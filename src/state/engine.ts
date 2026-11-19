@@ -1,0 +1,615 @@
+import type { Activity, Character, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
+import { d20, die, combineModes, signed, type Rng, type RollMode } from '../rules/dice';
+import { dateFromIndex, formatClock, formatDate } from '../rules/calendar';
+import { fireThreat, rollWeather, temperatureAt, CLIMATES } from '../rules/weather';
+import {
+  exhaustionSummary,
+  foodNeedLb,
+  FORAGE_DC,
+  PACES,
+  PINTS_PER_GALLON,
+  proficiencyBonus,
+  waterNeedPints,
+  fmtLb,
+  fmtWater,
+} from '../rules/survival';
+import { isCaster, PREP_RULE, preparedCount, preparedLimit } from '../rules/spells';
+import { uid } from './defaults';
+
+export interface Ctx {
+  rng: Rng;
+}
+
+const LOG_MAX = 600;
+export const MIN_PER_DAY = 1440;
+
+export const absNow = (s: State): number => s.dayIndex * MIN_PER_DAY + s.minutes;
+export const stamp = (s: State): string => `${formatDate(s.calendar, s.startYear, s.dayIndex)} · ${formatClock(s.minutes)}`;
+export const seasonOf = (s: State) => dateFromIndex(s.calendar, s.startYear, s.dayIndex).month.season;
+export const tempNow = (s: State): number => temperatureAt(s.weather, s.minutes % MIN_PER_DAY);
+export const charById = (s: State, id: string): Character | undefined => s.characters.find((c) => c.id === id);
+const alive = (c: Character) => c.exhaustion < 6;
+
+export function log(s: State, text: string, tone: Tone = 'info'): void {
+  s.log.unshift({ id: uid(), stamp: stamp(s), text, tone });
+  if (s.log.length > LOG_MAX) s.log.length = LOG_MAX;
+}
+
+/** Wraps a mutating action so callers always get a fresh state object. */
+function act<A extends unknown[]>(fn: (d: State, ctx: Ctx, ...args: A) => void) {
+  return (s: State, ctx: Ctx, ...args: A): State => {
+    const d = structuredClone(s);
+    ensureWeather(d, ctx);
+    fn(d, ctx, ...args);
+    return d;
+  };
+}
+
+// ---------------------------------------------------------------- weather
+
+export function ensureWeather(s: State, ctx: Ctx): void {
+  if (s.weather && s.weather.dayIndex === s.dayIndex) return;
+  newWeather(s, ctx);
+}
+
+function newWeather(s: State, ctx: Ctx): void {
+  s.weather = rollWeather(
+    { dayIndex: s.dayIndex, season: seasonOf(s), climate: s.place.climate, altitudeFt: s.place.altitudeFt, climateAdjustedPrecip: s.settings.climateAdjustedPrecip },
+    ctx.rng,
+  );
+  s.weatherHistory = [s.weather, ...s.weatherHistory.filter((w) => w.dayIndex !== s.dayIndex)].slice(0, 30);
+  const w = s.weather;
+  if (!CLIMATES[w.climate].noWeather) {
+    log(s, `Weather: high ${w.high}°F, low ${w.low}°F, ${w.wind === 'none' ? 'no' : w.wind} wind, ${w.precip === 'none' ? 'no' : w.precip} precipitation.`);
+  }
+}
+
+export const rerollWeather = act((d, ctx) => {
+  newWeather(d, ctx);
+});
+
+// ---------------------------------------------------------------- exposure
+
+export interface Exposure {
+  cold: boolean;
+  heat: boolean;
+  reason: string;
+}
+
+export function exposure(s: State, activity: Activity): Exposure {
+  const indoors = s.place.shelter === 'building' || s.place.shelter === 'cave';
+  if (activity !== 'travel' && indoors) return { cold: false, heat: false, reason: s.place.shelter === 'cave' ? 'Sheltered in a cave' : 'Indoors' };
+  if (activity !== 'travel' && s.fire.lit && s.settings.fireWarmsCamp) return { cold: false, heat: true, reason: 'Warmed by the campfire' };
+  return { cold: true, heat: true, reason: activity === 'travel' ? 'On the road' : s.place.shelter === 'tent' ? 'In a tent (still exposed to temperature)' : 'In the open' };
+}
+
+export function coldProtection(c: Character): string | null {
+  if (c.coldResist === 'immunity') return 'Cold Immunity';
+  if (c.coldResist === 'resistance') return 'Cold Resistance';
+  if (c.coldWeatherGear) return 'Cold weather gear';
+  return null;
+}
+
+export function hasDrinkableWater(s: State, c: Character, activity: Activity): boolean {
+  return c.waterPints > 0 || s.place.waterSource || (activity !== 'travel' && s.stores.waterGal > 0);
+}
+
+export function heatProtection(c: Character, hasWater: boolean): string | null {
+  if (c.fireResist === 'immunity') return 'Fire Immunity';
+  if (c.fireResist === 'resistance') return 'Fire Resistance';
+  if (hasWater) return 'Has drinkable water';
+  return null;
+}
+
+// ---------------------------------------------------------------- saves & exhaustion
+
+export function gainExhaustion(s: State, c: Character, n: number, why: string): void {
+  if (!alive(c)) return;
+  c.exhaustion = Math.min(6, c.exhaustion + n);
+  log(s, `${c.name} gains ${n} Exhaustion level${n > 1 ? 's' : ''} (${why}). Now level ${c.exhaustion}: ${exhaustionSummary(c.exhaustion)}.`, 'bad');
+  if (c.exhaustion >= 6) log(s, `${c.name} dies of exhaustion.`, 'bad');
+}
+
+function applySaveResult(s: State, c: Character, p: Omit<PendingSave, 'id' | 'stamp'>, passed: boolean, detail: string): void {
+  log(s, `${c.name}: Constitution save, DC ${p.dc}, against ${p.reason}. ${detail}${passed ? 'Success.' : 'Failure.'}`, passed ? 'good' : 'warn');
+  if (!passed) {
+    if (p.kind === 'malnutrition') c.malnourished = true;
+    gainExhaustion(s, c, 1, p.reason);
+  }
+}
+
+export function rollSave(c: Character, dc: number, mode: RollMode, rng: Rng) {
+  const r = d20(mode, rng);
+  const mod = c.conSave - 2 * c.exhaustion;
+  const total = r.value + mod;
+  const modeTxt = mode === 'normal' ? '' : ` (${mode === 'advantage' ? 'Advantage' : 'Disadvantage'})`;
+  const exhTxt = c.exhaustion ? `, including −${2 * c.exhaustion} from Exhaustion` : '';
+  return { passed: total >= dc, detail: `Rolled ${r.rolls.join('/')}${modeTxt} ${signed(mod)}${exhTxt} = ${total}. ` };
+}
+
+function requestSave(s: State, ctx: Ctx, c: Character, kind: SaveKind, dc: number, mode: RollMode, reason: string): void {
+  const spec = { charId: c.id, kind, dc, mode, reason };
+  if (s.settings.autoRollSaves) {
+    const r = rollSave(c, dc, mode, ctx.rng);
+    applySaveResult(s, c, spec, r.passed, r.detail);
+  } else {
+    s.pending.push({ ...spec, id: uid(), stamp: stamp(s) });
+  }
+}
+
+export const resolvePending = act((d, ctx, id: string, outcome: 'roll' | 'pass' | 'fail') => {
+  const p = d.pending.find((x) => x.id === id);
+  if (!p) return;
+  d.pending = d.pending.filter((x) => x.id !== id);
+  const c = charById(d, p.charId);
+  if (!c) return;
+  if (outcome === 'roll') {
+    const r = rollSave(c, p.dc, p.mode, ctx.rng);
+    applySaveResult(d, c, p, r.passed, r.detail);
+  } else applySaveResult(d, c, p, outcome === 'pass', 'Entered by hand. ');
+});
+
+// ---------------------------------------------------------------- the clock
+
+function tickHour(s: State, ctx: Ctx, activity: Activity): void {
+  const temp = temperatureAt(s.weather, (s.minutes - 30 + MIN_PER_DAY) % MIN_PER_DAY);
+
+  if (s.fire.lit) {
+    s.fire.fuelHours = Math.max(0, s.fire.fuelHours - 1);
+    const threat = fireThreat(s.weather, temp);
+    const indoors = s.place.shelter === 'building' || s.place.shelter === 'cave';
+    if (threat && !s.fire.sheltered && !indoors) {
+      s.fire.lit = false;
+      log(s, `The ${threat} puts out the campfire.`, 'warn');
+    } else if (s.fire.fuelHours <= 0) {
+      s.fire.lit = false;
+      log(s, 'The campfire burns down to embers and goes out.', 'warn');
+    }
+  }
+
+  const exp = exposure(s, activity);
+  for (const c of s.characters) {
+    if (!alive(c)) continue;
+    if (exp.cold && temp <= 0 && !coldProtection(c)) {
+      requestSave(s, ctx, c, 'cold', 10, 'normal', `extreme cold (${temp}°F)`);
+    }
+    if (exp.heat && temp >= 100) {
+      if (!heatProtection(c, hasDrinkableWater(s, c, activity))) {
+        c.heatHours += 1;
+        requestSave(s, ctx, c, 'heat', 4 + c.heatHours, c.heavyGarb ? 'disadvantage' : 'normal', `extreme heat (${temp}°F), hour ${c.heatHours}`);
+      } else c.heatHours = 0;
+    } else c.heatHours = 0;
+  }
+}
+
+function endOfDay(s: State, ctx: Ctx): void {
+  const hotDay = s.weather.high >= 100;
+  for (const c of s.characters) {
+    if (!alive(c)) continue;
+    if (c.needsWater) {
+      const need = waterNeedPints(c, hotDay, s.settings.doubleWaterInHeat);
+      if (c.drankPintsToday < need / 2) {
+        c.dehydrated = true;
+        gainExhaustion(s, c, 1, `dehydration: drank ${fmtWater(c.drankPintsToday)} of ${fmtWater(need)}`);
+      } else if (c.drankPintsToday >= need && c.dehydrated) {
+        c.dehydrated = false;
+        log(s, `${c.name} is fully rehydrated, so dehydration Exhaustion can be removed again.`, 'good');
+      }
+    }
+    if (c.needsFood) {
+      const need = foodNeedLb(c);
+      if (c.ateLbToday <= 0) {
+        c.daysWithoutFood += 1;
+        if (c.daysWithoutFood >= 5) {
+          c.malnourished = true;
+          gainExhaustion(s, c, 1, `malnutrition: day ${c.daysWithoutFood} without food`);
+        } else log(s, `${c.name} ate nothing today (${c.daysWithoutFood} day${c.daysWithoutFood > 1 ? 's' : ''} without food).`, 'warn');
+      } else {
+        c.daysWithoutFood = 0;
+        if (c.ateLbToday < need / 2) {
+          requestSave(s, ctx, c, 'malnutrition', 10, 'normal', `malnutrition: ate ${fmtLb(c.ateLbToday)} of ${fmtLb(need)}`);
+        } else if (c.ateLbToday >= need && c.malnourished) {
+          c.malnourished = false;
+          log(s, `${c.name} ate a full day's food, so malnutrition Exhaustion can be removed again.`, 'good');
+        }
+      }
+    }
+    c.ateLbToday = 0;
+    c.drankPintsToday = 0;
+  }
+  s.dayIndex += 1;
+  s.minutes = 0;
+  log(s, `A new day begins: ${formatDate(s.calendar, s.startYear, s.dayIndex)}.`);
+  newWeather(s, ctx);
+}
+
+/** Moves the clock forward, firing the hourly and end-of-day checks along the way. */
+export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activity): void {
+  let remaining = Math.max(0, Math.round(minutes));
+  while (remaining > 0) {
+    const toNextHour = 60 - (s.minutes % 60);
+    const step = Math.min(remaining, toNextHour);
+    s.minutes += step;
+    remaining -= step;
+    if (s.minutes % 60 === 0) tickHour(s, ctx, activity);
+    if (s.minutes >= MIN_PER_DAY) endOfDay(s, ctx);
+  }
+}
+
+export const advance = act((d, ctx, minutes: number, activity: Activity = 'camp') => advanceMut(d, ctx, minutes, activity));
+
+/** Advances to the next time the clock reads hh:mm. */
+export const advanceTo = act((d, ctx, targetMinutes: number, activity: Activity = 'camp') => {
+  let delta = (targetMinutes - d.minutes + MIN_PER_DAY) % MIN_PER_DAY;
+  if (delta === 0) delta = MIN_PER_DAY;
+  advanceMut(d, ctx, delta, activity);
+});
+
+// ---------------------------------------------------------------- rests
+
+export function canLongRest(s: State): { ok: boolean; reason?: string } {
+  if (s.lastLongRestEnd != null) {
+    const since = absNow(s) - s.lastLongRestEnd;
+    if (since < 16 * 60) {
+      const wait = 16 * 60 - since;
+      return { ok: false, reason: `Only one Long Rest per 24 hours. Available in ${Math.floor(wait / 60)} h ${wait % 60} min.` };
+    }
+  }
+  return { ok: true };
+}
+
+export const shortRest = act((d, ctx) => {
+  log(d, 'The party takes a Short Rest (1 hour). Everyone can spend Hit Point Dice.', 'info');
+  advanceMut(d, ctx, 60, 'rest');
+  for (const c of d.characters) {
+    if (c.chef && alive(c)) {
+      const pb = proficiencyBonus(c.level);
+      log(d, `${c.name}'s Chef cooking: up to ${4 + pb} creatures who spend Hit Point Dice this rest regain an extra 1d8 HP.`, 'good');
+    }
+  }
+});
+
+export const longRest = act((d, ctx, force = false) => {
+  const check = canLongRest(d);
+  if (!check.ok && !force) {
+    log(d, check.reason ?? 'Cannot Long Rest yet.', 'warn');
+    return;
+  }
+  log(d, 'The party settles in for a Long Rest (8 hours: at least 6 asleep, no more than 2 of light activity).');
+  advanceMut(d, ctx, 8 * 60, 'rest');
+  d.lastLongRestEnd = absNow(d);
+  d.travel.hoursToday = 0;
+  d.travel.milesToday = 0;
+  for (const c of d.characters) {
+    if (!alive(c)) continue;
+    if (c.exhaustion > 0) {
+      if (c.malnourished || c.dehydrated) {
+        log(d, `${c.name} can't shed Exhaustion yet: still ${c.malnourished ? 'malnourished' : 'dehydrated'}.`, 'warn');
+      } else {
+        c.exhaustion -= 1;
+        log(d, `${c.name} recovers 1 Exhaustion level. Now level ${c.exhaustion}.`, 'good');
+      }
+    }
+    for (const t of c.tasks) if (t.daily) t.done = false;
+    if (isCaster(c.className)) {
+      const rule = PREP_RULE[c.className];
+      c.prepOpen = rule === 'longRestAll';
+      c.swapsLeft = rule === 'longRestOne' ? 1 : 0;
+    }
+    if (c.chef) {
+      c.treats = proficiencyBonus(c.level);
+      log(d, `${c.name} bakes ${c.treats} Chef treats. Eating one is a Bonus Action and grants Temporary HP equal to their Proficiency Bonus.`, 'good');
+    }
+  }
+  log(d, 'Long Rest complete: HP and all spent Hit Point Dice are restored, and morning tasks reset.', 'good');
+});
+
+// ---------------------------------------------------------------- travel
+
+export interface TravelOpts {
+  hours: number;
+  pace: Pace;
+  difficult: boolean;
+  foragerIds: string[];
+}
+
+export const travel = act((d, ctx, o: TravelOpts) => {
+  d.travel.pace = o.pace;
+  if (d.fire.lit) {
+    d.fire.lit = false;
+    log(d, 'The party puts out the campfire and breaks camp.');
+  }
+  const p = PACES[o.pace];
+  const altitude = d.place.altitudeFt >= 10000;
+  let miles = 0;
+  log(d, `The party sets out at a ${o.pace} pace for ${o.hours} hour(s)${o.difficult ? ' over Difficult Terrain' : ''}. ${p.note}.`);
+  for (let i = 0; i < o.hours; i++) {
+    advanceMut(d, ctx, 60, 'travel');
+    d.travel.hoursToday += altitude ? 2 : 1;
+    miles += p.mph * (o.difficult ? 0.5 : 1);
+    if (d.travel.hoursToday > 8) {
+      const dc = 10 + (d.travel.hoursToday - 8);
+      for (const c of d.characters) {
+        if (alive(c)) requestSave(d, ctx, c, 'march', dc, 'normal', `a forced march (hour ${d.travel.hoursToday})`);
+      }
+    }
+  }
+  d.travel.milesToday += miles;
+  log(d, `Covered ${+miles.toFixed(1)} miles. That makes ${+d.travel.milesToday.toFixed(1)} miles and ${d.travel.hoursToday} travel hour(s) since the last Long Rest.`);
+  for (const id of o.foragerIds) {
+    const c = charById(d, id);
+    if (c) doForage(d, ctx, c, o.pace);
+  }
+});
+
+// ---------------------------------------------------------------- foraging, fire, food
+
+function doForage(s: State, ctx: Ctx, c: Character, pace: Pace | null): void {
+  if (!alive(c)) return;
+  const dc = FORAGE_DC[s.place.forage];
+  const mode = combineModes(pace === 'slow' ? 'advantage' : 'normal', pace === 'fast' ? 'disadvantage' : 'normal');
+  const r = d20(mode, ctx.rng);
+  const total = r.value + c.survival - 2 * c.exhaustion;
+  if (total >= dc) {
+    const food = Math.max(0, die(6, ctx.rng) + c.wisMod);
+    const water = Math.max(0, die(6, ctx.rng) + c.wisMod);
+    s.stores.foodLb += food;
+    s.stores.waterGal += water;
+    log(s, `${c.name} forages: Wisdom (Survival) ${r.rolls.join('/')} ${signed(c.survival - 2 * c.exhaustion)} = ${total} against DC ${dc}. Finds ${food} lb of food and ${water} gal of water for the camp stores.`, 'good');
+  } else {
+    log(s, `${c.name} forages: Wisdom (Survival) ${r.rolls.join('/')} ${signed(c.survival - 2 * c.exhaustion)} = ${total} against DC ${dc}. Finds nothing.`, 'warn');
+  }
+}
+
+export const forage = act((d, ctx, charId: string) => {
+  const c = charById(d, charId);
+  if (!c) return;
+  advanceMut(d, ctx, 60, 'camp');
+  doForage(d, ctx, c, null);
+});
+
+export const lightFire = act((d, ctx) => {
+  if (d.fire.lit) return;
+  if (d.fire.fuelHours <= 0) {
+    log(d, 'There is no fuel to light a fire. Gather wood first.', 'warn');
+    return;
+  }
+  const threat = fireThreat(d.weather, tempNow(d));
+  const indoors = d.place.shelter === 'building' || d.place.shelter === 'cave';
+  if (threat && !d.fire.sheltered && !indoors) {
+    log(d, `The ${threat} keeps putting the flame out. Shelter the fire pit first.`, 'warn');
+    return;
+  }
+  advanceMut(d, ctx, 1, 'camp');
+  d.fire.lit = true;
+  log(d, 'You light a campfire with a Tinderbox (1 minute).', 'good');
+});
+
+export const douseFire = act((d) => {
+  if (!d.fire.lit) return;
+  d.fire.lit = false;
+  log(d, 'The campfire is put out.');
+});
+
+export const gatherWood = act((d, ctx, charId: string) => {
+  const c = charById(d, charId);
+  if (!c) return;
+  advanceMut(d, ctx, 60, 'camp');
+  const dc = FORAGE_DC[d.place.forage];
+  const r = d20('normal', ctx.rng);
+  const total = r.value + c.survival - 2 * c.exhaustion;
+  const hours = total >= dc ? die(6, ctx.rng) + 2 : 1;
+  d.fire.fuelHours += hours;
+  log(d, `${c.name} gathers firewood for an hour: Survival ${total} against DC ${dc}. Adds ${hours} hour(s) of fuel (table rule).`, total >= dc ? 'good' : 'warn');
+});
+
+function takeFood(s: State, c: Character, lb: number, source: 'rations' | 'stores' | 'auto'): number {
+  let left = lb;
+  const fromStores = (amt: number) => {
+    const t = Math.min(amt, s.stores.foodLb);
+    s.stores.foodLb = round2(s.stores.foodLb - t);
+    return t;
+  };
+  const fromRations = (amt: number) => {
+    const t = Math.min(amt, c.rationsLb);
+    c.rationsLb = round2(c.rationsLb - t);
+    return t;
+  };
+  if (source === 'stores') left -= fromStores(left);
+  else if (source === 'rations') left -= fromRations(left);
+  else {
+    left -= fromStores(left);
+    left -= fromRations(left);
+  }
+  const eaten = round2(lb - left);
+  c.ateLbToday = round2(c.ateLbToday + eaten);
+  return eaten;
+}
+
+function takeWater(s: State, c: Character, pints: number, source: 'personal' | 'stores' | 'auto'): number {
+  let left = pints;
+  const fromPersonal = (amt: number) => {
+    const t = Math.min(amt, c.waterPints);
+    c.waterPints = round2(c.waterPints - t);
+    return t;
+  };
+  const fromStores = (amt: number) => {
+    const t = Math.min(amt, s.stores.waterGal * PINTS_PER_GALLON);
+    s.stores.waterGal = round2(s.stores.waterGal - t / PINTS_PER_GALLON);
+    return t;
+  };
+  if (source === 'personal') left -= fromPersonal(left);
+  else if (source === 'stores') left -= fromStores(left);
+  else {
+    if (s.place.waterSource) left = 0; // drinking straight from the stream
+    left -= fromStores(left);
+    left -= fromPersonal(left);
+  }
+  const drunk = round2(pints - left);
+  c.drankPintsToday = round2(c.drankPintsToday + drunk);
+  return drunk;
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+export const eat = act((d, _ctx, charId: string, lb: number, source: 'rations' | 'stores') => {
+  const c = charById(d, charId);
+  if (!c) return;
+  const got = takeFood(d, c, lb, source);
+  log(d, got > 0 ? `${c.name} eats ${fmtLb(got)} from ${source === 'rations' ? 'their rations' : 'the camp stores'}.` : `${c.name} has nothing to eat from ${source}.`, got > 0 ? 'info' : 'warn');
+});
+
+export const drink = act((d, _ctx, charId: string, pints: number, source: 'personal' | 'stores') => {
+  const c = charById(d, charId);
+  if (!c) return;
+  const got = takeWater(d, c, pints, source);
+  log(d, got > 0 ? `${c.name} drinks ${fmtWater(got)}.` : `${c.name} has nothing to drink.`, got > 0 ? 'info' : 'warn');
+});
+
+export type Portion = 'meal' | 'day' | 'topup';
+
+function portionFood(c: Character, portion: Portion): number {
+  const need = foodNeedLb(c);
+  if (portion === 'meal') return need / 2;
+  if (portion === 'day') return need;
+  return Math.max(0, need - c.ateLbToday);
+}
+
+export const partyEat = act((d, _ctx, portion: Portion) => {
+  const notes: string[] = [];
+  for (const c of d.characters) {
+    if (!alive(c) || !c.needsFood) continue;
+    const want = portionFood(c, portion);
+    if (want <= 0) continue;
+    const got = takeFood(d, c, want, 'auto');
+    notes.push(`${c.name} ${fmtLb(got)}${got < want ? ' (short)' : ''}`);
+  }
+  log(d, notes.length ? `The party eats (camp stores first, then rations): ${notes.join(', ')}.` : 'Nobody needs to eat right now.', notes.some((n) => n.includes('short')) ? 'warn' : 'info');
+});
+
+export const partyDrink = act((d, _ctx, portion: Portion) => {
+  const hot = d.weather.high >= 100;
+  const notes: string[] = [];
+  for (const c of d.characters) {
+    if (!alive(c) || !c.needsWater) continue;
+    const need = waterNeedPints(c, hot, d.settings.doubleWaterInHeat);
+    const want = portion === 'meal' ? need / 2 : portion === 'day' ? need : Math.max(0, need - c.drankPintsToday);
+    if (want <= 0) continue;
+    const got = takeWater(d, c, want, 'auto');
+    notes.push(`${c.name} ${fmtWater(got)}${got < want ? ' (short)' : ''}`);
+  }
+  log(d, notes.length ? `The party drinks${d.place.waterSource ? ' from the nearby water source' : ''}: ${notes.join(', ')}.` : 'Nobody needs to drink right now.', notes.some((n) => n.includes('short')) ? 'warn' : 'info');
+});
+
+export const refillWater = act((d) => {
+  if (!d.place.waterSource) {
+    log(d, 'There is no water source here.', 'warn');
+    return;
+  }
+  for (const c of d.characters) c.waterPints = c.waterCapacityPints;
+  log(d, 'Everyone refills their waterskins at the water source.', 'good');
+});
+
+export const cookMeal = act((d, ctx, cookId: string | null) => {
+  if (!d.fire.lit) {
+    log(d, 'You need a lit fire to cook a hot meal.', 'warn');
+    return;
+  }
+  const cook = cookId ? charById(d, cookId) : undefined;
+  advanceMut(d, ctx, 60, 'camp');
+  const eaters: string[] = [];
+  for (const c of d.characters) {
+    if (!alive(c) || !c.needsFood) continue;
+    const got = takeFood(d, c, foodNeedLb(c) / 2, 'auto');
+    if (got > 0) eaters.push(c.name);
+  }
+  let flavor = '';
+  if (cook) {
+    const bonus = cook.wisMod + (cook.cooksUtensils ? proficiencyBonus(cook.level) : 0) - 2 * cook.exhaustion;
+    const r = d20('normal', ctx.rng);
+    const ok = r.value + bonus >= 10;
+    flavor = ` ${cook.name} cooks: Wisdom with Cook's Utensils ${r.value} ${signed(bonus)} = ${r.value + bonus} against DC 10, ${ok ? 'a delicious meal' : 'edible, at least'}.`;
+  }
+  log(d, eaters.length ? `A hot meal at the campfire for ${eaters.join(', ')} (half a day's food each).${flavor}` : `Nothing to cook: the stores and rations are empty.${flavor}`, eaters.length ? 'good' : 'warn');
+});
+
+export const eatTreat = act((d, _ctx, charId: string) => {
+  const c = charById(d, charId);
+  if (!c || c.treats <= 0) return;
+  c.treats -= 1;
+  log(d, `${c.name} hands out a Chef treat (Bonus Action to eat: ${proficiencyBonus(c.level)} Temporary HP).`, 'good');
+});
+
+// ---------------------------------------------------------------- spells
+
+export const togglePrepared = act((d, _ctx, charId: string, spellName: string, setup: boolean) => {
+  const c = charById(d, charId);
+  const sp = c?.spells.find((x) => x.name === spellName);
+  if (!c || !sp || sp.alwaysPrepared) return;
+  if (!setup && !c.prepOpen) {
+    log(d, `${c.name} can't change prepared spells right now.`, 'warn');
+    return;
+  }
+  sp.prepared = !sp.prepared;
+});
+
+export const replaceSpell = act((d, _ctx, charId: string, dropName: string, addName: string) => {
+  const c = charById(d, charId);
+  if (!c || c.swapsLeft <= 0) return;
+  const drop = c.spells.find((x) => x.name === dropName && x.prepared && !x.alwaysPrepared);
+  const add = c.spells.find((x) => x.name === addName && !x.prepared);
+  if (!drop || !add) return;
+  drop.prepared = false;
+  add.prepared = true;
+  c.swapsLeft -= 1;
+  log(d, `${c.name} swaps ${drop.name} for ${add.name}.`, 'good');
+});
+
+export const finishPreparation = act((d, _ctx, charId: string) => {
+  const c = charById(d, charId);
+  if (!c) return;
+  c.prepOpen = false;
+  c.swapsLeft = 0;
+  const limit = preparedLimit(c);
+  const prepared = c.spells.filter((x) => x.prepared && x.level > 0).map((x) => x.name);
+  const task = c.tasks.find((t) => /prepare spells/i.test(t.label));
+  if (task) task.done = true;
+  log(d, `${c.name} finishes preparing spells (${preparedCount(c)}${limit != null ? `/${limit}` : ''}): ${prepared.join(', ') || 'none'}.`, 'good');
+});
+
+// ---------------------------------------------------------------- downtime
+
+export const workOnProjects = act((d, ctx, projectIds: string[]) => {
+  const projects = d.projects.filter((p) => projectIds.includes(p.id) && !p.done);
+  if (!projects.length) return;
+  advanceMut(d, ctx, 8 * 60, 'work');
+  for (const p of projects) progress(d, p);
+});
+
+function progress(s: State, p: Project): void {
+  const crafters = p.charIds.filter((id) => {
+    const c = charById(s, id);
+    return c && alive(c);
+  }).length;
+  const amount = Math.max(1, crafters);
+  p.daysDone = Math.min(p.daysRequired, p.daysDone + amount);
+  if (p.daysDone >= p.daysRequired) {
+    p.done = true;
+    log(s, `Downtime project complete: ${p.name}.`, 'good');
+  } else {
+    log(s, `A day's work on ${p.name}: ${p.daysDone}/${p.daysRequired} workdays.`);
+  }
+}
+
+/** One full downtime day: work 8 hours, eat and drink, then Long Rest from 23:00. */
+export const downtimeDay = act((d, ctx, projectIds: string[]) => {
+  const projects = d.projects.filter((p) => projectIds.includes(p.id) && !p.done);
+  advanceMut(d, ctx, 8 * 60, 'work');
+  for (const p of projects) progress(d, p);
+  const eatAll = partyEat(d, ctx, 'topup');
+  const drinkAll = partyDrink(eatAll, ctx, 'topup');
+  Object.assign(d, drinkAll);
+  if (d.minutes < 23 * 60) advanceMut(d, ctx, 23 * 60 - d.minutes, 'camp');
+  const rested = longRest(d, ctx, false);
+  Object.assign(d, rested);
+});
