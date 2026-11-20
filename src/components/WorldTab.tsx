@@ -6,6 +6,7 @@ import { dateFromIndex, formatDuration } from '../rules/calendar';
 import { GIFT_TYPES, type GiftType } from '../rules/hazards';
 import { DIVINATION_SPELLS, divinationFailChance, moonPhase, RESURRECTION_SPELLS, RITUAL_PRESETS } from '../rules/longterm';
 import { Card, Meter, Num, Pill, Select, Text, Rule } from './common';
+import { WaysAround } from './WaysAround';
 
 export function WorldTab() {
   return (
@@ -179,6 +180,7 @@ function RitualsCard() {
       </div>
       <button onClick={() => (dispatch((st, cx) => E.addRitual(st, cx, preset.spell, preset.days, place.trim(), caster || null)), setPlace(''))}>Start daily casting</button>
       <Rule>For long castings and slow magic, such as Clone growing for 120 days or a Geas lasting 30 days, use timers on the Effects & Lights tab.</Rule>
+      <WaysAround topic={'dailyCasting'} />
     </Card>
   );
 }
@@ -222,6 +224,7 @@ function DeathCard() {
         </button>
       </div>
       <Rule>Put a Gentle Repose timer on the body (Effects & Lights tab) and the days it lasts won&apos;t count toward these limits.</Rule>
+      <WaysAround topic={'death'} />
     </Card>
   );
 }
@@ -245,6 +248,7 @@ function DivinationCard() {
       </p>
       <button onClick={() => dispatch((st, cx) => E.castDivination(st, cx, c.id, spell))}>Cast {spell}</button>
       <Rule>Each extra casting before a Long Rest adds a cumulative 25% chance of a random or missing answer. Counts reset when the caster finishes a Long Rest. Check the exact wording of each spell.</Rule>
+      <WaysAround topic={'divination'} />
     </Card>
   );
 }

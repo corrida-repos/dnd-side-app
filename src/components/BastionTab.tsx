@@ -23,6 +23,7 @@ import { formatDuration } from '../rules/calendar';
 import { SpeedUp } from './SpeedUp';
 import { BastionPeople, FacilityPlan, FacilityStatus } from './BastionPlan';
 import { FACILITY_OPTIONS } from '../rules/bastionOrders';
+import { WaysAround } from './WaysAround';
 
 const ORDER_HINT: Record<Order, string> = {
   Craft: 'What is being made, e.g. Longsword',
@@ -59,6 +60,7 @@ export function BastionTab() {
           </li>
           <li>Construction moves forward every in-game day, even while the party is away adventuring.</li>
         </ul>
+        <WaysAround topic={['building', 'messages']} />
       </Card>
     </div>
   );

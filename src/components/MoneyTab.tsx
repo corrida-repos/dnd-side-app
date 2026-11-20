@@ -9,6 +9,7 @@ import { HIRELING_ROLES, MESSENGER_GP_PER_MILE, type HirelingRole } from '../rul
 import { coinCount, DENOMS, purseValue, type Denom } from '../rules/coins';
 import type { Hireling } from '../state/types';
 import { COMMON_SPELL_REQUESTS, PASSAGE, SPELL_SERVICES, spellServiceAvailable, type Settlement } from '../rules/services';
+import { WaysAround } from './WaysAround';
 
 export function MoneyTab() {
   return (
@@ -98,6 +99,7 @@ function PurseCard() {
         In town, lifestyle is charged every midnight, and everything except Wretched covers food, water and lodging, so nobody goes hungry. Lifestyle per day: Wretched free, Squalid 1 SP, Poor 2 SP, Modest 1 GP,
         Comfortable 2 GP, Wealthy 4 GP, Aristocratic 10 GP. Crafting materials and Bastion construction are charged when the work starts.
       </Rule>
+      <WaysAround topic={'lifestyle'} />
     </Card>
   );
 }
@@ -212,6 +214,7 @@ function HirelingsCard() {
         Hire {name.trim() || info.label} ({role === 'messenger' ? '2 CP per mile' : `${fmtGp(info.skilled ? HIRELING_WAGE.skilled : HIRELING_WAGE.untrained)}/day`})
       </button>
       <Rule>Skilled hirelings cost 2 GP a day and untrained ones 2 SP, charged at midnight. Messengers charge 2 CP per mile instead.</Rule>
+      <WaysAround topic={'hirelings'} />
     </Card>
   );
 }
@@ -268,6 +271,7 @@ function MountsCard() {
         Add {name.trim() || p.name}
       </button>
       <Rule>Mounts follow the same food, water, temperature and Exhaustion rules as everyone else. Party meals feed them from their feed, and town lifestyle doesn&apos;t cover them, so water them every day (for example with &quot;Top up today&apos;s water&quot;).</Rule>
+      <WaysAround topic={'mounts'} />
     </Card>
   );
 }
@@ -317,6 +321,7 @@ function ServicesCard() {
         Pay {fmtGp(spellGp)}
       </button>
       <Rule>2024 PHB services. Higher-level casters are harder to find: level 3+ only in towns and cities, level 6+ only in cities. Spells with costly components add their cost. Daily food and lodging are already part of lifestyle expenses.</Rule>
+      <WaysAround topic={'services'} />
     </Card>
   );
 }

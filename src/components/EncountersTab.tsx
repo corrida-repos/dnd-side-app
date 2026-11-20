@@ -6,6 +6,7 @@ import { TERRAIN, type TerrainType } from '../rules/terrain';
 import { formatDuration } from '../rules/calendar';
 import { Card, Pill, Rule, Select, Toggle } from './common';
 import { senseText } from './senseView';
+import { WaysAround } from './WaysAround';
 
 type Act = CheckConditions['activity'];
 const ACT_LABEL: Record<Act, string> = { travel: 'Travelling', camp: 'In camp', rest: 'Long Rest', explore: 'Exploring a dungeon' };
@@ -56,6 +57,7 @@ function DangerCard() {
       <p className="small muted">
         Imported bestiaries (Settings) with Challenge Ratings and environments are added to the tables automatically, and replace SRD creatures of the same name.
       </p>
+      <WaysAround topic={'encounters'} />
     </Card>
   );
 }
