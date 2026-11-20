@@ -4,6 +4,7 @@ import { rollWeather } from '../rules/weather';
 import { isCaster } from '../rules/spells';
 import { HIT_DIE } from '../rules/upkeep';
 import { autoAssign, watchCapacity } from '../rules/watch';
+import { coinsFor } from '../rules/coins';
 import type { Rng } from '../rules/dice';
 
 export const SAVE_VERSION = 1;
@@ -28,7 +29,8 @@ export function newCharacter(partial: Partial<Character> = {}): Character {
     id: uid(),
     kind: 'pc',
     name: 'New adventurer',
-    gp: 25,
+    gp: partial.gp ?? 25,
+    purse: partial.purse ?? coinsFor(partial.gp ?? 25),
     lifestyle: 'modest',
     speed: 30,
     className,
@@ -144,7 +146,7 @@ export function createDefaultState(rng: Rng): State {
     travel: { pace: 'normal', hoursToday: 0, milesToday: 0, lost: false, lostRecheckIn: 0, milesOffCourse: 0, navigatorId: null },
     lastLongRestEnd: null,
     trackingStart: dayIndex * 1440 + 7 * 60,
-    settings: { autoRollSaves: true, climateAdjustedPrecip: false, fireWarmsCamp: true, doubleWaterInHeat: false, wildNeedsPurifying: true, sleepInArmorPenalty: false, rawFoodRisk: true, rawFoodDC: 10, coldNights: true, coldNightF: 32, sleepDeprivation: true, encounterOn: 0, exploreEncounterOn: 0, chargeCosts: true, moonOffset: 0, stressPerLongRest: 1, fearPerLongRest: 1, weatherDamage: true, variantEncumbrance: false, coldGear2014: false, heavyClothing2014: false, extraCraftHelpers: false, lifestylePeriod: 'day', coinWeight: true, noTimepiece: false, poorVisibilityNav: true },
+    settings: { autoRollSaves: true, climateAdjustedPrecip: false, fireWarmsCamp: true, doubleWaterInHeat: false, wildNeedsPurifying: true, sleepInArmorPenalty: false, rawFoodRisk: true, rawFoodDC: 10, coldNights: true, coldNightF: 32, sleepDeprivation: true, encounterOn: 0, exploreEncounterOn: 0, chargeCosts: true, moonOffset: 0, stressPerLongRest: 1, fearPerLongRest: 1, weatherDamage: true, variantEncumbrance: false, coldGear2014: false, heavyClothing2014: false, extraCraftHelpers: false, lifestylePeriod: 'day', coinWeight: true, moneychangerFee: 0, noTimepiece: false, poorVisibilityNav: true },
     spellLibrary: [],
     bastions: [],
     watchOrder: [],
@@ -157,6 +159,7 @@ export function createDefaultState(rng: Rng): State {
     materials: [],
     bestiary: [],
     statusLog: [],
+    stashes: [],
   };
   const ids = state.characters.map((c) => c.id);
   state.watchPlan = { count: 4, slots: autoAssign(ids, 4, 1, Object.fromEntries(state.characters.map((c) => [c.id, watchCapacity(4, c.trance)]))) };

@@ -8,6 +8,7 @@ import { formatClock, formatDuration } from '../rules/calendar';
 import { Card, Meter, Num, Pill, Select, Text, Toggle, Rule } from './common';
 import type { Character, InventoryItem, MagicItem, Resource } from '../state/types';
 import { LOAD_LABEL, RATION_WEIGHT } from '../rules/encumbrance';
+import { fmtGp } from '../rules/money';
 import { PartyKnowledgeCard, PlayerItemView } from './ItemKnowledge';
 import { ARCANA_DC, CLUE_KIND_LABEL, SCHOOLS_OF_MAGIC, STUDY_LABEL, STUDY_MINUTES, type ClueKind } from '../rules/identify';
 import { RARITY_LABEL, type Rarity } from '../rules/crafting';
@@ -194,15 +195,32 @@ function InventoryBlock({ c }: { c: Character }) {
             {c.inventory.length} item line(s){guesses ? `, ${guesses} with guessed weights` : ''}
           </summary>
           <ul className="plain small">
-            {c.inventory.map((i) => (
+            {[...c.inventory.filter((i) => !i.containerId || !c.inventory.some((x) => x.id === i.containerId))]
+              .flatMap((i) => [i, ...c.inventory.filter((x) => x.containerId === i.id)])
+              .map((i) => (
               <li key={i.id} className="armor-row">
                 <span>
+                  {i.containerId && <span className="muted">↳ </span>}
                   {i.name} {i.qty > 1 && <span className="muted">×{i.qty}</span>}{' '}
+                  {i.container && (
+                    <Pill tone="info" title={i.container.note}>
+                      {i.container.weightless ? 'weightless inside' : 'container'}
+                      {i.container.capacityLb ? `: ${E.containerLoad(c.inventory, i.id)}/${i.container.capacityLb} lb` : ''}
+                    </Pill>
+                  )}
+                  {i.valueGp ? <span className="muted"> {fmtGp(i.valueGp * i.qty)}</span> : null}
                   <Pill tone={i.source === 'guess' ? 'warn' : 'muted'} title={i.source === 'book' ? 'From the PHB equipment list' : i.source === 'pasted' ? 'Weight from the pasted text' : i.source === 'guess' ? 'Guessed from the name' : 'Set by hand'}>
                     {i.source === 'book' ? 'PHB' : i.source}
                   </Pill>
                 </span>
                 <span className="btn-row tight">
+                  {!i.container && c.inventory.some((x) => x.container) && (
+                    <Select
+                      value={i.containerId ?? ''}
+                      onChange={(v) => set(i.id, (x) => void (x.containerId = v || null))}
+                      options={[{ value: '', label: 'Carried' }, ...c.inventory.filter((x) => x.container).map((x) => ({ value: x.id, label: `In ${x.name}` }))]}
+                    />
+                  )}
                   <Num value={i.qty} onChange={(v) => set(i.id, (x) => void (x.qty = Math.max(0, Math.round(v))))} min={0} width={2} />
                   <Num value={i.weight} onChange={(v) => set(i.id, (x) => ((x.weight = Math.max(0, v)), (x.source = 'manual')))} min={0} step={0.5} suffix="lb" width={3} />
                   <button className="ghost tiny" aria-label={`Remove ${i.name}`} onClick={() => setChar(c.id, (x) => void (x.inventory = x.inventory.filter((y) => y.id !== i.id)))}>

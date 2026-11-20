@@ -14,6 +14,7 @@ import { GearTab } from './components/GearTab';
 import { EffectsTab } from './components/EffectsTab';
 import { MoneyTab } from './components/MoneyTab';
 import { WorldTab } from './components/WorldTab';
+import { StorageTab } from './components/StorageTab';
 import { LogTab } from './components/LogTab';
 import { SettingsTab } from './components/SettingsTab';
 
@@ -25,6 +26,7 @@ const TABS = [
   { id: 'camp', label: 'Camp & Survival', el: CampTab },
   { id: 'morning', label: 'Morning & Spells', el: MorningTab },
   { id: 'money', label: 'Money & Mounts', el: MoneyTab },
+  { id: 'storage', label: 'Storage', el: StorageTab },
   { id: 'downtime', label: 'Downtime', el: DowntimeTab },
   { id: 'bastions', label: 'Bastions', el: BastionTab },
   { id: 'world', label: 'World', el: WorldTab },

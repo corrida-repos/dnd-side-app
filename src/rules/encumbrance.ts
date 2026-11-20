@@ -9,6 +9,8 @@ export interface ParsedItem {
   /** Weight of one item in pounds. */
   weight: number;
   source: WeightSource;
+  /** Value of one, from a price in the pasted text. */
+  valueGp?: number;
 }
 
 /** Carrying capacity multiplier by size: Strength × 15 lb for Small or Medium (PHB). */
@@ -113,7 +115,13 @@ export function parseInventoryLine(line: string): ParsedItem | null {
     weight = Number(lb[1]);
     text = text.replace(lb[0], ' ');
   }
-  text = text.replace(/\b\d[\d,]*(?:\.\d+)?\s*(?:gp|sp|cp|pp|ep)\b/gi, ' '); // drop prices
+  let valueGp: number | undefined;
+  const price = text.match(/\b(\d[\d,]*(?:\.\d+)?)\s*(gp|sp|cp|pp|ep)\b/i);
+  if (price) {
+    const rate: Record<string, number> = { cp: 0.01, sp: 0.1, ep: 0.5, gp: 1, pp: 10 };
+    valueGp = Number(price[1].replace(/,/g, '')) * rate[price[2].toLowerCase()];
+    text = text.replace(price[0], ' ');
+  }
   text = text.replace(/\s+/g, ' ').trim();
   const lead = text.match(/^(\d+)\s*[x×]?\s+(.+)$/i);
   // "x3", "(3)", or a bare count left over from a D&D Beyond row (name, weight, quantity, cost).
@@ -127,9 +135,10 @@ export function parseInventoryLine(line: string): ParsedItem | null {
   }
   const name = text.replace(/\s+/g, ' ').replace(/[,;:\-–]\s*$/, '').trim();
   if (!name || /^(name|item|weight|qty|quantity|cost|equipment|inventory)$/i.test(name)) return null;
-  if (weight != null) return { name, qty: Math.max(1, qty), weight: qty > 1 && /total/i.test(line) ? weight / qty : weight, source: 'pasted' };
+  const value = valueGp != null ? { valueGp } : {};
+  if (weight != null) return { name, qty: Math.max(1, qty), weight: qty > 1 && /total/i.test(line) ? weight / qty : weight, source: 'pasted', ...value };
   const est = estimateWeight(name);
-  return { name, qty: Math.max(1, qty), weight: est.weight, source: est.source };
+  return { name, qty: Math.max(1, qty), weight: est.weight, source: est.source, ...value };
 }
 
 export const parseInventory = (text: string): ParsedItem[] => text.split(/\r?\n/).map(parseInventoryLine).filter((x): x is ParsedItem => !!x);

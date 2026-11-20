@@ -932,3 +932,9 @@ select {
   border-radius: 8px;
   padding: 6px 10px;
 }
+
+.purse {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}

@@ -1,4 +1,4 @@
-import type { ActiveEffect, Activity, CharacterSpell, LogEntry, Ritual, Bastion, Character, ExhaustionCause, Facility, MagicItem, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
+import type { ActiveEffect, Activity, CharacterSpell, InventoryItem, LogEntry, Ritual, Stash, Bastion, Character, ExhaustionCause, Facility, MagicItem, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
 import { BASIC_BUILD, BASTION_TURN_DAYS, defaultSize, ENLARGE, rollBastionEvent, SIZE_LABEL, SPECIAL_FACILITIES, type FacilitySize } from '../rules/bastion';
 import { d20, die, combineModes, rollExpr, signed, type Rng, type RollMode } from '../rules/dice';
 import { dateFromIndex, formatClock, formatDate, formatDuration, lightAt, sunriseMinutes } from '../rules/calendar';
@@ -11,6 +11,8 @@ import { MESSENGER_GP_PER_MILE } from '../rules/hirelings';
 import { ARCANA_DC, STUDY_MINUTES, type StudyMethod } from '../rules/identify';
 import { FEED_LB_PER_DAY, MOUNT_CAPACITY, carryingCapacity, COINS_PER_LB, estimateWeight, loadLevel, parseInventory, RATION_WEIGHT, type LoadLevel } from '../rules/encumbrance';
 import { BUTCHER_DC, BUTCHER_MINUTES, isEdible, MEAT_LB, STRANGE_TYPES, yieldsHide, type Creature } from '../rules/hunting';
+import { addCoins, COIN_GP, coinCount, coinsFor, emptyPurse, exchange, fmtPurse, purseValue, spend, type Denom, type Purse } from '../rules/coins';
+import { detectContainer } from '../rules/containers';
 import { FEED_GP_PER_DAY, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset } from '../rules/money';
 import { STABLE_WAKE_DIE, STABILIZE_DC } from '../rules/upkeep';
 import { RITUAL_EXTRA_MINUTES as RITUAL_TAG_MINUTES, spellInfo } from '../rules/rituals';
@@ -94,6 +96,21 @@ const CAUSE_SENSE: Record<ExhaustionCause, SenseKey> = {
 
 const adventurers = (s: State) => s.characters.filter((c) => c.kind !== 'mount' && alive(c));
 
+/** Pays from a character's coins (making change); anything they can't cover becomes debt. */
+export function spendWealth(c: Character, gp: number): void {
+  const { purse } = spend(c.purse, gp);
+  c.purse = purse;
+  c.gp = Math.round((c.gp - gp) * 100) / 100;
+}
+
+/** Adds money as coins, paying off any debt first. */
+export function gainWealth(c: Character, gp: number): void {
+  const debt = Math.max(0, purseValue(c.purse) - c.gp);
+  const toPurse = Math.max(0, gp - debt);
+  c.purse = addCoins(c.purse, coinsFor(toPurse));
+  c.gp = Math.round((c.gp + gp) * 100) / 100;
+}
+
 /** Charges gold to one or more characters, split evenly. Does nothing when charging costs is switched off. */
 export function payGold(s: State, payerIds: string[], amount: number, what: string): void {
   if (!s.settings.chargeCosts || amount <= 0) return;
@@ -101,7 +118,7 @@ export function payGold(s: State, payerIds: string[], amount: number, what: stri
   if (!payers.length) payers = adventurers(s);
   if (!payers.length) return;
   const share = Math.round((amount / payers.length) * 100) / 100;
-  for (const c of payers) c.gp = Math.round((c.gp - share) * 100) / 100;
+  for (const c of payers) spendWealth(c, share);
   const broke = payers.filter((c) => c.gp < 0).map((c) => c.name);
   log(
     s,
@@ -115,7 +132,7 @@ export function receiveGold(s: State, payeeIds: string[], amount: number, what: 
   let payees = payeeIds.map((id) => charById(s, id)).filter((c): c is Character => !!c && c.kind !== 'mount');
   if (!payees.length) payees = adventurers(s);
   const share = Math.round((amount / payees.length) * 100) / 100;
-  for (const c of payees) c.gp = Math.round((c.gp + share) * 100) / 100;
+  for (const c of payees) gainWealth(c, share);
   log(s, `${payees.map((c) => c.name).join(', ')} receive ${fmtGp(amount)} for ${what}.`, 'good');
 }
 
@@ -1838,7 +1855,8 @@ export const buyFeed = act((d, _ctx, days: number) => {
 export const adjustGold = act((d, _ctx, charId: string, amount: number, reason: string) => {
   const c = charById(d, charId);
   if (!c || !amount) return;
-  c.gp = Math.round((c.gp + amount) * 100) / 100;
+  if (amount > 0) gainWealth(c, amount);
+  else spendWealth(c, -amount);
   log(d, `${c.name} ${amount > 0 ? 'gains' : 'spends'} ${fmtGp(Math.abs(amount))}${reason ? ` (${reason})` : ''}. Now ${fmtGp(c.gp)}.`, amount > 0 ? 'good' : 'info');
 });
 
@@ -2188,12 +2206,14 @@ export interface Load {
 
 /** Everything a character carries, in pounds, with the estimate broken down. */
 export function carriedLoad(s: State, c: Character): Load {
-  const gear = c.inventory.reduce((a, i) => a + i.weight * i.qty, 0);
+  // Things packed in a weightless container (Bag of Holding and the like) don't count, but the container does.
+  const weightless = new Set(c.inventory.filter((i) => i.container?.weightless).map((i) => i.id));
+  const gear = c.inventory.filter((i) => !(i.containerId && weightless.has(i.containerId))).reduce((a, i) => a + i.weight * i.qty, 0);
   // Rations weigh 2 lb per day; a day of animal feed weighs 10 lb.
   const food = c.kind === 'mount' ? (c.rationsLb / Math.max(0.25, foodNeedLb(c))) * FEED_LB_PER_DAY : c.rationsLb * RATION_WEIGHT;
   const skins = c.waterCapacityPints > 0 ? Math.ceil(c.waterCapacityPints / 4) : 0;
   const water = c.waterPints + skins; // a pint of water weighs about a pound; each empty skin about a pound
-  const coins = s.settings.coinWeight && c.kind !== 'mount' ? Math.max(0, c.gp) / COINS_PER_LB : 0;
+  const coins = s.settings.coinWeight ? coinCount(c.purse) / COINS_PER_LB : 0;
   const listed = new Set(c.inventory.map((i) => i.name.toLowerCase()));
   // Magic items count once: skip any that also appear in the pasted inventory.
   const magic = c.items.filter((it) => !listed.has(it.name.toLowerCase()) && !listed.has((it.partyName ?? '').toLowerCase())).reduce((a, it) => a + estimateWeight(it.name).weight, 0);
@@ -2207,9 +2227,9 @@ export const addInventory = act((d, _ctx, charId: string, text: string) => {
   if (!c) return;
   const parsed = parseInventory(text);
   for (const p of parsed) {
-    const same = c.inventory.find((i) => i.name.toLowerCase() === p.name.toLowerCase());
+    const same = c.inventory.find((i) => i.name.toLowerCase() === p.name.toLowerCase() && !i.containerId);
     if (same) same.qty += p.qty;
-    else c.inventory.push({ id: uid(), ...p });
+    else c.inventory.push({ id: uid(), ...p, container: detectContainer(p.name), ammo: isAmmo(p.name) ? { spent: 0 } : null });
   }
   if (parsed.length) log(d, `${c.name}'s inventory: added ${parsed.length} line(s), ${parsed.filter((p) => p.source === 'guess').length} with guessed weights.`);
 });
@@ -2235,3 +2255,101 @@ export const breatheAgain = act((d, _ctx, charId: string) => {
   c.exhaustion = kept.length;
   status(d, c, 'exhaustionEases', `${c.name} can breathe again, and the ${removed} Exhaustion level${removed > 1 ? 's' : ''} from suffocating go away.`, 'good');
 });
+
+// ---------------------------------------------------------------- coins, containers, stashes
+
+/** Is this ammunition (arrows, bolts, sling bullets, needles, firearm bullets)? */
+export const isAmmo = (name: string): boolean => /\b(arrows?|bolts?|sling bullets?|blowgun needles?|needles?|firearm bullets?|bullets?)\b/i.test(name) && !/case|quiver|pouch/i.test(name);
+
+export const setPurse = act((d, _ctx, charId: string, purse: Purse) => {
+  const c = charById(d, charId);
+  if (!c) return;
+  c.purse = purse;
+  c.gp = purseValue(purse);
+});
+
+/** Swaps coins at a moneychanger (table-rule fee). */
+export const exchangeCoins = act((d, _ctx, charId: string, from: Denom, to: Denom, count: number) => {
+  const c = charById(d, charId);
+  if (!c) return;
+  const r = exchange(c.purse, from, to, count, d.settings.moneychangerFee);
+  if (!r) {
+    log(d, `${c.name} doesn't have ${count} ${from} to exchange.`, 'warn');
+    return;
+  }
+  c.purse = r.purse;
+  c.gp = Math.round((c.gp - r.fee) * 100) / 100;
+  log(d, `${c.name} exchanges ${count} ${from} for ${r.received} ${to}${r.fee ? ` (fee ${fmtGp(r.fee)})` : ''}.`);
+});
+
+/** Who holds something: a character ("c:id") or a stash or vehicle ("s:id"). */
+export type Holder = string;
+
+function holderOf(s: State, ref: Holder): { name: string; items: InventoryItem[]; purse: Purse; char?: Character; stash?: Stash } | null {
+  if (ref.startsWith('c:')) {
+    const c = charById(s, ref.slice(2));
+    return c ? { name: c.name, items: c.inventory, purse: c.purse, char: c } : null;
+  }
+  const st = s.stashes.find((x) => `s:${x.id}` === ref);
+  return st ? { name: st.name, items: st.items, purse: st.purse, stash: st } : null;
+}
+
+/** Moves items (and anything packed inside them) between characters, stashes and vehicles. */
+export const moveItem = act((d, _ctx, from: Holder, to: Holder, itemId: string, qty: number) => {
+  const a = holderOf(d, from);
+  const b = holderOf(d, to);
+  if (!a || !b || from === to) return;
+  const it = a.items.find((i) => i.id === itemId);
+  if (!it || qty <= 0) return;
+  const n = Math.min(qty, it.qty);
+  const contents = it.container ? a.items.filter((i) => i.containerId === it.id) : [];
+  if (n === it.qty) {
+    a.items.splice(a.items.indexOf(it), 1);
+    b.items.push({ ...it, containerId: null });
+    for (const x of contents) {
+      a.items.splice(a.items.indexOf(x), 1);
+      b.items.push(x);
+    }
+  } else {
+    it.qty -= n;
+    const same = b.items.find((i) => i.name.toLowerCase() === it.name.toLowerCase() && !i.containerId);
+    if (same) same.qty += n;
+    else b.items.push({ ...it, id: uid(), qty: n, containerId: null, ammo: it.ammo ? { spent: 0 } : null });
+  }
+  log(d, `${n} × ${it.name}${contents.length ? ` (with ${contents.length} item${contents.length > 1 ? 's' : ''} inside)` : ''} moved from ${a.name} to ${b.name}.`);
+});
+
+/** Moves coins between purses (depositing in a vault, loading a strongbox on the wagon). */
+export const moveCoins = act((d, _ctx, from: Holder, to: Holder, denom: Denom, count: number) => {
+  const a = holderOf(d, from);
+  const b = holderOf(d, to);
+  if (!a || !b || from === to || count <= 0) return;
+  const n = Math.min(count, a.purse[denom]);
+  if (!n) return;
+  a.purse[denom] -= n;
+  b.purse[denom] += n;
+  if (a.char) a.char.gp = Math.round((a.char.gp - n * COIN_GP[denom]) * 100) / 100;
+  if (b.char) b.char.gp = Math.round((b.char.gp + n * COIN_GP[denom]) * 100) / 100;
+  log(d, `${n} ${denom} moved from ${a.name} to ${b.name}.`);
+});
+
+export const createStash = act((d, _ctx, name: string, kind: Stash['kind'], location: string, capacityLb: number | null) => {
+  d.stashes.push({ id: uid(), name, kind, location, capacityLb, items: [], purse: emptyPurse(), notes: '' });
+  log(d, `New ${kind === 'vehicle' ? 'vehicle' : kind === 'bank' ? 'bank vault' : 'stash'}: ${name}${location ? `, at ${location}` : ''}.`);
+});
+
+/** Weight stored in a stash or vehicle. */
+export function stashLoad(st: Stash, coinWeight: boolean): number {
+  const weightless = new Set(st.items.filter((i) => i.container?.weightless).map((i) => i.id));
+  const gear = st.items.filter((i) => !(i.containerId && weightless.has(i.containerId))).reduce((a, i) => a + i.weight * i.qty, 0);
+  return Math.round((gear + (coinWeight ? coinCount(st.purse) / COINS_PER_LB : 0)) * 10) / 10;
+}
+
+/** What a container holds, by weight (weightless containers still have a limit). */
+export function containerLoad(items: InventoryItem[], containerId: string): number {
+  return Math.round(items.filter((i) => i.containerId === containerId).reduce((a, i) => a + i.weight * i.qty, 0) * 10) / 10;
+}
+
+export const holderValue = (items: InventoryItem[], purse: Purse): number => Math.round((purseValue(purse) + items.reduce((a, i) => a + (i.valueGp ?? 0) * i.qty, 0)) * 100) / 100;
+
+void fmtPurse;

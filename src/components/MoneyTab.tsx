@@ -6,6 +6,7 @@ import { fmtGp, HIRELING_WAGE, LIFESTYLE_GP, LIFESTYLE_LABEL, MOUNT_PRESETS, FEE
 import { foodNeedLb, fmtLb, WATER_GAL_PER_DAY } from '../rules/survival';
 import { Card, Num, Pill, Select, Text, Toggle, Rule } from './common';
 import { HIRELING_ROLES, MESSENGER_GP_PER_MILE, type HirelingRole } from '../rules/hirelings';
+import { coinCount, DENOMS, purseValue, type Denom } from '../rules/coins';
 import type { Hireling } from '../state/types';
 
 export function MoneyTab() {
@@ -36,7 +37,7 @@ function PurseCard() {
           <thead>
             <tr>
               <th>Who</th>
-              <th>Gold</th>
+              <th>Coins (pp · gp · ep · sp · cp)</th>
               <th>Lifestyle</th>
               <th>Per day</th>
             </tr>
@@ -48,7 +49,16 @@ function PurseCard() {
                   <b>{c.name}</b>
                 </td>
                 <td className={c.gp < 0 ? 'bad-text' : ''}>
-                  <Num value={c.gp} onChange={(v) => edit((d) => void (d.characters.find((x) => x.id === c.id)!.gp = v))} step={1} suffix="GP" width={6} />
+                  <span className="purse">
+                    {DENOMS.map((dn) => (
+                      <Num key={dn} value={c.purse[dn]} onChange={(v) => dispatch((st, cx) => E.setPurse(st, cx, c.id, { ...c.purse, [dn]: Math.max(0, Math.round(v)) }))} min={0} suffix={dn} width={3} />
+                    ))}
+                  </span>
+                  <div className="small">
+                    Worth {fmtGp(purseValue(c.purse))}
+                    {c.gp < purseValue(c.purse) - 0.001 && <span className="bad-text"> · owes {fmtGp(purseValue(c.purse) - c.gp)}</span>}
+                    {s.settings.coinWeight && <span className="muted"> · {Math.round((coinCount(c.purse) / 50) * 10) / 10} lb of coins</span>}
+                  </div>
                 </td>
                 <td>
                   <Select
@@ -81,11 +91,35 @@ function PurseCard() {
           </span>
         ))}
       </div>
+      <ExchangeRow />
       <Rule>
         In town, lifestyle is charged every midnight, and everything except Wretched covers food, water and lodging, so nobody goes hungry. Lifestyle per day: Wretched free, Squalid 1 SP, Poor 2 SP, Modest 1 GP,
         Comfortable 2 GP, Wealthy 4 GP, Aristocratic 10 GP. Crafting materials and Bastion construction are charged when the work starts.
       </Rule>
     </Card>
+  );
+}
+
+function ExchangeRow() {
+  const s = useGame();
+  const pcs = s.characters.filter((c) => c.kind !== 'mount');
+  const [who, setWho] = useState(pcs[0]?.id ?? '');
+  const [from, setFrom] = useState<Denom>('cp');
+  const [to, setTo] = useState<Denom>('gp');
+  const [count, setCount] = useState(100);
+  return (
+    <div className="btn-row">
+      <span className="small">Moneychanger:</span>
+      <Select value={who} onChange={setWho} options={pcs.map((c) => ({ value: c.id, label: c.name }))} />
+      <Num value={count} onChange={(v) => setCount(Math.max(1, Math.round(v)))} min={1} width={5} />
+      <Select value={from} onChange={setFrom} options={DENOMS.map((d) => ({ value: d, label: d }))} />
+      <span className="small">into</span>
+      <Select value={to} onChange={setTo} options={DENOMS.map((d) => ({ value: d, label: d }))} />
+      <button className="small" onClick={() => dispatch((st, cx) => E.exchangeCoins(st, cx, who, from, to, count))}>
+        Exchange
+      </button>
+      <Num label="Fee %" value={s.settings.moneychangerFee} onChange={(v) => edit((d) => void (d.settings.moneychangerFee = Math.max(0, v)))} min={0} step={0.5} width={3} />
+    </div>
   );
 }
 

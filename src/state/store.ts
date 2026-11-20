@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import type { State } from './types';
 import { createDefaultState, newCharacter, SAVE_VERSION } from './defaults';
+import { coinsFor } from '../rules/coins';
 import { ensureWeather, type Ctx } from './engine';
 import { TERRAIN_FOR_CLIMATE } from '../rules/terrain';
 
@@ -43,10 +44,16 @@ function migrate(raw: unknown): State | null {
     materials: parsed.materials ?? [],
     bestiary: parsed.bestiary ?? [],
     statusLog: parsed.statusLog ?? [],
+    stashes: parsed.stashes ?? [],
     trackingStart: parsed.trackingStart ?? (parsed.dayIndex ?? base.dayIndex) * 1440 + (parsed.minutes ?? 0),
   } as State;
   // Characters saved by older versions pick up any newly added fields.
-  s.characters = s.characters.map((c) => ({ ...newCharacter(), ...c }));
+  s.characters = s.characters.map((c) => {
+    const merged = { ...newCharacter(), ...c };
+    // Older saves only had a gold total: turn it into coins.
+    if (!c.purse) merged.purse = coinsFor(Math.max(0, c.gp ?? 0));
+    return merged;
+  });
   ensureWeather(s, ctx);
   return s;
 }

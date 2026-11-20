@@ -11,6 +11,7 @@ import type { TerrainType } from '../rules/terrain';
 import type { HirelingRole } from '../rules/hirelings';
 import type { ClueKind, StudyMethod } from '../rules/identify';
 import type { WeightSource } from '../rules/encumbrance';
+import type { Purse } from '../rules/coins';
 
 export type Season = 'winter' | 'spring' | 'summer' | 'autumn';
 export type Size = 'Tiny' | 'Small' | 'Medium' | 'Large' | 'Huge' | 'Gargantuan';
@@ -105,6 +106,26 @@ export interface InventoryItem {
   /** Weight of one, in pounds. */
   weight: number;
   source: WeightSource;
+  /** Value of one in GP, if known (gems, art, trade goods, or a price in the pasted text). */
+  valueGp?: number;
+  /** The inventory item this is packed inside, if any. */
+  containerId?: string | null;
+  /** Set when this item is itself a container. */
+  container?: { capacityLb: number | null; weightless: boolean; note?: string } | null;
+  /** Ammunition: tracks how many were fired since the last recovery. */
+  ammo?: { spent: number } | null;
+}
+
+export interface Stash {
+  id: string;
+  name: string;
+  kind: 'stash' | 'vehicle' | 'bank';
+  /** Where it is in the world. */
+  location: string;
+  capacityLb: number | null;
+  items: InventoryItem[];
+  purse: Purse;
+  notes: string;
 }
 
 export interface Resource {
@@ -181,7 +202,10 @@ export interface Character {
   /** Mounts and animals use the same survival rules but skip spells, tasks and watches. */
   kind: 'pc' | 'mount';
   name: string;
+  /** Total wealth in GP (negative when in debt). Kept in step with `purse`. */
   gp: number;
+  /** Coins actually carried, by denomination. */
+  purse: Purse;
   lifestyle: Lifestyle;
   /** Mount speed in feet (mounts only). */
   speed: number;
@@ -468,6 +492,8 @@ export interface Settings {
   lifestylePeriod: 'day' | 'week' | 'month';
   /** Count coins toward carried weight (50 coins per pound, treating gold as coins). */
   coinWeight: boolean;
+  /** Table rule: a moneychanger's fee, in percent, for swapping coins. */
+  moneychangerFee: number;
   /** Nobody has a timepiece: show the time as nature's cues instead of a clock. */
   noTimepiece: boolean;
   /** Table rule: heavy precipitation and darkness each add +5 to the navigation DC. */
@@ -523,4 +549,6 @@ export interface State {
   bestiary: Creature[];
   /** Every status change in the game, per character (kept much longer than the Chronicle). */
   statusLog: StatusEntry[];
+  /** Stashes, bank vaults and vehicles holding the party's things. */
+  stashes: Stash[];
 }
