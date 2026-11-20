@@ -22,6 +22,45 @@ export const BUSINESS_PRESETS: { name: string; gpPerDay: number }[] = [
   { name: 'Abbey', gpPerDay: 20 },
 ];
 
+export interface BuildingPreset {
+  name: string;
+  gp: number;
+  days: number;
+  /** Matching business kind, for its daily maintenance. */
+  business?: string;
+  /** true: from the 2014 DMG Building a Stronghold table; false: a table-rule estimate. */
+  official: boolean;
+}
+
+/**
+ * Construction cost (materials and labor) and time while the owner oversees the work.
+ * The official rows are the 2014 DMG's Building a Stronghold table. The DMG prices no shops, taverns,
+ * inns or farms, so those are table-rule estimates scaled from it and from 2024 Bastion facility costs
+ * (Cramped 500 GP / 20 days, Roomy 1,000 GP / 45 days, Vast 3,000 GP / 125 days).
+ */
+export const BUILDING_PRESETS: BuildingPreset[] = [
+  { name: 'Market stall', gp: 50, days: 5, business: 'Shop', official: false },
+  { name: 'Small shop', gp: 1000, days: 45, business: 'Shop', official: false },
+  { name: 'Workshop or smithy', gp: 1500, days: 50, business: 'Shop', official: false },
+  { name: 'Tavern', gp: 2500, days: 60, business: 'Inn, town or city', official: false },
+  { name: 'Farm (house, barn and fields)', gp: 1500, days: 60, business: 'Farm', official: false },
+  { name: 'Inn, town or city', gp: 5000, days: 60, business: 'Inn, town or city', official: false },
+  { name: 'Inn, rural roadside (with stables)', gp: 6000, days: 75, business: 'Inn, rural roadside', official: false },
+  { name: 'Shrine or small temple', gp: 1000, days: 45, business: 'Small temple', official: false },
+  { name: 'Guildhall, town or city', gp: 5000, days: 60, business: 'Guildhall, town or city', official: true },
+  { name: 'Trading post', gp: 5000, days: 60, business: 'Trading post', official: true },
+  { name: 'Noble estate with manor', gp: 25000, days: 150, business: 'Noble estate', official: true },
+  { name: 'Outpost or fort', gp: 15000, days: 100, official: true },
+  { name: 'Tower, fortified', gp: 15000, days: 100, official: true },
+  { name: 'Temple', gp: 50000, days: 400, business: 'Large temple', official: true },
+  { name: 'Abbey', gp: 50000, days: 400, business: 'Abbey', official: true },
+  { name: 'Keep or small castle', gp: 50000, days: 400, official: true },
+  { name: 'Palace or large castle', gp: 500000, days: 1200, official: true },
+];
+
+/** DMG: work goes on while the owner is away, but each day away adds 3 days, so it advances a third as fast. */
+export const AWAY_PROGRESS = 1 / 3;
+
 export interface BusinessResult {
   roll: number;
   total: number;

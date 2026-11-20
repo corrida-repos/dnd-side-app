@@ -18,7 +18,7 @@ import {
 import { Card, Meter, Num, Select, Text, Toggle, Rule } from './common';
 import { MAGIC_ITEM_VALUE, fmtGp } from '../rules/money';
 import { SPELLBOOK_COPY, ACTIVITY_PRESETS } from '../rules/longterm';
-import { BUSINESS_DEBT_PENALTY, BUSINESS_MAX_DAYS, BUSINESS_PRESETS } from '../rules/business';
+import { AWAY_PROGRESS, BUILDING_PRESETS, BUSINESS_DEBT_PENALTY, BUSINESS_MAX_DAYS, BUSINESS_PRESETS } from '../rules/business';
 
 export function DowntimeTab() {
   const s = useGame();
@@ -384,6 +384,24 @@ function BusinessCard() {
   const [owner, setOwner] = useState('');
   const [cost, setCost] = useState(BUSINESS_PRESETS[0].gpPerDay);
   const [days, setDays] = useState(7);
+  const [build, setBuild] = useState(false);
+  const [building, setBuilding] = useState(BUILDING_PRESETS[1].name);
+  const [buildGp, setBuildGp] = useState(BUILDING_PRESETS[1].gp);
+  const [buildDays, setBuildDays] = useState(BUILDING_PRESETS[1].days);
+  const [landGp, setLandGp] = useState(0);
+  const pickBuilding = (v: string) => {
+    const bp = BUILDING_PRESETS.find((x) => x.name === v);
+    setBuilding(v);
+    if (!bp) return;
+    setBuildGp(bp.gp);
+    setBuildDays(bp.days);
+    const kind = BUSINESS_PRESETS.find((x) => x.name === bp.business);
+    if (kind) {
+      setPreset(kind.name);
+      setCost(kind.gpPerDay);
+    }
+  };
+  const bp = BUILDING_PRESETS.find((x) => x.name === building);
   const ownerId = owners.find((c) => c.id === owner)?.id ?? owners[0]?.id ?? '';
   return (
     <Card title="Running a business (optional rule)">
@@ -401,7 +419,13 @@ function BusinessCard() {
                   ✕
                 </button>
               </div>
-              <p className="small">
+              {b.building && (
+                <div className="small">
+                  <Meter value={b.building.daysDone} max={b.building.totalDays} tone="good" /> Building ({b.building.what}): {Math.floor(b.building.daysDone)}/{b.building.totalDays} days, about {E.buildDaysLeft(b)} more at this pace.
+                  <Toggle checked={!!b.overseeing} onChange={(v) => edit((d) => void (d.businesses.find((x) => x.id === b.id)!.overseeing = v))} label="Owner is on site overseeing the work (away: each day away adds 3 days)" />
+                </div>
+              )}
+              {!b.building && <><p className="small">
                 {b.daysWorked} day(s) worked since the last roll{b.daysWorked > BUSINESS_MAX_DAYS ? ` (only ${BUSINESS_MAX_DAYS} count)` : ''}. Roll: d100 + {counted}
                 {b.debts > 0 && <> − {b.debts * BUSINESS_DEBT_PENALTY} for {b.debts} unpaid debt(s) ({fmtGp(b.unpaidGp)})</>}.
                 {b.lastResult && <span className="muted"> Last: {b.lastResult}.</span>}
@@ -419,13 +443,27 @@ function BusinessCard() {
                     Pay debts ({fmtGp(b.unpaidGp)})
                   </button>
                 )}
-              </div>
+              </div></>}
             </li>
           );
         })}
       </ul>
       <details className="add-facility">
         <summary>Add a business</summary>
+        <Toggle checked={build} onChange={setBuild} label="Build it from scratch (otherwise it's already owned: inherited, bought or a reward)" />
+        {build && (
+          <>
+            <div className="form-row">
+              <Select label="Building" value={building} onChange={pickBuilding} options={BUILDING_PRESETS.map((x) => ({ value: x.name, label: `${x.name}${x.official ? '' : ' (table rule)'}` }))} />
+              <Num label="Construction" value={buildGp} onChange={(v) => setBuildGp(Math.max(0, Math.round(v)))} min={0} suffix="GP" width={7} />
+              <Num label="Time" value={buildDays} onChange={(v) => setBuildDays(Math.max(1, Math.round(v)))} min={1} suffix="days" width={4} />
+              <Num label="Land" value={landGp} onChange={(v) => setLandGp(Math.max(0, Math.round(v)))} min={0} suffix="GP" width={6} />
+            </div>
+            <p className="small muted">
+              {bp?.official ? 'From the 2014 DMG Building a Stronghold table.' : 'Table-rule estimate: the DMG prices no shops, taverns, inns or farms.'} Land: a small plot 100–1,000 GP, a large estate 5,000 GP or more (leave 0 if already owned). Away from the site, the work goes at a third of the speed (about {Math.ceil(buildDays / AWAY_PROGRESS)} days).
+            </p>
+          </>
+        )}
         <div className="form-row">
           <Select
             label="Kind"
@@ -440,12 +478,12 @@ function BusinessCard() {
           <Select label="Owner" value={ownerId} onChange={setOwner} options={owners.map((c) => ({ value: c.id, label: c.name }))} />
           <Num label="Upkeep" value={cost} onChange={(v) => setCost(Math.max(0, v))} min={0} step={0.5} suffix="GP/day" width={4} />
         </div>
-        <button className="small" disabled={!ownerId} onClick={() => dispatch((st, cx) => E.addBusiness(st, cx, name || preset, ownerId, cost))}>
-          Add business
+        <button className="small" disabled={!ownerId} onClick={() => dispatch((st, cx) => E.addBusiness(st, cx, name || (build ? building : preset), ownerId, cost, build ? { what: building, costGp: buildGp, days: buildDays, landGp } : undefined))}>
+          {build ? `Start building (${(buildGp + landGp).toLocaleString()} GP)` : 'Add business'}
         </button>
       </details>
       <Rule>
-        2014 DMG: each downtime day the owner spends running the business counts (at most 30). Then roll d100 + days on the Running a Business table: low rolls mean paying 1½×, full or half the maintenance for those days; middling rolls break even; high rolls add a profit of 1d6, 2d8 or 3d10 × 5 GP. An unpaid cost makes the business start to fail: −10 to later rolls for each debt until it&apos;s paid. The 2024 rules have no equivalent, so this can be switched off in Settings.
+        2014 DMG: each downtime day the owner spends running the business counts (at most 30). Then roll d100 + days on the Running a Business table: low rolls mean paying 1½×, full or half the maintenance for those days; middling rolls break even; high rolls add a profit of 1d6, 2d8 or 3d10 × 5 GP. An unpaid cost makes the business start to fail: −10 to later rolls for each debt until it&apos;s paid. Building one follows the DMG&apos;s Building a Stronghold rule: pay the cost up front, and work takes the listed days while the owner oversees it; each day away adds 3 days. The 2024 rules have no equivalent, so this can be switched off in Settings.
       </Rule>
     </Card>
   );

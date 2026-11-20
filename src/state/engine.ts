@@ -1,4 +1,4 @@
-import type { ActiveEffect, Activity, CharacterSpell, InventoryItem, LogEntry, Ritual, Stash, Bastion, Character, ExhaustionCause, Facility, MagicItem, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
+import type { ActiveEffect, Activity, CharacterSpell, InventoryItem, LogEntry, Ritual, Stash, Bastion, Business, Character, ExhaustionCause, Facility, MagicItem, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
 import { BASIC_BUILD, BASTION_TURN_DAYS, defaultSize, ENLARGE, rollBastionEvent, SIZE_LABEL, SPECIAL_FACILITIES, type FacilitySize } from '../rules/bastion';
 import { d20, die, combineModes, rollDice, rollExpr, signed, type Rng, type RollMode } from '../rules/dice';
 import { dateFromIndex, formatClock, formatDate, formatDuration, lightAt, sunriseMinutes } from '../rules/calendar';
@@ -9,7 +9,7 @@ import { TERRAIN, clampPace } from '../rules/terrain';
 import { readSky, SKY_DC } from '../rules/skyclock';
 import { MESSENGER_GP_PER_MILE } from '../rules/hirelings';
 import { COMMS, commCost, commDelay, type CommMethod } from '../rules/comms';
-import { BUSINESS_DEBT_PENALTY, BUSINESS_MAX_DAYS, rollBusiness } from '../rules/business';
+import { AWAY_PROGRESS, BUSINESS_DEBT_PENALTY, BUSINESS_MAX_DAYS, rollBusiness } from '../rules/business';
 import { HAZARDS, type GiftType, type HazardId } from '../rules/hazards';
 import { ARCANA_DC, STUDY_MINUTES, type StudyMethod } from '../rules/identify';
 import { FEED_LB_PER_DAY, MOUNT_CAPACITY, carryingCapacity, COINS_PER_LB, estimateWeight, loadLevel, parseInventory, RATION_WEIGHT, type LoadLevel } from '../rules/encumbrance';
@@ -397,6 +397,7 @@ function endOfDay(s: State, ctx: Ctx): void {
   s.dayIndex += 1;
   s.minutes = 0;
   progressBastions(s);
+  progressBusinesses(s);
   log(s, `A new day begins: ${formatDate(s.calendar, s.startYear, s.dayIndex)}.`);
   newWeather(s, ctx);
 }
@@ -1484,16 +1485,45 @@ export const downtimeDay = act((d, ctx, projectIds: string[]) => {
 
 // ---------------------------------------------------------------- businesses
 
-export const addBusiness = act((d, _ctx, name: string, ownerId: string, gpPerDay: number) => {
-  d.businesses.push({ id: uid(), name: name || 'Business', ownerId, gpPerDay: Math.max(0, gpPerDay), daysWorked: 0, debts: 0, unpaidGp: 0, netGp: 0, lastResult: '', notes: '' });
+export const addBusiness = act((d, _ctx, name: string, ownerId: string, gpPerDay: number, build?: { what: string; costGp: number; days: number; landGp: number }) => {
+  const b: Business = { id: uid(), name: name || 'Business', ownerId, gpPerDay: Math.max(0, gpPerDay), daysWorked: 0, debts: 0, unpaidGp: 0, netGp: 0, lastResult: '', notes: '' };
+  if (build) {
+    b.building = { what: build.what, costGp: build.costGp, totalDays: Math.max(1, Math.round(build.days)), daysDone: 0 };
+    b.overseeing = true;
+    const total = build.costGp + build.landGp;
+    if (build.landGp > 0) log(d, `${b.name}: land bought for ${fmtGp(build.landGp)}.`);
+    payGold(d, [ownerId], total, `building ${b.name} (${build.what})`);
+    b.netGp -= total;
+    log(d, `Construction of ${b.name} begins: ${build.what}, ${b.building.totalDays} days with the owner overseeing.`);
+  }
+  d.businesses.push(b);
 });
+
+/** Each midnight: construction advances a day if the owner oversees it, a third of a day if not. */
+function progressBusinesses(s: State): void {
+  for (const b of s.businesses) {
+    if (!b.building) continue;
+    b.building.daysDone = Math.round((b.building.daysDone + (b.overseeing ? 1 : AWAY_PROGRESS)) * 1000) / 1000;
+    if (b.building.daysDone >= b.building.totalDays) {
+      log(s, `${b.name} is built and open for business (${b.building.what}).`, 'good');
+      b.building = undefined;
+    }
+  }
+}
+
+/** Days left on construction at the current pace. */
+export function buildDaysLeft(b: Business): number {
+  if (!b.building) return 0;
+  const left = b.building.totalDays - b.building.daysDone;
+  return Math.ceil(left / (b.overseeing ? 1 : AWAY_PROGRESS));
+}
 
 /** The owner spends whole downtime days minding the business (work, meals, then a Long Rest). */
 export const runBusiness = act((d, ctx, businessId: string, days: number) => {
   for (let i = 0; i < Math.max(1, Math.round(days)); i++) {
     const b = d.businesses.find((x) => x.id === businessId);
     const owner = b && charById(d, b.ownerId);
-    if (!b || !owner || !alive(owner)) return;
+    if (!b || !owner || !alive(owner) || b.building) return;
     Object.assign(d, downtimeDay(d, ctx, []));
     const nb = d.businesses.find((x) => x.id === businessId)!;
     nb.daysWorked += 1;
@@ -1504,7 +1534,7 @@ export const runBusiness = act((d, ctx, businessId: string, days: number) => {
 /** Rolls on the Running a Business table for the days spent, then pays or collects. */
 export const settleBusiness = act((d, ctx, businessId: string) => {
   const b = d.businesses.find((x) => x.id === businessId);
-  if (!b || b.daysWorked < 1) return;
+  if (!b || b.daysWorked < 1 || b.building) return;
   const owner = charById(d, b.ownerId);
   const days = Math.min(BUSINESS_MAX_DAYS, b.daysWorked);
   const r = rollBusiness(ctx.rng, days, b.gpPerDay, b.debts);

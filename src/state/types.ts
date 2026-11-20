@@ -439,6 +439,10 @@ export interface Business {
   netGp: number;
   lastResult: string;
   notes: string;
+  /** Still being built: it can't be run until finished. */
+  building?: { what: string; costGp: number; totalDays: number; daysDone: number };
+  /** The owner is on site overseeing construction (otherwise it goes at a third of the speed). */
+  overseeing?: boolean;
 }
 
 export interface Dispatch {

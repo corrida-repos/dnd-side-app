@@ -49,4 +49,22 @@ describe('running a business', () => {
     expect(s.businesses[0].debts).toBe(0);
     expect(s.characters[0].gp).toBe(-145);
   });
+
+  it('builds a business: pays up front, takes the listed days while overseen, slower while away', () => {
+    let s = createDefaultState(() => 0);
+    s.settings.sleepDeprivation = false;
+    s.characters = [newCharacter({ name: 'Owner', gp: 2000, needsFood: false, needsWater: false })];
+    s = E.addBusiness(s, ctx(), 'The Gilded Mug', s.characters[0].id, 5, { what: 'Tavern', costGp: 1000, days: 3, landGp: 200 });
+    expect(s.characters[0].gp).toBe(800);
+    expect(E.buildDaysLeft(s.businesses[0])).toBe(3);
+    s = E.runBusiness(s, ctx(), s.businesses[0].id, 1);
+    expect(s.businesses[0].daysWorked).toBe(0);
+    s.businesses[0].overseeing = false;
+    expect(E.buildDaysLeft(s.businesses[0])).toBe(9);
+    s = E.advance(s, ctx(), 24 * 60);
+    expect(s.businesses[0].building!.daysDone).toBeCloseTo(1 / 3);
+    s.businesses[0].overseeing = true;
+    s = E.advance(s, ctx(), 3 * 24 * 60);
+    expect(s.businesses[0].building).toBeUndefined();
+  });
 });
