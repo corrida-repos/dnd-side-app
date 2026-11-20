@@ -99,11 +99,13 @@ export interface EncounterCreature {
   /** 5etools environments: terrains, plus 'any' and 'underwater'. */
   env: string[];
   source?: string;
+  /** L legendary, s swims, f flies. */
+  flags?: string;
 }
 
 const SIZE: Record<string, Size> = { T: 'Tiny', S: 'Small', M: 'Medium', L: 'Large', H: 'Huge', G: 'Gargantuan' };
 
-export const SRD_POOL: EncounterCreature[] = SRD_CREATURES.map(([name, cr, size, type, align, env]) => ({ name, cr, size: SIZE[size] ?? 'Medium', type, align, env: env.split(' '), source: 'SRD 5.2' }));
+export const SRD_POOL: EncounterCreature[] = SRD_CREATURES.map(([name, cr, size, type, align, env, flags]) => ({ name, cr, size: SIZE[size] ?? 'Medium', type, align, env: env.split(' '), source: 'SRD 5.2', flags }));
 
 /** Experience points by Challenge Rating. */
 export const CR_XP: Record<string, number> = {
@@ -146,14 +148,29 @@ const TERRAIN_ENV: Record<TerrainType, string[]> = {
   swamp: ['swamp'], underdark: ['underdark'], urban: ['urban'], waterborne: ['coastal', 'underwater'],
 };
 
-/** How strongly a creature belongs in a terrain: 3 native, 1 found anywhere (people on the road), 0 not at all. */
+/** People who travel the wilds. Other "found anywhere" humanoids (spies, nobles, gladiators, archmages) stay in towns. */
+const WILD_FOLK = ['Bandit', 'Bandit Captain', 'Berserker', 'Cultist', 'Cultist Fanatic', 'Druid', 'Knight', 'Priest', 'Priest Acolyte', 'Scout', 'Tough', 'Tough Boss', 'Warrior Infantry', 'Warrior Veteran'];
+/** Tame animals and harmless folk: they turn up as peaceful meetings, not as threats. */
+const NOT_A_THREAT = ['Camel', 'Cat', 'Commoner', 'Draft Horse', 'Mastiff', 'Mule', 'Noble', 'Pony', 'Riding Horse', 'Warhorse'];
+const isLegendary = (c: EncounterCreature): boolean => !!c.flags?.includes('L');
+const canCrossWater = (c: EncounterCreature): boolean => c.env.includes('underwater') || !!c.flags?.match(/[sf]/);
+
+/**
+ * How strongly a creature belongs in a terrain: 3 native, 1 a traveller or a rare legendary
+ * creature, 0 not at all.
+ */
 export function habitat(c: EncounterCreature, t: TerrainType): number {
-  if (c.env.some((e) => TERRAIN_ENV[t].includes(e))) return 3;
+  if (NOT_A_THREAT.includes(c.name)) return 0;
+  const native = c.env.some((e) => TERRAIN_ENV[t].includes(e));
+  // At sea, only swimmers and fliers can reach the ship (plus pirates, below).
+  if (native && t === 'waterborne' && !canCrossWater(c)) return 0;
+  // Legendary creatures rule a lair; meeting one on the road is rare.
+  if (native) return isLegendary(c) ? 1 : 3;
   if (c.env.includes('any')) {
-    // "Any" covers travellers and townsfolk outdoors; golems, liches and the like belong in dungeons.
-    if (/^Pirate/.test(c.name)) return t === 'waterborne' || t === 'coastal' || t === 'urban' ? 1 : 0;
-    if (c.type === 'humanoid') return t === 'urban' ? 3 : 1;
-    return t === 'underdark' || t === 'urban' ? 1 : 0;
+    if (/^Pirate/.test(c.name)) return t === 'waterborne' || t === 'coastal' ? 3 : t === 'urban' ? 1 : 0;
+    if (c.type === 'humanoid') return t === 'urban' ? 3 : t !== 'waterborne' && WILD_FOLK.includes(c.name) ? 1 : 0;
+    // Golems, liches and the like guard dungeons and towers rather than wander.
+    return t === 'underdark' ? 1 : 0;
   }
   return 0;
 }
@@ -187,6 +204,8 @@ export interface TableRow {
   text: string;
   creature?: EncounterCreature;
   count?: string;
+  /** A leader's band: who follows and how many. */
+  followers?: { creature: EncounterCreature; count: string };
   /** Average group XP and the difficulty that comes out to. */
   xp?: number;
   difficulty?: Difficulty;
@@ -218,9 +237,44 @@ const PEACEFUL: Record<TerrainType, string[]> = {
 /** Spawned parts and familiars that never wander on their own. */
 const NEVER_WANDERS = ['Troll Limb'];
 
+/** Leaders and the followers they bring along. */
+export const FOLLOWERS: Record<string, string> = {
+  'Bandit Captain': 'Bandit',
+  'Bugbear Stalker': 'Bugbear Warrior',
+  Ghast: 'Ghoul',
+  'Cultist Fanatic': 'Cultist',
+  'Goblin Boss': 'Goblin Warrior',
+  'Guard Captain': 'Guard',
+  'Hobgoblin Captain': 'Hobgoblin Warrior',
+  'Pirate Captain': 'Pirate',
+  Priest: 'Priest Acolyte',
+  'Tough Boss': 'Tough',
+  'Warrior Veteran': 'Warrior Infantry',
+};
+
+/** Creatures that live and hunt alone. */
+const SOLITARY = [
+  'Aboleth', 'Archmage', 'Behir', 'Bulette', 'Chimera', 'Cloaker', 'Couatl', 'Djinni', 'Dragon Turtle', 'Efreeti', 'Gelatinous Cube', 'Guardian Naga', 'Hydra', 'Invisible Stalker',
+  'Kraken', 'Lamia', 'Medusa', 'Mummy Lord', 'Oni', 'Otyugh', 'Purple Worm', 'Rakshasa', 'Remorhaz', 'Roc', 'Shield Guardian', 'Solar', 'Sphinx of Lore', 'Sphinx of Valor',
+  'Spirit Naga', 'Sphinx of Wonder', 'Tarrasque', 'Unicorn', 'Vampire', 'Werebear', 'Lich', 'Clay Golem', 'Stone Golem', 'Iron Golem', 'Flesh Golem', 'Assassin',
+];
+/** Creatures met alone or as a mated pair. */
+const PAIRS = ['Basilisk', 'Black Pudding', 'Doppelganger', 'Ettin', 'Giant Ape', 'Gorgon', 'Manticore', 'Mage', 'Spy', 'Gladiator', 'Treant', 'Tyrannosaurus Rex', 'Weretiger', 'Wyvern', 'Young Remorhaz'];
+
+/** Other small bands: a druid circle, a coven, snakes that don't hunt in packs. */
+const BAND_CAP: Record<string, number> = {
+  Druid: 3, "Will-o'-Wisp": 3, Ghost: 2, Incubus: 1, Succubus: 1, Specter: 4, Shadow: 6, 'Priest Acolyte': 6, Scout: 4,
+  'Black Bear': 3, 'Brown Bear': 3, 'Polar Bear': 3, Tiger: 1, Panther: 1, 'Saber-Toothed Tiger': 2, Lion: 6,
+  'Venomous Snake': 3, 'Giant Venomous Snake': 3, 'Constrictor Snake': 2, 'Giant Constrictor Snake': 2,
+};
+
 /** Table rule: the most of one creature that roam together, so dragons and giants don't come in packs. */
 export function maxGroup(c: EncounterCreature): number {
+  if (BAND_CAP[c.name]) return BAND_CAP[c.name];
+  if (SOLITARY.includes(c.name) || isLegendary(c) || FOLLOWERS[c.name]) return 1;
+  if (PAIRS.includes(c.name)) return 2;
   if (c.type === 'dragon') return /Wyrmling/.test(c.name) ? 2 : 1;
+  if (c.type === 'ooze') return 2;
   if (c.size === 'Gargantuan') return 1;
   if (c.size === 'Huge' || xpFor(c.cr) >= CR_XP['10']) return 2;
   // Veterans, spellcasters and stronger creatures travel in small bands.
@@ -252,19 +306,41 @@ export const signsFor = (type: string): string => SIGNS[type.toLowerCase()] ?? '
 export function buildTable(pool: EncounterCreature[], terrain: TerrainType, danger: Danger, party: Party, maxCreatures = 10): EncounterTable {
   const info = DANGER[danger];
   const target = budget(party, info.builtFor);
-  const scored = pool
+  const byName = new Map(pool.map((c) => [c.name, c]));
+  const candidates = pool
     .map((c) => {
       const h = habitat(c, terrain);
       const xp = xpFor(c.cr);
-      if (!h || !xp || NEVER_WANDERS.includes(c.name)) return null;
-      const n = Math.min(maxGroup(c), Math.floor(target / xp));
-      // The group has to be a real threat at this danger level: at least about half the budget.
-      if (n < 1 || n * xp < target * 0.5) return null;
-      const score = h / (1 + Math.abs(Math.log2((n * xp) / target)) + (n > 6 ? 0.5 : 0));
-      return { c, xp, n, h, score };
+      // CR 0 creatures are harmless critters, not encounters.
+      if (!h || !xp || c.cr === '0' || NEVER_WANDERS.includes(c.name)) return null;
+      if (xp > target) return null;
+      // Step the group down until its average roll stays within the budget.
+      let n = Math.min(maxGroup(c), Math.floor(target / xp));
+      while (n > 1 && avgOf(countExpr(n, maxGroup(c))) * xp > target * 1.1) n--;
+      // A leader brings followers to fill out the band.
+      const fc = FOLLOWERS[c.name] ? byName.get(FOLLOWERS[c.name]) : undefined;
+      const fxp = fc ? xpFor(fc.cr) : 0;
+      let fn = fc && fxp ? Math.min(12, Math.floor((target - xp) / fxp)) : 0;
+      while (fn > 1 && xp + avgOf(countExpr(fn)) * fxp > target * 1.1) fn--;
+      const groupXp = avgOf(countExpr(n, maxGroup(c))) * xp + (fn > 0 ? avgOf(countExpr(fn)) * fxp : 0);
+      const ratio = groupXp / target;
+      const score = h / (1 + Math.abs(Math.log2(ratio)) + (n > 6 ? 0.5 : 0));
+      // Groups well under the budget (filler at high levels) turn up less often.
+      const trivial = groupXp < budget(party, 'low') * 0.5;
+      const w = trivial ? h * 0.1 : h * Math.max(0.25, Math.min(1, ratio / 0.5));
+      return { c, xp, n, h: w, score, ratio, trivial, followers: fc && fn > 0 ? { creature: fc, n: fn } : undefined };
     })
-    .filter((x): x is NonNullable<typeof x> => !!x)
-    .sort((a, b) => b.score - a.score || a.c.name.localeCompare(b.c.name));
+    .filter((x): x is NonNullable<typeof x> => !!x);
+  // The group should be a real threat at this danger level (about half the budget or more). When too few
+  // creatures can manage that (high levels, small terrains), accept weaker groups rather than an empty table.
+  let scored = candidates.filter((x) => x.ratio >= 0.5);
+  if (scored.length < 6) scored = candidates.filter((x) => x.ratio >= 0.25);
+  // Still thin: add at most three of the strongest weaker groups as rare filler.
+  if (scored.length < 6) {
+    const filler = candidates.filter((x) => x.ratio < 0.25).sort((a, b) => b.ratio - a.ratio || a.c.name.localeCompare(b.c.name));
+    scored = [...scored, ...filler.slice(0, Math.min(3, Math.max(scored.length ? 2 : 6, 6 - scored.length)))];
+  }
+  scored.sort((a, b) => b.score - a.score || a.c.name.localeCompare(b.c.name));
 
   // Spread the picks over Challenge Ratings and creature types: take the best of each CR in turn.
   const buckets = new Map<string, typeof scored>();
@@ -275,7 +351,8 @@ export function buildTable(pool: EncounterCreature[], terrain: TerrainType, dang
     let took = false;
     for (const list of buckets.values()) {
       if (picked.length >= maxCreatures) break;
-      const i = list.findIndex((s) => (byType[s.c.type] ?? 0) < 3);
+      const trivialPicked = picked.filter((p) => p.trivial).length;
+      const i = list.findIndex((s) => (byType[s.c.type] ?? 0) < 3 && (!s.trivial || trivialPicked < 3));
       if (i < 0) continue;
       const [s] = list.splice(i, 1);
       byType[s.c.type] = (byType[s.c.type] ?? 0) + 1;
@@ -297,11 +374,12 @@ export function buildTable(pool: EncounterCreature[], terrain: TerrainType, dang
   const totalWeight = picked.reduce((a, s) => a + s.h, 0) || 1;
   for (const s of picked) {
     const count = countExpr(s.n, maxGroup(s.c));
-    const avg = avgOf(count);
-    const xp = Math.round(avg * s.xp);
+    const followers = s.followers ? { creature: s.followers.creature, count: countExpr(s.followers.n) } : undefined;
+    const xp = Math.round(avgOf(count) * s.xp + (followers ? avgOf(followers.count) * xpFor(followers.creature.cr) : 0));
+    const text = `${count} ${count === '1' ? s.c.name : plural(s.c.name)}${followers ? ` with ${followers.count} ${followers.count === '1' ? followers.creature.name : plural(followers.creature.name)}` : ''}`;
     entries.push({
       weight: ((1 - peacefulShare) * s.h) / totalWeight,
-      row: { kind: 'creature', text: `${count} ${count === '1' ? s.c.name : plural(s.c.name)}`, creature: s.c, count, xp, difficulty: difficultyOf(xp, party) },
+      row: { kind: 'creature', text, creature: s.c, count, followers, xp, difficulty: difficultyOf(xp, party) },
     });
   }
   // Creatures first (weakest to strongest), then the quiet results at the top of the die.
@@ -404,6 +482,10 @@ export interface EncounterResult {
   attitude?: { roll: number; attitude: Attitude };
   distanceFt: number;
   distanceExpr: string;
+  /** How many followers came with a leader. */
+  followerCount?: number;
+  /** "1 Bandit Captain with 6 Bandits". */
+  summary: string;
 }
 
 /** Rolls a d100 on a table, then the group size, starting attitude and distance (DMG Travel Terrain). */
@@ -414,8 +496,12 @@ export function rollOnTable(t: EncounterTable, rng: Rng, underwaterVisibilityFt?
   const distanceExpr = TERRAIN[t.terrain].encounterDistance;
   const m = distanceExpr.match(/^(\d+d\d+) × 10/);
   const distanceFt = underwaterVisibilityFt ?? (m ? (rollExpr(m[1], rng) ?? 1) * 10 : 60);
-  if (row.kind === 'peaceful' || !row.creature || !row.count) return { roll, row, distanceFt, distanceExpr };
+  if (row.kind === 'peaceful' || !row.creature || !row.count) return { roll, row, distanceFt, distanceExpr, summary: row.text };
   const count = Math.max(1, rollExpr(row.count, rng) ?? 1);
-  const xp = count * xpFor(row.creature.cr);
-  return { roll, row, count, xp, difficulty: difficultyOf(xp, t.party), attitude: rollAttitude(row.creature, rng), distanceFt, distanceExpr };
+  const f = row.followers;
+  const followerCount = f ? Math.max(1, rollExpr(f.count, rng) ?? 1) : undefined;
+  const xp = count * xpFor(row.creature.cr) + (f && followerCount ? followerCount * xpFor(f.creature.cr) : 0);
+  const name = (n: number, c: EncounterCreature) => `${n} ${n === 1 ? c.name : plural(c.name)}`;
+  const summary = `${name(count, row.creature)}${f && followerCount ? ` with ${name(followerCount, f.creature)}` : ''}`;
+  return { roll, row, count, xp, difficulty: difficultyOf(xp, t.party), attitude: rollAttitude(row.creature, rng), distanceFt, distanceExpr, followerCount, summary };
 }

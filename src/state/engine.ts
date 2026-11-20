@@ -47,7 +47,7 @@ import {
 import { isCaster, PREP_RULE, preparedCount, preparedLimit } from '../rules/spells';
 import { newCharacter, uid } from './defaults';
 import { sense, type SenseKey } from '../rules/senses';
-import { buildTable, checkModifiers, DANGER, DIFFICULTY_LABEL, firstSign, plural, rollOnTable, SRD_POOL, xpFor, type CheckConditions, type Danger, type EncounterCreature, type EncounterTable, type Party } from '../rules/encounters';
+import { buildTable, checkModifiers, DANGER, DIFFICULTY_LABEL, firstSign, rollOnTable, SRD_POOL, type CheckConditions, type Danger, type EncounterCreature, type EncounterTable, type Party } from '../rules/encounters';
 import type { TerrainType } from '../rules/terrain';
 
 export interface Ctx {
@@ -3011,7 +3011,7 @@ export function encounterPool(s: State): EncounterCreature[] {
   if (s.settings.srdEncounters) for (const c of SRD_POOL) byName.set(c.name.toLowerCase(), c);
   for (const c of s.bestiary) {
     if (!c.cr || !c.env?.length) continue;
-    byName.set(c.name.toLowerCase(), { name: c.name, cr: c.cr, size: c.size, type: c.type.toLowerCase(), align: c.align ?? 'N', env: c.env, source: c.source });
+    byName.set(c.name.toLowerCase(), { name: c.name, cr: c.cr, size: c.size, type: c.type.toLowerCase(), align: c.align ?? 'N', env: c.env, source: c.source, flags: c.flags });
   }
   const out = new Set(s.encounterExclude.map((n) => n.toLowerCase()));
   return [...byName.values()].filter((c) => !out.has(c.name.toLowerCase()));
@@ -3103,13 +3103,11 @@ export function resolveEncounter(s: State, ctx: Ctx, activity: CheckConditions['
     return;
   }
   const c = res.row.creature;
-  const count = res.count ?? 1;
-  const xpEach = xpFor(c.cr);
   const party = table.party;
-  const dm = `${head} ${count} ${count === 1 ? c.name : plural(c.name)} (CR ${c.cr}, ${res.row.count} rolled; ${res.xp} XP, ${DIFFICULTY_LABEL[res.difficulty ?? 'low']} for ${party.size} level-${party.level} characters; ${xpEach} XP each). Starting attitude: ${res.attitude?.attitude} (d20 ${res.attitude?.roll}). They are ${res.distanceFt} feet away (${res.distanceExpr}).${watchNote} Compare their Dexterity (Stealth) with the party's passive Perception for surprise.`;
+  const dm = `${head} ${res.summary} (CR ${c.cr}${res.row.followers ? ` and ${res.row.followers.creature.cr}` : ''}, rolled ${res.row.count}${res.row.followers ? ` and ${res.row.followers.count}` : ''}; ${res.xp} XP total, ${DIFFICULTY_LABEL[res.difficulty ?? 'low']} for ${party.size} level-${party.level} characters). Starting attitude: ${res.attitude?.attitude} (d20 ${res.attitude?.roll}). They are ${res.distanceFt} feet away (${res.distanceExpr}).${watchNote} Compare their Dexterity (Stealth) with the party's passive Perception for surprise.`;
   const predicate = firstSign(c.type, night);
   log(s, dm, res.attitude?.attitude === 'Hostile' ? 'bad' : 'warn', { charIds: watchers.map((w) => w.id), status: false, sense: predicate });
-  for (const w of watchers) s.statusLog.unshift({ id: uid(), stamp: stamp(s), at: absNow(s), charId: w.id, kind: 'encounter', text: `On watch, ${w.name} spots ${count === 1 ? `a ${c.name}` : plural(c.name)}.`, sense: predicate, tone: 'warn' });
+  for (const w of watchers) s.statusLog.unshift({ id: uid(), stamp: stamp(s), at: absNow(s), charId: w.id, kind: 'encounter', text: `On watch, ${w.name} spots ${res.summary}.`, sense: predicate, tone: 'warn' });
 }
 
 /** Roll a random encounter check by hand, using what the party is doing now. */

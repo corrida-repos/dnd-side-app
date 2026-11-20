@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { apportion, budget, buildTable, checkChance, checkModifiers, countExpr, difficultyOf, encountersPerDay, habitat, maxGroup, maxOf, plural, rollOnTable, SRD_POOL, xpFor, DANGERS, type CheckConditions } from './encounters';
+import { apportion, budget, buildTable, FOLLOWERS, checkChance, checkModifiers, countExpr, difficultyOf, encountersPerDay, habitat, maxGroup, maxOf, plural, rollOnTable, SRD_POOL, xpFor, DANGERS, type CheckConditions } from './encounters';
 import { parse5eToolsBestiary } from './hunting';
 
 const base: CheckConditions = { activity: 'travel', night: false, lightAtNight: false, pace: 'normal', goodRoad: false, foulWeather: false, sheltered: false, underground: false, bigGroup: false };
@@ -110,5 +110,49 @@ describe('random encounter rules', () => {
 describe('natural 20', () => {
   it('always finds an encounter, however safe the conditions', () => {
     expect(checkChance(19, -3)).toBeCloseTo(0.05);
+  });
+});
+
+describe('plausibility', () => {
+  const all = (terrain: Parameters<typeof buildTable>[1]) =>
+    DANGERS.flatMap((d) => [1, 3, 5, 8, 11, 15, 20].flatMap((level) => buildTable(SRD_POOL, terrain, d, { level, size: 4 }).rows.filter((r) => r.creature)));
+
+  it('keeps city folk and tame animals out of the wilds', () => {
+    const names = new Set(['forest', 'arctic', 'mountain', 'desert'].flatMap((t) => all(t as 'forest').map((r) => r.creature!.name)));
+    for (const n of ['Spy', 'Noble', 'Gladiator', 'Archmage', 'Assassin', 'Mule', 'Riding Horse', 'Commoner']) expect(names.has(n)).toBe(false);
+  });
+
+  it('brings only swimmers, fliers and pirates to a ship', () => {
+    for (const r of all('waterborne')) {
+      const c = r.creature!;
+      expect(c.env.includes('underwater') || /[sf]/.test(c.flags ?? '') || /^Pirate/.test(c.name)).toBe(true);
+    }
+  });
+
+  it('sends leaders with followers and solitary creatures alone', () => {
+    const rows = ['forest', 'grassland', 'hill', 'urban', 'underdark', 'waterborne'].flatMap((t) => all(t as 'forest'));
+    for (const r of rows) {
+      const c = r.creature!;
+      if (FOLLOWERS[c.name] || maxGroup(c) === 1) expect(r.count).toBe('1');
+      expect(maxOf(r.count!)).toBeLessThanOrEqual(Math.max(maxGroup(c), maxGroup(c) >= 12 ? 20 : 0));
+    }
+    expect(rows.some((r) => r.followers)).toBe(true);
+    expect(maxGroup(find('Bulette'))).toBe(1);
+    expect(maxGroup(find('Druid'))).toBe(3);
+  });
+
+  it('keeps legendary creatures rare and never leaves a table empty', () => {
+    for (const t of ['arctic', 'grassland', 'forest'] as const) {
+      const tb = buildTable(SRD_POOL, t, 'moderate', { level: 20, size: 4 });
+      expect(tb.rows.some((r) => r.creature)).toBe(true);
+    }
+    const mid = buildTable(SRD_POOL, 'hill', 'moderate', { level: 11, size: 4 });
+    const legendary = mid.rows.filter((r) => r.creature?.flags?.includes('L')).reduce((a, r) => a + r.to - r.from + 1, 0);
+    expect(legendary).toBeLessThan(15);
+  });
+
+  it('keeps groups within the danger level budget outside deadly areas', () => {
+    for (const d of ['low', 'moderate', 'high'] as const)
+      for (const level of [1, 5, 11]) for (const r of buildTable(SRD_POOL, 'forest', d, { level, size: 4 }).rows) expect(r.difficulty).not.toBe('beyond');
   });
 });

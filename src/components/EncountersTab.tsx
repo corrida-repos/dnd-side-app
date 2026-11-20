@@ -228,6 +228,15 @@ function TableCard({ act }: { act: Act }) {
           </tbody>
         </table>
       </div>
+      {(() => {
+        const triv = t.rows.filter((r) => r.difficulty === 'trivial').reduce((a, r) => a + r.to - r.from + 1, 0);
+        const fights = t.rows.filter((r) => r.creature).reduce((a, r) => a + r.to - r.from + 1, 0);
+        return fights > 0 && triv / fights > 0.3 && t.danger !== 'safe' ? (
+          <p className="small warn-text">
+            Few creatures that live here are a match for level {t.party.level}, so some rows are trivial filler. Importing a full bestiary (Settings) adds more, or treat this area as a legendary creature&apos;s domain.
+          </p>
+        ) : null;
+      })()}
       {t.rows.every((r) => r.kind === 'peaceful') && <p className="small warn-text">No creatures fit this terrain and party. Turn on the SRD creatures or import a bestiary in Settings.</p>}
       {s.encounterExclude.length > 0 && (
         <p className="small">
@@ -240,7 +249,8 @@ function TableCard({ act }: { act: Act }) {
         </p>
       )}
       <Rule>
-        Built from the creatures that live in this terrain (5etools environment tags), weighted toward natives over travellers, spread across Challenge Ratings, and sized to the danger level&apos;s XP budget. When a
+        Built from the creatures that live in this terrain (5etools environment tags), weighted toward natives over travellers, spread across Challenge Ratings, and sized to the danger level&apos;s XP budget.
+        Leaders bring followers, solitary creatures come alone, only swimmers and fliers reach a ship, tame animals are left out, and legendary creatures are rare outside their lairs. When a
         creature turns up, the app rolls how many, their starting attitude (from alignment), and how far away they are (DMG Travel Terrain table). Creatures from the System Reference Document 5.2 (CC BY 4.0).
       </Rule>
     </Card>
