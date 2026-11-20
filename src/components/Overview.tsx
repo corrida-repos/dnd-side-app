@@ -444,6 +444,7 @@ function PlaceCard() {
           onChange={(v: Abundance) => set({ forage: v })}
           options={(['abundant', 'limited', 'scarce'] as Abundance[]).map((k) => ({ value: k, label: ABUNDANCE_LABEL[k] }))}
         />
+        <Toggle checked={s.place.settlement} onChange={(v) => set({ settlement: v })} label="Town or city (lifestyle covers meals)" />
         <Toggle checked={s.place.waterSource} onChange={(v) => set({ waterSource: v })} label="Water source nearby" />
         {s.place.waterSource && (
           <Select

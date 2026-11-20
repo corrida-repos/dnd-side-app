@@ -3,6 +3,7 @@ import { BASIC_BUILD, BASTION_TURN_DAYS, ENLARGE, rollBastionEvent, SIZE_LABEL, 
 import { d20, die, combineModes, rollExpr, signed, type Rng, type RollMode } from '../rules/dice';
 import { dateFromIndex, formatClock, formatDate, formatDuration, sunriseMinutes } from '../rules/calendar';
 import { EXPLORATION_TURN_MINUTES, LIGHT_WARNING_MINUTES, type EffectPreset } from '../rules/effects';
+import { FEED_GP_PER_DAY, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset } from '../rules/money';
 import { abilityMod, ATTUNE_AWAY_MINUTES, IDENTIFY_MINUTES, MAX_ATTUNED, RITUAL_EXTRA_MINUTES, WATCH_HOURS } from '../rules/upkeep';
 import { fireThreat, rollWeather, temperatureAt, CLIMATES } from '../rules/weather';
 import {
@@ -28,7 +29,7 @@ import {
   BOIL_MINUTES,
 } from '../rules/survival';
 import { isCaster, PREP_RULE, preparedCount, preparedLimit } from '../rules/spells';
-import { uid } from './defaults';
+import { newCharacter, uid } from './defaults';
 
 export interface Ctx {
   rng: Rng;
@@ -47,6 +48,33 @@ const alive = (c: Character) => c.exhaustion < 6;
 export function log(s: State, text: string, tone: Tone = 'info'): void {
   s.log.unshift({ id: uid(), stamp: stamp(s), text, tone });
   if (s.log.length > LOG_MAX) s.log.length = LOG_MAX;
+}
+
+const adventurers = (s: State) => s.characters.filter((c) => c.kind !== 'mount' && alive(c));
+
+/** Charges gold to one or more characters, split evenly. Does nothing when charging costs is switched off. */
+export function payGold(s: State, payerIds: string[], amount: number, what: string): void {
+  if (!s.settings.chargeCosts || amount <= 0) return;
+  let payers = payerIds.map((id) => charById(s, id)).filter((c): c is Character => !!c && c.kind !== 'mount');
+  if (!payers.length) payers = adventurers(s);
+  if (!payers.length) return;
+  const share = Math.round((amount / payers.length) * 100) / 100;
+  for (const c of payers) c.gp = Math.round((c.gp - share) * 100) / 100;
+  const broke = payers.filter((c) => c.gp < 0).map((c) => c.name);
+  log(
+    s,
+    `${payers.map((c) => c.name).join(', ')} pay${payers.length > 1 ? ` ${fmtGp(share)} each` : ''} ${fmtGp(amount)} for ${what}.${broke.length ? ` ${broke.join(', ')} ${broke.length > 1 ? 'are' : 'is'} now in debt.` : ''}`,
+    broke.length ? 'warn' : 'info',
+  );
+}
+
+export function receiveGold(s: State, payeeIds: string[], amount: number, what: string): void {
+  if (!s.settings.chargeCosts || amount <= 0) return;
+  let payees = payeeIds.map((id) => charById(s, id)).filter((c): c is Character => !!c && c.kind !== 'mount');
+  if (!payees.length) payees = adventurers(s);
+  const share = Math.round((amount / payees.length) * 100) / 100;
+  for (const c of payees) c.gp = Math.round((c.gp + share) * 100) / 100;
+  log(s, `${payees.map((c) => c.name).join(', ')} receive ${fmtGp(amount)} for ${what}.`, 'good');
 }
 
 /** Wraps a mutating action so callers always get a fresh state object. */
@@ -235,7 +263,27 @@ function tickHour(s: State, ctx: Ctx, activity: Activity): void {
   }
 }
 
+function dailyCosts(s: State): void {
+  if (s.place.settlement) {
+    const fed: string[] = [];
+    for (const c of adventurers(s)) {
+      if (c.lifestyle !== 'wretched') {
+        c.ateLbToday = Math.max(c.ateLbToday, foodNeedLb(c));
+        c.drankPintsToday = Math.max(c.drankPintsToday, waterNeedPints(c, false, false));
+        fed.push(c.name);
+      }
+      const cost = LIFESTYLE_GP[c.lifestyle];
+      if (cost > 0) payGold(s, [c.id], cost, `a day of ${LIFESTYLE_LABEL[c.lifestyle]} living`);
+    }
+    if (fed.length) log(s, `Town living covers meals and lodging for ${fed.join(', ')}.`);
+  }
+  for (const h of s.hirelings) {
+    if (h.active && h.wageGp > 0) payGold(s, h.payer === 'party' ? [] : [h.payer], h.wageGp, `${h.name}'s daily wage`);
+  }
+}
+
 function endOfDay(s: State, ctx: Ctx): void {
+  dailyCosts(s);
   const hotDay = s.weather.high >= 100;
   for (const c of s.characters) {
     if (!alive(c)) continue;
@@ -1011,6 +1059,15 @@ function progress(s: State, p: Project): void {
   if (p.daysDone >= p.daysRequired) {
     p.done = true;
     log(s, `Downtime project complete: ${p.name}.`, 'good');
+    if (p.kind === 'buyMagic' && p.dealGp) payGold(s, p.charIds, p.dealGp, p.name);
+    if (p.kind === 'sellMagic' && p.dealGp) receiveGold(s, p.charIds, p.dealGp, p.name);
+    if (p.kind === 'spellcopy' && p.spell) {
+      const wiz = charById(s, p.charIds[0]);
+      if (wiz && !wiz.spells.some((x) => x.name.toLowerCase() === p.spell!.name.toLowerCase())) {
+        wiz.spells.push({ name: p.spell.name, level: p.spell.level, prepared: false, alwaysPrepared: false });
+        log(s, `${p.spell.name} is now in ${wiz.name}'s spellbook.`, 'good');
+      }
+    }
   } else {
     log(s, `A day's work on ${p.name}: ${p.daysDone}/${p.daysRequired} workdays.`);
   }
@@ -1094,6 +1151,7 @@ export const addFacility = act((d, _ctx, bastionId: string, nf: NewFacility) => 
     f.built = false;
     f.building = { what: `${SIZE_LABEL[nf.size]} ${nf.name}`, daysLeft: cost.days, totalDays: cost.days, costGp: cost.gp, toSize: nf.size };
     b.goldSpent += cost.gp;
+    payGold(d, [b.ownerId], cost.gp, `building a ${SIZE_LABEL[nf.size].toLowerCase()} ${nf.name}`);
     log(d, `${b.name}: construction starts on a ${SIZE_LABEL[nf.size].toLowerCase()} ${nf.name} (${cost.gp.toLocaleString()} GP, ${cost.days} days).`);
   } else {
     log(d, `${b.name}: adds ${nf.kind === 'special' ? 'the special facility' : 'a'} ${nf.name}.`);
@@ -1109,6 +1167,7 @@ export const enlargeFacility = act((d, _ctx, bastionId: string, facilityId: stri
   if (!step) return;
   f.building = { what: `Enlarging the ${f.name} to ${SIZE_LABEL[step.to]}`, daysLeft: step.days, totalDays: step.days, costGp: step.gp, toSize: step.to };
   b.goldSpent += step.gp;
+  payGold(d, [b.ownerId], step.gp, `enlarging the ${f.name}`);
   log(d, `${b.name}: work starts enlarging the ${f.name} to ${SIZE_LABEL[step.to].toLowerCase()} (${step.gp.toLocaleString()} GP, ${step.days} days).`);
 });
 
@@ -1290,4 +1349,49 @@ export const frigidWater = act((d, ctx, charId: string, minutes: number) => {
     advanceMut(d, ctx, 1, 'camp');
     if (m > safe && alive(c) && !resistant) requestSave(d, ctx, c, 'frigid', 10, 'normal', `frigid water (minute ${m})`);
   }
+});
+
+// ---------------------------------------------------------------- money, projects, mounts
+
+/** Starts a downtime project and pays for its materials up front (buying and selling settle on completion). */
+export const startProject = act((d, _ctx, p: Project) => {
+  d.projects.push(p);
+  log(d, `New downtime project: ${p.name} (${p.daysRequired} workdays${p.costGp ? `, ${fmtGp(p.costGp)}` : ''}).`);
+  if (p.kind !== 'buyMagic' && p.kind !== 'sellMagic' && p.costGp > 0) payGold(d, p.charIds, p.costGp, `materials for ${p.name}`);
+});
+
+export const addMount = act((d, _ctx, preset: MountPreset, name: string, buyerId: string | null) => {
+  const m = newCharacter({
+    kind: 'mount',
+    name: name || preset.name,
+    className: 'Other',
+    size: preset.size,
+    speed: preset.speed,
+    tasks: [],
+    bedroll: false,
+    rationsLb: 0,
+    waterPints: 0,
+    waterCapacityPints: 0,
+    gp: 0,
+    conScore: 14,
+  });
+  d.characters.push(m);
+  log(d, `${m.name} (${preset.name}, ${preset.size}, Speed ${preset.speed} ft) joins the party. It needs food and water every day like everyone else.`);
+  if (buyerId !== null) payGold(d, buyerId ? [buyerId] : [], preset.gp, `a ${preset.name}`);
+});
+
+/** Buys animal feed for every mount: a full day's food each per day bought. */
+export const buyFeed = act((d, _ctx, days: number) => {
+  const mounts = d.characters.filter((c) => c.kind === 'mount' && alive(c));
+  if (!mounts.length) return;
+  for (const m of mounts) m.rationsLb = Math.round((m.rationsLb + foodNeedLb(m) * days) * 100) / 100;
+  log(d, `Bought ${days} day(s) of feed for ${mounts.map((m) => m.name).join(', ')}.`);
+  payGold(d, [], FEED_GP_PER_DAY * days * mounts.length, `${days} day(s) of animal feed`);
+});
+
+export const adjustGold = act((d, _ctx, charId: string, amount: number, reason: string) => {
+  const c = charById(d, charId);
+  if (!c || !amount) return;
+  c.gp = Math.round((c.gp + amount) * 100) / 100;
+  log(d, `${c.name} ${amount > 0 ? 'gains' : 'spends'} ${fmtGp(Math.abs(amount))}${reason ? ` (${reason})` : ''}. Now ${fmtGp(c.gp)}.`, amount > 0 ? 'good' : 'info');
 });

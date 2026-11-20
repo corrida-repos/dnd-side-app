@@ -816,3 +816,10 @@ td {
 .pip.full {
   background: var(--accent);
 }
+
+@media (min-width: 821px) {
+  .tabs {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+}

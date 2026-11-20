@@ -97,23 +97,23 @@ These all happen during Short and Long Rests or at dawn, so they fit straight in
 
 ---
 
-## Phase 3: Money and living costs 📋
+## Phase 3: Money and living costs ✅
 
-### Lifestyle expenses 📋
+### Lifestyle expenses ✅
 - Daily cost by lifestyle: Wretched, Squalid, Poor, Modest, Comfortable, Wealthy, Aristocratic.
 - **To build:** a gold ledger per character, with lifestyle charged each day spent in town.
 
-### Lodging, meals and services 📋
+### Lodging, meals and services ✅
 - Inn stays and meals by quality.
 - Hirelings: skilled about 2 GP a day, untrained about 2 SP a day.
 - **To build:** hireling wages and lodging charged to the gold ledger.
 
-### Mounts and animals 📋
+### Mounts and animals ✅
 - Mounts need food and water every day (by size), plus feed, tack, stabling and carrying capacity.
 - A mount can travel faster for short stretches.
 - **To build:** mounts as party members that need food and water, with mounted travel pace.
 
-### Selling and buying magic items 📋
+### Selling and buying magic items ✅
 - Finding a buyer or seller takes days of downtime and a check. DMG tables set how long it takes and the price.
 - **To build:** downtime activities with time and outcome rolls.
 

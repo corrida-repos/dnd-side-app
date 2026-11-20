@@ -21,8 +21,8 @@ export function GearTab() {
       {s.characters.map((c) => (
         <Card key={c.id} title={`${c.name} · ${c.className} ${c.level}`}>
           <HpBlock c={c} />
-          <ResourcesBlock c={c} />
-          <ItemsBlock c={c} />
+          {c.kind !== 'mount' && <ResourcesBlock c={c} />}
+          {c.kind !== 'mount' && <ItemsBlock c={c} />}
         </Card>
       ))}
     </div>

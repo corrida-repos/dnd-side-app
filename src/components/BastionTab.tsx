@@ -60,7 +60,7 @@ export function BastionTab() {
 
 function FoundCard() {
   const s = useGame();
-  const eligible = s.characters.filter((c) => c.level >= BASTION_MIN_LEVEL && !s.bastions.some((b) => b.ownerId === c.id));
+  const eligible = s.characters.filter((c) => c.kind !== 'mount' && c.level >= BASTION_MIN_LEVEL && !s.bastions.some((b) => b.ownerId === c.id));
   const [owner, setOwner] = useState('');
   const [name, setName] = useState('');
   const chosen = eligible.find((c) => c.id === owner) ? owner : eligible[0]?.id ?? '';

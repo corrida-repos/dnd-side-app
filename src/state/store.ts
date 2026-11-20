@@ -23,6 +23,7 @@ function migrate(raw: unknown): State | null {
     bastions: parsed.bastions ?? [],
     watchOrder: parsed.watchOrder ?? [],
     effects: parsed.effects ?? [],
+    hirelings: parsed.hirelings ?? [],
     trackingStart: parsed.trackingStart ?? (parsed.dayIndex ?? base.dayIndex) * 1440 + (parsed.minutes ?? 0),
   } as State;
   // Characters saved by older versions pick up any newly added fields.

@@ -214,7 +214,7 @@ function WatchCard() {
     <Card title="Night watch">
       <p className="small muted">Pick who keeps watch. During a Long Rest they take 2-hour watches in this order.</p>
       <ul className="plain">
-        {s.characters.map((c) => {
+        {s.characters.filter((c) => c.kind !== 'mount').map((c) => {
           const on = order.includes(c.id);
           return (
             <li key={c.id} className="armor-row">

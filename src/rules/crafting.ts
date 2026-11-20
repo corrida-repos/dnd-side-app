@@ -46,7 +46,7 @@ export function magicItemCrafting(rarity: Rarity, consumable: boolean): { days: 
 /** Calendar days needed when several crafters with the required proficiency share the work. */
 export const calendarDays = (workDays: number, crafters: number): number => Math.ceil(workDays / Math.max(1, crafters));
 
-export type ProjectKind = 'nonmagical' | 'scroll' | 'potion' | 'magic' | 'activity';
+export type ProjectKind = 'nonmagical' | 'scroll' | 'potion' | 'magic' | 'activity' | 'buyMagic' | 'sellMagic' | 'spellcopy';
 
 export const PROJECT_KIND_LABEL: Record<ProjectKind, string> = {
   nonmagical: 'Craft a nonmagical item',
@@ -54,6 +54,9 @@ export const PROJECT_KIND_LABEL: Record<ProjectKind, string> = {
   potion: 'Brew Potions of Healing',
   magic: 'Craft a magic item',
   activity: 'Other downtime activity',
+  buyMagic: 'Buy a magic item',
+  sellMagic: 'Sell a magic item',
+  spellcopy: 'Copy a spell into a spellbook',
 };
 
 export const ACTIVITY_IDEAS = [

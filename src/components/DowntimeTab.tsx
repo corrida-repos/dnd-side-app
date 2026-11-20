@@ -16,6 +16,8 @@ import {
   type Rarity,
 } from '../rules/crafting';
 import { Card, Meter, Num, Select, Text, Toggle, Rule } from './common';
+import { MAGIC_ITEM_VALUE, fmtGp } from '../rules/money';
+import { SPELLBOOK_COPY } from '../rules/longterm';
 
 export function DowntimeTab() {
   const s = useGame();
@@ -97,6 +99,11 @@ function NewProject() {
   const [days, setDays] = useState(5);
   const [cost, setCost] = useState(0);
   const [crafters, setCrafters] = useState<string[]>([]);
+  const [deal, setDeal] = useState<number | null>(null);
+  const [dealDays, setDealDays] = useState(5);
+  const [spellName, setSpellName] = useState('');
+  const [spellLevel, setSpellLevel] = useState(1);
+  const pcs = s.characters.filter((c) => c.kind !== 'mount');
 
   let calc: { days: number; gp: number; label: string; note: string };
   switch (kind) {
@@ -126,6 +133,31 @@ function NewProject() {
     case 'magic': {
       const r = magicItemCrafting(rarity, consumable);
       calc = { ...r, label: name || `${RARITY_LABEL[rarity]} magic item`, note: 'Needs Arcana proficiency, the right tool and a formula. Consumables take half the time and cost.' };
+      break;
+    }
+    case 'buyMagic':
+    case 'sellMagic': {
+      const value = MAGIC_ITEM_VALUE[rarity];
+      const price = deal ?? (kind === 'sellMagic' ? value / 2 : value);
+      calc = {
+        days: dealDays,
+        gp: price,
+        label: name || `${kind === 'buyMagic' ? 'Buy' : 'Sell'} a ${RARITY_LABEL[rarity].toLowerCase()} magic item`,
+        note:
+          kind === 'buyMagic'
+            ? `Finding a seller takes downtime. Typical value: ${fmtGp(value)}. The price is paid when the deal is done.`
+            : `Finding a buyer takes downtime. Sellers usually get about half the value (${fmtGp(value / 2)}). The gold is received when the deal is done.`,
+      };
+      break;
+    }
+    case 'spellcopy': {
+      const hours = SPELLBOOK_COPY.hoursPerLevel * spellLevel;
+      calc = {
+        days: Math.max(1, Math.ceil(hours / 8)),
+        gp: SPELLBOOK_COPY.gpPerLevel * spellLevel,
+        label: name || `Copy ${spellName || 'a spell'} into a spellbook`,
+        note: `${hours} hours and ${SPELLBOOK_COPY.gpPerLevel * spellLevel} GP (2 hours and 50 GP per spell level). The first crafter's spellbook gets the spell when it's done.`,
+      };
       break;
     }
     default:
@@ -165,6 +197,19 @@ function NewProject() {
           />
         )}
         {kind === 'potion' && <Num label="How many" value={potions} onChange={(v) => setPotions(Math.max(1, Math.round(v)))} min={1} width={3} />}
+        {(kind === 'buyMagic' || kind === 'sellMagic') && (
+          <>
+            <Select label="Rarity" value={rarity} onChange={(v: Rarity) => (setRarity(v), setDeal(null))} options={(Object.keys(RARITY_LABEL) as Rarity[]).map((r) => ({ value: r, label: RARITY_LABEL[r] }))} />
+            <Num label="Price" value={calc.gp} onChange={(v) => setDeal(Math.max(0, v))} min={0} suffix="GP" width={7} />
+            <Num label="Workdays" value={dealDays} onChange={(v) => setDealDays(Math.max(1, Math.round(v)))} min={1} width={3} />
+          </>
+        )}
+        {kind === 'spellcopy' && (
+          <>
+            <Text label="Spell" value={spellName} onChange={setSpellName} placeholder="e.g. Fireball" />
+            <Num label="Level" value={spellLevel} onChange={(v) => setSpellLevel(Math.max(1, Math.min(9, Math.round(v))))} min={1} max={9} width={2} />
+          </>
+        )}
         {kind === 'magic' && (
           <>
             <Select label="Rarity" value={rarity} onChange={setRarity} options={(Object.keys(RARITY_LABEL) as Rarity[]).map((r) => ({ value: r, label: RARITY_LABEL[r] }))} />
@@ -181,7 +226,7 @@ function NewProject() {
       <div className="field">
         <span className="field-label">Who works on it</span>
         <div className="chips">
-          {s.characters.map((c) => (
+          {pcs.map((c) => (
             <Toggle key={c.id} checked={crafters.includes(c.id)} onChange={(v) => setCrafters(v ? [...crafters, c.id] : crafters.filter((x) => x !== c.id))} label={c.name} />
           ))}
         </div>
@@ -193,12 +238,23 @@ function NewProject() {
       <button
         className="primary"
         onClick={() => {
-          const p = { id: uid(), name: calc.label, kind, charIds: crafters, daysRequired: calc.days, daysDone: 0, costGp: calc.gp, notes: '', done: false };
-          edit((d) => {
-            d.projects.push(p);
-            E.log(d, `New downtime project: ${p.name} (${p.daysRequired} workdays, ${p.costGp} GP).`);
-          });
+          const trade = kind === 'buyMagic' || kind === 'sellMagic';
+          const p = {
+            id: uid(),
+            name: calc.label,
+            kind,
+            charIds: crafters,
+            daysRequired: calc.days,
+            daysDone: 0,
+            costGp: trade ? 0 : calc.gp,
+            notes: '',
+            done: false,
+            ...(trade ? { rarity, dealGp: calc.gp } : {}),
+            ...(kind === 'spellcopy' ? { spell: { name: spellName.trim() || 'Unnamed spell', level: spellLevel } } : {}),
+          };
+          dispatch((st, cx) => E.startProject(st, cx, p));
           setName('');
+          setDeal(null);
         }}
       >
         Start project

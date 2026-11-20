@@ -4,6 +4,8 @@ import type { ProjectKind } from '../rules/crafting';
 import type { FacilitySize, Order } from '../rules/bastion';
 import type { Recharge } from '../rules/upkeep';
 import type { EffectKind } from '../rules/effects';
+import type { Lifestyle } from '../rules/money';
+import type { Rarity } from '../rules/crafting';
 
 export type Season = 'winter' | 'spring' | 'summer' | 'autumn';
 export type Size = 'Tiny' | 'Small' | 'Medium' | 'Large' | 'Huge' | 'Gargantuan';
@@ -88,7 +90,13 @@ export interface ActiveEffect {
 
 export interface Character {
   id: string;
+  /** Mounts and animals use the same survival rules but skip spells, tasks and watches. */
+  kind: 'pc' | 'mount';
   name: string;
+  gp: number;
+  lifestyle: Lifestyle;
+  /** Mount speed in feet (mounts only). */
+  speed: number;
   className: ClassName;
   level: number;
   size: Size;
@@ -166,6 +174,8 @@ export interface Place {
   forage: Abundance;
   waterSource: boolean;
   waterQuality: WaterQuality;
+  /** In a town or city: lifestyle expenses are charged and cover meals. */
+  settlement: boolean;
 }
 
 export interface Fire {
@@ -195,6 +205,16 @@ export interface PendingSave {
   stamp: string;
 }
 
+export interface Hireling {
+  id: string;
+  name: string;
+  skilled: boolean;
+  wageGp: number;
+  /** Who pays: a character's id, or "party" to split between the adventurers. */
+  payer: string;
+  active: boolean;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -205,6 +225,11 @@ export interface Project {
   costGp: number;
   notes: string;
   done: boolean;
+  /** For buying or selling magic items: the rarity and the price the deal is struck at. */
+  rarity?: Rarity;
+  dealGp?: number;
+  /** For copying a spell: its name and level, and whose spellbook gets it. */
+  spell?: { name: string; level: number };
 }
 
 export interface Construction {
@@ -272,6 +297,8 @@ export interface Settings {
   encounterOn: number;
   /** Random encounter check per 10-minute exploration turn (d20 at or above). 0 turns it off. */
   exploreEncounterOn: number;
+  /** Charge crafting, construction, lifestyle and wages to characters' gold. */
+  chargeCosts: boolean;
 }
 
 export interface Travel {
@@ -306,4 +333,5 @@ export interface State {
   /** Order of characters taking 2-hour watches during a Long Rest. */
   watchOrder: string[];
   effects: ActiveEffect[];
+  hirelings: Hireling[];
 }

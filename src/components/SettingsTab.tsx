@@ -84,6 +84,7 @@ function RulesCard() {
           Each time the party passes another 24 hours without finishing a Long Rest, everyone makes a Con save or gains 1 Exhaustion level from Sleep deprivation. The DC is 10, plus 5 for every
           further 24 hours, and it resets after a Long Rest.
         </Rule>
+        <Toggle checked={s.settings.chargeCosts} onChange={(v) => set('chargeCosts', v)} label="Charge costs to characters' gold (crafting, construction, lifestyle, wages, feed)" />
         <Toggle checked={s.settings.climateAdjustedPrecip} onChange={(v) => set('climateAdjustedPrecip', v)} label="Adjust the precipitation roll for climate (deserts drier, jungles wetter)" />
         <Rule>When this is off, the plain DMG d20 table is used everywhere.</Rule>
         <Toggle checked={s.settings.doubleWaterInHeat} onChange={(v) => set('doubleWaterInHeat', v)} label="Double water needs on days of 100 °F or hotter (2014 rule)" />

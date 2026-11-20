@@ -25,7 +25,11 @@ export function newCharacter(partial: Partial<Character> = {}): Character {
   const maxHp = partial.maxHp ?? hitDie + 2 + (level - 1) * (hitDie / 2 + 2);
   return {
     id: uid(),
+    kind: 'pc',
     name: 'New adventurer',
+    gp: 25,
+    lifestyle: 'modest',
+    speed: 30,
     className,
     level: 1,
     size: 'Medium',
@@ -96,6 +100,7 @@ export function createDefaultState(rng: Rng): State {
     forage: 'abundant' as const,
     waterSource: true,
     waterQuality: 'questionable' as const,
+    settlement: false,
   };
   const weather = rollWeather({ dayIndex, season: 'spring', climate: place.climate, altitudeFt: place.altitudeFt, climateAdjustedPrecip: false }, rng);
   return {
@@ -120,10 +125,11 @@ export function createDefaultState(rng: Rng): State {
     travel: { pace: 'normal', hoursToday: 0, milesToday: 0 },
     lastLongRestEnd: null,
     trackingStart: dayIndex * 1440 + 7 * 60,
-    settings: { autoRollSaves: true, climateAdjustedPrecip: false, fireWarmsCamp: true, doubleWaterInHeat: false, wildNeedsPurifying: true, sleepInArmorPenalty: false, rawFoodRisk: true, rawFoodDC: 10, coldNights: true, coldNightF: 32, sleepDeprivation: true, encounterOn: 0, exploreEncounterOn: 0 },
+    settings: { autoRollSaves: true, climateAdjustedPrecip: false, fireWarmsCamp: true, doubleWaterInHeat: false, wildNeedsPurifying: true, sleepInArmorPenalty: false, rawFoodRisk: true, rawFoodDC: 10, coldNights: true, coldNightF: 32, sleepDeprivation: true, encounterOn: 0, exploreEncounterOn: 0, chargeCosts: true },
     spellLibrary: [],
     bastions: [],
     watchOrder: [],
     effects: [],
+    hirelings: [],
   };
 }
