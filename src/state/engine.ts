@@ -57,7 +57,7 @@ import {
 import { isCaster, PREP_RULE, preparedCount, preparedLimit } from '../rules/spells';
 import { newCharacter, uid } from './defaults';
 import { sense, type SenseKey } from '../rules/senses';
-import { buildTable, checkModifiers, DANGER, DIFFICULTY_LABEL, firstSign, rollOnTable, SRD_POOL, type CheckConditions, type Danger, type EncounterCreature, type EncounterTable, type Party } from '../rules/encounters';
+import { buildTable, checkModifiers, DANGER, DIFFICULTY_LABEL, firstSign, rollOnTable, SRD_POOL, BOOK_POOL, type CheckConditions, type Danger, type EncounterCreature, type EncounterTable, type Party } from '../rules/encounters';
 import type { TerrainType } from '../rules/terrain';
 
 export interface Ctx {
@@ -4459,6 +4459,7 @@ export function encounterPool(s: State): EncounterCreature[] {
   const byName = new Map<string, EncounterCreature>();
   if (s.settings.srdEncounters) for (const c of SRD_POOL) byName.set(c.name.toLowerCase(), c);
   const off = new Set(s.encounterSourcesOff);
+  for (const src of s.settings.encounterBooks) if (!off.has(src)) for (const c of BOOK_POOL[src] ?? []) byName.set(c.name.toLowerCase(), c);
   for (const c of s.bestiary) {
     if (!c.cr || !c.env?.length || off.has(c.source ?? '?')) continue;
     byName.set(c.name.toLowerCase(), { name: c.name, cr: c.cr, size: c.size, type: c.type.toLowerCase(), align: c.align ?? 'N', env: c.env, source: c.source, flags: c.flags });
@@ -4564,7 +4565,7 @@ export function resolveEncounter(s: State, ctx: Ctx, activity: CheckConditions['
   const table = encounterTable(s);
   const res = rollOnTable(table, ctx.rng);
   if (!res) {
-    log(s, 'Random encounter, but the table is empty: import a bestiary or turn on the SRD creatures in the Encounters tab.', 'warn');
+    log(s, 'Random encounter, but the table is empty: switch on the SRD creatures or more books in the Encounters tab.', 'warn');
     return;
   }
   const night = isNight(s) || isUnderground(s);
