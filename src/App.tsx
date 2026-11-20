@@ -7,6 +7,7 @@ import { readSky } from './rules/skyclock';
 import { Overview } from './components/Overview';
 import { PartyTab } from './components/PartyTab';
 import { CampTab } from './components/CampTab';
+import { EncountersTab } from './components/EncountersTab';
 import { MorningTab } from './components/MorningTab';
 import { DowntimeTab } from './components/DowntimeTab';
 import { BastionTab } from './components/BastionTab';
@@ -24,6 +25,7 @@ const TABS = [
   { id: 'gear', label: 'Gear & Resources', el: GearTab },
   { id: 'effects', label: 'Effects & Lights', el: EffectsTab },
   { id: 'camp', label: 'Camp & Survival', el: CampTab },
+  { id: 'encounters', label: 'Encounters', el: EncountersTab },
   { id: 'morning', label: 'Morning & Spells', el: MorningTab },
   { id: 'money', label: 'Money & Mounts', el: MoneyTab },
   { id: 'storage', label: 'Storage', el: StorageTab },

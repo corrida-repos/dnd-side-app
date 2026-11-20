@@ -126,6 +126,7 @@ describe('night watch', () => {
     const s = fresh((d) => {
       d.characters.push(newCharacter({ name: 'B', needsFood: false, needsWater: false }));
       d.watchPlan = { count: 4, slots: [[d.characters[0].id], [d.characters[1].id], [d.characters[0].id], [d.characters[1].id]] };
+      d.settings.encounters = false;
       d.settings.encounterOn = 20;
     });
     const quiet = E.longRest(s, LOW, false);

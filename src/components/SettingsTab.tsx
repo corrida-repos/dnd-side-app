@@ -207,10 +207,13 @@ function BestiaryCard() {
       }
       edit((d) => {
         const keyOf = (x: { name: string; source?: string }) => `${x.name}|${x.source ?? ''}`.toLowerCase();
+        // Re-importing refreshes entries saved before Challenge Ratings and environments were kept.
+        const fresh = new Map(found.map((x) => [keyOf(x), x]));
         const have = new Set(d.bestiary.map(keyOf));
         const added = found.filter((x) => !have.has(keyOf(x)));
-        d.bestiary = [...d.bestiary, ...added].sort((a, b) => a.name.localeCompare(b.name));
-        log(d, `Imported ${added.length} creatures into the bestiary for hunting.`);
+        d.bestiary = [...d.bestiary.map((x) => fresh.get(keyOf(x)) ?? x), ...added].sort((a, b) => a.name.localeCompare(b.name));
+        const forTables = found.filter((x) => x.cr && x.env?.length).length;
+        log(d, `Imported ${added.length} new creatures into the bestiary for hunting${forTables ? `; ${forTables} have a Challenge Rating and environment for the random encounter tables` : ''}.`);
       });
       setMsg(`Read ${found.length} creatures.`);
     } catch (e) {
@@ -218,9 +221,9 @@ function BestiaryCard() {
     }
   };
   return (
-    <Card title={`Bestiary for hunting (${s.bestiary.length})`}>
+    <Card title={`Bestiary for hunting and encounters (${s.bestiary.length})`}>
       <Rule>
-        Load a 5etools bestiary file you have access to (for example <code>bestiary-xmm.json</code>) to hunt any creature from it on the Camp tab. Only the name, size, creature type and source are kept.
+        Load a 5etools bestiary file you have access to (for example <code>bestiary-xmm.json</code>) to hunt any creature from it on the Camp tab and add it to the random encounter tables on the Encounters tab. Only the name, size, creature type, source, Challenge Rating, environments and alignment are kept.
       </Rule>
       <input
         ref={fileRef}

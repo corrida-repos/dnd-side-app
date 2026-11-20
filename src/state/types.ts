@@ -1,3 +1,4 @@
+import type { Danger } from '../rules/encounters';
 import type { ClimateId, Weather } from '../rules/weather';
 import type { Calendar } from '../rules/calendar';
 import type { ProjectKind } from '../rules/crafting';
@@ -338,6 +339,8 @@ export interface Place {
   waterQuality: WaterQuality;
   /** In a town or city: lifestyle expenses are charged and cover meals. */
   settlement: boolean;
+  /** How dangerous the area is: sets how often to check for random encounters and how tough they are. */
+  danger: Danger;
 }
 
 export interface Fire {
@@ -595,6 +598,10 @@ export interface Settings {
   poorVisibilityNav: boolean;
   /** Optional 2014 DMG rule: running a business as a downtime activity. */
   runningBusiness: boolean;
+  /** Roll random encounter checks automatically by the location's danger while travelling, camping, resting and exploring. */
+  encounters: boolean;
+  /** Use the built-in SRD 5.2 creatures for random encounter tables (imported bestiaries are always used). */
+  srdEncounters: boolean;
 }
 
 export interface Travel {
@@ -673,4 +680,12 @@ export interface State {
   dispatches: Dispatch[];
   /** Businesses the characters own (optional Running a Business rule). */
   businesses: Business[];
+  /** Minutes of overland time since the last automatic random encounter check. */
+  encounterClock: number;
+  /** Exploration turns since the last automatic wandering monster check. */
+  exploreTurns: number;
+  /** Creatures left out of the random encounter tables. */
+  encounterExclude: string[];
+  /** When the current Long Rest began (absolute minute), so encounters know who is on watch. */
+  restStart: number | null;
 }
