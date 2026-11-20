@@ -9,6 +9,7 @@ import type { Rarity } from '../rules/crafting';
 import type { Creature } from '../rules/hunting';
 import type { NavTerrain } from '../rules/navigation';
 import type { HirelingRole } from '../rules/hirelings';
+import type { ClueKind, StudyMethod } from '../rules/identify';
 
 export type Season = 'winter' | 'spring' | 'summer' | 'autumn';
 export type Size = 'Tiny' | 'Small' | 'Medium' | 'Large' | 'Huge' | 'Gargantuan';
@@ -69,6 +70,31 @@ export interface MagicItem {
   /** Absolute minute the item was left more than 100 ft away, or null while it's with its owner. */
   awaySince: number | null;
   notes: string;
+  /** What the party calls it before they know what it is, e.g. "silver ring with a blue stone". */
+  partyName?: string;
+  rarity?: Rarity | '';
+  /** School of magic, as Detect Magic would reveal it. */
+  school?: string;
+  /** Detect Magic (or similar) has shown it's magical. */
+  magicKnown?: boolean;
+  /** What the item does, each fact known or still hidden. */
+  clues?: ItemClue[];
+  /** How the party learned each thing. */
+  findings?: ItemFinding[];
+}
+
+export interface ItemClue {
+  id: string;
+  kind: ClueKind;
+  text: string;
+  known: boolean;
+}
+
+export interface ItemFinding {
+  id: string;
+  stamp: string;
+  method: StudyMethod;
+  text: string;
 }
 
 export interface Resource {

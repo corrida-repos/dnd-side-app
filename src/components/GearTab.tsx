@@ -7,6 +7,8 @@ import { isCaster } from '../rules/spells';
 import { formatClock, formatDuration } from '../rules/calendar';
 import { Card, Meter, Num, Pill, Select, Text, Toggle, Rule } from './common';
 import type { Character, MagicItem, Resource } from '../state/types';
+import { ARCANA_DC, CLUE_KIND_LABEL, SCHOOLS_OF_MAGIC, STUDY_LABEL, STUDY_MINUTES, type ClueKind } from '../rules/identify';
+import { RARITY_LABEL, type Rarity } from '../rules/crafting';
 
 const setChar = (id: string, fn: (c: Character) => void) =>
   edit((d) => {
@@ -18,6 +20,7 @@ export function GearTab() {
   const s = useGame();
   return (
     <div className="grid wide">
+      <MysteryOverview />
       {s.characters.map((c) => (
         <Card key={c.id} title={`${c.name} · ${c.className} ${c.level}`}>
           <HpBlock c={c} />
@@ -26,6 +29,123 @@ export function GearTab() {
         </Card>
       ))}
     </div>
+  );
+}
+
+function knowledge(it: MagicItem): { known: number; total: number } {
+  const clues = it.clues ?? [];
+  const total = clues.length + 1;
+  const known = clues.filter((c) => c.known).length + (it.magicKnown || it.identified ? 1 : 0);
+  return { known: Math.min(known, total), total };
+}
+
+function MysteryOverview() {
+  const s = useGame();
+  const items = s.characters.flatMap((c) => c.items.filter((it) => !it.identified || (it.clues ?? []).some((x) => !x.known)).map((it) => ({ c, it })));
+  if (!items.length) return null;
+  return (
+    <Card title={`Items not fully understood (${items.length})`} className="span-2">
+      <ul className="plain">
+        {items.map(({ c, it }) => {
+          const k = knowledge(it);
+          return (
+            <li key={it.id} className="armor-row">
+              <span>
+                <b>{it.identified ? it.name : it.partyName || 'Unknown item'}</b> <span className="muted small">carried by {c.name}</span>{' '}
+                {!it.identified && <span className="muted small">(really: {it.name})</span>}
+              </span>
+              <span className="small">
+                <Meter value={k.known} max={k.total} tone="good" /> {k.known}/{k.total} known
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      <p className="small muted">Open each item on its owner&apos;s card below to study it, cast Detect Magic or Identify, or reveal facts as the DM.</p>
+    </Card>
+  );
+}
+
+function KnowledgePanel({ c, it }: { c: Character; it: MagicItem }) {
+  const s = useGame();
+  const [studier, setStudier] = useState(c.id);
+  const [bonus, setBonus] = useState(0);
+  const [text, setText] = useState('');
+  const [kind, setKind] = useState<ClueKind>('property');
+  const setItem = (fn: (x: MagicItem) => void) => setChar(c.id, (x) => fn(x.items.find((i) => i.id === it.id)!));
+  const k = knowledge(it);
+  const studiers = [...s.characters.filter((x) => x.kind !== 'mount' && x.diedAt == null).map((x) => ({ value: x.id, label: x.name })), ...s.hirelings.filter((h) => h.active && (h.role === 'scribe' || h.role === 'other')).map((h) => ({ value: `h:${h.id}`, label: `${h.name} (hireling)` }))];
+  return (
+    <details className="knowledge" open={!it.identified}>
+      <summary>
+        What we know <Meter value={k.known} max={k.total} tone="good" /> {k.known}/{k.total}
+      </summary>
+      <div className="form-row">
+        <Text label="The party calls it" value={it.partyName ?? ''} onChange={(v) => setItem((x) => void (x.partyName = v))} placeholder="e.g. silver ring with a blue stone" />
+        <Select label="Rarity (DM)" value={it.rarity ?? ''} onChange={(v) => setItem((x) => void (x.rarity = v as MagicItem['rarity']))} options={[{ value: '', label: 'Unknown' }, ...(Object.keys(RARITY_LABEL) as Rarity[]).map((r) => ({ value: r, label: RARITY_LABEL[r] }))]} />
+        <Select label="School (DM)" value={it.school ?? ''} onChange={(v) => setItem((x) => void (x.school = v))} options={[{ value: '', label: 'Unknown' }, ...SCHOOLS_OF_MAGIC]} />
+      </div>
+      <p className="small">
+        {it.magicKnown || it.identified ? <span className="good-text">Known to be magical{it.school ? ` (${it.school})` : ''}.</span> : <span className="muted">Nobody has confirmed it&apos;s magical yet.</span>}
+      </p>
+      <ul className="plain small">
+        {(it.clues ?? []).map((cl) => (
+          <li key={cl.id} className="armor-row">
+            <label className="toggle">
+              <input type="checkbox" checked={cl.known} onChange={(e) => dispatch((st, cx) => E.setClueKnown(st, cx, c.id, it.id, cl.id, e.target.checked))} />
+              <span className={cl.known ? '' : 'muted'}>
+                <Pill tone={cl.kind === 'curse' ? 'bad' : 'muted'}>{CLUE_KIND_LABEL[cl.kind]}</Pill> {cl.text}
+                {!cl.known && ' (hidden)'}
+              </span>
+            </label>
+            <button className="ghost tiny" aria-label="Remove fact" onClick={() => setItem((x) => void (x.clues = (x.clues ?? []).filter((y) => y.id !== cl.id)))}>
+              ✕
+            </button>
+          </li>
+        ))}
+      </ul>
+      <form
+        className="btn-row tight"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!text.trim()) return;
+          setItem((x) => void (x.clues = [...(x.clues ?? []), { id: uid(), kind, text: text.trim(), known: false }]));
+          setText('');
+        }}
+      >
+        <Select value={kind} onChange={setKind} options={(Object.keys(CLUE_KIND_LABEL) as ClueKind[]).map((k2) => ({ value: k2, label: CLUE_KIND_LABEL[k2] }))} />
+        <Text value={text} onChange={setText} placeholder="A hidden fact (DM), e.g. +1 bonus to AC and saves" />
+        <button type="submit" className="small">
+          Add
+        </button>
+      </form>
+      <div className="btn-row tight">
+        <Select value={studier} onChange={setStudier} options={studiers} />
+        <button className="small" onClick={() => dispatch((st, cx) => E.studyItem(st, cx, c.id, it.id, 'detect', studier, 0))}>
+          Detect Magic
+        </button>
+        <Num value={bonus} onChange={(v) => setBonus(Math.round(v))} width={2} label="Arcana bonus" />
+        <button className="small" onClick={() => dispatch((st, cx) => E.studyItem(st, cx, c.id, it.id, 'arcana', studier, bonus))}>
+          Arcana check (DC {ARCANA_DC[it.rarity || 'unknown']}, {STUDY_MINUTES} min)
+        </button>
+        <button className="small ghost" onClick={() => dispatch((st, cx) => E.studyItem(st, cx, c.id, it.id, 'experiment', studier, 0))}>
+          Experiment ({STUDY_MINUTES} min)
+        </button>
+      </div>
+      {(it.findings ?? []).length > 0 && (
+        <ul className="log small">
+          {(it.findings ?? []).map((f) => (
+            <li key={f.id}>
+              <span className="muted">{f.stamp}</span> <b>{STUDY_LABEL[f.method]}:</b> {f.text}
+            </li>
+          ))}
+        </ul>
+      )}
+      <Rule>
+        Detect Magic shows that an item is magical and its school. An Arcana check (table rule: DC 10/15/20/25/30 by rarity) or experimenting reveals one fact at a time. Identify, or a Short Rest spent studying it, reveals
+        everything except curses. Attuning reveals a curse (table rule).
+      </Rule>
+    </details>
   );
 }
 
@@ -219,6 +339,7 @@ function ItemsBlock({ c }: { c: Character }) {
   const [regain, setRegain] = useState('1d6+1');
   const [regainAt, setRegainAt] = useState<MagicItem['regainAt']>('dawn');
   const [identified, setIdentified] = useState(false);
+  const [partyName, setPartyName] = useState('');
   const [caster, setCaster] = useState('');
   const setItem = (iid: string, fn: (it: MagicItem) => void) => setChar(c.id, (x) => fn(x.items.find((i) => i.id === iid)!));
   return (
@@ -234,7 +355,8 @@ function ItemsBlock({ c }: { c: Character }) {
             <li key={it.id} className="facility">
               <div className="armor-row">
                 <span>
-                  <b>{it.identified ? it.name : `${it.name} (unidentified)`}</b>{' '}
+                  <b>{it.identified ? it.name : it.partyName || 'Unknown item'}</b>
+                  {!it.identified && <span className="muted small"> (really: {it.name})</span>}{' '}
                   {it.requiresAttunement && (it.attuned ? <Pill tone="good">Attuned</Pill> : <Pill tone="muted">Needs attunement</Pill>)}
                   {it.charges != null && it.maxCharges != null && (
                     <Pill tone="info">
@@ -278,6 +400,7 @@ function ItemsBlock({ c }: { c: Character }) {
                   {it.awaySince == null ? 'Left behind' : 'Recovered'}
                 </button>
               </div>
+              {(!it.identified || (it.clues ?? []).length > 0 || (it.findings ?? []).length > 0) && <KnowledgePanel c={c} it={it} />}
               {!it.identified && (
                 <div className="btn-row tight">
                   <Select value={caster} onChange={setCaster} options={[{ value: '', label: 'Identify spell: scroll' }, ...s.characters.map((x) => ({ value: x.id, label: `Identify spell: ${x.name}` }))]} />
@@ -296,7 +419,8 @@ function ItemsBlock({ c }: { c: Character }) {
       <details>
         <summary>Add a magic item</summary>
         <div className="form-row">
-          <Text label="Name" value={name} onChange={setName} placeholder="e.g. Wand of Magic Missiles" />
+          <Text label="True name (DM)" value={name} onChange={setName} placeholder="e.g. Wand of Magic Missiles" />
+          {!identified && <Text label="The party calls it" value={partyName} onChange={setPartyName} placeholder="e.g. black wand carved with stars" />}
           <Num label="Charges" value={charges} onChange={(v) => setCharges(Math.max(0, Math.round(v)))} min={0} width={3} />
           {charges > 0 && (
             <>
@@ -335,9 +459,14 @@ function ItemsBlock({ c }: { c: Character }) {
                 regainAt,
                 awaySince: null,
                 notes: '',
+                partyName: partyName.trim(),
+                magicKnown: identified,
+                clues: [],
+                findings: [],
               }),
             );
             setName('');
+            setPartyName('');
           }}
         >
           Add item

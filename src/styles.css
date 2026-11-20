@@ -919,3 +919,10 @@ select {
 .interrupt {
   margin-top: 8px;
 }
+
+.knowledge {
+  margin: 6px 0;
+  padding: 6px 10px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+}

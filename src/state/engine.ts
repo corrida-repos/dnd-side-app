@@ -7,6 +7,7 @@ import { divinationFailChance, SPELLBOOK_REPLACE } from '../rules/longterm';
 import { LOST_RECHECK_DIE, navigationDC } from '../rules/navigation';
 import { readSky, SKY_DC } from '../rules/skyclock';
 import { MESSENGER_GP_PER_MILE } from '../rules/hirelings';
+import { ARCANA_DC, STUDY_MINUTES, type StudyMethod } from '../rules/identify';
 import { BUTCHER_DC, BUTCHER_MINUTES, isEdible, MEAT_LB, STRANGE_TYPES, yieldsHide, type Creature } from '../rules/hunting';
 import { FEED_GP_PER_DAY, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset } from '../rules/money';
 import { STABLE_WAKE_DIE, STABILIZE_DC } from '../rules/upkeep';
@@ -433,7 +434,7 @@ function applyRestFocus(s: State, c: Character): void {
   const it = c.items.find((x) => x.id === f.itemId);
   if (!it) return;
   if (f.action === 'identify') {
-    it.identified = true;
+    revealAll(s, it, 'identify');
     log(s, `${c.name} spends the rest focused on the ${it.name} and learns its properties${it.requiresAttunement ? ', including that it needs attunement' : ''}.`, 'good');
   } else if (f.action === 'unattune') {
     it.attuned = false;
@@ -444,7 +445,13 @@ function applyRestFocus(s: State, c: Character): void {
     else if (it.awaySince != null) log(s, `${c.name} can't attune to the ${it.name}: it has to be in hand.`, 'warn');
     else {
       it.attuned = true;
-      it.identified = true;
+      revealAll(s, it, 'attune');
+      const curses = (it.clues ?? []).filter((x) => x.kind === 'curse' && !x.known);
+      for (const x of curses) x.known = true;
+      if (curses.length) {
+        addFinding(s, it, 'attune', `Attuning reveals a curse: ${curses.map((x) => x.text).join('; ')}.`);
+        log(s, `As ${c.name} attunes to the ${it.name}, a curse makes itself known: ${curses.map((x) => x.text).join('; ')}.`, 'bad');
+      }
       status(s, c, 'attuned', `${c.name} attunes to the ${it.name} (${count + 1}/${MAX_ATTUNED}).`, 'good');
     }
   }
@@ -1588,7 +1595,7 @@ export const identifyBySpell = act((d, ctx, ownerId: string, itemId: string, cas
     }
   }
   advanceMut(d, ctx, IDENTIFY_MINUTES + (ritual ? RITUAL_EXTRA_MINUTES : 0), 'camp');
-  it.identified = true;
+  revealAll(d, it, 'identify');
   log(d, `${caster ? caster.name : 'A scroll'} casts Identify${ritual ? ' as a ritual' : ''} on the ${it.name}: its properties, charges and any attunement are revealed.`, 'good');
 });
 
@@ -2065,3 +2072,83 @@ function groomTheMounts(s: State): void {
   }
   if (tended.length) log(s, `${groom.name} feeds and waters the animals: ${tended.join(', ')}.`, tended.some((t) => t.includes('short')) ? 'warn' : 'info');
 }
+
+// ---------------------------------------------------------------- learning what magic items do
+
+function addFinding(s: State, it: MagicItem, method: StudyMethod, text: string): void {
+  it.findings = [{ id: uid(), stamp: stamp(s), method, text }, ...(it.findings ?? [])];
+}
+
+const itemLabel = (it: MagicItem) => (it.identified ? it.name : it.partyName?.trim() || 'the unknown item');
+
+/** Reveals every hidden fact except curses (Identify, or a Short Rest spent studying the item). */
+function revealAll(s: State, it: MagicItem, method: StudyMethod): void {
+  const before = itemLabel(it);
+  const revealed = (it.clues ?? []).filter((c) => !c.known && c.kind !== 'curse');
+  for (const c of revealed) c.known = true;
+  it.magicKnown = true;
+  it.identified = true;
+  addFinding(s, it, method, `Identified as ${it.name}.${revealed.length ? ` Learned: ${revealed.map((c) => c.text).join('; ')}.` : ''}`);
+  if (before !== it.name) log(s, `${before[0].toUpperCase()}${before.slice(1)} turns out to be ${it.name}.`, 'good');
+}
+
+/** Studying an unknown item: Detect Magic, an Arcana check, or experimenting with it. */
+export const studyItem = act((d, ctx, ownerId: string, itemId: string, method: 'detect' | 'arcana' | 'experiment', studierId: string | null, bonus: number) => {
+  const owner = charById(d, ownerId);
+  const it = owner?.items.find((x) => x.id === itemId);
+  if (!owner || !it) return;
+  const who = studierId ? actorById(d, studierId) : undefined;
+  const label = itemLabel(it);
+  if (method === 'detect') {
+    advanceMut(d, ctx, 1, 'camp');
+    it.magicKnown = true;
+    const txt = `${who ? `${who.name}'s ` : ''}Detect Magic shows ${label} has a magical aura${it.school ? ` of ${it.school}` : ''}.`;
+    addFinding(d, it, 'detect', txt);
+    log(d, txt, 'good');
+    return;
+  }
+  advanceMut(d, ctx, STUDY_MINUTES, 'camp');
+  const next = (it.clues ?? []).find((c) => !c.known && c.kind !== 'curse');
+  if (method === 'arcana') {
+    const dc = ARCANA_DC[it.rarity || 'unknown'];
+    const r = d20('normal', ctx.rng);
+    const total = r.value + bonus - 2 * (who?.exhaustion ?? 0);
+    if (total < dc) {
+      const txt = `${who?.name ?? 'Someone'} studies ${label}: Intelligence (Arcana) ${r.value} ${signed(bonus)} = ${total} against DC ${dc}. They can't make sense of it.`;
+      addFinding(d, it, 'arcana', txt);
+      log(d, txt, 'warn');
+      return;
+    }
+    if (!next) {
+      const txt = `${who?.name ?? 'Someone'} studies ${label} (Arcana ${total} against DC ${dc}) but learns nothing new.`;
+      addFinding(d, it, 'arcana', txt);
+      log(d, txt);
+      return;
+    }
+    next.known = true;
+    const txt = `${who?.name ?? 'Someone'} studies ${label} (Arcana ${total} against DC ${dc}) and works out: ${next.text}.`;
+    addFinding(d, it, 'arcana', txt);
+    log(d, txt, 'good');
+  } else {
+    if (!next) {
+      const txt = `${who?.name ?? 'Someone'} experiments with ${label} but discovers nothing new.`;
+      addFinding(d, it, 'experiment', txt);
+      log(d, txt);
+      return;
+    }
+    next.known = true;
+    const txt = `${who?.name ?? 'Someone'} experiments with ${label} and discovers: ${next.text}.`;
+    addFinding(d, it, 'experiment', txt);
+    log(d, txt, 'good');
+  }
+  if ((it.clues ?? []).every((c) => c.known || c.kind === 'curse') && (it.clues ?? []).length) revealAll(d, it, method);
+});
+
+/** The DM reveals or hides a single fact by hand. */
+export const setClueKnown = act((d, _ctx, ownerId: string, itemId: string, clueId: string, known: boolean) => {
+  const it = charById(d, ownerId)?.items.find((x) => x.id === itemId);
+  const c = it?.clues?.find((x) => x.id === clueId);
+  if (!it || !c) return;
+  c.known = known;
+  if (known) addFinding(d, it, 'dm', `Learned: ${c.text}.`);
+});
