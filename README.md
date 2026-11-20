@@ -1,5 +1,7 @@
 # Wayfarer's Ledger
 
+**Live app:** https://corrida-repos.github.io/dnd-side-app/
+
 A time, place and survival tracker for D&D 5.5e (the 2024 *Player's Handbook* and *Dungeon Master's Guide*). It runs in the browser, needs no server, and saves to local storage.
 
 ## What it tracks
@@ -16,6 +18,10 @@ A time, place and survival tracker for D&D 5.5e (the 2024 *Player's Handbook* an
 | **Morning and spells** | A daily checklist per character, and spell preparation using the 2024 prepared-spell tables. Clerics, Druids and Wizards can change any spell after a Long Rest. Paladins and Rangers swap one. Bards, Sorcerers and Warlocks change spells on level up. Always-prepared spells, ritual and concentration tags. |
 | **Downtime** | Crafting nonmagical items (10 GP per day, materials cost half), Spell Scrolls, Potions of Healing, magic items by rarity (consumables take half), and custom activities. Several crafters split the time. |
 | **Chronicle** | A searchable log of every roll and event. |
+
+## Deployment
+
+Every push to `main` runs the tests, builds the app and publishes it to GitHub Pages (`.github/workflows/deploy-pages.yml`). You can also start it by hand from the Actions tab. One-time setup: in the repository's **Settings → Pages**, set **Source** to **GitHub Actions**.
 
 ## Spell data from 5etools
 
