@@ -263,3 +263,65 @@ const fmtH = (h: number) => {
   const mm = Math.round((h - hh) * 60);
   return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
 };
+
+// ---------------------------------------------------------------- weather and damage (table rule)
+
+export type DamageType = 'Cold' | 'Fire' | 'Lightning' | 'Thunder' | 'Radiant' | 'Necrotic' | 'Poison';
+
+export interface Affinity {
+  type: DamageType;
+  /** +1: favored (+1 damage per die). -1: hindered (-1 per die, minimum 1 per die). */
+  dir: 1 | -1;
+  why: string;
+}
+
+/**
+ * Table rule: which damage types the weather favors or hinders right now. Only applies outdoors
+ * (the Underdark has its own). Opposite pulls on the same type cancel out.
+ */
+export function weatherDamageAffinities(args: { weather: Weather; tempNow: number; minutes: number; sheltered: boolean }): Affinity[] {
+  const { weather: w, tempNow, minutes, sheltered } = args;
+  const clim = CLIMATES[w.climate];
+  const raw: Affinity[] = [];
+  if (clim.noWeather) {
+    raw.push({ type: 'Necrotic', dir: 1, why: 'the lightless depths' });
+    raw.push({ type: 'Radiant', dir: -1, why: 'the lightless depths' });
+  } else if (!sheltered) {
+    const kind = precipKind(tempNow);
+    if (w.precip === 'heavy' && kind !== 'snow') {
+      raw.push({ type: 'Lightning', dir: 1, why: 'heavy rain' });
+      raw.push({ type: 'Fire', dir: -1, why: 'heavy rain' });
+      if (w.wind === 'strong') raw.push({ type: 'Thunder', dir: 1, why: 'a thunderstorm' });
+    }
+    if (w.precip !== 'none' && kind === 'snow') {
+      raw.push({ type: 'Cold', dir: 1, why: 'falling snow' });
+      if (w.precip === 'heavy') raw.push({ type: 'Fire', dir: -1, why: 'heavy snow' });
+    }
+    if (tempNow <= 0) {
+      raw.push({ type: 'Cold', dir: 1, why: 'extreme cold' });
+      raw.push({ type: 'Fire', dir: -1, why: 'extreme cold' });
+    }
+    if (tempNow >= 100) {
+      raw.push({ type: 'Fire', dir: 1, why: 'extreme heat' });
+      raw.push({ type: 'Cold', dir: -1, why: 'extreme heat' });
+    }
+    const light = lightAt(minutes, w.season);
+    if (light.phase === 'Day' && w.precip === 'none') raw.push({ type: 'Radiant', dir: 1, why: 'clear daylight' });
+    if (light.phase === 'Night') raw.push({ type: 'Necrotic', dir: 1, why: 'the dark of night' });
+    if (w.climate === 'swamp' && tempNow >= 75) raw.push({ type: 'Poison', dir: 1, why: 'humid swamp air' });
+  }
+  // Merge by type: sum the pulls, keep the reasons.
+  const byType = new Map<DamageType, { sum: number; whys: string[] }>();
+  for (const a of raw) {
+    const cur = byType.get(a.type) ?? { sum: 0, whys: [] };
+    cur.sum += a.dir;
+    if (!cur.whys.includes(a.why)) cur.whys.push(a.why);
+    byType.set(a.type, cur);
+  }
+  const out: Affinity[] = [];
+  for (const [type, v] of byType) {
+    if (v.sum === 0) continue;
+    out.push({ type, dir: v.sum > 0 ? 1 : -1, why: v.whys.join(', ') });
+  }
+  return out.sort((a, b) => b.dir - a.dir || a.type.localeCompare(b.type));
+}

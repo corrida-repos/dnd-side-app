@@ -94,9 +94,9 @@ export function newCharacter(partial: Partial<Character> = {}): Character {
 }
 
 export function createDefaultState(rng: Rng): State {
-  const calendar = structuredClone(CALENDARS.harptos);
-  const startYear = 1492;
-  const dayIndex = indexFromDate(calendar, startYear, 1492, 4, 1); // 1 Tarsakh
+  const calendar = structuredClone(CALENDARS.galifar);
+  const startYear = 998;
+  const dayIndex = indexFromDate(calendar, startYear, 998, 2, 1); // 1 Therendor, early spring
   const place = {
     name: 'Trade road outside town',
     climate: 'temperate' as const,
@@ -131,7 +131,7 @@ export function createDefaultState(rng: Rng): State {
     travel: { pace: 'normal', hoursToday: 0, milesToday: 0 },
     lastLongRestEnd: null,
     trackingStart: dayIndex * 1440 + 7 * 60,
-    settings: { autoRollSaves: true, climateAdjustedPrecip: false, fireWarmsCamp: true, doubleWaterInHeat: false, wildNeedsPurifying: true, sleepInArmorPenalty: false, rawFoodRisk: true, rawFoodDC: 10, coldNights: true, coldNightF: 32, sleepDeprivation: true, encounterOn: 0, exploreEncounterOn: 0, chargeCosts: true, moonOffset: 0, stressPerLongRest: 1, fearPerLongRest: 1 },
+    settings: { autoRollSaves: true, climateAdjustedPrecip: false, fireWarmsCamp: true, doubleWaterInHeat: false, wildNeedsPurifying: true, sleepInArmorPenalty: false, rawFoodRisk: true, rawFoodDC: 10, coldNights: true, coldNightF: 32, sleepDeprivation: true, encounterOn: 0, exploreEncounterOn: 0, chargeCosts: true, moonOffset: 0, stressPerLongRest: 1, fearPerLongRest: 1, weatherDamage: true },
     spellLibrary: [],
     bastions: [],
     watchOrder: [],

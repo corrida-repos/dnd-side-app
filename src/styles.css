@@ -833,3 +833,10 @@ td {
   background: radial-gradient(circle, #f5edd6 var(--lit), #3a342c calc(var(--lit) + 1%));
   border: 1px solid var(--border);
 }
+
+.affinities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: 2px 0;
+}

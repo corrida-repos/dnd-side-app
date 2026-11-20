@@ -192,6 +192,7 @@ function WeatherCard() {
 
 function EffectsCard() {
   const s = useGame();
+  const aff = E.currentAffinities(s);
   const uncovered = s.characters.filter((c) => c.exhaustion < 6 && !E.hasWarmCover(c)).map((c) => c.name);
   const effects = environmentEffects({
     weather: s.weather,
@@ -205,6 +206,21 @@ function EffectsCard() {
   return (
     <Card title="Conditions right now">
       <ul className="effects">
+        {aff.length > 0 && (
+          <li className="effect effect-info">
+            <b>Weather and damage (table rule)</b>
+            <span className="affinities">
+              {aff.map((a) => (
+                <Pill key={a.type} tone={a.dir > 0 ? 'good' : 'bad'} title={a.why}>
+                  {a.type} {a.dir > 0 ? '+1' : '−1'} per die
+                </Pill>
+              ))}
+            </span>
+            <span>
+              {aff.map((a) => `${a.type} ${a.dir > 0 ? 'favored' : 'hindered'} by ${a.why}`).join('; ')}. Favored damage deals +1 per damage die. Hindered damage deals −1 per die, minimum 1 per die.
+            </span>
+          </li>
+        )}
         {effects.map((e) => (
           <li key={e.id} className={`effect effect-${e.tone}`}>
             <b>{e.title}</b>

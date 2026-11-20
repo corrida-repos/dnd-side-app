@@ -131,3 +131,33 @@ describe('gear and bastion tables', () => {
     for (let r = 0; r < 100; r++) expect(rollBastionEvent(() => r / 100).event).toBeTruthy();
   });
 });
+
+import { weatherDamageAffinities } from './weather';
+
+describe('Eberron calendar', () => {
+  it('has 12 months of 28 days and built-in holidays', () => {
+    const c = CALENDARS.galifar;
+    expect(yearLength(c)).toBe(336);
+    expect(formatDate(c, 998, indexFromDate(c, 998, 998, 1, 20))).toBe('20 Olarune, 998 YK');
+    expect(c.holidays?.find((h) => h.name === 'Long Shadows')).toMatchObject({ monthIndex: 11, day: 26, days: 3 });
+    expect(c.months[0].moon).toBe('Zarantyr');
+  });
+});
+
+describe('weather and damage (table rule)', () => {
+  const base = rollWeather({ dayIndex: 0, season: 'summer', climate: 'temperate', altitudeFt: 0, climateAdjustedPrecip: false }, seq([face(1, 20)]));
+  const aff = (patch: Partial<typeof base>, tempNow: number, minutes: number, sheltered = false) =>
+    weatherDamageAffinities({ weather: { ...base, ...patch }, tempNow, minutes, sheltered }).map((a) => `${a.type}${a.dir > 0 ? '+' : '-'}`);
+
+  it('favors lightning and thunder in a storm and hinders fire', () => {
+    expect(aff({ precip: 'heavy', wind: 'strong' }, 60, 12 * 60)).toEqual(['Lightning+', 'Thunder+', 'Fire-']);
+  });
+  it('favors cold in snow and extreme cold, fire in extreme heat', () => {
+    expect(aff({ precip: 'heavy', wind: 'none' }, -5, 2 * 60)).toEqual(['Cold+', 'Necrotic+', 'Fire-']);
+    expect(aff({ precip: 'none', wind: 'none' }, 105, 14 * 60)).toEqual(['Fire+', 'Radiant+', 'Cold-']);
+  });
+  it('does nothing under shelter, and the Underdark has its own pull', () => {
+    expect(aff({ precip: 'heavy', wind: 'strong' }, 60, 12 * 60, true)).toEqual([]);
+    expect(aff({ climate: 'underdark' }, 55, 12 * 60)).toEqual(['Necrotic+', 'Radiant-']);
+  });
+});

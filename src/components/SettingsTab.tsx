@@ -91,6 +91,12 @@ function RulesCard() {
           <Num label="Stress removed per Long Rest" value={s.settings.stressPerLongRest} onChange={(v) => edit((d) => void (d.settings.stressPerLongRest = Math.max(0, Math.round(v))))} min={0} width={2} />
           <Num label="Fear removed per Long Rest" value={s.settings.fearPerLongRest} onChange={(v) => edit((d) => void (d.settings.fearPerLongRest = Math.max(0, Math.round(v))))} min={0} width={2} />
         </div>
+        <Toggle checked={s.settings.weatherDamage} onChange={(v) => set('weatherDamage', v)} label="Weather favors or hinders some damage types (table rule)" />
+        <Rule>
+          Outdoors: heavy rain favors Lightning and hinders Fire, and a thunderstorm also favors Thunder. Falling snow and extreme cold favor Cold and hinder Fire. Extreme heat favors Fire and hinders Cold. Clear
+          daylight favors Radiant, night favors Necrotic, and humid swamp air favors Poison. The Underdark favors Necrotic and hinders Radiant. Favored means +1 damage per damage die, hindered means −1 per die
+          (minimum 1).
+        </Rule>
         <Toggle checked={s.settings.climateAdjustedPrecip} onChange={(v) => set('climateAdjustedPrecip', v)} label="Adjust the precipitation roll for climate (deserts drier, jungles wetter)" />
         <Rule>When this is off, the plain DMG d20 table is used everywhere.</Rule>
         <Toggle checked={s.settings.doubleWaterInHeat} onChange={(v) => set('doubleWaterInHeat', v)} label="Double water needs on days of 100 °F or hotter (2014 rule)" />

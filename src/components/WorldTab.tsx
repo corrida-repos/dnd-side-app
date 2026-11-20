@@ -26,10 +26,13 @@ function SkyCard() {
   const [month, setMonth] = useState(0);
   const [day, setDay] = useState(1);
   const yearLen = s.calendar.months.reduce((a, m) => a + m.days, 0);
-  const upcoming = s.holidays
+  const builtIn = (s.calendar.holidays ?? []).map((h) => ({ id: `cal-${h.name}`, name: h.name, monthIndex: h.monthIndex, day: h.day, days: h.days ?? 1, builtIn: true }));
+  const upcoming = [...builtIn, ...s.holidays.map((h) => ({ ...h, days: 1, builtIn: false }))]
     .map((h) => {
       const start = s.calendar.months.slice(0, h.monthIndex).reduce((a, m) => a + m.days, 0) + h.day - 1;
-      const inDays = (start - today.dayOfYear + yearLen) % yearLen;
+      const sinceStart = (today.dayOfYear - start + yearLen) % yearLen;
+      const ongoing = sinceStart < h.days;
+      const inDays = ongoing ? 0 : (start - today.dayOfYear + yearLen) % yearLen;
       return { ...h, inDays };
     })
     .sort((a, b) => a.inDays - b.inDays);
@@ -40,6 +43,11 @@ function SkyCard() {
         <span className="moon" style={{ ['--lit' as string]: `${Math.round((1 - Math.abs(moon.fraction - 0.5) * 2) * 100)}%` }} aria-hidden /> <b>{moon.name}</b>
         <span className="muted small"> · {moon.daysToFull === 0 ? 'full tonight' : `full moon in ${moon.daysToFull} day(s)`}</span>
       </p>
+      {today.month.moon && (
+        <p className="small">
+          Eberron has twelve moons. This month belongs to <b>{today.month.moon}</b>. The phase above follows a single moon, so set the offset to match the one you care about.
+        </p>
+      )}
       <p className="small">
         Season: <b>{today.month.season}</b>
         {todays.length > 0 && (
@@ -58,11 +66,16 @@ function SkyCard() {
         {upcoming.map((h) => (
           <li key={h.id} className="armor-row">
             <span>
-              <b>{h.name}</b> · {h.day} {s.calendar.months[h.monthIndex]?.name} · {h.inDays === 0 ? 'today' : `in ${h.inDays} day(s)`}
+              <b>{h.name}</b> · {h.day}
+              {h.days > 1 ? `–${h.day + h.days - 1}` : ''} {s.calendar.months[h.monthIndex]?.name} · {h.inDays === 0 ? 'today' : `in ${h.inDays} day(s)`}
             </span>
-            <button className="ghost tiny" aria-label={`Remove ${h.name}`} onClick={() => edit((d) => void (d.holidays = d.holidays.filter((x) => x.id !== h.id)))}>
-              ✕
-            </button>
+            {h.builtIn ? (
+              <Pill tone="muted">calendar</Pill>
+            ) : (
+              <button className="ghost tiny" aria-label={`Remove ${h.name}`} onClick={() => edit((d) => void (d.holidays = d.holidays.filter((x) => x.id !== h.id)))}>
+                ✕
+              </button>
+            )}
           </li>
         ))}
       </ul>

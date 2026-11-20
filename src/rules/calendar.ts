@@ -5,6 +5,16 @@ export interface Month {
   days: number;
   season: Season;
   festival?: boolean;
+  /** Eberron: the moon associated with this month. */
+  moon?: string;
+}
+
+export interface CalendarHoliday {
+  name: string;
+  monthIndex: number;
+  day: number;
+  /** Number of days it lasts (default 1). */
+  days?: number;
 }
 
 export interface Calendar {
@@ -12,11 +22,49 @@ export interface Calendar {
   name: string;
   era: string;
   months: Month[];
+  /** Holidays that come with the calendar. */
+  holidays?: CalendarHoliday[];
 }
 
 const m = (name: string, days: number, season: Season, festival = false): Month => ({ name, days, season, festival });
 
+const gm = (name: string, season: Season): Month => ({ name, days: 28, season, moon: name });
+
 export const CALENDARS: Record<string, Calendar> = {
+  galifar: {
+    id: 'galifar',
+    name: 'Calendar of Galifar (Eberron)',
+    era: 'YK',
+    months: [
+      gm('Zarantyr', 'winter'),
+      gm('Olarune', 'winter'),
+      gm('Therendor', 'spring'),
+      gm('Eyre', 'spring'),
+      gm('Dravago', 'spring'),
+      gm('Nymm', 'summer'),
+      gm('Lharvion', 'summer'),
+      gm('Barrakas', 'summer'),
+      gm('Rhaan', 'autumn'),
+      gm('Sypheros', 'autumn'),
+      gm('Aryth', 'autumn'),
+      gm('Vult', 'winter'),
+    ],
+    holidays: [
+      { name: 'Crystalfall', monthIndex: 1, day: 9 },
+      { name: 'The Day of Mourning', monthIndex: 1, day: 20 },
+      { name: "Sun's Blessing", monthIndex: 2, day: 15 },
+      { name: "Aureon's Crown", monthIndex: 4, day: 26 },
+      { name: 'Brightblade', monthIndex: 5, day: 12 },
+      { name: 'The Race of Eight Winds', monthIndex: 6, day: 23 },
+      { name: 'The Hunt', monthIndex: 7, day: 4 },
+      { name: "Fathen's Fall", monthIndex: 7, day: 25 },
+      { name: "Boldrei's Feast", monthIndex: 8, day: 9 },
+      { name: 'The Ascension', monthIndex: 9, day: 1 },
+      { name: 'Wildnight', monthIndex: 9, day: 18, days: 2 },
+      { name: 'Thronehold', monthIndex: 10, day: 11 },
+      { name: 'Long Shadows', monthIndex: 11, day: 26, days: 3 },
+    ],
+  },
   harptos: {
     id: 'harptos',
     name: 'Calendar of Harptos (Forgotten Realms)',

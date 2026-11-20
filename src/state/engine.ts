@@ -7,7 +7,7 @@ import { divinationFailChance, SPELLBOOK_REPLACE } from '../rules/longterm';
 import { BUTCHER_DC, BUTCHER_MINUTES, isEdible, MEAT_LB, STRANGE_TYPES, yieldsHide, type Creature } from '../rules/hunting';
 import { FEED_GP_PER_DAY, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset } from '../rules/money';
 import { abilityMod, ATTUNE_AWAY_MINUTES, IDENTIFY_MINUTES, MAX_ATTUNED, RITUAL_EXTRA_MINUTES, WATCH_HOURS } from '../rules/upkeep';
-import { fireThreat, rollWeather, temperatureAt, CLIMATES } from '../rules/weather';
+import { fireThreat, rollWeather, temperatureAt, CLIMATES, weatherDamageAffinities, type Affinity } from '../rules/weather';
 import {
   exhaustionSummary,
   foodNeedLb,
@@ -1579,3 +1579,10 @@ export const replaceSpellbook = act((d, ctx, charId: string) => {
   payGold(d, [c.id], levels * SPELLBOOK_REPLACE.gpPerLevel, 'a replacement spellbook');
   log(d, `${c.name} rewrites their prepared spells into a new spellbook (${levels} hours).`, 'good');
 });
+
+/** Table rule: damage types the weather favors or hinders right now, or none when the rule is off. */
+export function currentAffinities(s: State): Affinity[] {
+  if (!s.settings.weatherDamage) return [];
+  const indoors = s.place.shelter === 'building' || s.place.shelter === 'cave' || s.effects.some((e) => e.shelter);
+  return weatherDamageAffinities({ weather: s.weather, tempNow: tempNow(s), minutes: s.minutes, sheltered: indoors });
+}

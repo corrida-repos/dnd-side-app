@@ -359,6 +359,8 @@ export interface Settings {
   stressPerLongRest: number;
   /** Fear points removed by each Long Rest (0 turns it off). */
   fearPerLongRest: number;
+  /** Table rule: weather favors or hinders certain damage types (+1 or -1 per damage die). */
+  weatherDamage: boolean;
 }
 
 export interface Travel {
