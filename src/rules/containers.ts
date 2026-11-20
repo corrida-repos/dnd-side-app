@@ -33,16 +33,17 @@ export function detectContainer(name: string): ContainerInfo | null {
 }
 
 /** Table defaults for vehicle storage (the PHB lists ship cargo in tons; land vehicles depend on what pulls them). */
-export const VEHICLES: { name: string; capacityLb: number; note: string }[] = [
+/** speedMph is set for vessels (PHB); land vehicles move at the travel pace of whatever pulls them. */
+export const VEHICLES: { name: string; capacityLb: number; note: string; speedMph?: number }[] = [
   { name: 'Cart', capacityLb: 1500, note: 'Table default; depends on the animal pulling it' },
   { name: 'Wagon', capacityLb: 3000, note: 'Table default; depends on the team pulling it' },
   { name: 'Sled', capacityLb: 1000, note: 'Table default' },
   { name: 'Carriage', capacityLb: 500, note: 'Table default; mostly passengers' },
-  { name: 'Rowboat', capacityLb: 300, note: 'Table default; no cargo hold' },
-  { name: 'Keelboat', capacityLb: 1000, note: 'PHB: ½ ton of cargo' },
-  { name: 'Airship', capacityLb: 2000, note: 'PHB: 1 ton of cargo' },
-  { name: 'Longship', capacityLb: 20000, note: 'PHB: 10 tons of cargo' },
-  { name: 'Sailing Ship', capacityLb: 200000, note: 'PHB: 100 tons of cargo' },
-  { name: 'Galley', capacityLb: 300000, note: 'PHB: 150 tons of cargo' },
-  { name: 'Warship', capacityLb: 400000, note: 'PHB: 200 tons of cargo' },
+  { name: 'Rowboat', speedMph: 1.5, capacityLb: 300, note: 'Table default; no cargo hold' },
+  { name: 'Keelboat', speedMph: 1, capacityLb: 1000, note: 'PHB: ½ ton of cargo' },
+  { name: 'Airship', speedMph: 8, capacityLb: 2000, note: 'PHB: 1 ton of cargo' },
+  { name: 'Longship', speedMph: 3, capacityLb: 20000, note: 'PHB: 10 tons of cargo' },
+  { name: 'Sailing Ship', speedMph: 2, capacityLb: 200000, note: 'PHB: 100 tons of cargo' },
+  { name: 'Galley', speedMph: 4, capacityLb: 300000, note: 'PHB: 150 tons of cargo' },
+  { name: 'Warship', speedMph: 2.5, capacityLb: 400000, note: 'PHB: 200 tons of cargo' },
 ];

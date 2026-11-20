@@ -20,6 +20,7 @@ export function Overview() {
       <PendingCard />
       <PartyStatusCard />
       <TravelCard />
+      <JourneyCard />
       <PlaceCard />
       <RecentLog />
     </div>
@@ -467,6 +468,11 @@ function TravelCard() {
   const [foragers, setForagers] = useState<string[]>([]);
   const [navigator, setNavigator] = useState<string>(s.travel.navigatorId ?? s.characters.filter((c) => c.kind !== 'mount').sort((a, b) => b.survival - a.survival)[0]?.id ?? '');
   const nav = E.currentNavigationDC(s);
+  const [gallop, setGallop] = useState(false);
+  const vessels = s.stashes.filter((x) => x.speedMph);
+  const [vesselId, setVesselId] = useState('');
+  const [seeker, setSeeker] = useState(s.characters[0]?.id ?? '');
+  const [seekBonus, setSeekBonus] = useState(0);
   const p = PACES[pace];
   const miles = hours * p.mph * (difficult ? 0.5 : 1);
   const counted = s.travel.hoursToday + hours * (s.place.altitudeFt >= 10000 ? 2 : 1);
@@ -485,6 +491,17 @@ function TravelCard() {
           ]}
         />
         <Toggle checked={difficult} onChange={setDifficult} label="Difficult Terrain (half speed)" />
+        {s.characters.some((c) => c.kind === 'mount') && (
+          <Toggle checked={gallop} onChange={setGallop} label={s.travel.gallopUsed ? 'Gallop (mounts need a rest first)' : 'Gallop: double distance for 1 hour'} />
+        )}
+        {vessels.length > 0 && (
+          <Select
+            label="Aboard"
+            value={vesselId}
+            onChange={setVesselId}
+            options={[{ value: '', label: 'On foot or mounted' }, ...vessels.map((v) => ({ value: v.id, label: `${v.name} (${v.speedMph} mph)` }))]}
+          />
+        )}
       </div>
       <p className="small">
         {p.note}. About <b>{+miles.toFixed(1)} miles</b>. {s.travel.hoursToday} travel hour(s) since the last Long Rest
@@ -540,13 +557,115 @@ function TravelCard() {
         </div>
       </div>
       <div className="btn-row">
-        <button className="primary" onClick={() => dispatch((st, c) => E.travel(st, c, { hours, pace, difficult, foragerIds: foragers, navigatorId: navigator || null }))}>
+        <button className="primary" onClick={() => dispatch((st, c) => E.travel(st, c, { hours, pace, difficult, foragerIds: foragers, navigatorId: navigator || null, gallop, vesselId: vesselId || null }))}>
           Travel {hours} h
         </button>
         <button className="ghost" onClick={() => edit((d) => ((d.travel.hoursToday = 0), (d.travel.milesToday = 0)))}>
           Reset travel day
         </button>
       </div>
+      <div className="btn-row tight">
+        <span className="small">Search or track (DC {TERRAIN[s.place.terrain].searchDC}):</span>
+        <Select value={seeker} onChange={setSeeker} options={s.characters.filter((c) => c.kind !== 'mount').map((c) => ({ value: c.id, label: c.name }))} />
+        <Num value={seekBonus} onChange={(v) => setSeekBonus(Math.round(v))} width={2} />
+        <button className="small" onClick={() => dispatch((st, cx) => E.searchCheck(st, cx, seeker, 'search', seekBonus))}>
+          Search (Perception)
+        </button>
+        <button className="small" onClick={() => dispatch((st, cx) => E.searchCheck(st, cx, seeker, 'track', seekBonus))}>
+          Track (Survival)
+        </button>
+      </div>
+    </Card>
+  );
+}
+
+function JourneyCard() {
+  const s = useGame();
+  const [name, setName] = useState('');
+  const [miles, setMiles] = useState(24);
+  const [terrain, setTerrain] = useState<TerrainType>(s.place.terrain);
+  const [onRoute, setOnRoute] = useState(true);
+  const [goodRoad, setGoodRoad] = useState(true);
+  const [difficult, setDifficult] = useState(false);
+  const [pace, setPace] = useState<Pace>('normal');
+  const [camp, setCamp] = useState(true);
+  const [vesselId, setVesselId] = useState('');
+  const vessels = s.stashes.filter((x) => x.speedMph);
+  const left = s.journey.filter((x) => !x.done);
+  return (
+    <Card title="Journey">
+      {s.journey.length === 0 && <p className="muted small">Plan a trip in stages: each has a distance and a terrain, and runs day by day until it&apos;s done.</p>}
+      <ul className="plain">
+        {s.journey.map((st) => (
+          <li key={st.id} className="facility">
+            <div className="armor-row">
+              <span>
+                <b>{st.name}</b>{' '}
+                <span className="muted small">
+                  {st.miles} mi · {TERRAIN[st.terrain].label}
+                  {st.onRoute ? ', on a road or river' : ''}
+                  {st.goodRoad ? ', good road' : ''}
+                  {st.difficult ? ', difficult' : ''}
+                </span>{' '}
+                {st.done ? <Pill tone="good">Done</Pill> : null}
+              </span>
+              <span className="btn-row tight">
+                {!st.done && (
+                  <button className="small primary" onClick={() => dispatch((st2, cx) => E.runStage(st2, cx, st.id, { pace, foragerIds: [], navigatorId: s.travel.navigatorId, vesselId: vesselId || null }, camp))}>
+                    Run stage
+                  </button>
+                )}
+                <button className="ghost tiny" aria-label={`Remove ${st.name}`} onClick={() => edit((d) => void (d.journey = d.journey.filter((x) => x.id !== st.id)))}>
+                  ✕
+                </button>
+              </span>
+            </div>
+            {!st.done && st.milesDone > 0 && (
+              <div className="small">
+                <Meter value={st.milesDone} max={st.miles} tone="good" /> {st.milesDone}/{st.miles} miles
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+      {left.length > 0 && (
+        <div className="form-row">
+          <Select
+            label="Pace"
+            value={pace}
+            onChange={setPace}
+            options={[
+              { value: 'slow', label: 'Slow' },
+              { value: 'normal', label: 'Normal' },
+              { value: 'fast', label: 'Fast' },
+            ]}
+          />
+          {vessels.length > 0 && <Select label="Aboard" value={vesselId} onChange={setVesselId} options={[{ value: '', label: 'On foot or mounted' }, ...vessels.map((v) => ({ value: v.id, label: v.name }))]} />}
+          <Toggle checked={camp} onChange={setCamp} label="Camp each night (eat, drink, Long Rest)" />
+        </div>
+      )}
+      <details>
+        <summary>Add a stage</summary>
+        <div className="form-row">
+          <Text label="Stage" value={name} onChange={setName} placeholder="e.g. Through the Mournland edge" />
+          <Num label="Miles" value={miles} onChange={(v) => setMiles(Math.max(1, Math.round(v)))} min={1} width={4} />
+          <Select label="Terrain" value={terrain} onChange={setTerrain} options={(Object.keys(TERRAIN) as TerrainType[]).map((k) => ({ value: k, label: TERRAIN[k].label }))} />
+        </div>
+        <div className="chips">
+          <Toggle checked={onRoute} onChange={setOnRoute} label="On a road, river or landmark" />
+          <Toggle checked={goodRoad} onChange={setGoodRoad} label="Good road" />
+          <Toggle checked={difficult} onChange={setDifficult} label="Difficult Terrain" />
+        </div>
+        <button
+          onClick={() => {
+            edit((d) => void d.journey.push({ id: Math.random().toString(36).slice(2), name: name.trim() || `Stage ${d.journey.length + 1}`, miles, terrain, onRoute, goodRoad, difficult, milesDone: 0, done: false, notes: '' }));
+            setName('');
+          }}
+        >
+          Add stage
+        </button>
+      </details>
+      <Rule>Each day of a stage the party travels up to 8 hours (vessels sail around the clock), with one navigation check, then camps if you choose. Food and water are used each day, and the weather, hazards and Exhaustion all apply.</Rule>
     </Card>
   );
 }

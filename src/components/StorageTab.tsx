@@ -51,12 +51,16 @@ function NewStash() {
         <Text label="Where" value={location} onChange={setLocation} placeholder="e.g. Sharn, Middle Dura" />
         <Num label="Capacity (lb, 0 = no limit)" value={cap ?? (kind === 'vehicle' ? v.capacityLb : 0)} onChange={(x) => setCap(Math.max(0, Math.round(x)))} min={0} width={7} />
       </div>
-      {kind === 'vehicle' && <p className="small muted">{v.note}.</p>}
+      {kind === 'vehicle' && (
+        <p className="small muted">
+          {v.note}.{v.speedMph ? ` Speed ${v.speedMph} mph: travel aboard it from the Travel card or a journey stage.` : ''}
+        </p>
+      )}
       <button
         className="primary"
         onClick={() => {
           const capacity = cap ?? (kind === 'vehicle' ? v.capacityLb : 0);
-          dispatch((st, cx) => E.createStash(st, cx, name.trim() || (kind === 'vehicle' ? vehicle : kind === 'bank' ? 'Vault' : 'Stash'), kind, location.trim(), capacity > 0 ? capacity : null));
+          dispatch((st, cx) => E.createStash(st, cx, name.trim() || (kind === 'vehicle' ? vehicle : kind === 'bank' ? 'Vault' : 'Stash'), kind, location.trim(), capacity > 0 ? capacity : null, kind === 'vehicle' ? v.speedMph : undefined));
           setName('');
           setLocation('');
           setCap(null);

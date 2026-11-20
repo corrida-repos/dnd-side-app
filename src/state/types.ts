@@ -120,6 +120,8 @@ export interface Stash {
   id: string;
   name: string;
   kind: 'stash' | 'vehicle' | 'bank';
+  /** Vessel speed in mph (ships and airships), if this vehicle sails. */
+  speedMph?: number;
   /** Where it is in the world. */
   location: string;
   capacityLb: number | null;
@@ -265,6 +267,8 @@ export interface Character {
   coldWeatherGear: boolean;
   /** Naturally adapted to icy water: automatic success against frigid water. */
   coldWaterAdapted: boolean;
+  /** Has a Swim Speed: unaffected by deep water. */
+  swimSpeed: boolean;
   /** PHB: while in a Bedroll you automatically succeed on saves against extreme cold. */
   bedroll: boolean;
   /** PHB: while wrapped in a Blanket you have Advantage on saves against extreme cold. */
@@ -517,6 +521,21 @@ export interface Travel {
   lostRecheckIn: number;
   milesOffCourse: number;
   navigatorId: string | null;
+  /** Mounts can gallop (double distance for 1 hour) until they get a Short or Long Rest. */
+  gallopUsed: boolean;
+}
+
+export interface JourneyStage {
+  id: string;
+  name: string;
+  miles: number;
+  terrain: TerrainType;
+  onRoute: boolean;
+  goodRoad: boolean;
+  difficult: boolean;
+  milesDone: number;
+  done: boolean;
+  notes: string;
 }
 
 export interface State {
@@ -557,4 +576,5 @@ export interface State {
   statusLog: StatusEntry[];
   /** Stashes, bank vaults and vehicles holding the party's things. */
   stashes: Stash[];
+  journey: JourneyStage[];
 }

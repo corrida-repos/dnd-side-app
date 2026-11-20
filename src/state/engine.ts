@@ -441,7 +441,7 @@ function restoreAfterRest(s: State, ctx: Ctx, c: Character, kind: 'short' | 'lon
   for (const r of c.resources) {
     const before = r.current;
     if (kind === 'long' && r.recharge !== 'manual' && r.recharge !== 'dawn') r.current = r.max;
-    else if (kind === 'short' && r.recharge === 'short') r.current = r.max;
+    else if (kind === 'short' && (r.recharge === 'short' || (c.className === 'Bard' && c.level >= 5 && /bardic inspiration/i.test(r.name)))) r.current = r.max; // Font of Inspiration
     else if (kind === 'short' && r.recharge === 'shortOne') r.current = Math.min(r.max, r.current + 1);
     if (r.current > before) got.push(`${r.name} ${r.current}/${r.max}`);
   }
@@ -687,6 +687,7 @@ export const longRest = act((d, ctx, force = false) => {
 /** Everything that happens when a Long Rest finishes. */
 function completeLongRest(d: State, ctx: Ctx, watched: Record<string, number>): void {
   d.lastLongRestEnd = absNow(d);
+  d.travel.gallopUsed = false;
   d.travel.hoursToday = 0;
   d.travel.milesToday = 0;
   for (const c of d.characters) {
@@ -855,6 +856,7 @@ export const interruptedRest = act((d, ctx, o: InterruptOpts) => {
 
 /** Short Rest benefits: resources, rest focus (attuning, identifying), Chef. Requires at least 1 HP. */
 function finishShortRest(d: State, ctx: Ctx): void {
+  d.travel.gallopUsed = false;
   for (const c of d.characters) {
     if (!alive(c)) continue;
     if (c.hp <= 0) {
@@ -864,6 +866,11 @@ function finishShortRest(d: State, ctx: Ctx): void {
     applyRestFocus(d, c);
     const got = restoreAfterRest(d, ctx, c, 'short');
     if (got.length) log(d, `${c.name} recovers: ${got.join(', ')}.`, 'good');
+    // Ranger Tireless (level 10): a Short Rest removes 1 Exhaustion level.
+    if (c.className === 'Ranger' && c.level >= 10 && c.exhaustion > 0) {
+      const gone = recoverExhaustion(c);
+      if (gone) status(d, c, 'exhaustionEases', `${c.name}'s Tireless feature removes 1 Exhaustion level (${EXHAUSTION_CAUSE_LABEL[gone]}).`, 'good');
+    }
   }
 }
 
@@ -876,6 +883,10 @@ export interface TravelOpts {
   foragerIds: string[];
   /** Who finds the way when the party leaves the road. */
   navigatorId?: string | null;
+  /** Mounted party gallops: double distance for the first hour. */
+  gallop?: boolean;
+  /** Sailing or flying aboard a vessel from the Storage tab: its speed, no pace, no forced march. */
+  vesselId?: string | null;
 }
 
 /** The navigation DC right now, or null when following a road, river or coast. */
@@ -896,7 +907,11 @@ function navigate(s: State, ctx: Ctx, nav: Character, pace: Pace): boolean | nul
   return ok;
 }
 
-export const travel = act((d, ctx, o: TravelOpts) => {
+export const travel = act((d, ctx, o: TravelOpts) => travelMut(d, ctx, o));
+
+function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
+  const vessel = o.vesselId ? d.stashes.find((x) => x.id === o.vesselId && x.speedMph) : undefined;
+  if (vessel) return sail(d, ctx, vessel, o);
   const allowed = clampPace(o.pace, d.place.terrain, d.place.goodRoad);
   if (allowed !== o.pace) {
     log(d, `${TERRAIN[d.place.terrain].label} terrain${d.place.goodRoad ? ', even with a good road,' : ''} only allows a ${allowed} pace.`, 'warn');
@@ -919,10 +934,22 @@ export const travel = act((d, ctx, o: TravelOpts) => {
     d.travel.lost = true;
     d.travel.lostRecheckIn = die(LOST_RECHECK_DIE, ctx.rng);
   }
+  const mounts = d.characters.filter((c) => c.kind === 'mount' && alive(c)).length;
+  const riders = d.characters.filter((c) => c.kind !== 'mount' && alive(c)).length;
+  let gallop = !!o.gallop;
+  if (gallop && (mounts < riders || d.travel.gallopUsed)) {
+    log(d, mounts < riders ? 'Not everyone has a mount, so the party can’t gallop.' : 'The mounts need a Short or Long Rest before they can gallop again.', 'warn');
+    gallop = false;
+  }
   for (let i = 0; i < o.hours; i++) {
     advanceMut(d, ctx, 60, 'travel');
     d.travel.hoursToday += altitude ? 2 : 1;
-    const step = p.mph * (o.difficult ? 0.5 : 1);
+    const burst = gallop && i === 0 ? 2 : 1;
+    if (burst === 2) {
+      d.travel.gallopUsed = true;
+      log(d, 'The mounts gallop for an hour, covering twice the distance.');
+    }
+    const step = p.mph * (o.difficult ? 0.5 : 1) * burst;
     miles += step;
     if (d.travel.lost) {
       offCourse += step;
@@ -951,6 +978,58 @@ export const travel = act((d, ctx, o: TravelOpts) => {
   for (const id of o.foragerIds) {
     const c = charById(d, id);
     if (c) doForage(d, ctx, c, o.pace, stageDays);
+  }
+  return d.travel.lost ? 0 : miles;
+}
+
+/** Travel aboard a vessel: its own speed, no travel pace, and no forced march (the crew works in shifts). */
+function sail(d: State, ctx: Ctx, v: Stash, o: TravelOpts): number {
+  const mph = v.speedMph ?? 1;
+  log(d, `Aboard the ${v.name}, the party travels for ${o.hours} hour(s) at ${mph} mph.`);
+  advanceMut(d, ctx, o.hours * 60, 'camp');
+  const miles = Math.round(mph * o.hours * 10) / 10;
+  d.travel.milesToday += miles;
+  log(d, `The ${v.name} covers ${miles} miles.`);
+  return miles;
+}
+
+/** Search or track: Wisdom (Perception) or Wisdom (Survival) against the terrain's search DC. */
+export const searchCheck = act((d, ctx, charId: string, what: 'search' | 'track', bonus: number) => {
+  const c = actorById(d, charId);
+  if (!c) return;
+  const dc = TERRAIN[d.place.terrain].searchDC;
+  const r = d20('normal', ctx.rng);
+  const total = r.value + bonus - 2 * c.exhaustion;
+  log(d, `${c.name} ${what === 'track' ? 'looks for tracks: Wisdom (Survival)' : 'searches: Wisdom (Perception)'} ${r.value} ${signed(bonus - 2 * c.exhaustion)} = ${total} against DC ${dc} (${TERRAIN[d.place.terrain].label}). ${total >= dc ? 'Found!' : 'Nothing.'}`, total >= dc ? 'good' : 'warn');
+});
+
+/** Runs a planned journey stage day by day: travel up to 8 hours, then (optionally) eat, drink and Long Rest overnight. */
+export const runStage = act((d, ctx, stageId: string, o: Omit<TravelOpts, 'hours' | 'difficult'>, camp: boolean) => {
+  // Look the stage up afresh each day: resting swaps in a new copy of the state.
+  const stage = () => d.journey.find((x) => x.id === stageId);
+  const first = stage();
+  if (!first || first.done) return;
+  Object.assign(d.place, { terrain: first.terrain, onRoute: first.onRoute, goodRoad: first.goodRoad });
+  log(d, `Journey stage: ${first.name} (${first.miles - first.milesDone} miles to go, ${TERRAIN[first.terrain].label}).`);
+  for (let day = 0; day < 60 && stage()!.milesDone < stage()!.miles; day++) {
+    const st = stage()!;
+    const vessel = o.vesselId ? d.stashes.find((x) => x.id === o.vesselId && x.speedMph) : undefined;
+    const pace = clampPace(o.pace, st.terrain, st.goodRoad);
+    const mph = vessel?.speedMph ?? PACES[pace].mph * (st.difficult ? 0.5 : 1);
+    const hours = Math.max(1, Math.min(vessel ? 24 : 8, Math.ceil((st.miles - st.milesDone) / mph)));
+    const covered = travelMut(d, ctx, { ...o, pace, hours, difficult: st.difficult });
+    st.milesDone = Math.min(st.miles, Math.round((st.milesDone + covered) * 10) / 10);
+    if (st.milesDone >= st.miles || !camp) break;
+    const eaten = partyEat(d, ctx, 'topup');
+    Object.assign(d, partyDrink(eaten, ctx, 'topup'));
+    if (d.minutes % MIN_PER_DAY < 22 * 60) advanceMut(d, ctx, 22 * 60 - (d.minutes % MIN_PER_DAY), 'camp');
+    Object.assign(d, longRest(d, ctx, false));
+    if (d.minutes % MIN_PER_DAY < 7 * 60) advanceMut(d, ctx, 7 * 60 - (d.minutes % MIN_PER_DAY), 'camp');
+  }
+  const done = stage()!;
+  if (done.milesDone >= done.miles) {
+    done.done = true;
+    log(d, `Stage complete: ${done.name}.`, 'good');
   }
 });
 
@@ -2335,8 +2414,8 @@ export const moveCoins = act((d, _ctx, from: Holder, to: Holder, denom: Denom, c
   log(d, `${n} ${denom} moved from ${a.name} to ${b.name}.`);
 });
 
-export const createStash = act((d, _ctx, name: string, kind: Stash['kind'], location: string, capacityLb: number | null) => {
-  d.stashes.push({ id: uid(), name, kind, location, capacityLb, items: [], purse: emptyPurse(), notes: '' });
+export const createStash = act((d, _ctx, name: string, kind: Stash['kind'], location: string, capacityLb: number | null, speedMph?: number) => {
+  d.stashes.push({ id: uid(), name, kind, location, capacityLb, items: [], purse: emptyPurse(), notes: '', speedMph });
   log(d, `New ${kind === 'vehicle' ? 'vehicle' : kind === 'bank' ? 'bank vault' : 'stash'}: ${name}${location ? `, at ${location}` : ''}.`);
 });
 

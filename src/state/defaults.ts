@@ -71,6 +71,7 @@ export function newCharacter(partial: Partial<Character> = {}): Character {
     fireResist: 'none',
     coldWeatherGear: false,
     coldWaterAdapted: false,
+    swimSpeed: false,
     bedroll: true,
     blanket: false,
     nightChill: null,
@@ -143,7 +144,7 @@ export function createDefaultState(rng: Rng): State {
     pending: [],
     projects: [],
     log: [],
-    travel: { pace: 'normal', hoursToday: 0, milesToday: 0, lost: false, lostRecheckIn: 0, milesOffCourse: 0, navigatorId: null },
+    travel: { pace: 'normal', hoursToday: 0, milesToday: 0, lost: false, lostRecheckIn: 0, milesOffCourse: 0, navigatorId: null, gallopUsed: false },
     lastLongRestEnd: null,
     trackingStart: dayIndex * 1440 + 7 * 60,
     settings: { autoRollSaves: true, climateAdjustedPrecip: false, fireWarmsCamp: true, doubleWaterInHeat: false, wildNeedsPurifying: true, sleepInArmorPenalty: false, rawFoodRisk: true, rawFoodDC: 10, coldNights: true, coldNightF: 32, sleepDeprivation: true, encounterOn: 0, exploreEncounterOn: 0, chargeCosts: true, moonOffset: 0, stressPerLongRest: 1, fearPerLongRest: 1, weatherDamage: true, variantEncumbrance: false, coldGear2014: false, heavyClothing2014: false, extraCraftHelpers: false, lifestylePeriod: 'day', coinWeight: true, moneychangerFee: 0, noTimepiece: false, poorVisibilityNav: true },
@@ -160,6 +161,7 @@ export function createDefaultState(rng: Rng): State {
     bestiary: [],
     statusLog: [],
     stashes: [],
+    journey: [],
   };
   const ids = state.characters.map((c) => c.id);
   state.watchPlan = { count: 4, slots: autoAssign(ids, 4, 1, Object.fromEntries(state.characters.map((c) => [c.id, watchCapacity(4, c.trance)]))) };

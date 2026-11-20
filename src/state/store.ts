@@ -45,6 +45,7 @@ function migrate(raw: unknown): State | null {
     bestiary: parsed.bestiary ?? [],
     statusLog: parsed.statusLog ?? [],
     stashes: parsed.stashes ?? [],
+    journey: parsed.journey ?? [],
     trackingStart: parsed.trackingStart ?? (parsed.dayIndex ?? base.dayIndex) * 1440 + (parsed.minutes ?? 0),
   } as State;
   // Characters saved by older versions pick up any newly added fields.
