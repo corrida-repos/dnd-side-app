@@ -8,6 +8,7 @@ import { formatClock, formatDuration } from '../rules/calendar';
 import { Card, Meter, Num, Pill, Select, Text, Toggle, Rule } from './common';
 import type { Character, InventoryItem, MagicItem, Resource } from '../state/types';
 import { LOAD_LABEL, RATION_WEIGHT } from '../rules/encumbrance';
+import { PartyKnowledgeCard, PlayerItemView } from './ItemKnowledge';
 import { ARCANA_DC, CLUE_KIND_LABEL, SCHOOLS_OF_MAGIC, STUDY_LABEL, STUDY_MINUTES, type ClueKind } from '../rules/identify';
 import { RARITY_LABEL, type Rarity } from '../rules/crafting';
 
@@ -22,6 +23,7 @@ export function GearTab() {
   return (
     <div className="grid wide">
       <MysteryOverview />
+      <PartyKnowledgeCard />
       {s.characters.map((c) => (
         <Card key={c.id} title={`${c.name} · ${c.className} ${c.level}`}>
           <HpBlock c={c} />
@@ -70,6 +72,7 @@ function MysteryOverview() {
 
 function KnowledgePanel({ c, it }: { c: Character; it: MagicItem }) {
   const s = useGame();
+  const [asPlayers, setAsPlayers] = useState(false);
   const [studier, setStudier] = useState(c.id);
   const [bonus, setBonus] = useState(0);
   const [text, setText] = useState('');
@@ -82,6 +85,11 @@ function KnowledgePanel({ c, it }: { c: Character; it: MagicItem }) {
       <summary>
         What we know <Meter value={k.known} max={k.total} tone="good" /> {k.known}/{k.total}
       </summary>
+      <Toggle checked={asPlayers} onChange={setAsPlayers} label="Show as the players see it" />
+      {asPlayers ? (
+        <PlayerItemView c={c} it={it} />
+      ) : (
+        <>
       <div className="form-row">
         <Text label="The party calls it" value={it.partyName ?? ''} onChange={(v) => setItem((x) => void (x.partyName = v))} placeholder="e.g. silver ring with a blue stone" />
         <Select label="Rarity (DM)" value={it.rarity ?? ''} onChange={(v) => setItem((x) => void (x.rarity = v as MagicItem['rarity']))} options={[{ value: '', label: 'Unknown' }, ...(Object.keys(RARITY_LABEL) as Rarity[]).map((r) => ({ value: r, label: RARITY_LABEL[r] }))]} />
@@ -147,6 +155,8 @@ function KnowledgePanel({ c, it }: { c: Character; it: MagicItem }) {
         Detect Magic shows that an item is magical and its school. An Arcana check (table rule: DC 10/15/20/25/30 by rarity) or experimenting reveals one fact at a time. Identify, or a Short Rest spent studying it, reveals
         everything except curses. Attuning reveals a curse (table rule).
       </Rule>
+        </>
+      )}
     </details>
   );
 }
