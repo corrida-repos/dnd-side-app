@@ -5,6 +5,8 @@ import { uid } from '../state/defaults';
 import { fmtGp, HIRELING_WAGE, LIFESTYLE_GP, LIFESTYLE_LABEL, MOUNT_PRESETS, FEED_GP_PER_DAY, type Lifestyle } from '../rules/money';
 import { foodNeedLb, fmtLb, WATER_GAL_PER_DAY } from '../rules/survival';
 import { Card, Num, Pill, Select, Text, Toggle, Rule } from './common';
+import { HIRELING_ROLES, MESSENGER_GP_PER_MILE, type HirelingRole } from '../rules/hirelings';
+import type { Hireling } from '../state/types';
 
 export function MoneyTab() {
   return (
@@ -90,55 +92,90 @@ function PurseCard() {
 function HirelingsCard() {
   const s = useGame();
   const pcs = s.characters.filter((c) => c.kind !== 'mount');
+  const [role, setRole] = useState<HirelingRole>('guard');
   const [name, setName] = useState('');
-  const [skilled, setSkilled] = useState(true);
   const [payer, setPayer] = useState('party');
+  const [miles, setMiles] = useState(10);
+  const info = HIRELING_ROLES[role];
+  const set = (id: string, patch: Partial<Hireling>) => edit((d) => void Object.assign(d.hirelings.find((x) => x.id === id)!, patch));
   return (
-    <Card title="Hirelings">
+    <Card title="Hirelings" className="span-2">
       {s.hirelings.length === 0 && <p className="muted small">Nobody on the payroll.</p>}
       <ul className="plain">
-        {s.hirelings.map((h) => (
-          <li key={h.id} className="armor-row">
-            <span>
-              <b>{h.name}</b> <span className="muted small">
-                {h.skilled ? 'skilled' : 'untrained'}, {fmtGp(h.wageGp)}/day, paid by {h.payer === 'party' ? 'the party' : E.charById(s, h.payer)?.name ?? '?'}
-              </span>
-            </span>
-            <span className="btn-row tight">
-              <Toggle checked={h.active} onChange={(v) => edit((d) => void (d.hirelings.find((x) => x.id === h.id)!.active = v))} label="Employed" />
-              <button className="ghost small bad" aria-label={`Dismiss ${h.name}`} onClick={() => edit((d) => void (d.hirelings = d.hirelings.filter((x) => x.id !== h.id)))}>
-                ✕
-              </button>
-            </span>
-          </li>
-        ))}
+        {s.hirelings.map((h) => {
+          const r = HIRELING_ROLES[h.role] ?? HIRELING_ROLES.other;
+          return (
+            <li key={h.id} className="facility">
+              <div className="armor-row">
+                <span>
+                  <b>{h.name}</b> <Pill tone="muted">{r.label}</Pill>{' '}
+                  <span className="muted small">
+                    {fmtGp(h.wageGp)}/day, paid by {h.payer === 'party' ? 'the party' : E.charById(s, h.payer)?.name ?? '?'}
+                  </span>
+                </span>
+                <span className="btn-row tight">
+                  <Toggle checked={h.active} onChange={(v) => set(h.id, { active: v })} label="Employed" />
+                  <button className="ghost small bad" aria-label={`Dismiss ${h.name}`} onClick={() => edit((d) => void (d.hirelings = d.hirelings.filter((x) => x.id !== h.id)))}>
+                    ✕
+                  </button>
+                </span>
+              </div>
+              <p className="small muted">
+                {r.does}
+                {r.hook ? ` ${r.hook}` : ''}
+              </p>
+              <div className="btn-row tight">
+                {r.skill && <Num label={`${r.skill} bonus`} value={h.bonus} onChange={(v) => set(h.id, { bonus: Math.round(v) })} width={2} />}
+                <Num label="Passive Perception" value={h.passivePerception} onChange={(v) => set(h.id, { passivePerception: Math.round(v) })} width={2} />
+                {h.role === 'torchbearer' && h.active && (
+                  <button className="small" onClick={() => dispatch((st, cx) => E.torchbearerLights(st, cx, h.id))}>
+                    Light a torch (1 h)
+                  </button>
+                )}
+                {h.role === 'messenger' && h.active && (
+                  <>
+                    <Num value={miles} onChange={(v) => setMiles(Math.max(1, Math.round(v)))} min={1} suffix="miles" width={4} />
+                    <button className="small" onClick={() => dispatch((st, cx) => E.sendMessage(st, cx, h.id, miles, h.payer))}>
+                      Send a message ({fmtGp(miles * MESSENGER_GP_PER_MILE)})
+                    </button>
+                  </>
+                )}
+              </div>
+            </li>
+          );
+        })}
       </ul>
+      <h3>Hire someone</h3>
       <div className="form-row">
-        <Text label="Name or job" value={name} onChange={setName} placeholder="e.g. Torchbearer, Guide" />
-        <Select
-          label="Type"
-          value={skilled ? 'skilled' : 'untrained'}
-          onChange={(v) => setSkilled(v === 'skilled')}
-          options={[
-            { value: 'skilled', label: `Skilled (${fmtGp(HIRELING_WAGE.skilled)}/day)` },
-            { value: 'untrained', label: `Untrained (${fmtGp(HIRELING_WAGE.untrained)}/day)` },
-          ]}
-        />
+        <Select label="Job" value={role} onChange={setRole} options={(Object.keys(HIRELING_ROLES) as HirelingRole[]).map((k) => ({ value: k, label: `${HIRELING_ROLES[k].label} (${HIRELING_ROLES[k].skilled ? 'skilled' : 'untrained'})` }))} />
+        <Text label="Name" value={name} onChange={setName} placeholder={info.label} />
         <Select label="Paid by" value={payer} onChange={setPayer} options={[{ value: 'party', label: 'Party (split)' }, ...pcs.map((c) => ({ value: c.id, label: c.name }))]} />
       </div>
+      <p className="small">
+        {info.does} {info.hook && <span className="good-text">{info.hook}</span>}
+      </p>
       <button
-        disabled={!name.trim()}
-        onClick={() => (
+        onClick={() => {
           edit(
             (d) =>
-              void d.hirelings.push({ id: uid(), name: name.trim(), skilled, wageGp: skilled ? HIRELING_WAGE.skilled : HIRELING_WAGE.untrained, payer, active: true }),
-          ),
-          setName('')
-        )}
+              void d.hirelings.push({
+                id: uid(),
+                name: name.trim() || info.label,
+                role,
+                bonus: info.skilled ? 4 : 0,
+                passivePerception: role === 'guard' ? 12 : 10,
+                skilled: info.skilled,
+                wageGp: role === 'messenger' ? 0 : info.skilled ? HIRELING_WAGE.skilled : HIRELING_WAGE.untrained,
+                payer,
+                active: true,
+              }),
+          );
+          setName('');
+        }}
       >
-        Hire
+        Hire {name.trim() || info.label} ({role === 'messenger' ? '2 CP per mile' : `${fmtGp(info.skilled ? HIRELING_WAGE.skilled : HIRELING_WAGE.untrained)}/day`})
       </button>
-      <Rule>Wages are charged every midnight while a hireling is employed.</Rule>
+      <Rule>Skilled hirelings cost 2 GP a day and untrained ones 2 SP, charged at midnight. Messengers charge 2 CP per mile instead.</Rule>
     </Card>
   );
 }

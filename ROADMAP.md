@@ -190,8 +190,8 @@ Checked against the 2024 *Player's Handbook* and *Dungeon Master's Guide* data t
 - 🔜 **Suffocation:** track the Exhaustion levels gained from suffocating, and remove all of them once the creature can breathe again.
 
 ### Rests
-- 🔜 **A Short Rest needs at least 1 HP to start**, just like a Long Rest. Characters at 0 HP get no Short Rest benefits.
-- 🔜 **Interrupting a rest:** rolling Initiative, casting a spell other than a cantrip, taking damage, or 1 hour of walking or other exertion.
+- ✅ **A Short Rest needs at least 1 HP to start**, just like a Long Rest. Characters at 0 HP get no Short Rest benefits.
+- ✅ **Interrupting a rest:** rolling Initiative, casting a spell other than a cantrip, taking damage, or 1 hour of walking or other exertion.
   - An interrupted Short Rest gives no benefits.
   - A Long Rest interrupted after at least 1 hour gives Short Rest benefits instead.
   - The party can resume a Long Rest, which then takes 1 more hour per interruption.

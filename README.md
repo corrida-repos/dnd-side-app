@@ -2,7 +2,7 @@
 
 **Live app:** https://corrida-repos.github.io/dnd-side-app/
 
-A time, place and survival tracker for D&D 5.5e (the 2024 *Player's Handbook* and *Dungeon Master's Guide*). It runs in the browser, needs no server, and saves to local storage.
+A tracker for every nitty-gritty part of D&D 5.5e life that isn't tied to one campaign or adventure and doesn't run on combat's seconds-long timescale: time, travel, weather, survival, rests, upkeep, money, downtime and the wider world. It follows the 2024 *Player's Handbook* and *Dungeon Master's Guide*, marks anything else as a table rule you can switch off, and describes what the characters notice when their condition changes. It runs in the browser, needs no server, and saves to local storage.
 
 ## What it tracks
 
@@ -36,6 +36,9 @@ A time, place and survival tracker for D&D 5.5e (the 2024 *Player's Handbook* an
 | **Renown, fear and stress** | Per-character trackers with reasons logged. Stress and Fear show with the debuffs, and a Long Rest eases each by an amount you choose. |
 | **Getting lost** | Off-road travel calls for a navigator's Wisdom (Survival) check against the terrain: DC 5 for grassland, 10 for arctic, desert, hills or sea under clear skies, and 15 for forest, jungle, swamp, mountains or sea under clouds. Roads, rivers and coasts need no check. Slow pace gives Advantage and fast pace Disadvantage, and (table rule) heavy rain or snow and darkness each add +5. On a failure the party wanders off course unknowingly, and the navigator can try again every 1d6 travel hours. |
 | **Telling time by nature** | Each part of the day has its sky cues (shadows, birdsong, dawn colors, stars). They get vaguer under cloud and vanish underground. "No timepiece" mode shows these cues instead of the clock (the DM can peek), and a "Read the sky" Wisdom (Survival) check (DC 10 clear, 15 overcast, 20 underground) gives a guess that's off by 1d4 hours on a failure. |
+| **What characters feel** | Every status change over time (thirst, hunger, cold, food poisoning, dying, waking, stress, fear, lights going out and more) comes with an in-world description the DM can read out. A separate status history keeps every change per character, and the Chronicle has a player view with only the descriptions. |
+| **Interrupted rests and waking** | Interrupt a rest partway: combat, casting a non-cantrip spell, taking damage or an hour of exertion breaks it. A Long Rest interrupted after at least 1 hour gives Short Rest benefits, or the party can resume for 1 extra hour. A noise only wakes people, and the rest continues. Whoever is on watch is awake, a loud noise wakes everyone, and quiet threats are noticed with passive Perception − 5 while asleep (table rule); anyone else has to be shaken awake. Short Rests now need at least 1 HP. |
+| **Hirelings with jobs** | Torchbearers, porters, laborers, guards, guides, cooks, grooms, healers, artisans, scribes, interpreters, teamsters, sailors and messengers. Guards stand watch, guides navigate, cooks make the cooking check, healers stabilize, grooms feed and water the mounts every day, torchbearers carry a light, and messengers charge 2 CP per mile. |
 | **Chronicle** | A searchable log of every roll and event. |
 
 ## Deployment

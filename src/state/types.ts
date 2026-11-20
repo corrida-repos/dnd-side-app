@@ -8,6 +8,7 @@ import type { Lifestyle } from '../rules/money';
 import type { Rarity } from '../rules/crafting';
 import type { Creature } from '../rules/hunting';
 import type { NavTerrain } from '../rules/navigation';
+import type { HirelingRole } from '../rules/hirelings';
 
 export type Season = 'winter' | 'spring' | 'summer' | 'autumn';
 export type Size = 'Tiny' | 'Small' | 'Medium' | 'Large' | 'Huge' | 'Gargantuan';
@@ -283,6 +284,10 @@ export interface PendingSave {
 export interface Hireling {
   id: string;
   name: string;
+  role: HirelingRole;
+  /** Bonus to the skill or tool their job uses. */
+  bonus: number;
+  passivePerception: number;
   skilled: boolean;
   wageGp: number;
   /** Who pays: a character's id, or "party" to split between the adventurers. */

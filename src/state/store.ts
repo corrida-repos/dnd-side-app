@@ -29,7 +29,7 @@ function migrate(raw: unknown): State | null {
         return { count: 4, slots: [0, 1, 2, 3].map((i) => (order.length ? [order[i % order.length]] : [])) };
       })(),
     effects: parsed.effects ?? [],
-    hirelings: parsed.hirelings ?? [],
+    hirelings: (parsed.hirelings ?? []).map((h) => ({ ...{ role: 'other' as const, bonus: 0, passivePerception: 10 }, ...(h as Partial<State['hirelings'][number]>) }) as State['hirelings'][number]),
     rituals: parsed.rituals ?? [],
     factions: parsed.factions ?? [],
     holidays: parsed.holidays ?? [],

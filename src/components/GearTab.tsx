@@ -81,7 +81,10 @@ function HpBlock({ c }: { c: Character }) {
 
 function DyingBlock({ c }: { c: Character }) {
   const s = useGame();
-  const helpers = s.characters.filter((x) => x.id !== c.id && x.kind !== 'mount' && x.hp > 0 && x.diedAt == null);
+  const helpers = [
+    ...s.characters.filter((x) => x.id !== c.id && x.kind !== 'mount' && x.hp > 0 && x.diedAt == null).map((x) => ({ id: x.id, name: x.name, wisMod: x.wisMod })),
+    ...s.hirelings.filter((x) => x.active && x.role === 'healer').map((x) => ({ id: `h:${x.id}`, name: `${x.name} (hired healer)`, wisMod: x.bonus })),
+  ];
   const [helper, setHelper] = useState(helpers[0]?.id ?? '');
   const h = helpers.find((x) => x.id === helper);
   const [bonus, setBonus] = useState<number | null>(null);

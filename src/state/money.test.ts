@@ -39,9 +39,9 @@ describe('gold, lifestyle and wages', () => {
       d.place.settlement = false;
       d.characters.forEach((c) => ((c.needsFood = false), (c.needsWater = false)));
       d.hirelings = [
-        { id: 'h1', name: 'Guide', skilled: true, wageGp: 2, payer: 'party', active: true },
-        { id: 'h2', name: 'Porter', skilled: false, wageGp: 0.2, payer: d.characters[1].id, active: true },
-        { id: 'h3', name: 'Off duty', skilled: true, wageGp: 2, payer: 'party', active: false },
+        { id: 'h1', name: 'Guide', role: 'guide', bonus: 4, passivePerception: 12, skilled: true, wageGp: 2, payer: 'party', active: true },
+        { id: 'h2', name: 'Porter', role: 'porter', bonus: 0, passivePerception: 10, skilled: false, wageGp: 0.2, payer: d.characters[1].id, active: true },
+        { id: 'h3', name: 'Off duty', role: 'guard', bonus: 2, passivePerception: 12, skilled: true, wageGp: 2, payer: 'party', active: false },
       ];
     });
     expect(E.advance(s, ctx(), 60).characters.map((c) => c.gp)).toEqual([9, 8.8]);

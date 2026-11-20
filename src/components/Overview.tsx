@@ -4,7 +4,7 @@ import * as E from '../state/engine';
 import { CLIMATES, environmentEffects, temperatureAt, weatherSummary, type ClimateId, type Weather } from '../rules/weather';
 import { formatClock, formatDate, formatDuration } from '../rules/calendar';
 import { ABUNDANCE_LABEL, PACES, foodNeedLb, waterNeedPints, fmtLb, fmtWater } from '../rules/survival';
-import { Card, Meter, Num, Pill, Select, Text, Toggle } from './common';
+import { Card, Meter, Num, Pill, Rule, Select, Text, Toggle } from './common';
 import { Debuffs } from './Debuffs';
 import type { Abundance, Pace, Shelter, WaterQuality } from '../state/types';
 import { NAV_LABEL, NAV_FOR_CLIMATE, type NavTerrain } from '../rules/navigation';
@@ -68,8 +68,76 @@ function ClockCard() {
         </button>
       </div>
       <LongRestTracker />
+      <InterruptPanel />
       <RestPlans />
     </Card>
+  );
+}
+
+function InterruptPanel() {
+  const s = useGame();
+  const [kind, setKind] = useState<'long' | 'short'>('long');
+  const [after, setAfter] = useState(180);
+  const [reason, setReason] = useState<E.InterruptReason>('combat');
+  const [noise, setNoise] = useState<'loud' | 'quiet'>('quiet');
+  const [dc, setDc] = useState(12);
+  const [resume, setResume] = useState(true);
+  const total = kind === 'long' ? 480 : 60;
+  const breaks = reason !== 'disturbance';
+  let outcome: string;
+  if (!breaks) outcome = 'Sleepers may wake, then everyone goes back to sleep. The rest still counts.';
+  else if (kind === 'short') outcome = 'An interrupted Short Rest gives no benefits.';
+  else if (resume) outcome = `The party resumes afterwards: ${formatDuration(total - after + 60)} more (1 extra hour), then full Long Rest benefits.`;
+  else outcome = after >= 60 ? 'The Long Rest is abandoned, with Short Rest benefits because at least 1 hour had passed.' : 'The Long Rest is abandoned less than an hour in, with no benefits.';
+  return (
+    <details className="interrupt">
+      <summary>Interrupt a rest</summary>
+      <div className="form-row">
+        <Select
+          label="Rest"
+          value={kind}
+          onChange={(v) => (setKind(v), setAfter(Math.min(after, v === 'long' ? 479 : 59)))}
+          options={[
+            { value: 'long', label: 'Long Rest (8 h)' },
+            { value: 'short', label: 'Short Rest (1 h)' },
+          ]}
+        />
+        <Num label="Interrupted after" value={after} onChange={(v) => setAfter(Math.max(0, Math.min(total - 1, Math.round(v))))} min={0} max={total - 1} step={kind === 'long' ? 30 : 10} suffix="min" width={4} />
+        <Select label="What happens" value={reason} onChange={setReason} options={(Object.keys(E.INTERRUPT_LABEL) as E.InterruptReason[]).map((k) => ({ value: k, label: E.INTERRUPT_LABEL[k] }))} />
+      </div>
+      {kind === 'long' && (
+        <div className="form-row">
+          {reason === 'disturbance' ? (
+            <>
+              <Select
+                label="How loud"
+                value={noise}
+                onChange={setNoise}
+                options={[
+                  { value: 'quiet', label: 'Quiet (sleepers make a passive Perception check)' },
+                  { value: 'loud', label: 'Loud (wakes everyone)' },
+                ]}
+              />
+              {noise === 'quiet' && <Num label="DC to notice" value={dc} onChange={(v) => setDc(Math.round(v))} width={2} />}
+            </>
+          ) : (
+            <Toggle checked={resume} onChange={setResume} label="Resume the rest afterwards (+1 hour)" />
+          )}
+        </div>
+      )}
+      <p className="small">{outcome}</p>
+      <button
+        className="primary"
+        onClick={() => dispatch((st, cx) => E.interruptedRest(st, cx, { kind, after, reason, noise: breaks ? 'loud' : noise, dc, resume }))}
+        disabled={kind === 'long' && !E.canLongRest(s).ok}
+      >
+        Rest, interrupted after {formatDuration(Math.max(1, after))}
+      </button>
+      <Rule>
+        In 2024, a rest is broken by rolling Initiative, casting a spell other than a cantrip, taking damage, or 1 hour of walking or exertion. Whoever is on watch is awake. Sleepers notice a quiet threat if their passive Perception
+        − 5 (asleep, table rule) meets the DC, a loud one wakes everyone, and anyone still asleep needs someone to use an action to shake them awake. Characters unconscious from wounds can&apos;t be shaken awake.
+      </Rule>
+    </details>
   );
 }
 
@@ -433,7 +501,11 @@ function TravelCard() {
           label="Navigator"
           value={navigator}
           onChange={setNavigator}
-          options={[{ value: '', label: 'Nobody (no check)' }, ...s.characters.filter((c) => c.kind !== 'mount').map((c) => ({ value: c.id, label: `${c.name} (Survival ${c.survival >= 0 ? '+' : ''}${c.survival})` }))]}
+          options={[
+            { value: '', label: 'Nobody (no check)' },
+            ...s.characters.filter((c) => c.kind !== 'mount').map((c) => ({ value: c.id, label: `${c.name} (Survival ${c.survival >= 0 ? '+' : ''}${c.survival})` })),
+            ...s.hirelings.filter((h) => h.active && h.role === 'guide').map((h) => ({ value: `h:${h.id}`, label: `${h.name}, hired guide (Survival +${h.bonus})` })),
+          ]}
         />
         <span className="small">
           {nav.dc == null ? (

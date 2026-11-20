@@ -6,6 +6,7 @@ import { EXPLORATION_TURN_MINUTES, LIGHT_WARNING_MINUTES, type EffectPreset } fr
 import { divinationFailChance, SPELLBOOK_REPLACE } from '../rules/longterm';
 import { LOST_RECHECK_DIE, navigationDC } from '../rules/navigation';
 import { readSky, SKY_DC } from '../rules/skyclock';
+import { MESSENGER_GP_PER_MILE } from '../rules/hirelings';
 import { BUTCHER_DC, BUTCHER_MINUTES, isEdible, MEAT_LB, STRANGE_TYPES, yieldsHide, type Creature } from '../rules/hunting';
 import { FEED_GP_PER_DAY, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset } from '../rules/money';
 import { STABLE_WAKE_DIE, STABILIZE_DC } from '../rules/upkeep';
@@ -324,6 +325,7 @@ function dailyCosts(s: State): void {
 
 function endOfDay(s: State, ctx: Ctx): void {
   dailyCosts(s);
+  groomTheMounts(s);
   checkRituals(s);
   const hotDay = s.weather.high >= 100;
   for (const c of s.characters) {
@@ -472,7 +474,7 @@ export function planWatches(s: State): WatchSlotInfo[] {
     const lit = campLitFor(s, t.to - start);
     const ids = s.watchPlan.slots[i] ?? [];
     const watchers = ids
-      .map((id) => charById(s, id))
+      .map((id) => actorById(s, id))
       .filter((c): c is Character => !!c && alive(c))
       .map((c) => {
         const sight = watchSight(phase, lit, c.darkvision, underground);
@@ -626,12 +628,7 @@ export function canLongRest(s: State): { ok: boolean; reason?: string } {
 export const shortRest = act((d, ctx) => {
   log(d, 'The party takes a Short Rest (1 hour). Everyone can spend Hit Point Dice.', 'info');
   advanceMut(d, ctx, 60, 'rest');
-  for (const c of d.characters) {
-    if (!alive(c)) continue;
-    applyRestFocus(d, c);
-    const got = restoreAfterRest(d, ctx, c, 'short');
-    if (got.length) log(d, `${c.name} recovers: ${got.join(', ')}.`, 'good');
-  }
+  finishShortRest(d, ctx);
   for (const c of d.characters) {
     if (c.chef && alive(c)) {
       const pb = proficiencyBonus(c.level);
@@ -649,6 +646,11 @@ export const longRest = act((d, ctx, force = false) => {
   log(d, 'The party settles in for a Long Rest (8 hours: at least 6 asleep, no more than 2 of light activity).');
   const watched = standWatches(d, ctx);
   advanceMut(d, ctx, 8 * 60, 'rest');
+  completeLongRest(d, ctx, watched);
+});
+
+/** Everything that happens when a Long Rest finishes. */
+function completeLongRest(d: State, ctx: Ctx, watched: Record<string, number>): void {
   d.lastLongRestEnd = absNow(d);
   d.travel.hoursToday = 0;
   d.travel.milesToday = 0;
@@ -719,7 +721,116 @@ export const longRest = act((d, ctx, force = false) => {
     }
     c.nightChill = null;
   }
+}
+
+// ---------------------------------------------------------------- interrupting rests and waking up
+
+export type InterruptReason = 'combat' | 'spell' | 'damage' | 'exertion' | 'disturbance';
+
+export const INTERRUPT_LABEL: Record<InterruptReason, string> = {
+  combat: 'Combat (roll Initiative)',
+  spell: 'Someone casts a spell other than a cantrip',
+  damage: 'Someone takes damage',
+  exertion: '1 hour of walking or other exertion',
+  disturbance: 'A noise or disturbance, no fighting (back to sleep)',
+};
+
+export interface InterruptOpts {
+  kind: 'long' | 'short';
+  /** Minutes rested before the interruption. */
+  after: number;
+  reason: InterruptReason;
+  /** How loud it is: loud wakes everyone, quiet is a passive Perception check for sleepers. */
+  noise: 'loud' | 'quiet';
+  /** DC for sleepers to notice a quiet threat (e.g. the intruder's Stealth). */
+  dc: number;
+  /** Resume the Long Rest afterwards (1 extra hour per interruption). */
+  resume: boolean;
+}
+
+/** Who is awake when a rest is interrupted: the watch, anyone the noise wakes, and the rest get shaken awake. */
+function wakeTheCamp(d: State, minutesIn: number, noise: 'loud' | 'quiet', dc: number): void {
+  const len = watchMinutes(d.watchPlan.count);
+  const slot = Math.min(d.watchPlan.count - 1, Math.floor(minutesIn / len));
+  const onWatch = new Set(d.watchPlan.slots[slot] ?? []);
+  const sleepers = d.characters.filter((c) => alive(c) && c.kind !== 'mount' && !c.dying && !c.stable && !onWatch.has(c.id));
+  const watchers = d.characters.filter((c) => onWatch.has(c.id));
+  const watchHirelings = d.hirelings.filter((h) => onWatch.has(`h:${h.id}`)).map((h) => h.name);
+  const awake = [...watchers.map((c) => c.name), ...watchHirelings];
+  if (awake.length) log(d, `On watch and awake: ${awake.join(', ')}.`);
+  const stillAsleep: Character[] = [];
+  for (const c of sleepers) {
+    const passive = c.passivePerception - 5;
+    if (noise === 'loud') status(d, c, 'wokenByNoise', `${c.name} wakes at the commotion.`);
+    else if (passive >= dc) status(d, c, 'wokenByNoise', `${c.name} stirs awake (passive Perception ${passive} while asleep, against DC ${dc}).`);
+    else stillAsleep.push(c);
+  }
+  for (const c of stillAsleep) {
+    if (awake.length || sleepers.length > stillAsleep.length) status(d, c, 'shakenAwake', `${c.name} sleeps through it (passive Perception ${c.passivePerception - 5} while asleep, against DC ${dc}) until someone uses an action to shake them awake.`);
+    else status(d, c, 'sleepsThrough', `${c.name} sleeps on, unaware (passive Perception ${c.passivePerception - 5} while asleep, against DC ${dc}). Nobody is awake to raise the alarm.`, 'warn');
+  }
+  const down = d.characters.filter((c) => c.dying || c.stable);
+  if (down.length) log(d, `${down.map((c) => c.name).join(', ')} ${down.length > 1 ? 'are' : 'is'} unconscious from wounds and can't be shaken awake.`, 'warn');
+}
+
+/** A rest that gets interrupted partway, using the 2024 rules for what still counts. */
+export const interruptedRest = act((d, ctx, o: InterruptOpts) => {
+  if (o.kind === 'long') {
+    const check = canLongRest(d);
+    if (!check.ok) {
+      log(d, check.reason ?? 'Cannot Long Rest yet.', 'warn');
+      return;
+    }
+  }
+  const total = o.kind === 'long' ? 8 * 60 : 60;
+  const after = Math.max(0, Math.min(total - 1, Math.round(o.after)));
+  log(d, `The party settles in for a ${o.kind === 'long' ? 'Long' : 'Short'} Rest.`);
+  const watched = o.kind === 'long' ? standWatches(d, ctx) : {};
+  advanceMut(d, ctx, after, 'rest');
+  log(d, `${formatDuration(Math.max(1, after))} in, the rest is interrupted: ${INTERRUPT_LABEL[o.reason]}.`, 'warn');
+  if (o.kind === 'long') wakeTheCamp(d, after, o.reason === 'disturbance' ? o.noise : 'loud', o.dc);
+  if (o.reason === 'exertion') advanceMut(d, ctx, 60, 'camp');
+  if (o.reason === 'disturbance') {
+    log(d, 'Nothing comes of it, and the party settles back down. A disturbance like this doesn’t break the rest.');
+    advanceMut(d, ctx, total - after, 'rest');
+    if (o.kind === 'long') completeLongRest(d, ctx, watched);
+    else finishShortRest(d, ctx);
+    return;
+  }
+  const all = d.characters.filter((c) => alive(c));
+  for (const c of all) status(d, c, 'restInterrupted', `${c.name}'s ${o.kind === 'long' ? 'Long' : 'Short'} Rest is interrupted.`, 'warn');
+  if (o.kind === 'short') {
+    log(d, 'An interrupted Short Rest gives no benefits.', 'warn');
+    return;
+  }
+  if (o.resume) {
+    const left = total - after + 60;
+    log(d, `Once things settle, the party resumes the Long Rest. It needs ${formatDuration(left)} more (1 extra hour for the interruption).`);
+    advanceMut(d, ctx, left, 'rest');
+    completeLongRest(d, ctx, watched);
+    return;
+  }
+  if (after >= 60) {
+    log(d, 'The Long Rest is abandoned, but the party had rested at least 1 hour, so they get the benefits of a Short Rest.', 'warn');
+    finishShortRest(d, ctx);
+  } else {
+    log(d, 'The Long Rest is abandoned less than an hour in, so it gives no benefits.', 'warn');
+  }
 });
+
+/** Short Rest benefits: resources, rest focus (attuning, identifying), Chef. Requires at least 1 HP. */
+function finishShortRest(d: State, ctx: Ctx): void {
+  for (const c of d.characters) {
+    if (!alive(c)) continue;
+    if (c.hp <= 0) {
+      log(d, `${c.name} is at 0 HP, so they get no Short Rest benefits.`, 'warn');
+      continue;
+    }
+    applyRestFocus(d, c);
+    const got = restoreAfterRest(d, ctx, c, 'short');
+    if (got.length) log(d, `${c.name} recovers: ${got.join(', ')}.`, 'good');
+  }
+}
 
 // ---------------------------------------------------------------- travel
 
@@ -763,7 +874,7 @@ export const travel = act((d, ctx, o: TravelOpts) => {
   log(d, `The party sets out at a ${o.pace} pace for ${o.hours} hour(s)${o.difficult ? ' over Difficult Terrain' : ''}. ${p.note}.`);
   const navId = o.navigatorId === undefined ? d.travel.navigatorId : o.navigatorId;
   d.travel.navigatorId = navId ?? null;
-  const nav = navId ? charById(d, navId) : undefined;
+  const nav = navId ? actorById(d, navId) : undefined;
   if (nav && alive(nav) && !d.travel.lost && navigate(d, ctx, nav, o.pace) === false) {
     d.travel.lost = true;
     d.travel.lostRecheckIn = die(LOST_RECHECK_DIE, ctx.rng);
@@ -1045,7 +1156,7 @@ export const cookMeal = act((d, ctx, cookId: string | null) => {
     log(d, 'You need a lit fire to cook a hot meal.', 'warn');
     return;
   }
-  const cook = cookId ? charById(d, cookId) : undefined;
+  const cook = cookId ? actorById(d, cookId) : undefined;
   advanceMut(d, ctx, 60, 'camp');
   const eaters: string[] = [];
   let cookedUnsafe = 0;
@@ -1441,7 +1552,7 @@ export const deathSave = act((d, ctx, charId: string) => {
 export const stabilize = act((d, ctx, charId: string, helperId: string | null, method: 'medicine' | 'sure', medicineBonus?: number) => {
   const c = charById(d, charId);
   if (!c || !c.dying || c.diedAt != null) return;
-  const helper = helperId ? charById(d, helperId) : undefined;
+  const helper = helperId ? actorById(d, helperId) : undefined;
   if (method === 'medicine') {
     const mod = (medicineBonus ?? helper?.wisMod ?? 0) - 2 * (helper?.exhaustion ?? 0);
     const r = d20('normal', ctx.rng);
@@ -1905,3 +2016,51 @@ export const castSpell = act((d, ctx, charId: string, spellName: string, mode: '
     log(d, `${sp.name} lasts ${preset.minutes == null ? 'until dispelled' : formatDuration(preset.minutes)}${preset.concentration ? ' (Concentration)' : ''}. Its timer is on the Effects & Lights tab.`);
   }
 });
+
+// ---------------------------------------------------------------- hirelings at work
+
+/** A character, or a hireling standing in for one (guide, cook, healer), for rolls the tracker makes. */
+export function actorById(s: State, id: string): Character | undefined {
+  if (!id.startsWith('h:')) return charById(s, id);
+  const h = s.hirelings.find((x) => `h:${x.id}` === id && x.active);
+  if (!h) return undefined;
+  return newCharacter({ id, name: `${h.name} (hireling)`, survival: h.bonus, wisMod: h.bonus, passivePerception: h.passivePerception, needsFood: false, needsWater: false, tasks: [] });
+}
+
+export const sendMessage = act((d, _ctx, hirelingId: string, miles: number, payer: string) => {
+  const h = d.hirelings.find((x) => x.id === hirelingId);
+  if (!h || miles <= 0) return;
+  log(d, `${h.name} sets off to deliver a message ${miles} mile(s) away.`);
+  payGold(d, payer === 'party' ? [] : [payer], Math.round(miles * MESSENGER_GP_PER_MILE * 100) / 100, `a message carried ${miles} mile(s)`);
+});
+
+export const torchbearerLights = act((d, _ctx, hirelingId: string) => {
+  const h = d.hirelings.find((x) => x.id === hirelingId);
+  if (!h) return;
+  const now = absNow(d);
+  d.effects.push({ id: uid(), name: `Torch (carried by ${h.name})`, kind: 'light', targetIds: [], casterId: null, concentration: false, shelter: false, startedAt: now, endsAt: now + 60, notes: 'Bright Light 20 ft, Dim Light 20 ft more.' });
+  log(d, `${h.name} lights a torch and holds it high.`);
+});
+
+/** A groom feeds and waters every mount at the end of the day. */
+function groomTheMounts(s: State): void {
+  const groom = s.hirelings.find((h) => h.active && h.role === 'groom');
+  if (!groom) return;
+  const tended: string[] = [];
+  for (const m of s.characters.filter((c) => c.kind === 'mount' && alive(c))) {
+    const food = Math.max(0, foodNeedLb(m) - m.ateLbToday);
+    const fromFeed = Math.min(food, m.rationsLb);
+    m.rationsLb = Math.round((m.rationsLb - fromFeed) * 100) / 100;
+    m.ateLbToday += fromFeed;
+    const water = Math.max(0, waterNeedPints(m, false, false) - m.drankPintsToday);
+    let got = 0;
+    if (s.place.waterSource) got = water;
+    else {
+      got = Math.min(water, s.stores.waterGal * PINTS_PER_GALLON);
+      s.stores.waterGal = Math.round((s.stores.waterGal - got / PINTS_PER_GALLON) * 100) / 100;
+    }
+    m.drankPintsToday += got;
+    tended.push(`${m.name}${fromFeed < food ? ' (short of feed)' : ''}${got < water ? ' (short of water)' : ''}`);
+  }
+  if (tended.length) log(s, `${groom.name} feeds and waters the animals: ${tended.join(', ')}.`, tended.some((t) => t.includes('short')) ? 'warn' : 'info');
+}

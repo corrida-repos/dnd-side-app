@@ -206,14 +206,17 @@ function ArmorCard() {
 
 function WatchCard() {
   const s = useGame();
-  const pcs = s.characters.filter((c) => c.kind !== 'mount' && c.diedAt == null);
+  const pcs = [
+    ...s.characters.filter((c) => c.kind !== 'mount' && c.diedAt == null).map((c) => ({ id: c.id, name: c.name, hireling: false, trance: c.trance })),
+    ...s.hirelings.filter((h) => h.active).map((h) => ({ id: `h:${h.id}`, name: h.name, hireling: true, trance: false })),
+  ];
   const plan = E.planWatches(s);
   const load = E.watchLoad(s);
   const [perWatch, setPerWatch] = useState(1);
   const [pool, setPool] = useState<string[]>(() => pcs.map((c) => c.id));
   const setCount = (count: number) =>
     edit((d) => {
-      const ids = pool.filter((id) => d.characters.some((c) => c.id === id));
+      const ids = pool.filter((id) => d.characters.some((c) => c.id === id) || d.hirelings.some((h) => `h:${h.id}` === id && h.active));
       const cap = Object.fromEntries(d.characters.map((c) => [c.id, watchCapacity(count, c.trance)]));
       d.watchPlan = { count, slots: autoAssign(ids, count, perWatch, cap) };
     });
@@ -223,7 +226,7 @@ function WatchCard() {
       slots[slot] = slots[slot].includes(id) ? slots[slot].filter((x) => x !== id) : [...slots[slot], id];
       d.watchPlan = { ...d.watchPlan, slots };
     });
-  const overloaded = pcs.filter((c) => (load[c.id] ?? 0) > maxWatchMinutes(c.trance));
+  const overloaded = pcs.filter((c) => !c.hireling && (load[c.id] ?? 0) > maxWatchMinutes(c.trance));
   const len = watchMinutes(s.watchPlan.count);
   return (
     <Card title="Night watch" className="span-2">
@@ -251,7 +254,7 @@ function WatchCard() {
       <div className="chips">
         <span className="small muted">Share among:</span>
         {pcs.map((c) => (
-          <Toggle key={c.id} checked={pool.includes(c.id)} onChange={(v) => setPool(v ? [...pool, c.id] : pool.filter((x) => x !== c.id))} label={c.name} />
+          <Toggle key={c.id} checked={pool.includes(c.id)} onChange={(v) => setPool(v ? [...pool, c.id] : pool.filter((x) => x !== c.id))} label={c.hireling ? `${c.name} (hireling)` : c.name} />
         ))}
       </div>
       <p className="small muted">Times assume the Long Rest starts now, at {formatClock(s.minutes % 1440)}.</p>
@@ -261,7 +264,10 @@ function WatchCard() {
             <tr>
               <th>Watch</th>
               {pcs.map((c) => (
-                <th key={c.id}>{c.name}</th>
+                <th key={c.id}>
+                  {c.name}
+                  {c.hireling && <div className="muted small">hireling</div>}
+                </th>
               ))}
               <th>Best passive Perception</th>
             </tr>
@@ -300,7 +306,7 @@ function WatchCard() {
               <td className="small muted">On watch</td>
               {pcs.map((c) => {
                 const mins = load[c.id] ?? 0;
-                const over = mins > maxWatchMinutes(c.trance);
+                const over = !c.hireling && mins > maxWatchMinutes(c.trance);
                 return (
                   <td key={c.id} className={`small ${over ? 'bad-text' : ''}`}>
                     {mins ? formatDuration(mins) : '—'}
@@ -320,7 +326,7 @@ function WatchCard() {
         </p>
       )}
       <div className="form-row">
-        {pcs.map((c) => (
+        {s.characters.filter((c) => c.kind !== 'mount' && c.diedAt == null).map((c) => (
           <span key={c.id} className="field">
             <span className="field-label">{c.name}</span>
             <span className="inline-group">
@@ -356,7 +362,11 @@ function MealsCard() {
   return (
     <Card title="Meals" className="span-2">
       <div className="btn-row">
-        <Select value={cook} onChange={setCook} options={[{ value: '', label: 'No cook check' }, ...opts]} />
+        <Select
+          value={cook}
+          onChange={setCook}
+          options={[{ value: '', label: 'No cook check' }, ...opts, ...s.hirelings.filter((h) => h.active && h.role === 'cook').map((h) => ({ value: `h:${h.id}`, label: `${h.name} (hired cook, +${h.bonus})` }))]}
+        />
         <button className="primary" disabled={!s.fire.lit} onClick={() => dispatch((st, c) => E.cookMeal(st, c, cook || null))} title={s.fire.lit ? '' : 'Light the fire first'}>
           Cook a hot meal (1 h)
         </button>

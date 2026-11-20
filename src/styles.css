@@ -915,3 +915,7 @@ select {
 .status-history {
   margin: 8px 0;
 }
+
+.interrupt {
+  margin-top: 8px;
+}
