@@ -358,9 +358,31 @@ function ContagionCard() {
 }
 
 function PotionMixCard() {
+  const s = useGame();
   const [what, setWhat] = useState('');
+  const [who, setWho] = useState('');
+  const [a, setA] = useState('');
+  const [b, setB] = useState('');
+  const people = s.characters.filter((c) => E.alive(c) && c.inventory.some((i) => /potion|elixir|philter/i.test(i.name)));
+  const c = people.find((x) => x.id === who) ?? people[0];
+  const potions = (c?.inventory ?? []).filter((i) => /potion|elixir|philter/i.test(i.name));
+  const aId = potions.find((p) => p.id === a)?.id ?? potions[0]?.id ?? '';
+  const bId = potions.find((p) => p.id === b && (p.id !== aId || p.qty > 1))?.id ?? potions.find((p) => p.id !== aId)?.id ?? (potions[0]?.qty > 1 ? potions[0].id : '');
   return (
     <Card title="Mixing potions">
+      {c && potions.length > 0 && (
+        <>
+          <div className="form-row">
+            <Select label="Who" value={c.id} onChange={setWho} options={people.map((x) => ({ value: x.id, label: x.name }))} />
+            <Select label="First potion" value={aId} onChange={setA} options={potions.map((p) => ({ value: p.id, label: `${p.name} ×${p.qty}` }))} />
+            <Select label="Second potion" value={bId} onChange={setB} options={potions.map((p) => ({ value: p.id, label: `${p.name} ×${p.qty}` }))} />
+          </div>
+          <button className="small" disabled={!aId || !bId} onClick={() => dispatch((st, cx) => E.mixInventoryPotions(st, cx, c.id, aId, bId))}>
+            Mix and drink (uses both)
+          </button>
+          <p className="small muted">The result is applied: healing rolled, durations halved or doubled on the effect timers, a poison, or an explosion.</p>
+        </>
+      )}
       <Text label="Which potions" value={what} onChange={setWhat} placeholder="e.g. Healing and Invisibility" />
       <button className="small" onClick={() => dispatch((st, cx) => E.mixPotions(st, cx, what))}>
         Roll on the Potion Miscibility table

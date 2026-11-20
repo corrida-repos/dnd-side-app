@@ -1,8 +1,8 @@
-import type { ActiveEffect, Activity, CharacterSpell, InventoryItem, LogEntry, Ritual, Stash, Bastion, Business, Character, FacilityWork, ExhaustionCause, Facility, MagicItem, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
+import type { ActiveEffect, Activity, CharacterSpell, InventoryItem, LogEntry, Ritual, Stash, Bastion, Business, Character, FacilityWork, Obstacle, ExhaustionCause, Facility, MagicItem, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
 import { BASIC_BUILD, BASTION_TURN_DAYS, defaultSize, ENLARGE, rollBastionEvent, SIZE_LABEL, SPECIAL_FACILITIES, type FacilitySize } from '../rules/bastion';
 import { d20, die, combineModes, rollDice, rollExpr, signed, type Rng, type RollMode } from '../rules/dice';
 import { dateFromIndex, formatClock, formatDate, formatDuration, lightAt, sunriseMinutes } from '../rules/calendar';
-import { EXPLORATION_TURN_MINUTES, LIGHT_WARNING_MINUTES, type EffectPreset } from '../rules/effects';
+import { EFFECT_PRESETS, EXPLORATION_TURN_MINUTES, LIGHT_WARNING_MINUTES, type EffectPreset } from '../rules/effects';
 import { divinationFailChance, SPELLBOOK_REPLACE } from '../rules/longterm';
 import { LOST_RECHECK_DIE, navigationDC } from '../rules/navigation';
 import { TERRAIN, clampPace } from '../rules/terrain';
@@ -14,6 +14,7 @@ import { neglectLimit } from '../rules/bastion';
 import { magicItemCrafting, nonmagicalCrafting, SCROLL_CRAFTING, type Rarity } from '../rules/crafting';
 import { ALL_IS_WELL, BARRACK_ROOM, BASTION_CHARMS, CREATURE_ROOM, EVENT_PREFERENCE, FACILITY_OPTIONS, GARDEN_PRODUCTS, GUILDS, MENAGERIE_CREATURES, MENAGERIE_ROOM, SHIPS, TRAINERS, TREASURE_TABLE, facilityHirelings, stableMarkup, storehouseLimit, storehouseMarkup, type GardenType } from '../rules/bastionOrders';
 import { priceOf, saleRate } from '../rules/shop';
+import { groundDifficulty, meltInches, mudAfter, snowfallInches } from '../rules/ground';
 import { activityOf, resolveActivity, type ActivityOpts } from '../rules/downtimeOutcomes';
 import { componentFor, REVIVAL_LIMIT, TARGET_SPELLS, type CostlyComponent } from '../rules/components';
 import { POISONS, poisonByName, poisonItemName, type PoisonInfo } from '../rules/poisons';
@@ -176,6 +177,17 @@ export function ensureWeather(s: State, ctx: Ctx): void {
 }
 
 function newWeather(s: State, ctx: Ctx): void {
+  // Yesterday's weather leaves its mark on the ground (table rule).
+  if (s.weather && s.weather.dayIndex < s.dayIndex && !CLIMATES[s.weather.climate].noWeather) {
+    const g = s.place.ground ?? { snowIn: 0, mudDays: 0 };
+    const before = groundDifficulty(g, s.place.goodRoad);
+    g.snowIn = Math.max(0, g.snowIn + snowfallInches(s.weather) - meltInches(s.weather));
+    g.mudDays = mudAfter(g.mudDays, s.weather);
+    s.place.ground = g;
+    const after = groundDifficulty(g, s.place.goodRoad);
+    if (after && !before) noticed(s, 'groundHeavy', [], `The ground has turned to ${after}: travel off well-kept roads counts as Difficult Terrain.`, 'warn');
+    if (before && !after) noticed(s, 'groundClear', [], 'The ground firms up again; travel is back to normal.', 'good');
+  }
   s.weather = rollWeather(
     { dayIndex: s.dayIndex, season: seasonOf(s), climate: s.place.climate, altitudeFt: s.place.altitudeFt, climateAdjustedPrecip: s.settings.climateAdjustedPrecip },
     ctx.rng,
@@ -352,7 +364,7 @@ function dailyCosts(s: State): void {
   if (s.place.settlement) {
     const fed: string[] = [];
     for (const c of adventurers(s)) {
-      if (c.lifestyle !== 'wretched') {
+      if (c.lifestyle !== 'wretched' || Math.max(0, ...s.factions.map((f) => f.renown)) >= 3) {
         c.ateLbToday = Math.max(c.ateLbToday, foodNeedLb(c));
         c.drankPintsToday = Math.max(c.drankPintsToday, waterNeedPints(c, false, false));
         fed.push(c.name);
@@ -375,6 +387,7 @@ function dailyCosts(s: State): void {
 
 function endOfDay(s: State, ctx: Ctx): void {
   dailyCosts(s);
+  lifestyleRisks(s, ctx);
   groomTheMounts(s);
   checkRituals(s);
   const hotDay = s.weather.high >= 100;
@@ -797,6 +810,7 @@ function completeLongRest(d: State, ctx: Ctx, watched: Record<string, number>): 
   }
   log(d, 'Long Rest complete: HP and all spent Hit Point Dice are restored, and morning tasks reset.', 'good');
   bastionLongRest(d);
+  syncLevelRenown(d);
   // A cold night is judged on waking, after the rest's normal recovery.
   for (const c of d.characters) {
     if (c.nightChill != null && alive(c)) {
@@ -1006,6 +1020,11 @@ function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
   const vessel = o.vesselId ? d.stashes.find((x) => x.id === o.vesselId && x.speedMph) : undefined;
   if (vessel) return sail(d, ctx, vessel, o);
   if (o.flying && o.difficult) o = { ...o, difficult: false };
+  const ground = groundDifficulty(d.place.ground, d.place.goodRoad);
+  if (ground && !o.flying && !o.difficult) {
+    log(d, `With ${ground} underfoot, the going counts as Difficult Terrain (half speed).`, 'warn');
+    o = { ...o, difficult: true };
+  }
   const slow = slowTravelers(d);
   const allowed = slow.length ? 'slow' : o.flying ? o.pace : clampPace(o.pace, d.place.terrain, d.place.goodRoad);
   if (slow.length && o.pace !== 'slow') {
@@ -1117,7 +1136,9 @@ export const runStage = act((d, ctx, stageId: string, o: Omit<TravelOpts, 'hours
     const st = stage()!;
     const vessel = o.vesselId ? d.stashes.find((x) => x.id === o.vesselId && x.speedMph) : undefined;
     const pace = clampPace(o.pace, st.terrain, st.goodRoad);
-    const mph = vessel ? Math.max(0.1, vesselSpeed(d, vessel, o).mph) : PACES[pace].mph * (st.difficult ? 0.5 : 1);
+    const pending = (st.obstacles ?? []).filter((x) => !x.resolved);
+    if (pending.length && day === 0) log(d, `This stage has ${pending.length} unresolved obstacle(s): ${pending.map((x) => x.name).join(', ')}. Resolve them on the Journey card.`, 'warn');
+    const mph = vessel ? Math.max(0.1, vesselSpeed(d, vessel, o).mph) : PACES[pace].mph * (st.difficult || groundDifficulty(d.place.ground, st.goodRoad) ? 0.5 : 1);
     const hours = Math.max(1, Math.min(vessel ? 24 : 8, Math.ceil((st.miles - st.milesDone) / mph)));
     const covered = travelMut(d, ctx, { ...o, pace, hours, difficult: st.difficult });
     st.milesDone = Math.min(st.miles, Math.round((st.milesDone + covered) * 10) / 10);
@@ -1656,6 +1677,185 @@ export const harvestPoison = act((d, ctx, charId: string, bonus: number, creatur
     log(d, `${me.name} botches the harvest from ${name} (${total} vs DC ${POISON_HARVEST_DC}, failed by 5 or more) and is exposed to its poison. Apply the creature's poison effect.`, 'bad');
   } else {
     log(d, `${me.name} spends ${mins} min on ${name} but can't extract any poison (${total} vs DC ${POISON_HARVEST_DC}).`, 'warn');
+  }
+});
+
+// ---------------------------------------------------------------- mixed potions, lifestyle risks, renown
+
+const HEALING_DICE: [RegExp, string][] = [
+  [/supreme healing/i, '10d4+20'],
+  [/superior healing/i, '8d4+8'],
+  [/greater healing/i, '4d4+4'],
+  [/healing/i, '2d4+2'],
+];
+
+/** Drinks one potion's effect with a multiplier on its numbers and duration (or makes it permanent). */
+function drinkPotion(s: State, ctx: Ctx, c: Character, name: string, factor: number | 'permanent'): void {
+  const heal = HEALING_DICE.find(([re]) => re.test(name));
+  if (heal) {
+    const amt = rollExpr(heal[1], ctx.rng) ?? 0;
+    if (factor === 'permanent') {
+      c.maxHp += amt;
+      log(s, `${name} works permanently: ${c.name}'s HP maximum rises by ${amt}.`, 'good');
+      return;
+    }
+    Object.assign(s, changeHp(s, ctx, c.id, Math.max(1, Math.floor(amt * factor))));
+    return;
+  }
+  const preset = EFFECT_PRESETS.find((p) => p.kind === 'potion' && p.name.toLowerCase() === name.toLowerCase());
+  const base = preset?.minutes ?? 60;
+  s.effects.push({ id: uid(), name, kind: 'potion', targetIds: [c.id], casterId: null, concentration: false, shelter: false, startedAt: absNow(s), endsAt: factor === 'permanent' ? null : absNow(s) + Math.max(1, Math.round(base * factor)), notes: factor === 'permanent' ? 'Permanent, from mixed potions.' : factor === 1 ? '' : `Numbers and duration ×${factor} from mixed potions.` });
+}
+
+/** Mixes (or drinks together) two potions from the inventory and applies the 2024 DMG Potion Miscibility result. */
+export const mixInventoryPotions = act((d, ctx, charId: string, itemA: string, itemB: string) => {
+  const c = charById(d, charId);
+  const a = c?.inventory.find((i) => i.id === itemA);
+  const b = c?.inventory.find((i) => i.id === itemB && (i.id !== itemA || i.qty > 1));
+  if (!c || !a || !b) return;
+  const names = [a.name, b.name];
+  for (const it of [a, b]) it.qty -= 1;
+  c.inventory = c.inventory.filter((i) => i.qty > 0);
+  const roll = die(100, ctx.rng);
+  const r = POTION_MISCIBILITY.find((x) => roll <= x.upTo)!;
+  log(d, `${c.name} mixes ${names[0]} and ${names[1]}: d100 = ${roll}. ${r.text}`, roll <= 25 ? 'bad' : roll >= 91 ? 'good' : 'info');
+  const pick = () => names[die(2, ctx.rng) - 1];
+  if (roll === 1) return dealDamage(d, ctx, c.id, rollExpr('4d10', ctx.rng) ?? 22);
+  if (roll <= 8) return void Object.assign(d, exposePoison(d, ctx, c.id, "Assassin's Blood", null));
+  if (roll <= 15) return;
+  if (roll <= 25) return drinkPotion(d, ctx, charById(d, charId)!, pick(), 1);
+  if (roll <= 35) return names.forEach((n) => drinkPotion(d, ctx, charById(d, charId)!, n, 0.5));
+  if (roll <= 90) return names.forEach((n) => drinkPotion(d, ctx, charById(d, charId)!, n, 1));
+  if (roll <= 99) {
+    const doubled = pick();
+    return names.forEach((n) => drinkPotion(d, ctx, charById(d, charId)!, n, n === doubled ? 2 : 1));
+  }
+  drinkPotion(d, ctx, charById(d, charId)!, pick(), 'permanent');
+});
+
+/** Highest faction renown a character's party holds (factions are party-wide in this tracker). */
+const bestRenown = (s: State): number => Math.max(0, ...s.factions.map((f) => f.renown));
+
+/**
+ * Table rule (the 2024 PHB says lifestyles have no inherent consequences, but describes the risks):
+ * once a week in town, the poor risk theft and disease and the rich draw attention. Renown 3+ means
+ * shelter in need, which spares Wretched characters the street.
+ */
+function lifestyleRisks(s: State, ctx: Ctx): void {
+  if (!s.settings.lifestyleRisks || !s.place.settlement || (s.dayIndex + 1) % 7 !== 0) return;
+  for (const c of adventurers(s)) {
+    const r = die(6, ctx.rng);
+    const steal = (dice: string) => {
+      const gp = Math.min(c.gp, rollExpr(dice, ctx.rng) ?? 1);
+      if (gp <= 0) return;
+      spendWealth(c, gp);
+      log(s, `${c.name} notices their purse is lighter: ${fmtGp(gp)} gone, lifted while living ${LIFESTYLE_LABEL[c.lifestyle].toLowerCase()} (table rule).`, 'warn');
+    };
+    switch (c.lifestyle) {
+      case 'wretched':
+        if (bestRenown(s) >= 3) break;
+        if (r === 1) steal('1d6');
+        else if (r === 2) Object.assign(s, exposeContagion(s, ctx, c.id, 'sewer', true));
+        else if (r === 3) {
+          log(s, `${c.name} is roughed up sleeping rough on the street (table rule).`, 'warn');
+          Object.assign(s, changeHp(s, ctx, c.id, -die(4, ctx.rng)));
+        }
+        break;
+      case 'squalid':
+        if (r === 1) Object.assign(s, exposeContagion(s, ctx, c.id, 'sewer', true));
+        else if (r === 2) steal('1d6');
+        break;
+      case 'poor':
+        if (r === 1 && die(2, ctx.rng) === 1) steal('1d4');
+        break;
+      case 'aristocratic':
+        if (r === 1) steal('2d10');
+        else if (r === 2) log(s, `Word of ${c.name}'s wealth spreads: someone seeks their patronage, a loan or a favor (table rule).`, 'info');
+        else if (r === 3) log(s, `${c.name} receives an invitation from someone who wants to be seen with them (table rule).`, 'info');
+        break;
+      case 'wealthy':
+        if (r === 1) log(s, `A petitioner approaches ${c.name}, having heard they can afford to help (table rule).`, 'info');
+        break;
+    }
+  }
+}
+
+/** DMG: +1 renown for completing a mission that serves the group. */
+export const factionMission = act((d, _ctx, factionId: string) => {
+  const f = d.factions.find((x) => x.id === factionId);
+  if (!f) return;
+  const before = f.renown;
+  f.renown += 1;
+  log(d, `A mission for ${f.name} is done: renown ${before} → ${f.renown}.${f.renown === 3 ? ' Members now treat the party as respected (Friendly, shelter in need).' : f.renown === 10 ? ' Potions, scrolls, favors and backup are now within reach.' : f.renown === 50 ? ' The faction would raise a small army for you.' : ''}`, 'good');
+});
+
+/** Level-based renown (DMG option): a faction tied to a character keeps renown at least equal to their level. */
+function syncLevelRenown(s: State): void {
+  for (const f of s.factions) {
+    if (!f.levelOf) continue;
+    const c = charById(s, f.levelOf);
+    if (c && c.level > f.renown) {
+      log(s, `${f.name} renown rises with ${c.name}'s level: ${f.renown} → ${c.level}.`, 'good');
+      f.renown = c.level;
+    }
+  }
+}
+
+/** Faction supply at Renown 10+: Common or Uncommon potions and scrolls at their 2024 DMG value (consumables half). */
+export const factionSupply = act((d, _ctx, charId: string, name: string, rarity: 'common' | 'uncommon') => {
+  const c = charById(d, charId);
+  if (!c || bestRenown(d) < 10) return;
+  const gp = rarity === 'common' ? 50 : 200;
+  if (c.gp < gp) return void log(d, `${c.name} can't afford ${name} (${gp} GP).`, 'warn');
+  spendWealth(c, gp);
+  c.inventory.push({ id: uid(), name, qty: 1, weight: 0.5, source: 'manual', valueGp: gp, container: null, ammo: null });
+  log(d, `${c.name} gets ${name} through faction contacts for ${gp} GP.`, 'good');
+});
+
+// ---------------------------------------------------------------- journey obstacles
+
+export const addObstacle = act((d, _ctx, stageId: string, preset: Omit<Obstacle, 'id'>) => {
+  const st = d.journey.find((x) => x.id === stageId);
+  if (!st) return;
+  st.obstacles = [...(st.obstacles ?? []), { id: uid(), ...preset }];
+});
+
+/** Tries to get past an obstacle: one leader's check, or a group check where half or more must succeed (2024 PHB). */
+export const resolveObstacle = act((d, ctx, stageId: string, obstacleId: string, bonus: number, leaderId: string | null) => {
+  const st = d.journey.find((x) => x.id === stageId);
+  const ob = st?.obstacles?.find((x) => x.id === obstacleId);
+  if (!st || !ob || ob.resolved) return;
+  const travelers = d.characters.filter((c) => alive(c) && !c.dying && !c.stable);
+  const rollers = ob.group ? travelers : travelers.filter((c) => c.id === leaderId).slice(0, 1);
+  if (!rollers.length) return;
+  const results = rollers.map((c) => {
+    const r = d20('normal', ctx.rng).value + bonus - 2 * c.exhaustion;
+    return { c, r, ok: r >= ob.dc };
+  });
+  const passed = ob.group ? results.filter((x) => x.ok).length * 2 >= results.length : results[0].ok;
+  ob.resolved = passed ? 'passed' : 'failed';
+  log(d, `${ob.name}: ${ob.check} DC ${ob.dc}${ob.group ? ' (group check)' : ''}. ${results.map((x) => `${x.c.name} ${x.r}`).join(', ')}. ${passed ? 'They get past it.' : 'They fail.'}`, passed ? 'good' : 'bad');
+  if (passed) return;
+  switch (ob.consequence) {
+    case 'delay': {
+      const hours = Number(ob.amount) || 4;
+      log(d, `The obstacle costs ${hours} hour(s).`, 'warn');
+      advanceMut(d, ctx, hours * 60, 'camp');
+      return;
+    }
+    case 'exhaustion':
+      for (const c of travelers) {
+        const n = rollExpr(ob.amount, ctx.rng) ?? 1;
+        gainExhaustion(d, c, n, ob.name, /blizzard|snow|ice/i.test(ob.name) ? 'cold' : 'march');
+      }
+      return;
+    case 'damage':
+      for (const c of travelers) Object.assign(d, changeHp(d, ctx, c.id, -(rollExpr(ob.amount, ctx.rng) ?? 0)));
+      return;
+    case 'condition':
+      for (const c of travelers)
+        d.effects.push({ id: uid(), name: `${ob.condition ?? 'Condition'} (${ob.name})`, kind: 'other', targetIds: [c.id], casterId: null, concentration: false, shelter: false, startedAt: absNow(d), endsAt: ob.minutes ? absNow(d) + ob.minutes : null, notes: ob.minutes ? '' : 'Lasts until removed by magic.' });
+      log(d, `Everyone is ${ob.condition ?? 'affected'}${ob.minutes ? ` for ${formatDuration(ob.minutes)}` : ' until magic removes it'}.`, 'bad');
   }
 });
 
@@ -4331,6 +4531,30 @@ export function encounterCheck(s: State, ctx: Ctx, activity: CheckConditions['ac
 const ACTIVITY_WHEN: Record<CheckConditions['activity'], string> = { travel: 'on the road', camp: 'in camp', rest: 'during the Long Rest', explore: 'while exploring' };
 
 /** Rolls on the location's table and logs what turns up, with what the characters notice first. */
+/** Table rule: a creature's Stealth bonus estimated from its challenge rating (proficiency plus a typical Dexterity). */
+export function estimatedStealth(cr: string): number {
+  const n = cr.includes('/') ? 0 : Number(cr) || 0;
+  return n >= 17 ? 6 : n >= 11 ? 5 : n >= 5 ? 4 : n >= 2 ? 3 : 2;
+}
+
+/**
+ * Who notices whom (2024 rules): the creatures' Dexterity (Stealth) against the party's best passive Perception.
+ * Fast pace means Disadvantage on Perception (−5 passive), Slow means Advantage (+5). Asleep, nobody but the watch notices.
+ * Only Hostile creatures try to ambush; a surprised party has Disadvantage on Initiative.
+ */
+function surpriseCheck(s: State, ctx: Ctx, cr: string, hostile: boolean, activity: CheckConditions['activity'], watchers: Character[]): string {
+  if (!hostile) return ' They aren’t hiding: both sides see each other at that distance.';
+  const awake = activity === 'rest' ? watchers : s.characters.filter((c) => c.kind !== 'mount' && alive(c) && !c.dying && !c.stable);
+  const pace = activity === 'travel' ? s.travel.pace : null;
+  const adj = pace === 'fast' ? -5 : pace === 'slow' ? 5 : 0;
+  const best = awake.length ? Math.max(...awake.map((c) => c.passivePerception)) + adj : -Infinity;
+  const stealth = d20('normal', ctx.rng).value + estimatedStealth(cr);
+  if (!awake.length) return ` With nobody awake to notice, they approach unseen: the party is surprised (Disadvantage on Initiative).`;
+  return stealth > best
+    ? ` They try to ambush: Stealth ${stealth} beats the party's best passive Perception ${best}${adj ? ` (${adj > 0 ? '+5 slow pace' : '−5 fast pace'})` : ''}. The party is surprised (Disadvantage on Initiative).`
+    : ` They try to sneak up: Stealth ${stealth} against passive Perception ${best}${adj ? ` (${adj > 0 ? '+5 slow pace' : '−5 fast pace'})` : ''}. The party spots them in time, no surprise.`;
+}
+
 export function resolveEncounter(s: State, ctx: Ctx, activity: CheckConditions['activity'], checkDetail?: string): void {
   const table = encounterTable(s);
   const res = rollOnTable(table, ctx.rng);
@@ -4349,7 +4573,7 @@ export function resolveEncounter(s: State, ctx: Ctx, activity: CheckConditions['
   }
   const c = res.row.creature;
   const party = table.party;
-  const dm = `${head} ${res.summary} (CR ${c.cr}${res.row.followers ? ` and ${res.row.followers.creature.cr}` : ''}, rolled ${res.row.count}${res.row.followers ? ` and ${res.row.followers.count}` : ''}; ${res.xp} XP total, ${DIFFICULTY_LABEL[res.difficulty ?? 'low']} for ${party.size} level-${party.level} characters). Starting attitude: ${res.attitude?.attitude} (d20 ${res.attitude?.roll}). They are ${res.distanceFt} feet away (${res.distanceExpr}).${watchNote} Compare their Dexterity (Stealth) with the party's passive Perception for surprise.`;
+  const dm = `${head} ${res.summary} (CR ${c.cr}${res.row.followers ? ` and ${res.row.followers.creature.cr}` : ''}, rolled ${res.row.count}${res.row.followers ? ` and ${res.row.followers.count}` : ''}; ${res.xp} XP total, ${DIFFICULTY_LABEL[res.difficulty ?? 'low']} for ${party.size} level-${party.level} characters). Starting attitude: ${res.attitude?.attitude} (d20 ${res.attitude?.roll}). They are ${res.distanceFt} feet away (${res.distanceExpr}).${watchNote}${surpriseCheck(s, ctx, c.cr, res.attitude?.attitude === 'Hostile', activity, watchers)}${res.attitude?.attitude !== 'Hostile' ? ' They can be parleyed with: an Influence check (DC 15 or the creature’s Intelligence score, whichever is higher) can shift an Indifferent creature.' : ''}`;
   const predicate = firstSign(c.type, night);
   log(s, dm, res.attitude?.attitude === 'Hostile' ? 'bad' : 'warn', { charIds: watchers.map((w) => w.id), status: false, sense: predicate });
   for (const w of watchers) s.statusLog.unshift({ id: uid(), stamp: stamp(s), at: absNow(s), charId: w.id, kind: 'encounter', text: `On watch, ${w.name} spots ${res.summary}.`, sense: predicate, tone: 'warn' });

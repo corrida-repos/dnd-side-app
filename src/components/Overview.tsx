@@ -11,6 +11,7 @@ import { groupLog, senseText } from './senseView';
 import type { Pace, Shelter, WaterQuality } from '../state/types';
 import { TERRAIN, TERRAIN_FOR_CLIMATE, maxPaceFor, type TerrainType } from '../rules/terrain';
 import { readSky, rangeLabel } from '../rules/skyclock';
+import { DEEP_SNOW_IN, groundDifficulty, OBSTACLES } from '../rules/ground';
 import { WaysAround } from './WaysAround';
 
 export function Overview() {
@@ -515,6 +516,8 @@ function TravelCard() {
           />
         )}
       </div>
+      {groundDifficulty(s.place.ground, s.place.goodRoad) && !vesselId && !flying && <p className="small warn-text">The ground ({groundDifficulty(s.place.ground, s.place.goodRoad)}) makes this Difficult Terrain: half speed (table rule).</p>}
+      {(s.place.ground?.snowIn ?? 0) > 0 && !groundDifficulty(s.place.ground, s.place.goodRoad) && <p className="small muted">{s.place.ground!.snowIn} inches of snow on the ground (Difficult Terrain at {DEEP_SNOW_IN}).</p>}
       {slow.length > 0 && !vesselId && <p className="small warn-text">{slow.join(', ')} {slow.length > 1 ? 'are' : 'is'} at half Speed or less (load or Exhaustion): the party must travel at a Slow pace.</p>}
       <p className="small">
         {p.note}. About <b>{+miles.toFixed(1)} miles</b>. {s.travel.hoursToday} travel hour(s) since the last Long Rest
@@ -639,6 +642,7 @@ function JourneyCard() {
                 <Meter value={st.milesDone} max={st.miles} tone="good" /> {st.milesDone}/{st.miles} miles
               </div>
             )}
+            {!st.done && <StageObstacles stageId={st.id} />}
           </li>
         ))}
       </ul>
@@ -771,5 +775,51 @@ function RecentLog() {
         {!s.log.length && <li className="muted">Nothing has happened yet. Advance time, travel or rest to begin.</li>}
       </ul>
     </Card>
+  );
+}
+
+function StageObstacles({ stageId }: { stageId: string }) {
+  const s = useGame();
+  const st = s.journey.find((x) => x.id === stageId)!;
+  const [preset, setPreset] = useState(OBSTACLES[0].name);
+  const [bonus, setBonus] = useState(0);
+  const [leader, setLeader] = useState('');
+  const people = s.characters.filter((c) => E.alive(c));
+  const leaderId = people.find((c) => c.id === leader)?.id ?? people[0]?.id ?? '';
+  const obs = st.obstacles ?? [];
+  const p = OBSTACLES.find((x) => x.name === preset)!;
+  return (
+    <details className="add-facility">
+      <summary className="small">Obstacles{obs.length ? ` (${obs.filter((o) => !o.resolved).length} to resolve)` : ''}</summary>
+      <ul className="plain small">
+        {obs.map((o) => (
+          <li key={o.id} className="btn-row tight">
+            <b>{o.name}</b> · {o.check} DC {o.dc}
+            {o.group ? ' (group)' : ''}
+            {o.resolved ? (
+              <Pill tone={o.resolved === 'passed' ? 'good' : 'bad'}>{o.resolved === 'passed' ? 'Passed' : 'Failed'}</Pill>
+            ) : (
+              <>
+                {!o.group && <Select value={leaderId} onChange={setLeader} options={people.map((c) => ({ value: c.id, label: c.name }))} />}
+                <Num value={bonus} onChange={setBonus} width={3} label="Bonus" />
+                <button className="small" onClick={() => dispatch((st2, cx) => E.resolveObstacle(st2, cx, st.id, o.id, bonus, leaderId))}>
+                  Attempt
+                </button>
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
+      <div className="btn-row tight">
+        <Select value={preset} onChange={setPreset} options={OBSTACLES.map((x) => x.name)} />
+        <button className="small" onClick={() => dispatch((st2, cx) => E.addObstacle(st2, cx, st.id, { name: p.name, check: p.check, dc: p.dc, group: p.group, consequence: p.consequence, amount: p.amount, condition: p.condition, minutes: p.minutes }))}>
+          Add obstacle
+        </button>
+      </div>
+      <p className="small muted">
+        {p.note} Failure: {p.consequence === 'delay' ? `${p.amount} hours lost` : p.consequence === 'exhaustion' ? `${p.amount} Exhaustion level(s) each` : p.consequence === 'damage' ? `${p.amount} damage each` : `${p.condition}${p.minutes ? '' : ' until removed by magic'}`}.
+      </p>
+      <Rule>2024 DMG journey challenges: get past an obstacle with a good plan or a check; failure costs time, Exhaustion, damage or a condition. Group checks pass when at least half succeed. DCs and consequences are table rules.</Rule>
+    </details>
   );
 }

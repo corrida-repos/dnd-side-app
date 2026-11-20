@@ -403,6 +403,7 @@ function ShopCard() {
           </button>
         </>
       )}
+      {Math.max(0, ...s.factions.map((f) => f.renown)) >= 10 && <FactionSupply buyerId={whoId} />}
       <h3>Split loot</h3>
       <div className="form-row">
         <Num label="Coin" value={loot} onChange={(v) => setLoot(Math.max(0, v))} min={0} suffix="GP" width={6} />
@@ -420,5 +421,23 @@ function ShopCard() {
         2024 PHB prices. Selling: equipment in good condition fetches half its price; gems, jewelry, art objects and trade goods keep their full value. Magic items are sold as downtime deals (Downtime tab). Table rules: what each settlement stocks, and a {Math.round(RENOWN_DISCOUNT * 100)}% discount through a faction where you have Renown 3+.
       </Rule>
     </Card>
+  );
+}
+
+function FactionSupply({ buyerId }: { buyerId: string }) {
+  const [name, setName] = useState('Potion of Greater Healing');
+  const [rarity, setRarity] = useState<'common' | 'uncommon'>('uncommon');
+  return (
+    <>
+      <h3>Faction supply (Renown 10+)</h3>
+      <div className="form-row">
+        <Text label="Potion or scroll" value={name} onChange={setName} />
+        <Select label="Rarity" value={rarity} onChange={setRarity} options={[{ value: 'common', label: 'Common (50 GP)' }, { value: 'uncommon', label: 'Uncommon (200 GP)' }]} />
+      </div>
+      <button className="small" disabled={!name.trim() || !buyerId} onClick={() => dispatch((st, cx) => E.factionSupply(st, cx, buyerId, name.trim(), rarity))}>
+        Get it through contacts
+      </button>
+      <p className="small muted">DMG: Renown 10+ can open access to potions and scrolls. Priced at half the 2024 DMG value for consumables (table rule).</p>
+    </>
   );
 }

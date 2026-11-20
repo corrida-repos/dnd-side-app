@@ -120,6 +120,17 @@ function FactionsCard() {
                 </button>
               </span>
             </div>
+            <div className="btn-row tight">
+              <button className="small" onClick={() => dispatch((st, cx) => E.factionMission(st, cx, f.id))}>
+                Mission done (+1)
+              </button>
+              <Select
+                label="Level-based renown"
+                value={f.levelOf ?? ''}
+                onChange={(v) => edit((d) => void (d.factions.find((x) => x.id === f.id)!.levelOf = v || null))}
+                options={[{ value: '', label: 'Off' }, ...s.characters.filter((c) => c.kind !== 'mount').map((c) => ({ value: c.id, label: `Follows ${c.name}'s level` }))]}
+              />
+            </div>
             <Text value={f.notes} onChange={(v) => set(f.id, (x) => void (x.notes = v))} placeholder="Notes: contacts, favors owed, rumors" />
           </li>
         ))}
