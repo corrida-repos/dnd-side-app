@@ -1,4 +1,5 @@
-import type { Activity, Character, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
+import type { Activity, Bastion, Character, Facility, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
+import { BASIC_BUILD, BASTION_TURN_DAYS, ENLARGE, rollBastionEvent, SIZE_LABEL, SPECIAL_FACILITIES, type FacilitySize } from '../rules/bastion';
 import { d20, die, combineModes, signed, type Rng, type RollMode } from '../rules/dice';
 import { dateFromIndex, formatClock, formatDate } from '../rules/calendar';
 import { fireThreat, rollWeather, temperatureAt, CLIMATES } from '../rules/weather';
@@ -232,6 +233,7 @@ function endOfDay(s: State, ctx: Ctx): void {
   }
   s.dayIndex += 1;
   s.minutes = 0;
+  progressBastions(s);
   log(s, `A new day begins: ${formatDate(s.calendar, s.startYear, s.dayIndex)}.`);
   newWeather(s, ctx);
 }
@@ -794,4 +796,105 @@ export const downtimeDay = act((d, ctx, projectIds: string[]) => {
   if (d.minutes < 23 * 60) advanceMut(d, ctx, 23 * 60 - d.minutes, 'camp');
   const rested = longRest(d, ctx, false);
   Object.assign(d, rested);
+});
+
+// ---------------------------------------------------------------- bastions
+
+export function turnsDue(s: State, b: Bastion): number {
+  return Math.floor((s.dayIndex - b.lastTurnDay) / BASTION_TURN_DAYS);
+}
+
+export function daysToNextTurn(s: State, b: Bastion): number {
+  const since = s.dayIndex - b.lastTurnDay;
+  return BASTION_TURN_DAYS - (since % BASTION_TURN_DAYS);
+}
+
+/** Runs at each midnight: hirelings keep building whether or not the owner is home. */
+function progressBastions(s: State): void {
+  for (const b of s.bastions) {
+    for (const f of b.facilities) {
+      if (!f.building) continue;
+      f.building.daysLeft -= 1;
+      if (f.building.daysLeft <= 0) {
+        log(s, `${b.name}: ${f.building.what} is finished (${f.building.totalDays} days).`, 'good');
+        f.size = f.building.toSize;
+        f.built = true;
+        f.building = null;
+      }
+    }
+    if ((s.dayIndex - b.lastTurnDay) % BASTION_TURN_DAYS === 0 && s.dayIndex > b.lastTurnDay) {
+      log(s, `${b.name}: a Bastion turn is due. Give your special facilities their orders.`, 'warn');
+    }
+  }
+}
+
+export const foundBastion = act((d, _ctx, ownerId: string, name: string) => {
+  const owner = charById(d, ownerId);
+  if (!owner) return;
+  d.bastions.push({ id: uid(), name: name || `${owner.name}'s Bastion`, ownerId, facilities: [], lastTurnDay: d.dayIndex, turns: 0, lastEvent: '', goldSpent: 0, notes: '' });
+  log(d, `${owner.name} founds a Bastion: ${name || `${owner.name}'s Bastion`}.`, 'good');
+});
+
+export interface NewFacility {
+  kind: 'basic' | 'special';
+  name: string;
+  size: FacilitySize;
+  /** Already standing (a starting facility, or built before you started tracking). */
+  alreadyBuilt: boolean;
+}
+
+export const addFacility = act((d, _ctx, bastionId: string, nf: NewFacility) => {
+  const b = d.bastions.find((x) => x.id === bastionId);
+  if (!b) return;
+  const special = SPECIAL_FACILITIES.find((x) => x.name === nf.name);
+  const f: Facility = {
+    id: uid(),
+    name: nf.name,
+    kind: nf.kind,
+    size: nf.size,
+    order: special && nf.kind === 'special' ? special.order : 'Maintain',
+    orderNote: '',
+    building: null,
+    built: true,
+  };
+  // Special facilities come with character levels at no cost. Basic facilities are paid for and built.
+  if (nf.kind === 'basic' && !nf.alreadyBuilt) {
+    const cost = BASIC_BUILD[nf.size];
+    f.built = false;
+    f.building = { what: `${SIZE_LABEL[nf.size]} ${nf.name}`, daysLeft: cost.days, totalDays: cost.days, costGp: cost.gp, toSize: nf.size };
+    b.goldSpent += cost.gp;
+    log(d, `${b.name}: construction starts on a ${SIZE_LABEL[nf.size].toLowerCase()} ${nf.name} (${cost.gp.toLocaleString()} GP, ${cost.days} days).`);
+  } else {
+    log(d, `${b.name}: adds ${nf.kind === 'special' ? 'the special facility' : 'a'} ${nf.name}.`);
+  }
+  b.facilities.push(f);
+});
+
+export const enlargeFacility = act((d, _ctx, bastionId: string, facilityId: string) => {
+  const b = d.bastions.find((x) => x.id === bastionId);
+  const f = b?.facilities.find((x) => x.id === facilityId);
+  if (!b || !f || f.building) return;
+  const step = ENLARGE[f.size];
+  if (!step) return;
+  f.building = { what: `Enlarging the ${f.name} to ${SIZE_LABEL[step.to]}`, daysLeft: step.days, totalDays: step.days, costGp: step.gp, toSize: step.to };
+  b.goldSpent += step.gp;
+  log(d, `${b.name}: work starts enlarging the ${f.name} to ${SIZE_LABEL[step.to].toLowerCase()} (${step.gp.toLocaleString()} GP, ${step.days} days).`);
+});
+
+/** Resolves one Bastion turn: logs each order, and rolls a Bastion event if every special facility was told to Maintain. */
+export const resolveBastionTurn = act((d, ctx, bastionId: string) => {
+  const b = d.bastions.find((x) => x.id === bastionId);
+  if (!b || turnsDue(d, b) < 1) return;
+  b.lastTurnDay += BASTION_TURN_DAYS;
+  b.turns += 1;
+  const working = b.facilities.filter((f) => f.kind === 'special' && f.built);
+  const orders = working.map((f) => `${f.name}: ${f.order}${f.orderNote ? ` (${f.orderNote})` : ''}`);
+  log(d, `${b.name}, Bastion turn ${b.turns}. Orders: ${orders.join('; ') || 'none'}.`);
+  if (working.every((f) => f.order === 'Maintain')) {
+    const e = rollBastionEvent(ctx.rng);
+    b.lastEvent = `Turn ${b.turns}: ${e.event} (d100 = ${e.roll})`;
+    log(d, `${b.name}: every facility was maintained, so roll a Bastion event. d100 = ${e.roll}: ${e.event}. See the DMG for what happens.`, e.event === 'Attack' || e.event === 'Criminal Hireling' || e.event === 'Lost Hirelings' ? 'warn' : 'info');
+  } else {
+    b.lastEvent = `Turn ${b.turns}: orders carried out`;
+  }
 });

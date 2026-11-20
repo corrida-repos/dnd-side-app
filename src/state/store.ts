@@ -20,6 +20,7 @@ function migrate(raw: unknown): State | null {
     fire: { ...base.fire, ...parsed.fire },
     stores: { ...base.stores, ...parsed.stores },
     place: { ...base.place, ...parsed.place },
+    bastions: parsed.bastions ?? [],
   } as State;
   // Characters saved by older versions pick up any newly added fields.
   s.characters = s.characters.map((c) => ({ ...newCharacter(), ...c }));

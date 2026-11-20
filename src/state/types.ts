@@ -1,6 +1,7 @@
 import type { ClimateId, Weather } from '../rules/weather';
 import type { Calendar } from '../rules/calendar';
 import type { ProjectKind } from '../rules/crafting';
+import type { FacilitySize, Order } from '../rules/bastion';
 
 export type Season = 'winter' | 'spring' | 'summer' | 'autumn';
 export type Size = 'Tiny' | 'Small' | 'Medium' | 'Large' | 'Huge' | 'Gargantuan';
@@ -137,6 +138,41 @@ export interface Project {
   done: boolean;
 }
 
+export interface Construction {
+  what: string;
+  daysLeft: number;
+  totalDays: number;
+  costGp: number;
+  /** Size the facility becomes when the work is done. */
+  toSize: FacilitySize;
+}
+
+export interface Facility {
+  id: string;
+  name: string;
+  kind: 'basic' | 'special';
+  size: FacilitySize;
+  order: Order;
+  /** What the current order is for, e.g. "Craft: Longsword". */
+  orderNote: string;
+  /** Unfinished work. A facility that's still being built can't take orders. */
+  building: Construction | null;
+  built: boolean;
+}
+
+export interface Bastion {
+  id: string;
+  name: string;
+  ownerId: string;
+  facilities: Facility[];
+  /** Day index when the last Bastion turn was resolved (or the Bastion was founded). */
+  lastTurnDay: number;
+  turns: number;
+  lastEvent: string;
+  goldSpent: number;
+  notes: string;
+}
+
 export interface LogEntry {
   id: string;
   stamp: string;
@@ -183,4 +219,5 @@ export interface State {
   lastLongRestEnd: number | null;
   settings: Settings;
   spellLibrary: SpellRef[];
+  bastions: Bastion[];
 }

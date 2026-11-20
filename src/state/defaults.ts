@@ -102,5 +102,6 @@ export function createDefaultState(rng: Rng): State {
     lastLongRestEnd: null,
     settings: { autoRollSaves: true, climateAdjustedPrecip: false, fireWarmsCamp: true, doubleWaterInHeat: false, wildNeedsPurifying: true, sleepInArmorPenalty: false },
     spellLibrary: [],
+    bastions: [],
   };
 }

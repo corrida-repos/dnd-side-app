@@ -114,3 +114,20 @@ describe('survival helpers', () => {
     expect([1, 4, 5, 9, 13, 17].map(proficiencyBonus)).toEqual([2, 2, 3, 4, 5, 6]);
   });
 });
+
+import { GEAR_CATALOG } from './crafting';
+import { specialSlots, rollBastionEvent } from './bastion';
+
+describe('gear and bastion tables', () => {
+  it('crafts common gear at 10 GP per workday', () => {
+    const t = (n: string) => nonmagicalCrafting(GEAR_CATALOG.find((g) => g.name === n)!.gp);
+    expect(t('Plate Armor')).toEqual({ days: 150, gp: 750 });
+    expect(t('Chain Mail')).toEqual({ days: 8, gp: 37.5 });
+    expect(t('Longsword')).toEqual({ days: 2, gp: 7.5 });
+    expect(calendarDays(t('Plate Armor').days, 3)).toBe(50);
+  });
+  it('grants special facility slots by level and covers the whole d100', () => {
+    expect([4, 5, 8, 9, 13, 17, 20].map(specialSlots)).toEqual([0, 2, 2, 4, 5, 6, 6]);
+    for (let r = 0; r < 100; r++) expect(rollBastionEvent(() => r / 100).event).toBeTruthy();
+  });
+});

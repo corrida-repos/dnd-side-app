@@ -4,6 +4,7 @@ import * as E from '../state/engine';
 import { uid } from '../state/defaults';
 import {
   ACTIVITY_IDEAS,
+  GEAR_CATALOG,
   calendarDays,
   magicItemCrafting,
   nonmagicalCrafting,
@@ -88,6 +89,7 @@ function NewProject() {
   const [kind, setKind] = useState<ProjectKind>('nonmagical');
   const [name, setName] = useState('');
   const [price, setPrice] = useState(50);
+  const [gear, setGear] = useState('');
   const [scrollLevel, setScrollLevel] = useState(1);
   const [potions, setPotions] = useState(1);
   const [rarity, setRarity] = useState<Rarity>('uncommon');
@@ -100,7 +102,12 @@ function NewProject() {
   switch (kind) {
     case 'nonmagical': {
       const r = nonmagicalCrafting(price);
-      calc = { ...r, label: name || `Item worth ${price} GP`, note: 'Needs proficiency with the right tool. Materials cost half the price.' };
+      const item = GEAR_CATALOG.find((g) => g.name === gear);
+      calc = {
+        ...r,
+        label: name || item?.name || `Item worth ${price} GP`,
+        note: `${item ? `Needs proficiency with ${item.tool}. ` : 'Needs proficiency with the right tool. '}Each 8-hour workday makes 10 GP of progress, and materials cost half the price.`,
+      };
       break;
     }
     case 'scroll': {
@@ -131,7 +138,24 @@ function NewProject() {
       <Select label="Type" value={kind} onChange={setKind} options={(Object.keys(PROJECT_KIND_LABEL) as ProjectKind[]).map((k) => ({ value: k, label: PROJECT_KIND_LABEL[k] }))} />
       <Text label="Name" value={name} onChange={setName} placeholder={kind === 'activity' ? ACTIVITY_IDEAS.join(', ') : 'Optional'} wide />
       <div className="form-row">
-        {kind === 'nonmagical' && <Num label="Item price" value={price} onChange={setPrice} min={0} suffix="GP" width={6} />}
+        {kind === 'nonmagical' && (
+          <>
+            <Select
+              label="Gear"
+              value={gear}
+              onChange={(v) => {
+                setGear(v);
+                const item = GEAR_CATALOG.find((g) => g.name === v);
+                if (item) setPrice(item.gp);
+              }}
+              options={[
+                { value: '', label: 'Custom price…' },
+                ...GEAR_CATALOG.map((g) => ({ value: g.name, label: `${g.name}: ${g.gp} GP, ${Math.max(1, Math.ceil(g.gp / 10))} d` })),
+              ]}
+            />
+            <Num label="Item price" value={price} onChange={(v) => (setPrice(v), setGear(''))} min={0} suffix="GP" width={6} />
+          </>
+        )}
         {kind === 'scroll' && (
           <Select
             label="Spell level"

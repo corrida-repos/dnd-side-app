@@ -751,3 +751,14 @@ td {
   gap: 6px;
   padding: 4px 0;
 }
+
+.facility {
+  border-bottom: 1px solid var(--border);
+  padding: 4px 0;
+}
+.add-facility {
+  margin-top: 12px;
+}
+.rules-list li {
+  margin-bottom: 6px;
+}

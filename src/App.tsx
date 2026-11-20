@@ -8,6 +8,7 @@ import { PartyTab } from './components/PartyTab';
 import { CampTab } from './components/CampTab';
 import { MorningTab } from './components/MorningTab';
 import { DowntimeTab } from './components/DowntimeTab';
+import { BastionTab } from './components/BastionTab';
 import { LogTab } from './components/LogTab';
 import { SettingsTab } from './components/SettingsTab';
 
@@ -17,6 +18,7 @@ const TABS = [
   { id: 'camp', label: 'Camp & Survival', el: CampTab },
   { id: 'morning', label: 'Morning & Spells', el: MorningTab },
   { id: 'downtime', label: 'Downtime', el: DowntimeTab },
+  { id: 'bastions', label: 'Bastions', el: BastionTab },
   { id: 'log', label: 'Chronicle', el: LogTab },
   { id: 'settings', label: 'Settings', el: SettingsTab },
 ] as const;

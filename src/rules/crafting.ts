@@ -66,3 +66,57 @@ export const ACTIVITY_IDEAS = [
   'Gathering rumors',
   'Building a stronghold',
 ];
+
+/** Common gear with its PHB price and the tool used to craft it. Craft time comes from nonmagicalCrafting(). */
+export interface GearItem {
+  name: string;
+  gp: number;
+  tool: string;
+  group: 'Armor' | 'Weapons' | 'Ammunition' | 'Gear';
+}
+
+const SMITH = "Smith's Tools";
+const LEATHER = "Leatherworker's Tools";
+const WOOD = "Woodcarver's Tools";
+const WEAVER = "Weaver's Tools";
+const CARP = "Carpenter's Tools";
+const TINKER = "Tinker's Tools";
+
+export const GEAR_CATALOG: GearItem[] = [
+  { name: 'Padded Armor', gp: 5, tool: WEAVER, group: 'Armor' },
+  { name: 'Leather Armor', gp: 10, tool: LEATHER, group: 'Armor' },
+  { name: 'Studded Leather Armor', gp: 45, tool: LEATHER, group: 'Armor' },
+  { name: 'Hide Armor', gp: 10, tool: LEATHER, group: 'Armor' },
+  { name: 'Chain Shirt', gp: 50, tool: SMITH, group: 'Armor' },
+  { name: 'Scale Mail', gp: 50, tool: SMITH, group: 'Armor' },
+  { name: 'Breastplate', gp: 400, tool: SMITH, group: 'Armor' },
+  { name: 'Half Plate Armor', gp: 750, tool: SMITH, group: 'Armor' },
+  { name: 'Ring Mail', gp: 30, tool: SMITH, group: 'Armor' },
+  { name: 'Chain Mail', gp: 75, tool: SMITH, group: 'Armor' },
+  { name: 'Splint Armor', gp: 200, tool: SMITH, group: 'Armor' },
+  { name: 'Plate Armor', gp: 1500, tool: SMITH, group: 'Armor' },
+  { name: 'Shield', gp: 10, tool: WOOD, group: 'Armor' },
+  { name: 'Dagger', gp: 2, tool: SMITH, group: 'Weapons' },
+  { name: 'Handaxe', gp: 5, tool: SMITH, group: 'Weapons' },
+  { name: 'Mace', gp: 5, tool: SMITH, group: 'Weapons' },
+  { name: 'Shortsword', gp: 10, tool: SMITH, group: 'Weapons' },
+  { name: 'Battleaxe', gp: 10, tool: SMITH, group: 'Weapons' },
+  { name: 'Longsword', gp: 15, tool: SMITH, group: 'Weapons' },
+  { name: 'Warhammer', gp: 15, tool: SMITH, group: 'Weapons' },
+  { name: 'Rapier', gp: 25, tool: SMITH, group: 'Weapons' },
+  { name: 'Greatsword', gp: 50, tool: SMITH, group: 'Weapons' },
+  { name: 'Greataxe', gp: 30, tool: SMITH, group: 'Weapons' },
+  { name: 'Shortbow', gp: 25, tool: WOOD, group: 'Weapons' },
+  { name: 'Longbow', gp: 50, tool: WOOD, group: 'Weapons' },
+  { name: 'Light Crossbow', gp: 25, tool: WOOD, group: 'Weapons' },
+  { name: 'Heavy Crossbow', gp: 50, tool: WOOD, group: 'Weapons' },
+  { name: 'Arrows (20)', gp: 1, tool: WOOD, group: 'Ammunition' },
+  { name: 'Bolts (20)', gp: 1, tool: WOOD, group: 'Ammunition' },
+  { name: 'Backpack', gp: 2, tool: LEATHER, group: 'Gear' },
+  { name: 'Grappling Hook', gp: 2, tool: SMITH, group: 'Gear' },
+  { name: 'Iron Pot', gp: 2, tool: SMITH, group: 'Gear' },
+  { name: 'Tent', gp: 2, tool: WEAVER, group: 'Gear' },
+  { name: 'Ladder', gp: 1, tool: CARP, group: 'Gear' },
+  { name: 'Lock', gp: 10, tool: TINKER, group: 'Gear' },
+  { name: 'Manacles', gp: 2, tool: SMITH, group: 'Gear' },
+];
