@@ -443,6 +443,10 @@ export interface Business {
   building?: { what: string; costGp: number; totalDays: number; daysDone: number };
   /** The owner is on site overseeing construction (otherwise it goes at a third of the speed). */
   overseeing?: boolean;
+  /** Extra paid crews speeding up construction (table rule). */
+  extraCrews?: number;
+  /** Characters working on site; skilled ones have carpenter's or mason's tools. */
+  helpers?: { charId: string; skilled: boolean }[];
 }
 
 export interface Dispatch {

@@ -61,6 +61,31 @@ export const BUILDING_PRESETS: BuildingPreset[] = [
 /** DMG: work goes on while the owner is away, but each day away adds 3 days, so it advances a third as fast. */
 export const AWAY_PROGRESS = 1 / 3;
 
+/*
+ * Speeding up construction. Neither DMG has rules for this, so all of it is a table rule.
+ */
+
+/** Each extra crew adds half the normal pace and costs half the construction price for the work still left. */
+export const CREW_SPEED = 0.5;
+export const CREW_COST_SHARE = 0.5;
+export const MAX_EXTRA_CREWS = 2;
+
+/** A character working on site adds this much pace (more with carpenter's or mason's tools). */
+export const HELPER_SPEED = { skilled: 0.1, untrained: 0.05 };
+
+/** Spells that do construction work at once, in workdays of progress per casting (table rule). */
+export const BUILD_SPELLS: { name: string; level: number; days: number; ritual?: boolean; note: string }[] = [
+  { name: 'Stone Shape', level: 4, days: 1, note: 'Shapes doors, windows and fittings from existing stone.' },
+  { name: 'Fabricate', level: 4, days: 2, note: 'Turns raw timber or stone into finished beams, planks or blocks.' },
+  { name: 'Wall of Stone', level: 5, days: 5, note: 'Ten 10-ft panels, permanent if concentration lasts the full 10 minutes.' },
+  { name: 'Move Earth', level: 6, days: 3, note: 'Digs foundations and levels ground over 2 hours of concentration.' },
+];
+
+/** Pace multiplier from crews and helpers (before the away penalty). */
+export function buildPace(extraCrews: number, skilled: number, untrained: number): number {
+  return 1 + CREW_SPEED * extraCrews + HELPER_SPEED.skilled * skilled + HELPER_SPEED.untrained * untrained;
+}
+
 export interface BusinessResult {
   roll: number;
   total: number;

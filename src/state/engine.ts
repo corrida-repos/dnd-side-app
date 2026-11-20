@@ -9,7 +9,7 @@ import { TERRAIN, clampPace } from '../rules/terrain';
 import { readSky, SKY_DC } from '../rules/skyclock';
 import { MESSENGER_GP_PER_MILE } from '../rules/hirelings';
 import { COMMS, commCost, commDelay, type CommMethod } from '../rules/comms';
-import { AWAY_PROGRESS, BUSINESS_DEBT_PENALTY, BUSINESS_MAX_DAYS, rollBusiness } from '../rules/business';
+import { AWAY_PROGRESS, BUILD_SPELLS, BUSINESS_DEBT_PENALTY, BUSINESS_MAX_DAYS, CREW_COST_SHARE, MAX_EXTRA_CREWS, buildPace, rollBusiness } from '../rules/business';
 import { HAZARDS, type GiftType, type HazardId } from '../rules/hazards';
 import { ARCANA_DC, STUDY_MINUTES, type StudyMethod } from '../rules/identify';
 import { FEED_LB_PER_DAY, MOUNT_CAPACITY, carryingCapacity, COINS_PER_LB, estimateWeight, loadLevel, parseInventory, RATION_WEIGHT, type LoadLevel } from '../rules/encumbrance';
@@ -60,7 +60,7 @@ export const stamp = (s: State): string => `${formatDate(s.calendar, s.startYear
 export const seasonOf = (s: State) => dateFromIndex(s.calendar, s.startYear, s.dayIndex).month.season;
 export const tempNow = (s: State): number => temperatureAt(s.weather, s.minutes % MIN_PER_DAY);
 export const charById = (s: State, id: string): Character | undefined => s.characters.find((c) => c.id === id);
-const alive = (c: Character) => c.exhaustion < 6 && c.diedAt == null;
+export const alive = (c: Character) => c.exhaustion < 6 && c.diedAt == null;
 
 export function log(s: State, text: string, tone: Tone = 'info', extra?: Pick<LogEntry, 'charIds' | 'status' | 'sense'>): void {
   s.log.unshift({ id: uid(), stamp: stamp(s), text, tone, ...extra });
@@ -1499,11 +1499,77 @@ export const addBusiness = act((d, _ctx, name: string, ownerId: string, gpPerDay
   d.businesses.push(b);
 });
 
+/** Spends the lowest spell slot of at least this level. Characters who don't track slots can always cast. */
+function useSlot(s: State, caster: Character, level: number, what: string): boolean {
+  const lvl = (name: string) => Number(/level (\d)/i.exec(name)?.[1] ?? 0);
+  const slot = caster.resources
+    .filter((r) => /(spell|pact) slots \(level (\d)\)/i.test(r.name) && lvl(r.name) >= level && r.current > 0)
+    .sort((x, y) => lvl(x.name) - lvl(y.name))[0];
+  if (caster.resources.some((r) => /slots/i.test(r.name)) && !slot) {
+    log(s, `${caster.name} has no spell slot of level ${level} or higher left for ${what}.`, 'warn');
+    return false;
+  }
+  if (slot) slot.current -= 1;
+  return true;
+}
+
+/** Daily construction pace for a business, counting crews, helpers and whether the owner is on site. */
+export function businessPace(s: State, b: Business): number {
+  const helpers = (b.helpers ?? []).filter((h) => {
+    const c = charById(s, h.charId);
+    return c && alive(c);
+  });
+  const pace = buildPace(b.extraCrews ?? 0, helpers.filter((h) => h.skilled).length, helpers.filter((h) => !h.skilled).length);
+  // Helpers only work while the owner keeps the site going; away, everything slows to a third.
+  return b.overseeing ? pace : buildPace(b.extraCrews ?? 0, 0, 0) * AWAY_PROGRESS;
+}
+
+/** Hires extra crews for the rest of the work: each costs half the construction price for the share still left. */
+export const hireBuildCrews = act((d, _ctx, businessId: string, crews: number) => {
+  const b = d.businesses.find((x) => x.id === businessId);
+  if (!b?.building) return;
+  const want = Math.max(0, Math.min(MAX_EXTRA_CREWS, Math.round(crews)));
+  const added = want - (b.extraCrews ?? 0);
+  if (added <= 0) {
+    b.extraCrews = want;
+    if (added < 0) log(d, `${b.name}: extra crews let go; ${want} remain.`);
+    return;
+  }
+  const left = 1 - b.building.daysDone / b.building.totalDays;
+  const cost = Math.round(b.building.costGp * CREW_COST_SHARE * left * added);
+  payGold(d, [b.ownerId], cost, `${added} extra building crew${added > 1 ? 's' : ''} for ${b.name}`);
+  b.netGp -= cost;
+  b.extraCrews = want;
+  log(d, `${b.name}: ${want} extra crew${want > 1 ? 's' : ''} on site. About ${buildDaysLeft(d, b)} days of work left.`);
+});
+
+/** A caster uses a construction spell on the site: that much work is done at once. */
+export const castBuildSpell = act((d, ctx, businessId: string, casterId: string, spellName: string) => {
+  const b = d.businesses.find((x) => x.id === businessId);
+  const sp = BUILD_SPELLS.find((x) => x.name === spellName);
+  const caster = charById(d, casterId);
+  if (!b?.building || !sp || !caster || !alive(caster)) return;
+  if (!caster.spells.some((x) => x.name.toLowerCase() === sp.name.toLowerCase())) {
+    log(d, `${caster.name} doesn't know ${sp.name}.`, 'warn');
+    return;
+  }
+  if (!useSlot(d, caster, sp.level, sp.name)) return;
+  advanceMut(d, ctx, sp.name === 'Move Earth' ? 120 : 10, 'work');
+  const nb = d.businesses.find((x) => x.id === businessId)!;
+  if (!nb.building) return;
+  nb.building.daysDone = Math.min(nb.building.totalDays, nb.building.daysDone + sp.days);
+  log(d, `${caster.name} casts ${sp.name} on the ${nb.building.what}, saving about ${sp.days} day${sp.days > 1 ? 's' : ''} of work (${Math.floor(nb.building.daysDone)}/${nb.building.totalDays}).`, 'good');
+  if (nb.building.daysDone >= nb.building.totalDays) {
+    log(d, `${nb.name} is built and open for business (${nb.building.what}).`, 'good');
+    nb.building = undefined;
+  }
+});
+
 /** Each midnight: construction advances a day if the owner oversees it, a third of a day if not. */
 function progressBusinesses(s: State): void {
   for (const b of s.businesses) {
     if (!b.building) continue;
-    b.building.daysDone = Math.round((b.building.daysDone + (b.overseeing ? 1 : AWAY_PROGRESS)) * 1000) / 1000;
+    b.building.daysDone = Math.round((b.building.daysDone + businessPace(s, b)) * 1000) / 1000;
     if (b.building.daysDone >= b.building.totalDays) {
       log(s, `${b.name} is built and open for business (${b.building.what}).`, 'good');
       b.building = undefined;
@@ -1512,10 +1578,10 @@ function progressBusinesses(s: State): void {
 }
 
 /** Days left on construction at the current pace. */
-export function buildDaysLeft(b: Business): number {
+export function buildDaysLeft(s: State, b: Business): number {
   if (!b.building) return 0;
   const left = b.building.totalDays - b.building.daysDone;
-  return Math.ceil(left / (b.overseeing ? 1 : AWAY_PROGRESS));
+  return Math.ceil(Math.round((left / businessPace(s, b)) * 1000) / 1000);
 }
 
 /** The owner spends whole downtime days minding the business (work, meals, then a Long Rest). */
@@ -1716,16 +1782,7 @@ export const sendBastionOrders = act((d, ctx, bastionId: string, method: CommMet
       return;
     }
     const ritual = method === 'animal';
-    if (!ritual && info.slotLevel) {
-      const slot = caster.resources
-        .filter((r) => /(spell|pact) slots \(level (\d)\)/i.test(r.name) && Number(/level (\d)/i.exec(r.name)![1]) >= info.slotLevel! && r.current > 0)
-        .sort((x, y) => Number(/level (\d)/i.exec(x.name)![1]) - Number(/level (\d)/i.exec(y.name)![1]))[0];
-      if (caster.resources.some((r) => /slots/i.test(r.name)) && !slot) {
-        log(d, `${caster.name} has no spell slot of level ${info.slotLevel} or higher left for ${info.needs}.`, 'warn');
-        return;
-      }
-      if (slot) slot.current -= 1;
-    }
+    if (!ritual && info.slotLevel && !useSlot(d, caster, info.slotLevel, info.needs!)) return;
     advanceMut(d, ctx, ritual ? 11 : 1, 'camp');
   }
   const cost = commCost(method, b.distanceMiles);

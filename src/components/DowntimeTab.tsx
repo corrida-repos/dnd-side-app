@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { Business } from '../state/types';
 import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
 import { uid } from '../state/defaults';
@@ -18,7 +19,7 @@ import {
 import { Card, Meter, Num, Select, Text, Toggle, Rule } from './common';
 import { MAGIC_ITEM_VALUE, fmtGp } from '../rules/money';
 import { SPELLBOOK_COPY, ACTIVITY_PRESETS } from '../rules/longterm';
-import { AWAY_PROGRESS, BUILDING_PRESETS, BUSINESS_DEBT_PENALTY, BUSINESS_MAX_DAYS, BUSINESS_PRESETS } from '../rules/business';
+import { AWAY_PROGRESS, BUILD_SPELLS, CREW_COST_SHARE, CREW_SPEED, HELPER_SPEED, MAX_EXTRA_CREWS, BUILDING_PRESETS, BUSINESS_DEBT_PENALTY, BUSINESS_MAX_DAYS, BUSINESS_PRESETS } from '../rules/business';
 
 export function DowntimeTab() {
   const s = useGame();
@@ -421,8 +422,9 @@ function BusinessCard() {
               </div>
               {b.building && (
                 <div className="small">
-                  <Meter value={b.building.daysDone} max={b.building.totalDays} tone="good" /> Building ({b.building.what}): {Math.floor(b.building.daysDone)}/{b.building.totalDays} days, about {E.buildDaysLeft(b)} more at this pace.
+                  <Meter value={b.building.daysDone} max={b.building.totalDays} tone="good" /> Building ({b.building.what}): {Math.floor(b.building.daysDone)}/{b.building.totalDays} days, about {E.buildDaysLeft(s, b)} more at this pace.
                   <Toggle checked={!!b.overseeing} onChange={(v) => edit((d) => void (d.businesses.find((x) => x.id === b.id)!.overseeing = v))} label="Owner is on site overseeing the work (away: each day away adds 3 days)" />
+                  <SpeedUp b={b} />
                 </div>
               )}
               {!b.building && <><p className="small">
@@ -486,5 +488,55 @@ function BusinessCard() {
         2014 DMG: each downtime day the owner spends running the business counts (at most 30). Then roll d100 + days on the Running a Business table: low rolls mean paying 1½×, full or half the maintenance for those days; middling rolls break even; high rolls add a profit of 1d6, 2d8 or 3d10 × 5 GP. An unpaid cost makes the business start to fail: −10 to later rolls for each debt until it&apos;s paid. Building one follows the DMG&apos;s Building a Stronghold rule: pay the cost up front, and work takes the listed days while the owner oversees it; each day away adds 3 days. The 2024 rules have no equivalent, so this can be switched off in Settings.
       </Rule>
     </Card>
+  );
+}
+
+function SpeedUp({ b }: { b: Business }) {
+  const s = useGame();
+  const [crews, setCrews] = useState(b.extraCrews ?? 0);
+  const [spell, setSpell] = useState(BUILD_SPELLS[0].name);
+  const [caster, setCaster] = useState('');
+  const build = b.building!;
+  const left = 1 - build.daysDone / build.totalDays;
+  const added = Math.max(0, crews - (b.extraCrews ?? 0));
+  const crewCost = Math.round(build.costGp * CREW_COST_SHARE * left * added);
+  const people = s.characters.filter((c) => c.kind !== 'mount' && E.alive(c));
+  const helpers = b.helpers ?? [];
+  const setHelpers = (h: { charId: string; skilled: boolean }[]) => edit((d) => void (d.businesses.find((x) => x.id === b.id)!.helpers = h));
+  const sp = BUILD_SPELLS.find((x) => x.name === spell)!;
+  const casters = people.filter((c) => c.spells.some((x) => x.name.toLowerCase() === sp.name.toLowerCase()));
+  const casterId = casters.find((c) => c.id === caster)?.id ?? casters[0]?.id ?? '';
+  return (
+    <details className="add-facility">
+      <summary>Speed up construction (table rules) · pace ×{Math.round(E.businessPace(s, b) * 100) / 100}</summary>
+      <div className="btn-row tight">
+        <Num label="Extra crews" value={crews} onChange={(v) => setCrews(Math.max(0, Math.min(MAX_EXTRA_CREWS, Math.round(v))))} min={0} max={MAX_EXTRA_CREWS} width={2} />
+        <button className="small" disabled={crews === (b.extraCrews ?? 0)} onClick={() => dispatch((st, cx) => E.hireBuildCrews(st, cx, b.id, crews))}>
+          {added > 0 ? `Hire (${crewCost.toLocaleString()} GP)` : 'Set crews'}
+        </button>
+      </div>
+      <p className="small muted">Each extra crew adds {CREW_SPEED * 100}% to the pace and costs {CREW_COST_SHARE * 100}% of the construction price for the work still left. At most {MAX_EXTRA_CREWS}.</p>
+      <div className="small">
+        <b>Party members working on site</b> (only while the owner oversees):
+        {people.map((c) => {
+          const h = helpers.find((x) => x.charId === c.id);
+          return (
+            <div key={c.id} className="btn-row tight">
+              <Toggle checked={!!h} onChange={(v) => setHelpers(v ? [...helpers, { charId: c.id, skilled: false }] : helpers.filter((x) => x.charId !== c.id))} label={c.name} />
+              {h && <Toggle checked={h.skilled} onChange={(v) => setHelpers(helpers.map((x) => (x.charId === c.id ? { ...x, skilled: v } : x)))} label="Carpenter's or mason's tools" />}
+            </div>
+          );
+        })}
+        <span className="muted">Each adds {HELPER_SPEED.untrained * 100}% to the pace, or {HELPER_SPEED.skilled * 100}% with carpenter&apos;s or mason&apos;s tools. Their days go to the building, not other downtime.</span>
+      </div>
+      <div className="btn-row tight">
+        <Select label="Spell" value={spell} onChange={setSpell} options={BUILD_SPELLS.map((x) => ({ value: x.name, label: `${x.name} (level ${x.level}, −${x.days} d)` }))} />
+        <Select label="Caster" value={casterId} onChange={setCaster} options={casters.length ? casters.map((c) => ({ value: c.id, label: c.name })) : [{ value: '', label: `Nobody knows ${sp.name}` }]} />
+        <button className="small" disabled={!casterId} onClick={() => dispatch((st, cx) => E.castBuildSpell(st, cx, b.id, casterId, spell))}>
+          Cast on site
+        </button>
+      </div>
+      <p className="small muted">{sp.note} Uses a level {sp.level}+ slot and saves about {sp.days} day(s) of work.</p>
+    </details>
   );
 }

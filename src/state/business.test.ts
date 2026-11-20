@@ -56,15 +56,36 @@ describe('running a business', () => {
     s.characters = [newCharacter({ name: 'Owner', gp: 2000, needsFood: false, needsWater: false })];
     s = E.addBusiness(s, ctx(), 'The Gilded Mug', s.characters[0].id, 5, { what: 'Tavern', costGp: 1000, days: 3, landGp: 200 });
     expect(s.characters[0].gp).toBe(800);
-    expect(E.buildDaysLeft(s.businesses[0])).toBe(3);
+    expect(E.buildDaysLeft(s, s.businesses[0])).toBe(3);
     s = E.runBusiness(s, ctx(), s.businesses[0].id, 1);
     expect(s.businesses[0].daysWorked).toBe(0);
     s.businesses[0].overseeing = false;
-    expect(E.buildDaysLeft(s.businesses[0])).toBe(9);
+    expect(E.buildDaysLeft(s, s.businesses[0])).toBe(9);
     s = E.advance(s, ctx(), 24 * 60);
     expect(s.businesses[0].building!.daysDone).toBeCloseTo(1 / 3);
     s.businesses[0].overseeing = true;
     s = E.advance(s, ctx(), 3 * 24 * 60);
     expect(s.businesses[0].building).toBeUndefined();
+  });
+
+  it('extra crews, helpers and spells speed construction up', () => {
+    let s = createDefaultState(() => 0);
+    s.settings.sleepDeprivation = false;
+    s.characters = [
+      newCharacter({ name: 'Owner', gp: 10000, needsFood: false, needsWater: false }),
+      newCharacter({ name: 'Mage', gp: 0, needsFood: false, needsWater: false, spells: [{ name: 'Wall of Stone', level: 5, prepared: true, alwaysPrepared: false }], resources: [{ id: 'r', name: 'Spell slots (level 5)', max: 1, current: 1, recharge: 'long' }] }),
+    ];
+    s = E.addBusiness(s, ctx(), 'Inn', s.characters[0].id, 5, { what: 'Inn', costGp: 4000, days: 40, landGp: 0 });
+    const id = s.businesses[0].id;
+    s = E.hireBuildCrews(s, ctx(), id, 2);
+    expect(s.characters[0].gp).toBe(10000 - 4000 - 4000);
+    expect(E.buildDaysLeft(s, s.businesses[0])).toBe(20);
+    s.businesses[0].helpers = [{ charId: s.characters[1].id, skilled: true }];
+    expect(E.businessPace(s, s.businesses[0])).toBeCloseTo(2.1);
+    s = E.castBuildSpell(s, ctx(), id, s.characters[1].id, 'Wall of Stone');
+    expect(s.businesses[0].building!.daysDone).toBe(5);
+    expect(s.characters[1].resources[0].current).toBe(0);
+    s = E.castBuildSpell(s, ctx(), id, s.characters[1].id, 'Wall of Stone');
+    expect(s.businesses[0].building!.daysDone).toBe(5);
   });
 });
