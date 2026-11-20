@@ -7,7 +7,9 @@ import { HAZARDS, type HazardId } from '../rules/hazards';
 import { DANGER } from '../rules/encounters';
 import { formatClock, formatDuration } from '../rules/calendar';
 import { Card, Meter, Num, Pill, Select, Text, Toggle, Rule } from './common';
+import { POISONS, poisonByName } from '../rules/poisons';
 import { CONTAGIONS, RECUPERATE_DAYS, RECUPERATE_DC, type ContagionKind } from '../rules/contagion';
+import { WaysAround } from './WaysAround';
 
 export function EffectsTab() {
   return (
@@ -19,6 +21,7 @@ export function EffectsTab() {
       <HazardCard />
       <ContagionCard />
       <PotionMixCard />
+      <PoisonCard />
     </div>
   );
 }
@@ -76,6 +79,7 @@ function ActiveCard() {
         })}
       </ul>
       {concentrating.length > 0 && <p className="small muted">Concentrating: {concentrating.map((c) => c.name).join(', ')}. Starting another Concentration spell ends the first one.</p>}
+      <WaysAround topic={'light'} />
     </Card>
   );
 }
@@ -186,6 +190,7 @@ function ExploreCard() {
       <p className={`small ${lights.length ? '' : 'warn-text'}`}>
         {lights.length ? `Light: ${lights.map((l) => l.name).join(', ')}.` : 'No light source is burning. Without Darkvision the party is in Darkness underground.'}
       </p>
+      <WaysAround topic={'exploration'} />
     </Card>
   );
 }
@@ -224,6 +229,7 @@ function BreathCard() {
         <Num value={mins} onChange={(v) => setMins(Math.max(1, Math.round(v)))} min={1} max={240} suffix="min" width={3} />
         <button onClick={() => dispatch((st, cx) => E.frigidWater(st, cx, c.id, mins))}>In frigid water for {mins} min</button>
       </div>
+      <WaysAround topic={'breath'} />
     </Card>
   );
 }
@@ -267,6 +273,7 @@ function HazardCard() {
           </button>
         </div>
       )}
+      <WaysAround topic={'hazards'} />
     </Card>
   );
 }
@@ -345,6 +352,7 @@ function ContagionCard() {
       <Rule>
         2024 DMG. Saves happen on their own: Sewer Plague at dawn, Cackle Fever after each Long Rest. Recuperating means {RECUPERATE_DAYS} days of nothing that would interrupt a Long Rest, then a DC {RECUPERATE_DC} Con save; success gives Advantage on saves against the contagion for 24 hours.
       </Rule>
+      <WaysAround topic={'disease'} />
     </Card>
   );
 }
@@ -360,6 +368,44 @@ function PotionMixCard() {
       <Rule>
         2024 DMG: roll d100 whenever two potions are combined, whether poured together or drunk while another is still working. Roll again for each further potion. Unless the result is obvious, reveal it only when it shows. Drinking or giving a potion takes a Bonus Action, and a small taste reveals what a potion does.
       </Rule>
+    </Card>
+  );
+}
+
+function PoisonCard() {
+  const s = useGame();
+  const people = s.characters.filter((c) => E.alive(c));
+  const [who, setWho] = useState('');
+  const [poison, setPoison] = useState(POISONS[1].name);
+  const [from, setFrom] = useState('');
+  const whoId = people.find((c) => c.id === who)?.id ?? people[0]?.id ?? '';
+  const p = POISONS.find((x) => x.name === poison)!;
+  const holders = s.characters.filter((c) => c.inventory.some((i) => poisonByName(i.name)?.name === poison && i.qty > 0));
+  const poisoned = people.filter((c) => (c.poisonTimers ?? []).length > 0 || s.effects.some((e) => e.name.startsWith('Poisoned') && e.targetIds.includes(c.id)));
+  return (
+    <Card title="Poisons">
+      <div className="form-row">
+        <Select label="Who is exposed" value={whoId} onChange={setWho} options={people.map((c) => ({ value: c.id, label: c.name }))} />
+        <Select label="Poison" value={poison} onChange={setPoison} options={POISONS.map((x) => ({ value: x.name, label: `${x.name} (${x.type}, ${x.gp} GP)` }))} />
+        <Select label="Dose from" value={holders.some((h) => h.id === from) ? from : ''} onChange={setFrom} options={[{ value: '', label: 'Not tracked' }, ...holders.map((h) => ({ value: h.id, label: `${h.name}'s inventory` }))]} />
+      </div>
+      <button className="small" disabled={!whoId} onClick={() => dispatch((st, cx) => E.exposePoison(st, cx, whoId, poison, holders.some((h) => h.id === from) ? from : null))}>
+        Expose
+      </button>
+      <p className="small muted">{p.effect}</p>
+      {poisoned.length > 0 && (
+        <ul className="plain small">
+          {poisoned.map((c) => (
+            <li key={c.id}>
+              <b>{c.name}</b>: {[...s.effects.filter((e) => e.name.startsWith('Poisoned') && e.targetIds.includes(c.id)).map((e) => `${e.name}${e.endsAt ? ` (${formatDuration(Math.max(0, e.endsAt - E.absNow(s)))})` : ''}`), ...(c.poisonTimers ?? []).map((t) => (t.name === 'Midnight Tears' ? 'Midnight Tears (strikes at midnight, hidden)' : `Pale Tincture ${t.successes}/7 saves`))].join(', ')}{' '}
+              <button className="ghost tiny" onClick={() => dispatch((st, cx) => E.curePoison(st, cx, c.id))}>
+                Cured (Lesser Restoration or similar)
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <Rule>2024 DMG poisons. Contact poisons work on touch, ingested ones in food or drink, inhaled ones as powder or gas, injury ones on a weapon or ammunition. Saves and lasting effects run on their own; Midnight Tears waits for midnight and Pale Tincture rechecks every 24 hours.</Rule>
     </Card>
   );
 }

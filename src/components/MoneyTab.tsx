@@ -8,7 +8,9 @@ import { Card, Num, Pill, Select, Text, Toggle, Rule } from './common';
 import { HIRELING_ROLES, MESSENGER_GP_PER_MILE, type HirelingRole } from '../rules/hirelings';
 import { coinCount, DENOMS, purseValue, type Denom } from '../rules/coins';
 import type { Hireling } from '../state/types';
+import { TARGET_SPELLS } from '../rules/components';
 import { COMMON_SPELL_REQUESTS, PASSAGE, SPELL_SERVICES, spellServiceAvailable, type Settlement } from '../rules/services';
+import { WaysAround } from './WaysAround';
 
 export function MoneyTab() {
   return (
@@ -98,6 +100,7 @@ function PurseCard() {
         In town, lifestyle is charged every midnight, and everything except Wretched covers food, water and lodging, so nobody goes hungry. Lifestyle per day: Wretched free, Squalid 1 SP, Poor 2 SP, Modest 1 GP,
         Comfortable 2 GP, Wealthy 4 GP, Aristocratic 10 GP. Crafting materials and Bastion construction are charged when the work starts.
       </Rule>
+      <WaysAround topic={'lifestyle'} />
     </Card>
   );
 }
@@ -212,6 +215,7 @@ function HirelingsCard() {
         Hire {name.trim() || info.label} ({role === 'messenger' ? '2 CP per mile' : `${fmtGp(info.skilled ? HIRELING_WAGE.skilled : HIRELING_WAGE.untrained)}/day`})
       </button>
       <Rule>Skilled hirelings cost 2 GP a day and untrained ones 2 SP, charged at midnight. Messengers charge 2 CP per mile instead.</Rule>
+      <WaysAround topic={'hirelings'} />
     </Card>
   );
 }
@@ -268,6 +272,7 @@ function MountsCard() {
         Add {name.trim() || p.name}
       </button>
       <Rule>Mounts follow the same food, water, temperature and Exhaustion rules as everyone else. Party meals feed them from their feed, and town lifestyle doesn&apos;t cover them, so water them every day (for example with &quot;Top up today&apos;s water&quot;).</Rule>
+      <WaysAround topic={'mounts'} />
     </Card>
   );
 }
@@ -282,6 +287,7 @@ function ServicesCard() {
   const [here, setHere] = useState<Settlement>('town');
   const [spell, setSpell] = useState(COMMON_SPELL_REQUESTS[0].name);
   const [custom, setCustom] = useState(1);
+  const [target, setTarget] = useState('');
   const payers = payer === 'party' ? pcs.map((c) => c.id) : [payer];
   const f = PASSAGE.find((x) => x.id === fare)!;
   const fareGp = ((f.gpPerMile ?? 0) * amount + (f.gpPerDay ?? 0) * amount + (f.gpFlat ?? 0)) * people;
@@ -313,10 +319,26 @@ function ServicesCard() {
         {req?.componentGp ? ` + ${fmtGp(req.componentGp)} components` : ''}. {available ? 'A caster can be found here.' : `Only found in a ${tier.where === 'city' ? 'city' : 'town or city'}.`}
         {req && <span className="muted"> {req.note}</span>}
       </p>
-      <button className="small" disabled={!available} onClick={() => dispatch((st, cx) => E.payForService(st, cx, payers, spellGp, `having ${req ? req.name : `a level ${custom} spell`} cast`))}>
+      {req && TARGET_SPELLS[req.name] && (
+        <Select label="Cast on" value={target} onChange={setTarget} options={[{ value: '', label: 'Choose…' }, ...s.characters.map((c) => ({ value: c.id, label: `${c.name}${c.diedAt != null ? ' (dead)' : ''}` }))]} />
+      )}
+      <button
+        className="small"
+        disabled={!available || (!!req && !!TARGET_SPELLS[req.name] && !target)}
+        onClick={() =>
+          dispatch((st, cx) => {
+            let next = E.payForService(st, cx, payers, spellGp, `having ${req ? req.name : `a level ${custom} spell`} cast`);
+            if (req && TARGET_SPELLS[req.name] && target) next = E.spellOnTarget(next, cx, req.name, target);
+            if (req?.name === 'Purify Food and Drink') next = E.purifySpell(next, cx, null, 'slot');
+            return next;
+          })
+        }
+      >
         Pay {fmtGp(spellGp)}
+        {req && TARGET_SPELLS[req.name] ? ' and cast' : ''}
       </button>
       <Rule>2024 PHB services. Higher-level casters are harder to find: level 3+ only in towns and cities, level 6+ only in cities. Spells with costly components add their cost. Daily food and lodging are already part of lifestyle expenses.</Rule>
+      <WaysAround topic={'services'} />
     </Card>
   );
 }

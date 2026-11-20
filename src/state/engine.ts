@@ -1,4 +1,4 @@
-import type { ActiveEffect, Activity, CharacterSpell, InventoryItem, LogEntry, Ritual, Stash, Bastion, Business, Character, ExhaustionCause, Facility, MagicItem, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
+import type { ActiveEffect, Activity, CharacterSpell, InventoryItem, LogEntry, Ritual, Stash, Bastion, Business, Character, FacilityWork, ExhaustionCause, Facility, MagicItem, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
 import { BASIC_BUILD, BASTION_TURN_DAYS, defaultSize, ENLARGE, rollBastionEvent, SIZE_LABEL, SPECIAL_FACILITIES, type FacilitySize } from '../rules/bastion';
 import { d20, die, combineModes, rollDice, rollExpr, signed, type Rng, type RollMode } from '../rules/dice';
 import { dateFromIndex, formatClock, formatDate, formatDuration, lightAt, sunriseMinutes } from '../rules/calendar';
@@ -11,6 +11,10 @@ import { MESSENGER_GP_PER_MILE } from '../rules/hirelings';
 import { COMMS, commCost, commDelay, type CommMethod } from '../rules/comms';
 import { CONTAGIONS, RECUPERATE_DAYS, RECUPERATE_DC, SIGHT_ROT_CURE_HOURS, type ContagionKind } from '../rules/contagion';
 import { neglectLimit } from '../rules/bastion';
+import { magicItemCrafting, nonmagicalCrafting, SCROLL_CRAFTING, type Rarity } from '../rules/crafting';
+import { ALL_IS_WELL, BARRACK_ROOM, BASTION_CHARMS, CREATURE_ROOM, EVENT_PREFERENCE, FACILITY_OPTIONS, GARDEN_PRODUCTS, GUILDS, MENAGERIE_CREATURES, MENAGERIE_ROOM, SHIPS, TRAINERS, TREASURE_TABLE, facilityHirelings, stableMarkup, storehouseLimit, storehouseMarkup, type GardenType } from '../rules/bastionOrders';
+import { componentFor, REVIVAL_LIMIT, TARGET_SPELLS, type CostlyComponent } from '../rules/components';
+import { POISONS, poisonByName, poisonItemName, type PoisonInfo } from '../rules/poisons';
 import { POISON_HARVEST_DC, POTION_MISCIBILITY } from '../rules/potions';
 import { AWAY_PROGRESS, BUILD_SPELLS, BUSINESS_DEBT_PENALTY, BUSINESS_MAX_DAYS, CREW_COST_SHARE, MAX_EXTRA_CREWS, buildPace, rollBusiness } from '../rules/business';
 import { HAZARDS, type GiftType, type HazardId } from '../rules/hazards';
@@ -408,6 +412,7 @@ function endOfDay(s: State, ctx: Ctx): void {
   s.dayIndex += 1;
   s.minutes = 0;
   progressBastions(s);
+  bastionDaily(s);
   progressBusinesses(s);
   log(s, `A new day begins: ${formatDate(s.calendar, s.startYear, s.dayIndex)}.`);
   newWeather(s, ctx);
@@ -481,8 +486,14 @@ function applyRestFocus(s: State, c: Character): void {
     revealAll(s, it, 'identify');
     log(s, `${c.name} spends the rest focused on the ${it.name} and learns its properties${it.requiresAttunement ? ', including that it needs attunement' : ''}.`, 'good');
   } else if (f.action === 'unattune') {
-    it.attuned = false;
-    status(s, c, 'attunementEnds', `${c.name} ends their attunement to the ${it.name}.`);
+    const cursed = (it.clues ?? []).some((x) => x.kind === 'curse');
+    if (cursed && !c.curseBroken) {
+      log(s, `${c.name} focuses on the ${it.name} all rest but can't let go of it: a curse binds the attunement. Remove Curse (or similar) must be cast first.`, 'warn');
+    } else {
+      it.attuned = false;
+      if (cursed) c.curseBroken = false;
+      status(s, c, 'attunementEnds', `${c.name} ends their attunement to the ${it.name}.`);
+    }
   } else {
     const count = c.items.filter((x) => x.attuned).length;
     if (count >= MAX_ATTUNED) log(s, `${c.name} can't attune to the ${it.name}: already attuned to ${MAX_ATTUNED} items.`, 'warn');
@@ -623,6 +634,7 @@ export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activi
     tickEffects(s, before);
     deliverDispatches(s);
     tickContagions(s);
+    tickPoisons(s, ctx);
     if (s.minutes % 60 === 0) tickHour(s, ctx, activity);
     if (s.minutes >= MIN_PER_DAY) endOfDay(s, ctx);
     if (s.settings.encounters && activity !== 'work' && !opts.exploring) overlandEncounterClock(s, ctx, step, activity);
@@ -764,6 +776,10 @@ function completeLongRest(d: State, ctx: Ctx, watched: Record<string, number>): 
       const regained = armorSpoiled ? Math.max(1, Math.floor(c.level / 4)) : c.hitDiceSpent;
       c.hitDiceSpent = Math.max(0, c.hitDiceSpent - regained);
     }
+    if (c.revivalPenalty) {
+      c.revivalPenalty -= 1;
+      log(d, c.revivalPenalty ? `${c.name}'s return from death weighs less: −${c.revivalPenalty} to D20 Tests.` : `${c.name} has fully recovered from returning to life.`, 'good');
+    }
     cackleSaveAfterRest(d, ctx, c);
     const got = restoreAfterRest(d, ctx, c, 'long');
     if (got.length) log(d, `${c.name} recovers: ${got.join(', ')}.`, 'good');
@@ -778,6 +794,7 @@ function completeLongRest(d: State, ctx: Ctx, watched: Record<string, number>): 
     }
   }
   log(d, 'Long Rest complete: HP and all spent Hit Point Dice are restored, and morning tasks reset.', 'good');
+  bastionLongRest(d);
   // A cold night is judged on waking, after the rest's normal recovery.
   for (const c of d.characters) {
     if (c.nightChill != null && alive(c)) {
@@ -1619,6 +1636,229 @@ export const harvestPoison = act((d, ctx, charId: string, bonus: number, creatur
   }
 });
 
+// ---------------------------------------------------------------- costly components and spell effects
+
+/** Value of matching component items a character carries. */
+export function componentValue(c: Character, comp: CostlyComponent): number {
+  return c.inventory.filter((i) => i.name.toLowerCase().includes(comp.match)).reduce((a, i) => a + (i.valueGp ?? 0) * i.qty, 0);
+}
+
+/** Checks and spends a spell's costly component. Returns false (and logs why) if it's missing. */
+function useComponent(s: State, c: Character, spell: string): boolean {
+  const comp = componentFor(spell);
+  if (!comp || !s.settings.trackComponents) return true;
+  const talisman = c.inventory.find((i) => /^reliquary talisman$/i.test(i.name));
+  if (componentValue(c, comp) < comp.gp) {
+    if (talisman && comp.gp <= 1000) {
+      talisman.name = 'Reliquary talisman (spent)';
+      log(s, `${c.name} uses the Reliquary talisman in place of ${comp.what}. It must go back to the Reliquary to recharge.`, 'good');
+      return true;
+    }
+    log(s, `${c.name} needs ${comp.what} to cast ${spell} and doesn't carry it. Add it to the inventory with its value (e.g. "Diamond (300 GP)").`, 'warn');
+    return false;
+  }
+  if (!comp.consumed) return true;
+  let left = comp.gp;
+  for (const it of c.inventory.filter((i) => i.name.toLowerCase().includes(comp.match)).sort((a, b) => (a.valueGp ?? 0) - (b.valueGp ?? 0))) {
+    while (left > 0 && it.qty > 0) {
+      const v = it.valueGp ?? 0;
+      if (v <= left || it.qty === 1) {
+        left -= v;
+        it.qty -= 1;
+      } else {
+        // Dust and powders: take only what's needed from one piece.
+        it.valueGp = v - left;
+        left = 0;
+      }
+    }
+    if (left <= 0) break;
+  }
+  c.inventory = c.inventory.filter((i) => i.qty > 0);
+  log(s, `${spell} consumes ${comp.what}.`);
+  return true;
+}
+
+/** Applies a spell's lasting effect to a character (restoration, curses, healing, revival). */
+function applySpellTo(s: State, ctx: Ctx, spell: string, targetId: string): void {
+  const t = charById(s, targetId);
+  if (!t) return;
+  const endPoison = () => {
+    t.poisonedUntil = null;
+    t.poisonTimers = [];
+    s.effects = s.effects.filter((e) => !(e.name.startsWith('Poisoned') && e.targetIds.includes(t.id)));
+  };
+  const endSightRot = () => {
+    const x = (t.contagions ?? []).find((k) => k.kind === 'sightRot');
+    if (x) endContagion(s, t, x.id, spell);
+  };
+  switch (spell) {
+    case 'Lesser Restoration': {
+      const poisoned = t.poisonedUntil != null || (t.poisonTimers ?? []).length > 0 || s.effects.some((e) => e.name.startsWith('Poisoned') && e.targetIds.includes(t.id));
+      if (poisoned) {
+        endPoison();
+        return void log(s, `${spell} ends the Poisoned condition on ${t.name}.`, 'good');
+      }
+      if ((t.contagions ?? []).some((k) => k.kind === 'sightRot')) return endSightRot();
+      return void log(s, `${spell} finds nothing to cure on ${t.name}.`);
+    }
+    case 'Greater Restoration': {
+      if (t.exhaustion > 0) {
+        const causes = causesOf(t);
+        causes.pop();
+        t.exhaustionCauses = causes;
+        t.exhaustion = causes.length;
+        return void status(s, t, 'exhaustionEases', `${spell} lifts 1 Exhaustion level from ${t.name}. Now level ${t.exhaustion}.`, 'good');
+      }
+      const curse = s.effects.find((e) => e.kind === 'curse' && e.targetIds.includes(t.id));
+      if (curse) {
+        s.effects = s.effects.filter((e) => e.id !== curse.id);
+        return void log(s, `${spell} ends ${curse.name} on ${t.name}.`, 'good');
+      }
+      return void log(s, `${spell} finds nothing to restore on ${t.name}.`);
+    }
+    case 'Remove Curse': {
+      const curses = s.effects.filter((e) => e.kind === 'curse' && e.targetIds.includes(t.id));
+      s.effects = s.effects.filter((e) => !curses.includes(e));
+      t.curseBroken = true;
+      return void log(s, `${spell}: ${curses.length ? `${curses.map((e) => e.name).join(', ')} end${curses.length > 1 ? '' : 's'}` : 'no curse effects'} on ${t.name}. Attunement to a cursed item can now be ended.`, 'good');
+    }
+    case 'Heal':
+      endPoison();
+      endSightRot();
+      if (t.diedAt == null) Object.assign(s, changeHp(s, ctx, t.id, 70));
+      return void log(s, `${spell} restores up to 70 HP to ${t.name} and ends Blinded, Deafened and Poisoned.`, 'good');
+  }
+  const limit = REVIVAL_LIMIT[spell];
+  if (limit == null) return;
+  const dead = deadFor(s, t);
+  if (dead == null) return void log(s, `${t.name} isn't dead.`, 'warn');
+  if (dead > limit) return void log(s, `${spell} fails: ${t.name} has been dead ${formatDuration(dead)}, longer than ${formatDuration(limit)}.`, 'bad');
+  Object.assign(t, { diedAt: null, reposeMinutes: 0, dying: false, stable: false, deathSuccesses: 0, deathFailures: 0, wakesAt: null });
+  if (t.exhaustion >= 6) {
+    t.exhaustion = 0;
+    t.exhaustionCauses = [];
+  }
+  const full = spell === 'Reincarnate' || spell === 'Resurrection' || spell === 'True Resurrection';
+  t.hp = full ? t.maxHp : 1;
+  if (spell === 'Raise Dead' || spell === 'Resurrection') t.revivalPenalty = 4;
+  status(s, t, 'revived', `${spell} returns ${t.name} to life with ${full ? 'all' : '1'} HP${t.revivalPenalty ? '. −4 to D20 Tests, easing by 1 with each Long Rest' : ''}${spell === 'Reincarnate' ? '. They wake in a new body (roll the species)' : ''}.`, 'good');
+}
+
+/** A spell cast on a target from outside the party (a temple, a hired caster) or by the party. */
+export const spellOnTarget = act((d, ctx, spell: string, targetId: string) => applySpellTo(d, ctx, spell, targetId));
+
+// ---------------------------------------------------------------- poisons
+
+function dealDamage(d: State, ctx: Ctx, charId: string, amount: number): void {
+  if (amount > 0) Object.assign(d, changeHp(d, ctx, charId, -amount));
+}
+
+function poisonEffect(s: State, c: Character, p: PoisonInfo, minutes: number, extra?: string): void {
+  s.effects.push({ id: uid(), name: `Poisoned (${p.name})${extra ? `, ${extra}` : ''}`, kind: 'other', targetIds: [c.id], casterId: null, concentration: false, shelter: false, startedAt: absNow(s), endsAt: absNow(s) + minutes, notes: p.effect });
+}
+
+/** A creature is exposed to a dose of poison: roll its save and apply what happens (2024 DMG). */
+export const exposePoison = act((d, ctx, charId: string, poisonName: string, fromCharId: string | null) => {
+  const p = poisonByName(poisonName);
+  const c0 = charById(d, charId);
+  if (!p || !c0 || !alive(c0)) return;
+  if (fromCharId) {
+    const holder = charById(d, fromCharId);
+    const dose = holder?.inventory.find((i) => poisonByName(i.name)?.name === p.name && i.qty > 0);
+    if (!holder || !dose) return void log(d, `No dose of ${p.name} to use.`, 'warn');
+    dose.qty -= 1;
+    holder.inventory = holder.inventory.filter((i) => i.qty > 0);
+  }
+  if (p.dc == null) return void log(d, `${p.name}: ${p.effect}`, 'info');
+  if (p.name === 'Midnight Tears') {
+    c0.poisonTimers = [...(c0.poisonTimers ?? []), { id: uid(), name: p.name, nextAt: (d.dayIndex + 1) * MIN_PER_DAY, successes: 0 }];
+    return void log(d, `${c0.name} has ingested Midnight Tears. Nothing happens until midnight, unless something ends the Poisoned condition first. The player doesn't know.`, 'warn');
+  }
+  const r = rollSave(c0, p.dc, 'normal', ctx.rng);
+  const total = Number(/= (-?\d+)\./.exec(r.detail)?.[1] ?? 0);
+  log(d, `${c0.name} is exposed to ${p.name} (${p.type}): DC ${p.dc} Con save. ${r.detail}${r.passed ? 'Success.' : 'Failure.'}`, r.passed ? 'good' : 'bad');
+  const dmg = p.damage ? (rollExpr(p.damage, ctx.rng) ?? 0) : 0;
+  if (p.name === 'Burnt Othur Fumes') {
+    if (r.passed) return;
+    let total2 = dmg;
+    let ok = 0;
+    let rounds = 0;
+    const c = charById(d, charId)!;
+    while (ok < 3 && rounds < 20) {
+      rounds += 1;
+      const again = rollSave(c, p.dc, 'normal', ctx.rng);
+      if (again.passed) ok += 1;
+      else total2 += die(6, ctx.rng);
+    }
+    log(d, `The fumes linger for ${rounds} rounds until ${c.name} makes three saves.`, 'warn');
+    return dealDamage(d, ctx, charId, total2);
+  }
+  if (p.name === 'Carrion Crawler Mucus') {
+    if (r.passed) return;
+    let rounds = 1;
+    const c = charById(d, charId)!;
+    while (rounds < 10 && !rollSave(c, p.dc, 'normal', ctx.rng).passed) rounds += 1;
+    poisonEffect(d, c, p, rounds >= 10 ? 1 : Math.max(1, Math.ceil(rounds / 10)), 'Paralyzed');
+    return void log(d, `${c.name} is Poisoned and Paralyzed for ${rounds >= 10 ? 'the full minute' : `${rounds} round(s)`}.`, 'bad');
+  }
+  if (p.damage) dealDamage(d, ctx, charId, r.passed ? (p.halfOnSave ? Math.floor(dmg / 2) : 0) : dmg);
+  const c = charById(d, charId)!;
+  if (r.passed) return;
+  if (p.name === 'Pale Tincture') {
+    c.poisonTimers = [...(c.poisonTimers ?? []), { id: uid(), name: p.name, nextAt: absNow(d) + MIN_PER_DAY, successes: 0 }];
+    poisonEffect(d, c, p, 8 * MIN_PER_DAY);
+    return;
+  }
+  const minutes = p.poisonedHoursDice ? (rollExpr(p.poisonedHoursDice, ctx.rng) ?? 4) * 60 : (p.poisonedMinutes ?? 0);
+  if (!minutes) return;
+  const extra = p.alsoCondition && (!p.extraOnFailBy5 || total <= p.dc - 5) ? p.alsoCondition : undefined;
+  poisonEffect(d, c, p, minutes, extra);
+  log(d, `${c.name} is Poisoned${extra ? ` and ${extra}` : ''} for ${formatDuration(minutes)}.`, 'bad');
+});
+
+/** Midnight Tears and Pale Tincture keep acting on their own schedule. */
+function tickPoisons(s: State, ctx: Ctx): void {
+  const now = absNow(s);
+  for (const c of s.characters) {
+    for (const t of [...(c.poisonTimers ?? [])]) {
+      if (now < t.nextAt || !alive(c)) continue;
+      const p = poisonByName(t.name)!;
+      const r = rollSave(c, p.dc!, 'normal', ctx.rng);
+      if (t.name === 'Midnight Tears') {
+        c.poisonTimers = c.poisonTimers!.filter((x) => x.id !== t.id);
+        const dmg = rollExpr('9d6', ctx.rng) ?? 31;
+        log(s, `Midnight strikes, and the Midnight Tears in ${c.name} take hold: DC 17 Con save. ${r.detail}${r.passed ? 'Half damage.' : 'Failure.'}`, 'bad');
+        Object.assign(s, changeHp(s, ctx, c.id, -(r.passed ? Math.floor(dmg / 2) : dmg)));
+        continue;
+      }
+      // Pale Tincture: a save every 24 hours; seven successes end it.
+      t.nextAt = now + MIN_PER_DAY;
+      if (r.passed) t.successes += 1;
+      log(s, `${c.name} fights the Pale Tincture: DC 16 Con save. ${r.detail}${r.passed ? `Success (${t.successes}/7).` : 'Failure: 1d6 Poison damage that can’t be healed while Poisoned.'}`, r.passed ? 'good' : 'bad');
+      if (!r.passed) Object.assign(s, changeHp(s, ctx, c.id, -die(6, ctx.rng)));
+      const me = charById(s, c.id)!;
+      if (t.successes >= 7) {
+        me.poisonTimers = (me.poisonTimers ?? []).filter((x) => x.id !== t.id);
+        s.effects = s.effects.filter((e) => !(e.name.startsWith('Poisoned (Pale Tincture)') && e.targetIds.includes(c.id)));
+        log(s, `${c.name} is free of the Pale Tincture.`, 'good');
+      } else {
+        const eff = s.effects.find((e) => e.name.startsWith('Poisoned (Pale Tincture)') && e.targetIds.includes(c.id));
+        if (eff) eff.endsAt = now + 8 * MIN_PER_DAY;
+      }
+    }
+  }
+}
+
+/** Anything that ends the Poisoned condition (Lesser Restoration, Antitoxin taken in advance aside) ends these too. */
+export const curePoison = act((d, _ctx, charId: string) => {
+  const c = charById(d, charId);
+  if (!c) return;
+  c.poisonTimers = [];
+  c.poisonedUntil = null;
+  d.effects = d.effects.filter((e) => !(e.name.startsWith('Poisoned') && e.targetIds.includes(c.id)));
+  log(d, `${c.name} is no longer Poisoned; any lingering poison is neutralized.`, 'good');
+});
+
 // ---------------------------------------------------------------- contagions
 
 const contagionMode = (s: State, c: Character): RollMode => (c.recuperatedUntil && c.recuperatedUntil > absNow(s) ? 'advantage' : 'normal');
@@ -2066,18 +2306,674 @@ export const enlargeFacility = act((d, _ctx, bastionId: string, facilityId: stri
 });
 
 /** Resolves one Bastion turn: logs each order, and rolls a Bastion event if every special facility was told to Maintain. */
+// ---- Bastion orders, defenders and events (2024 DMG chapter 8)
+
+/** The Bastion's own storage, where finished goods wait until claimed. */
+export function bastionStash(s: State, b: Bastion): Stash {
+  let st = s.stashes.find((x) => x.id === `bastion-${b.id}`);
+  if (!st) {
+    st = { id: `bastion-${b.id}`, name: `${b.name} stores`, kind: 'stash', location: b.name, capacityLb: null, items: [], purse: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 }, notes: 'Goods made, harvested or found by the Bastion.' };
+    s.stashes.push(st);
+  }
+  return st;
+}
+
+function stashAdd(s: State, b: Bastion, name: string, qty: number, valueGp?: number): void {
+  const st = bastionStash(s, b);
+  const same = st.items.find((i) => i.name === name);
+  if (same) same.qty += qty;
+  else {
+    const est = estimateWeight(name);
+    st.items.push({ id: uid(), name, qty, weight: est.weight, source: est.source, valueGp, container: null, ammo: null });
+  }
+}
+
+export function bastionDefenders(b: Bastion): number {
+  return (b.defenders ?? 0) + (b.menagerie ?? []).filter((m) => m.defends).length + (b.guests ?? []).filter((g) => g.kind === 'mercenary').length;
+}
+
+export function barrackRoom(b: Bastion): number {
+  return b.facilities.filter((f) => f.name === 'Barrack' && f.built).reduce((a, f) => a + (BARRACK_ROOM[f.size] ?? 12), 0);
+}
+
+/** Removes defenders: Barrack soldiers first, then mercenary guests, then Menagerie creatures. */
+function loseDefenders(s: State, b: Bastion, n: number, why: string): number {
+  let left = n;
+  const fromBarrack = Math.min(left, b.defenders ?? 0);
+  b.defenders = (b.defenders ?? 0) - fromBarrack;
+  left -= fromBarrack;
+  while (left > 0 && (b.guests ?? []).some((g) => g.kind === 'mercenary')) {
+    const i = b.guests!.findIndex((g) => g.kind === 'mercenary');
+    b.guests!.splice(i, 1);
+    left -= 1;
+  }
+  while (left > 0 && (b.menagerie ?? []).some((m) => m.defends)) {
+    const i = b.menagerie!.findIndex((m) => m.defends);
+    log(s, `${b.name}: the ${b.menagerie![i].name} from the Menagerie is killed.`, 'bad');
+    b.menagerie!.splice(i, 1);
+    left -= 1;
+  }
+  const lost = n - left;
+  if (lost) log(s, `${b.name} loses ${lost} Bastion Defender${lost > 1 ? 's' : ''} (${why}). ${bastionDefenders(b)} remain.`, 'bad');
+  return lost;
+}
+
+const ownerLevel = (s: State, b: Bastion): number => charById(s, b.ownerId)?.level ?? 5;
+const rarityKey = (r?: string): { rarity: Rarity; consumable: boolean } => ({ rarity: /uncommon/i.test(r ?? '') ? 'uncommon' : 'common', consumable: /consumable/i.test(r ?? '') });
+
+/** Starts the work for a facility's chosen option: checks it, pays for it and sets how long it takes. */
+function startWork(s: State, ctx: Ctx, b: Bastion, f: Facility): FacilityWork | null {
+  const opts = FACILITY_OPTIONS[f.name] ?? [];
+  const plan = f.plan ?? { option: opts[0]?.id ?? '' };
+  const opt = opts.find((x) => x.id === plan.option) ?? opts[0];
+  if (!opt) return null;
+  const lvl = ownerLevel(s, b);
+  if (opt.minLevel && lvl < opt.minLevel) {
+    log(s, `${b.name}: ${opt.label} needs the owner to be level ${opt.minLevel}+. The ${f.name} idles this turn.`, 'warn');
+    return null;
+  }
+  const hire = facilityHirelings(f.name, f.size);
+  const pay = (gp: number, what: string) => {
+    if (gp > 0) {
+      payGold(s, [b.ownerId], gp, `${b.name}: ${what}`);
+      b.goldSpent += gp;
+    }
+  };
+  let days = BASTION_TURN_DAYS;
+  const label = `${opt.label}${plan.text ? `: ${plan.text}` : plan.choice ? `: ${plan.choice}` : ''}`;
+  switch (`${f.name}/${opt.id}`) {
+    case 'Arcane Study/book':
+      pay(10, 'a blank book');
+      break;
+    case 'Arcane Study/magic':
+    case 'Sacristy/relic':
+    case 'Smithy/magic':
+    case 'Workshop/magic': {
+      const { rarity, consumable } = rarityKey(plan.rarity);
+      const c = magicItemCrafting(rarity, consumable);
+      days = Math.ceil(c.days / hire);
+      pay(c.gp, `crafting ${plan.text || 'a magic item'}`);
+      break;
+    }
+    case 'Laboratory/alchemy':
+    case 'Smithy/gear':
+    case 'Workshop/gear': {
+      const c = nonmagicalCrafting(plan.gp ?? 10);
+      days = Math.ceil(c.days / hire);
+      pay(c.gp, `materials for ${plan.text || 'an item'}`);
+      break;
+    }
+    case 'Laboratory/poison': {
+      const p = poisonByName(plan.choice ?? 'Torpor');
+      pay(Math.floor((p?.gp ?? 0) / 2), `ingredients for ${p?.name ?? 'poison'}`);
+      break;
+    }
+    case 'Armory/stock': {
+      const gp = (100 + 100 * bastionDefenders(b)) / (b.facilities.some((x) => x.name === 'Smithy' && x.built) ? 2 : 1);
+      pay(gp, 'stocking the Armory');
+      break;
+    }
+    case 'Barrack/recruit':
+      if (bastionDefenders(b) - (b.menagerie ?? []).filter((m) => m.defends).length >= barrackRoom(b)) {
+        log(s, `${b.name}: the Barracks are full (${barrackRoom(b)}), so the Recruit order can't be given.`, 'warn');
+        return null;
+      }
+      break;
+    case 'Menagerie/creature': {
+      const c = MENAGERIE_CREATURES.find((x) => (plan.choice ?? '').startsWith(x.name)) ?? MENAGERIE_CREATURES[0];
+      const used = (b.menagerie ?? []).reduce((a, m) => a + CREATURE_ROOM[m.size], 0);
+      if (used + CREATURE_ROOM[c.size] > MENAGERIE_ROOM) {
+        log(s, `${b.name}: the Menagerie has no room for a ${c.size} creature.`, 'warn');
+        return null;
+      }
+      pay(c.gp, `buying a ${c.name}`);
+      break;
+    }
+    case 'Sacristy/holy':
+      pay(Math.min(500, Math.floor((plan.gp ?? 0) / 100) * 100), 'empowering Holy Water');
+      break;
+    case 'Scriptorium/replica': {
+      const st = bastionStash(s, b);
+      const blank = st.items.find((i) => /book \(blank\)|blank book/i.test(i.name) && i.qty > 0);
+      if (!blank) {
+        log(s, `${b.name}: the Scriptorium needs a blank book in the Bastion's stores (the Arcane Study can make one).`, 'warn');
+        return null;
+      }
+      blank.qty -= 1;
+      st.items = st.items.filter((i) => i.qty > 0);
+      break;
+    }
+    case 'Scriptorium/scroll': {
+      const lv = Math.max(0, Math.min(3, Number(/(\d)/.exec(plan.text ?? '')?.[1] ?? 1)));
+      const c = SCROLL_CRAFTING.find((x) => x.level === lv)!;
+      days = Math.max(BASTION_TURN_DAYS, c.days);
+      pay(c.gp, `scribing a level ${lv} scroll`);
+      break;
+    }
+    case 'Scriptorium/paperwork':
+      pay(Math.min(50, Math.max(1, Math.round(plan.gp ?? 50))), 'paperwork');
+      break;
+    case 'Stable/buy':
+      pay(plan.gp ?? 0, 'buying animals');
+      break;
+    case 'Storehouse/buy': {
+      const cap = storehouseLimit(lvl);
+      const gp = Math.min(cap, plan.gp ?? 0);
+      if ((plan.gp ?? 0) > cap) log(s, `${b.name}: the Storehouse can procure at most ${cap} GP of goods at level ${lvl}.`, 'warn');
+      pay(gp, 'procuring goods');
+      plan.gp = gp;
+      break;
+    }
+    case 'Storehouse/sell': {
+      const st = bastionStash(s, b);
+      const stock = st.items.filter((i) => /^trade goods/i.test(i.name)).reduce((a, i) => a + (i.valueGp ?? 0) * i.qty, 0);
+      if (stock <= 0) {
+        log(s, `${b.name}: the Storehouse has no goods to sell. Procure some first.`, 'warn');
+        return null;
+      }
+      plan.gp = Math.min(stock, plan.gp ?? stock);
+      break;
+    }
+    case 'Theater/production':
+      days = 14;
+      break;
+    case 'War Room/soldiers':
+      if (b.army) {
+        log(s, `${b.name}: an army is already in the field; disband it before mustering another.`, 'warn');
+        return null;
+      }
+      if (!(b.lieutenants ?? 0)) {
+        log(s, `${b.name}: the War Room needs at least one lieutenant to muster soldiers.`, 'warn');
+        return null;
+      }
+      break;
+    case 'War Room/lieutenant':
+      if ((b.lieutenants ?? 0) >= 10) {
+        log(s, `${b.name} already has ten lieutenants.`, 'warn');
+        return null;
+      }
+      break;
+    case 'Guildhall/assignment': {
+      const guild = f.guild ?? GUILDS[0];
+      if (guild === "Shipbuilders' Guild") {
+        const ship = SHIPS.find((x) => (plan.text ?? '').toLowerCase().includes(x.name.toLowerCase())) ?? SHIPS[0];
+        pay(ship.gp, `building a ${ship.name}`);
+        days = Math.max(1, Math.ceil(ship.gp / 1000));
+      } else if (guild === "Masons' Guild") {
+        days = Math.max(1, Number(/(\d+)/.exec(plan.text ?? '')?.[1] ?? 7));
+      } else if (guild === "Adventurers' Guild" || guild === "Thieves' Guild") {
+        days = die(6, ctx.rng) + 1;
+      }
+      break;
+    }
+  }
+  return { option: opt.id, label, daysLeft: days, plan: { ...plan } };
+}
+
+/** Applies the results of finished work. */
+function finishWork(s: State, ctx: Ctx, b: Bastion, f: Facility, w: FacilityWork): void {
+  const lvl = ownerLevel(s, b);
+  const owner = charById(s, b.ownerId);
+  const p = w.plan;
+  const done = (text: string, tone: Tone = 'good') => {
+    log(s, `${b.name}, ${f.name}: ${text}`, tone);
+    b.reports = [`Turn ${b.turns}, ${f.name}: ${text}`, ...(b.reports ?? [])].slice(0, 40);
+  };
+  const today = s.dayIndex;
+  switch (`${f.name}/${w.option}`) {
+    case 'Arcane Study/focus':
+      stashAdd(s, b, 'Arcane focus', 1, 10);
+      return done('an Arcane Focus is ready in the Bastion stores.');
+    case 'Arcane Study/book':
+      stashAdd(s, b, 'Book (blank)', 1, 25);
+      return done('a blank book is ready.');
+    case 'Arcane Study/magic':
+    case 'Sacristy/relic':
+    case 'Smithy/magic':
+    case 'Workshop/magic':
+      stashAdd(s, b, p.text || `${p.rarity ?? 'Common'} magic item`, 1);
+      return done(`${p.text || 'the magic item'} is finished.`);
+    case 'Laboratory/alchemy':
+    case 'Smithy/gear':
+    case 'Workshop/gear':
+      stashAdd(s, b, p.text || 'Crafted item', 1, p.gp);
+      return done(`${p.text || 'the item'} is finished.`);
+    case 'Laboratory/poison':
+    case 'Greenhouse/poison': {
+      const po = poisonByName(p.choice ?? '') ?? POISONS[0];
+      stashAdd(s, b, poisonItemName(po), 1, po.gp);
+      return done(`a vial of ${po.name} is ready.`);
+    }
+    case 'Greenhouse/herbs':
+      stashAdd(s, b, 'Potion of Greater Healing', 1, 150);
+      return done('a Potion of Greater Healing is brewed from the herbs.');
+    case 'Garden/harvest': {
+      const gardens = f.gardens?.length ? f.gardens : [{ type: 'Food', product: 'rations' }];
+      const count = f.size === 'vast' ? 2 : 1;
+      const got: string[] = [];
+      for (const g of gardens.slice(0, count)) {
+        const prods = GARDEN_PRODUCTS[(g.type as GardenType) in GARDEN_PRODUCTS ? (g.type as GardenType) : 'Food'];
+        const prod = prods.find((x) => x.id === g.product) ?? prods[0];
+        for (const it of prod.items) stashAdd(s, b, it.name, it.qty, it.valueGp);
+        got.push(prod.label.toLowerCase());
+      }
+      return done(`the harvest is in: ${got.join(' and ')}.`);
+    }
+    case 'Reliquary/talisman':
+      stashAdd(s, b, 'Reliquary talisman', 1);
+      return done('the talisman is prepared. It replaces one spell’s Material components worth up to 1,000 GP, then must come back to recharge.');
+    case 'Sacristy/holy': {
+      const extra = Math.min(5, Math.floor((p.gp ?? 0) / 100));
+      stashAdd(s, b, extra ? `Holy Water (+${extra}d8)` : 'Holy Water', 1, 25 + extra * 100);
+      return done(`a flask of Holy Water${extra ? ` dealing an extra ${extra}d8` : ''} is blessed.`);
+    }
+    case 'Sanctuary/focus':
+      stashAdd(s, b, p.choice?.startsWith('Holy') ? 'Holy symbol' : 'Druidic focus', 1, 5);
+      return done(`a ${p.choice ?? 'sacred focus'} is crafted.`);
+    case 'Scriptorium/replica':
+      stashAdd(s, b, `Book: ${p.text || 'copy'}`, 1, 25);
+      return done(`a copy of ${p.text || 'the book'} is made.`);
+    case 'Scriptorium/scroll': {
+      const lv = Math.max(0, Math.min(3, Number(/(\d)/.exec(p.text ?? '')?.[1] ?? 1)));
+      const name = (p.text ?? 'Spell').split(',')[0].trim();
+      stashAdd(s, b, `Spell Scroll (${name}, level ${lv})`, 1);
+      return done(`a Spell Scroll of ${name} is scribed.`);
+    }
+    case 'Scriptorium/paperwork':
+      return done(`${Math.min(50, Math.round(p.gp ?? 50))} copies are printed and distributed within 50 miles${p.text ? `: ${p.text}` : ''}.`);
+    case 'Armory/stock':
+      b.armoryStocked = true;
+      return done('the Armory is stocked. Defender-loss rolls use d8s until an event uses it up.');
+    case 'Barrack/recruit': {
+      const room = barrackRoom(b) - (b.defenders ?? 0);
+      const n = Math.max(0, Math.min(4, room));
+      b.defenders = (b.defenders ?? 0) + n;
+      return done(`${n} Bastion Defender${n === 1 ? '' : 's'} recruited (${bastionDefenders(b)} in all).`);
+    }
+    case 'Menagerie/creature': {
+      const c = MENAGERIE_CREATURES.find((x) => (p.choice ?? '').startsWith(x.name)) ?? MENAGERIE_CREATURES[0];
+      b.menagerie = [...(b.menagerie ?? []), { name: c.name, size: c.size, defends: true }];
+      return done(`a ${c.name} joins the Menagerie and counts as a Bastion Defender.`);
+    }
+    case 'Gaming Hall/gamble': {
+      const r = die(100, ctx.rng);
+      const dice = r <= 50 ? 1 : r <= 85 ? 2 : r <= 95 ? 4 : 10;
+      const gp = rollDice(dice, 6, ctx.rng) * 10;
+      receiveGold(s, [b.ownerId], gp, `${b.name}'s gambling hall`);
+      return done(`the gambling den closes its week. d100 = ${r}: your share is ${dice}d6 × 10 = ${gp} GP.`);
+    }
+    case 'Stable/buy':
+      stashAdd(s, b, `Mounts bought (${p.text || `${p.gp ?? 0} GP worth`})`, 1, p.gp);
+      return done(`the animals are bought and stabled. Add them on the Money & Mounts tab when they join the party.`);
+    case 'Stable/sell': {
+      const gp = Math.round((p.gp ?? 0) * (1 + stableMarkup(lvl)));
+      receiveGold(s, [b.ownerId], gp, `animals sold by ${b.name}'s Stable`);
+      return done(`the animals sell for ${gp} GP (${Math.round(stableMarkup(lvl) * 100)}% over standard).`);
+    }
+    case 'Storehouse/buy':
+      stashAdd(s, b, 'Trade goods', 1, p.gp ?? 0);
+      return done(`${p.gp ?? 0} GP of goods are procured and stored.`);
+    case 'Storehouse/sell': {
+      const st = bastionStash(s, b);
+      let left = p.gp ?? 0;
+      for (const it of st.items.filter((i) => /^trade goods/i.test(i.name))) {
+        const v = (it.valueGp ?? 0) * it.qty;
+        const take = Math.min(v, left);
+        left -= take;
+        it.valueGp = it.qty ? (v - take) / it.qty : 0;
+      }
+      st.items = st.items.filter((i) => !/^trade goods/i.test(i.name) || (i.valueGp ?? 0) > 0);
+      const sold = (p.gp ?? 0) - left;
+      const gp = Math.round(sold * (1 + storehouseMarkup(lvl)));
+      receiveGold(s, [b.ownerId], gp, `goods sold by ${b.name}'s Storehouse`);
+      return done(`${sold} GP of goods sell for ${gp} GP (${Math.round(storehouseMarkup(lvl) * 100)}% profit).`);
+    }
+    case 'Library/research':
+    case 'Trophy Room/lore':
+      return done(`research on "${p.text || 'the topic'}" is complete: up to three accurate facts you didn't know. Ask the DM for them.`);
+    case 'Archive/lore':
+      return done(`the archivist has found what Legend Lore would reveal about "${p.text || 'the topic'}". Ask the DM.`);
+    case 'Pub/spies':
+      return done(`the spies report on events within 10 miles${p.text ? ` and on ${p.text}'s whereabouts over the last 7 days (if within 50 miles and not hidden by magic)` : ''}. Ask the DM.`);
+    case 'Trophy Room/trinket': {
+      const r = die(6, ctx.rng);
+      if (r % 2 === 0) {
+        stashAdd(s, b, 'Common magic item (Implements table)', 1);
+        return done(`the search turns up a Common magic item (die ${r}). Roll on the Implements - Common table for what it is.`);
+      }
+      return done(`the search finds nothing useful (die ${r}).`, 'info');
+    }
+    case 'Meditation Chamber/peace':
+      b.innerPeace = true;
+      return done('the hirelings find inner peace: the next Bastion event is rolled twice.');
+    case 'Demiplane/resilience':
+      b.demiplaneUntilDay = today + 7;
+      return done('runes glow on the Demiplane walls for 7 days: a Long Rest there grants Temporary HP equal to five times your level.');
+    case 'Observatory/discovery': {
+      const r = die(6, ctx.rng);
+      if (r % 2 === 0 || !owner) return done(`seven nights under the stars reveal nothing (die ${r}).`, 'info');
+      const charm = ['Charm of Darkvision', 'Charm of Heroism', 'Charm of Vitality'][die(3, ctx.rng) - 1];
+      grantCharm(s, owner, charm, charm === 'Charm of Darkvision' ? 3 : 1, null, charm === 'Charm of Darkvision' ? 'Cast Darkvision; vanishes after three uses.' : `Magic action: the benefit of a Potion of ${charm.split(' ').pop()}; then it vanishes.`);
+      return done(`an unknown power answers (die ${r}): ${owner.name} gains a ${charm}.`);
+    }
+    case 'Sanctum/rites': {
+      const who = p.people?.[0]?.charId ?? b.ownerId;
+      b.rites = { charId: who, untilDay: today + 7 };
+      return done(`daily rites for ${charById(s, who)?.name ?? 'the beneficiary'}: Temporary HP equal to ${lvl} after each Long Rest for 7 days.`);
+    }
+    case 'Training Area/training': {
+      const t = TRAINERS.find((x) => x.name === f.trainer) ?? TRAINERS[0];
+      const names: string[] = [];
+      for (const pp of p.people ?? []) {
+        const c = charById(s, pp.charId);
+        if (!c) continue;
+        names.push(c.name);
+        s.effects.push({ id: uid(), name: `Training: ${t.name}`, kind: 'gift', targetIds: [c.id], casterId: null, concentration: false, shelter: false, startedAt: absNow(s), endsAt: absNow(s) + 7 * MIN_PER_DAY, notes: t.benefit });
+      }
+      return done(names.length ? `${names.join(', ')} finish the ${t.name}'s training: ${t.benefit} (7 days).` : 'nobody trained this week.', names.length ? 'good' : 'info');
+    }
+    case 'Theater/production': {
+      const people = p.people ?? [];
+      let ok = 0;
+      const rolls: string[] = [];
+      for (const pp of people) {
+        const r = d20('normal', ctx.rng);
+        const total = r.value + pp.bonus;
+        if (total >= 15) ok += 1;
+        rolls.push(`${charById(s, pp.charId)?.name ?? '?'} ${total}`);
+      }
+      const dieSize = lvl >= 17 ? 10 : lvl >= 13 ? 8 : 6;
+      if (people.length && ok > people.length - ok) {
+        for (const pp of people) {
+          const c = charById(s, pp.charId);
+          if (!c) continue;
+          c.resources = c.resources.filter((r) => !/^Theater die/.test(r.name));
+          c.resources.push({ id: uid(), name: `Theater die (d${dieSize})`, max: 1, current: 1, recharge: 'manual' });
+        }
+        return done(`opening night! Performance checks (DC 15): ${rolls.join(', ')}. Every contributor gains a Theater die (d${dieSize}) to add to one D20 Test.`);
+      }
+      return done(`the production falls flat. Performance checks (DC 15): ${rolls.join(', ') || 'nobody contributed'}.`, 'info');
+    }
+    case 'Teleportation Circle/invite': {
+      const r = die(6, ctx.rng);
+      if (r % 2) return done(`the invited spellcaster declines (die ${r}).`, 'info');
+      b.guests = [...(b.guests ?? []), { id: uid(), kind: 'spellcaster', label: `Visiting spellcaster: casts one Wizard spell of level ${lvl >= 17 ? 8 : 4} or lower for you (you pay costly components)`, untilDay: today + 14 }];
+      return done(`a Friendly spellcaster arrives through the circle (die ${r}) and stays 14 days or until they cast a spell for you.`);
+    }
+    case 'War Room/lieutenant':
+      b.lieutenants = Math.min(10, (b.lieutenants ?? 0) + 1);
+      return done(`a new lieutenant joins (${b.lieutenants} in all).`);
+    case 'War Room/soldiers': {
+      const mounted = /mounted/i.test(p.choice ?? '');
+      const per = mounted ? 20 : 100;
+      const n = (b.lieutenants ?? 0) * per;
+      b.army = { guards: n, horses: mounted ? n : 0 };
+      return done(`${b.lieutenants} lieutenant(s) muster ${n} Guards${mounted ? ' on Riding Horses' : ''}. Feeding them costs ${n * (mounted ? 2 : 1)} GP a day.`);
+    }
+    case 'Guildhall/assignment': {
+      const guild = f.guild ?? GUILDS[0];
+      if (guild === "Bakers' Guild") {
+        receiveGold(s, [b.ownerId], 500, `${b.name}'s bakers`);
+        return done('the bakers deliver for a prestigious event and are paid 500 GP (or take a favor instead, by arrangement with the DM).');
+      }
+      if (guild === "Brewers' Guild") {
+        stashAdd(s, b, 'Barrel of ale (40 gallons)', 50, 10);
+        return done('fifty 40-gallon barrels of ale (10 GP each) arrive.');
+      }
+      if (guild === "Masons' Guild") {
+        const sq = Math.max(1, Number(/(\d+)/.exec(p.text ?? '')?.[1] ?? 7));
+        b.facilities.push({ id: uid(), name: `Defensive walls (${sq} squares)`, kind: 'basic', size: 'cramped', order: 'Maintain', orderNote: '', built: true, building: null });
+        return done(`the masons raise ${sq} squares of defensive wall at no cost.`);
+      }
+      if (guild === "Shipbuilders' Guild") {
+        const ship = SHIPS.find((x) => (p.text ?? '').toLowerCase().includes(x.name.toLowerCase())) ?? SHIPS[0];
+        s.stashes.push({ id: uid(), name: ship.name, kind: 'vehicle', speedMph: ship.mph, location: b.name, capacityLb: null, items: [], purse: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 }, notes: `Built by ${b.name}'s shipbuilders.` });
+        return done(`the shipbuilders launch a ${ship.name}. It's on the Storage tab.`);
+      }
+      if (guild === "Thieves' Guild") return done(`the thieves deliver ${p.text || 'the object'} to the Bastion. The DM decides whether anyone comes looking for it.`, 'warn');
+      return done(`the adventurers return: ${p.text || 'the beast'} has been dealt with${b.facilities.some((x) => x.name === 'Trophy Room') ? ' (a trophy can go in the Trophy Room)' : ''}.`);
+    }
+  }
+  done(`${w.label} is complete.`);
+}
+
+function grantCharm(s: State, c: Character, name: string, uses: number, endsAt: number | null, notes: string): void {
+  if (s.effects.some((e) => e.name === name && e.targetIds.includes(c.id))) return;
+  s.effects.push({ id: uid(), name, kind: 'gift', targetIds: [c.id], casterId: null, concentration: false, shelter: false, startedAt: absNow(s), endsAt, notes });
+  c.resources.push({ id: uid(), name, max: uses, current: uses, recharge: 'manual' });
+}
+
+/** Rolls and applies a Bastion event. */
+function bastionEvent(s: State, ctx: Ctx, b: Bastion, excludeOpportunity = false): void {
+  const roll1 = rollBastionEvent(ctx.rng);
+  let e = roll1;
+  if (b.innerPeace) {
+    const roll2 = rollBastionEvent(ctx.rng);
+    e = EVENT_PREFERENCE.indexOf(roll2.event) < EVENT_PREFERENCE.indexOf(roll1.event) ? roll2 : roll1;
+    log(s, `${b.name}: the Meditation Chamber's calm lets the event be rolled twice (${roll1.event}, ${roll2.event}); keeping ${e.event}.`);
+    b.innerPeace = false;
+  }
+  while (excludeOpportunity && e.event === 'Extraordinary Opportunity') e = rollBastionEvent(ctx.rng);
+  b.lastEvent = `Turn ${b.turns}: ${e.event} (d100 = ${e.roll})`;
+  const say = (text: string, tone: Tone = 'info') => {
+    log(s, `${b.name}, Bastion event (d100 = ${e.roll}): ${e.event}. ${text}`, tone);
+    b.reports = [`Turn ${b.turns}, event: ${e.event}. ${text}`, ...(b.reports ?? [])].slice(0, 40);
+  };
+  const special = b.facilities.filter((f) => f.kind === 'special' && f.built);
+  const randomFacility = () => special[die(Math.max(1, special.length), ctx.rng) - 1];
+  switch (e.event) {
+    case 'All Is Well':
+      return say(ALL_IS_WELL[die(8, ctx.rng) - 1]);
+    case 'Attack': {
+      const monster = (b.guests ?? []).find((g) => g.kind === 'monster');
+      b.guests = (b.guests ?? []).filter((g) => g.kind !== 'spellcaster' && g.kind !== 'refugees');
+      if (monster) {
+        b.guests = b.guests.filter((g) => g.id !== monster.id);
+        return say(`A hostile force attacks and is beaten off. Your monstrous guest defends the Bastion, so no defenders are lost, and then it departs.`, 'warn');
+      }
+      const sides = b.armoryStocked ? 8 : 6;
+      const rolls = Array.from({ length: 6 }, () => die(sides, ctx.rng));
+      const ones = rolls.filter((r) => r === 1).length;
+      const had = bastionDefenders(b);
+      if (b.armoryStocked) b.armoryStocked = false;
+      if (had === 0) {
+        const f = randomFacility();
+        if (f) f.shutTurns = 1;
+        return say(`A hostile force attacks and is beaten off, but with no defenders the ${f?.name ?? 'Bastion'} is damaged and shut down for the next turn (repaired free after).`, 'bad');
+      }
+      say(`A hostile force attacks and is defeated. 6d${sides}: ${rolls.join(', ')}${sides === 8 ? ' (stocked Armory, now used up)' : ''}.`, ones ? 'bad' : 'warn');
+      loseDefenders(s, b, ones, 'the attack');
+      return;
+    }
+    case 'Criminal Hireling': {
+      const gp = die(6, ctx.rng) * 100;
+      const f = randomFacility();
+      b.decision = { kind: 'bribe', gp, facilityId: f?.id ?? null };
+      return say(`Officials arrive with a warrant for a hireling${f ? ` from the ${f.name}` : ''}. Pay a ${gp} GP bribe to keep them, or let them be taken (the facility then idles a turn).`, 'warn');
+    }
+    case 'Extraordinary Opportunity':
+      b.decision = { kind: 'opportunity' };
+      return say('A chance to host a festival, fund a spellcaster’s research or appease a noble. Pay 500 GP to seize it (and roll another event), or decline.', 'info');
+    case 'Friendly Visitors': {
+      const gp = die(6, ctx.rng) * 100;
+      const f = randomFacility();
+      receiveGold(s, [b.ownerId], gp, `visitors using ${b.name}'s ${f?.name ?? 'facilities'}`);
+      return say(`Visitors pay ${gp} GP for brief use of the ${f?.name ?? 'Bastion'}.`, 'good');
+    }
+    case 'Guest': {
+      const r = die(4, ctx.rng);
+      if (r === 1) {
+        b.guests = [...(b.guests ?? []), { id: uid(), kind: 'renown', label: 'Renowned guest (leaves a letter of recommendation)', untilDay: s.dayIndex + 7 }];
+        return say('A guest of great renown stays 7 days and will leave a letter of recommendation.', 'good');
+      }
+      if (r === 2) {
+        const gp = die(6, ctx.rng) * 100;
+        b.guests = [...(b.guests ?? []), { id: uid(), kind: 'sanctuary', label: `Guest in sanctuary (gift of ${gp} GP on leaving)`, untilDay: s.dayIndex + 7 }];
+        receiveGold(s, [b.ownerId], gp, `a grateful guest at ${b.name}`);
+        return say(`A guest seeks sanctuary for 7 days and offers a gift of ${gp} GP.`, 'good');
+      }
+      if (r === 3) {
+        b.guests = [...(b.guests ?? []), { id: uid(), kind: 'mercenary', label: 'Mercenary guest (counts as a Bastion Defender)' }];
+        return say('A mercenary arrives and serves as an extra Bastion Defender until sent away or killed.', 'good');
+      }
+      b.guests = [...(b.guests ?? []), { id: uid(), kind: 'monster', label: 'Friendly monster guest (defends once, then leaves)' }];
+      return say('A Friendly monster comes to stay. If the Bastion is attacked it defends, no defenders are lost, and then it leaves.', 'good');
+    }
+    case 'Lost Hirelings': {
+      const f = randomFacility();
+      if (f) f.shutTurns = 1;
+      return say(`The ${f?.name ?? 'facility'} loses its hirelings and can't be used next turn; they're replaced free after that.`, 'warn');
+    }
+    case 'Magical Discovery':
+      stashAdd(s, b, 'Uncommon Potion or Scroll (your choice)', 1);
+      return say('The hirelings discover or accidentally create an Uncommon potion or scroll of your choice. It waits in the Bastion stores.', 'good');
+    case 'Refugees': {
+      const n = rollDice(2, 4, ctx.rng);
+      const gp = die(6, ctx.rng) * 100;
+      b.guests = [...(b.guests ?? []).filter((g) => g.kind !== 'refugees'), { id: uid(), kind: 'refugees', label: `${n} refugees (stay until rehomed or the Bastion is attacked)` }];
+      receiveGold(s, [b.ownerId], gp, `refugees sheltering at ${b.name}`);
+      return say(`${n} refugees seek shelter and pay ${gp} GP for your protection.`, 'good');
+    }
+    case 'Request for Aid':
+      b.decision = { kind: 'aid' };
+      return say(`A local leader asks for help. Send Bastion Defenders (1d6 each; 10+ solves it for a 1d6 × 100 GP reward, less halves the reward and costs a defender), or refuse.`);
+    case 'Treasure': {
+      const r = die(100, ctx.rng);
+      const t = TREASURE_TABLE.find((x) => r <= x.upTo)!;
+      stashAdd(s, b, t.what, 1, t.valueGp);
+      return say(`d100 = ${r}: ${t.what}. ${t.valueGp ? '' : 'Roll on the matching magic item table. '}It waits in the Bastion stores.`, 'good');
+    }
+  }
+  say('See the DMG.');
+}
+
+/** The owner answers an event's choice. */
+export const resolveBastionDecision = act((d, ctx, bastionId: string, accept: boolean, defendersSent: number = 0) => {
+  const b = d.bastions.find((x) => x.id === bastionId);
+  const dec = b?.decision;
+  if (!b || !dec) return;
+  b.decision = null;
+  if (dec.kind === 'bribe') {
+    if (accept) {
+      payGold(d, [b.ownerId], dec.gp, `a bribe to keep a hireling at ${b.name}`);
+      log(d, `${b.name}: the bribe is paid and the hireling stays.`, 'good');
+    } else {
+      const f = b.facilities.find((x) => x.id === dec.facilityId);
+      if (f && facilityHirelings(f.name, f.size) <= 1) f.shutTurns = 1;
+      log(d, `${b.name}: the hireling is arrested${f && facilityHirelings(f.name, f.size) <= 1 ? `, and the ${f.name} idles next turn until a replacement arrives` : ''}.`, 'warn');
+    }
+  } else if (dec.kind === 'opportunity') {
+    if (!accept) return void log(d, `${b.name} declines the opportunity.`);
+    payGold(d, [b.ownerId], 500, `${b.name}'s extraordinary opportunity`);
+    log(d, `${b.name} seizes the opportunity, and the attention brings another event.`, 'good');
+    bastionEvent(d, ctx, b, true);
+  } else if (dec.kind === 'aid') {
+    const n = Math.min(bastionDefenders(b), Math.max(0, Math.round(defendersSent)));
+    if (!accept || n === 0) return void log(d, `${b.name} sends no help.`);
+    const rolls = Array.from({ length: n }, () => die(6, ctx.rng));
+    const total = rolls.reduce((a, x) => a + x, 0);
+    const reward = die(6, ctx.rng) * 100;
+    if (total >= 10) {
+      receiveGold(d, [b.ownerId], reward, `${b.name}'s aid to a local leader`);
+      log(d, `${b.name} sends ${n} defender(s): ${rolls.join(' + ')} = ${total}. The problem is solved; reward ${reward} GP.`, 'good');
+    } else {
+      receiveGold(d, [b.ownerId], reward / 2, `${b.name}'s aid to a local leader`);
+      log(d, `${b.name} sends ${n} defender(s): ${rolls.join(' + ')} = ${total}. Solved, but the reward is halved (${reward / 2} GP).`, 'warn');
+      loseDefenders(d, b, 1, 'the request for aid');
+    }
+  }
+});
+
+export const disbandArmy = act((d, _ctx, bastionId: string) => {
+  const b = d.bastions.find((x) => x.id === bastionId);
+  if (!b?.army) return;
+  b.army = null;
+  log(d, `${b.name}'s army disbands.`);
+});
+
+export const dismissGuest = act((d, _ctx, bastionId: string, guestId: string) => {
+  const b = d.bastions.find((x) => x.id === bastionId);
+  if (!b) return;
+  const g = (b.guests ?? []).find((x) => x.id === guestId);
+  b.guests = (b.guests ?? []).filter((x) => x.id !== guestId);
+  if (g) log(d, `${b.name}: ${g.label.split(' (')[0]} departs.`);
+});
+
+/** Each midnight: feed the army, see guests off. */
+function bastionDaily(s: State): void {
+  for (const b of s.bastions) {
+    if (b.abandoned) continue;
+    if (b.army) {
+      const owner = charById(s, b.ownerId);
+      const cost = b.army.guards + b.army.horses;
+      if (!owner || owner.gp < cost) {
+        log(s, `${b.name}'s army goes a day unfed (${cost} GP needed) and disbands.`, 'bad');
+        b.army = null;
+      } else payGold(s, [b.ownerId], cost, `feeding ${b.name}'s army`);
+    }
+    for (const g of [...(b.guests ?? [])]) {
+      if (g.untilDay != null && s.dayIndex >= g.untilDay) {
+        b.guests = b.guests!.filter((x) => x.id !== g.id);
+        if (g.kind === 'renown') {
+          stashAdd(s, b, 'Letter of recommendation', 1);
+          log(s, `${b.name}: the renowned guest departs, leaving a letter of recommendation.`, 'good');
+        } else log(s, `${b.name}: ${g.label.split(' (')[0]} departs.`);
+      }
+    }
+  }
+}
+
+/** A Long Rest at the Bastion: Charms from facilities, Demiplane and Sanctum Temporary HP. */
+function bastionLongRest(s: State): void {
+  for (const b of s.bastions) {
+    if (b.abandoned) continue;
+    const owner = charById(s, b.ownerId);
+    const lvl = owner?.level ?? 5;
+    if (owner && alive(owner) && b.distanceMiles === 0) {
+      for (const f of b.facilities.filter((x) => x.kind === 'special' && x.built)) {
+        const charm = BASTION_CHARMS[f.name];
+        if (!charm) continue;
+        const name = charm.split(':')[0];
+        if (s.effects.some((e) => e.name === name && e.targetIds.includes(owner.id))) continue;
+        grantCharm(s, owner, name, 1, absNow(s) + 7 * MIN_PER_DAY, charm.split(': ')[1] + '. Lasts 7 days or until used.');
+        log(s, `${owner.name} wakes in ${b.name} with a ${name} (${charm.split(': ')[1]}; 7 days or until used).`, 'good');
+      }
+      if ((b.demiplaneUntilDay ?? -1) >= s.dayIndex && b.facilities.some((x) => x.name === 'Demiplane' && x.built)) {
+        owner.tempHp = Math.max(owner.tempHp, 5 * lvl);
+        log(s, `${owner.name} rests in the Demiplane among glowing runes: ${5 * lvl} Temporary HP.`, 'good');
+      }
+    }
+    if (b.rites && b.rites.untilDay >= s.dayIndex) {
+      const c = charById(s, b.rites.charId);
+      if (c && alive(c)) {
+        c.tempHp = Math.max(c.tempHp, lvl);
+        log(s, `Rites in ${b.name}'s Sanctum fortify ${c.name}: ${lvl} Temporary HP.`, 'good');
+      }
+    }
+  }
+}
+
 export const resolveBastionTurn = act((d, ctx, bastionId: string) => {
   const b = d.bastions.find((x) => x.id === bastionId);
   if (!b || b.abandoned || turnsDue(d, b) < 1) return;
   b.lastTurnDay += BASTION_TURN_DAYS;
   b.turns += 1;
   const working = b.facilities.filter((f) => f.kind === 'special' && f.built);
+  // Work already under way moves on a turn, whatever the new orders are.
+  for (const f of working) {
+    if (!f.work) continue;
+    if ((f.shutTurns ?? 0) > 0) continue;
+    f.work.daysLeft -= BASTION_TURN_DAYS;
+    if (f.work.daysLeft <= 0) {
+      const w = f.work;
+      f.work = null;
+      finishWork(d, ctx, b, f, w);
+    } else log(d, `${b.name}, ${f.name}: ${f.work.label} continues (${f.work.daysLeft} more days).`);
+  }
   // An absent owner's orders only count if they arrived in time; otherwise the hirelings Maintain (DMG).
   const away = b.distanceMiles > 0;
   const maintain = b.maintain || (away && !b.ordersArrived);
   if (away && !b.ordersArrived && !b.maintain) log(d, `No new orders reached ${b.name} before this turn, so its hirelings Maintain.`, 'warn');
-  const orders = maintain ? ['Maintain (the whole Bastion)'] : working.map((f) => `${f.name}: ${f.order}${f.orderNote ? ` (${f.orderNote})` : ''}`);
-  log(d, `${b.name}, Bastion turn ${b.turns}. Orders: ${orders.join('; ') || 'none'}.`);
   // Neglect: an owner who is dead, or away with no orders arriving, issues no orders this turn.
   const owner = charById(d, b.ownerId);
   const noOrders = !owner || !alive(owner) || (away && !b.ordersArrived);
@@ -2090,18 +2986,34 @@ export const resolveBastionTurn = act((d, ctx, bastionId: string) => {
     return;
   }
   if (noOrders && b.neglectedTurns >= limit - 1) log(d, `${b.name}: ${b.neglectedTurns} turn(s) without orders. One more and the hirelings walk away.`, 'warn');
-  if (maintain || !working.length) {
-    const e = rollBastionEvent(ctx.rng);
-    b.lastEvent = `Turn ${b.turns}: ${e.event} (d100 = ${e.roll})`;
-    log(d, `${b.name}: every facility was maintained, so roll a Bastion event. d100 = ${e.roll}: ${e.event}. See the DMG for what happens.`, e.event === 'Attack' || e.event === 'Criminal Hireling' || e.event === 'Lost Hirelings' ? 'warn' : 'info');
-  } else {
-    b.lastEvent = `Turn ${b.turns}: orders carried out`;
+  const started: string[] = [];
+  if (!maintain) {
+    for (const f of working) {
+      if ((f.shutTurns ?? 0) > 0) {
+        started.push(`${f.name}: shut down this turn`);
+        continue;
+      }
+      if (f.order === 'Maintain') continue;
+      if (f.work) {
+        started.push(`${f.name}: busy with ${f.work.label}`);
+        continue;
+      }
+      const w = startWork(d, ctx, b, f);
+      if (w) {
+        f.work = w;
+        started.push(`${f.name}: ${w.label} (${w.daysLeft} days)`);
+      }
+    }
   }
+  for (const f of working) if ((f.shutTurns ?? 0) > 0) f.shutTurns! -= 1;
+  log(d, `${b.name}, Bastion turn ${b.turns}. Orders: ${maintain ? 'Maintain (the whole Bastion)' : started.join('; ') || 'none'}.`);
+  if (maintain || !working.length) bastionEvent(d, ctx, b);
+  else b.lastEvent = `Turn ${b.turns}: ${started.length} order(s) under way`;
   // The owner hears about it only when the report reaches them.
   if (away) {
     const delay = commDelay(b.reportMethod, b.distanceMiles) ?? commDelay('courier', b.distanceMiles)!;
     const now = absNow(d);
-    d.dispatches.push({ id: uid(), bastionId: b.id, direction: 'report', method: b.reportMethod, sentAt: now, arrivesAt: now + delay, costGp: 0, delivered: false, report: b.lastEvent });
+    d.dispatches.push({ id: uid(), bastionId: b.id, direction: 'report', method: b.reportMethod, sentAt: now, arrivesAt: now + delay, costGp: 0, delivered: false, report: (b.reports ?? []).slice(0, 4).join(' ') || b.lastEvent });
     log(d, `${b.name} sends its report by ${COMMS[b.reportMethod].label.toLowerCase()}; it should reach ${charById(d, b.ownerId)?.name ?? 'the owner'} in ${formatDuration(Math.max(1, delay))}.`);
   }
 });
@@ -2154,7 +3066,7 @@ export const sendBastionOrders = act((d, ctx, bastionId: string, method: CommMet
     costGp: cost,
     delivered: false,
     maintain,
-    orders: working.map((f) => ({ facilityId: f.id, order: f.draftOrder ?? f.order, note: f.draftNote ?? f.orderNote })),
+    orders: working.map((f) => ({ facilityId: f.id, order: f.draftOrder ?? f.order, note: f.draftNote ?? f.orderNote, plan: f.draftPlan ?? f.plan })),
     hirelingId,
   });
   if (cost > 0) payGold(d, [b.ownerId], cost, `sending orders to ${b.name}`);
@@ -2175,7 +3087,7 @@ function deliverDispatches(s: State): void {
       b.draftMaintain = undefined;
       for (const o of m.orders ?? []) {
         const f = b.facilities.find((x) => x.id === o.facilityId);
-        if (f) Object.assign(f, { order: o.order, orderNote: o.note, draftOrder: undefined, draftNote: undefined });
+        if (f) Object.assign(f, { order: o.order, orderNote: o.note, plan: o.plan ?? f.plan, draftOrder: undefined, draftNote: undefined, draftPlan: undefined });
       }
       b.ordersArrived = true;
       log(s, `Orders reach ${b.name} by ${COMMS[m.method].label.toLowerCase()}, ${formatDuration(Math.max(1, now - m.sentAt))} after they were sent: ${m.maintain ? 'Maintain' : (m.orders ?? []).map((o) => `${b.facilities.find((f) => f.id === o.facilityId)?.name}: ${o.order}`).join('; ')}.`, 'good');
@@ -2697,10 +3609,11 @@ export function canCastAsRitual(c: Character, sp: CharacterSpell): { ok: boolean
 }
 
 /** Casts a known spell: as a ritual (+10 minutes, no slot) or normally (uses a tracked slot of its level or higher). */
-export const castSpell = act((d, ctx, charId: string, spellName: string, mode: 'ritual' | 'slot') => {
+export const castSpell = act((d, ctx, charId: string, spellName: string, mode: 'ritual' | 'slot', targetId: string | null = null) => {
   const c = charById(d, charId);
   const own = c?.spells.find((x) => x.name === spellName);
   if (!c || !own || !alive(c)) return;
+  if (!useComponent(d, c, own.name)) return;
   const sp = { ...own, ...spellInfo(own, d.spellLibrary) } as CharacterSpell;
   const base = sp.castMinutes ?? 0;
   if (mode === 'ritual') {
@@ -2732,6 +3645,7 @@ export const castSpell = act((d, ctx, charId: string, spellName: string, mode: '
   if (minutes > 0) advanceMut(d, ctx, minutes, 'camp');
   const timeTxt = mode === 'ritual' ? `as a ritual (${sp.castTime ?? 'its casting time'} + 10 minutes = ${formatDuration(Math.max(1, Math.round(minutes)))}, no spell slot)` : `(${sp.castTime ?? 'its casting time'}${sp.level > 0 ? ', using a spell slot' : ''})`;
   log(d, `${c.name} casts ${sp.name} ${timeTxt}.`, 'good');
+  if (targetId && TARGET_SPELLS[sp.name]) applySpellTo(d, ctx, sp.name, targetId);
   if (sp.durationMinutes || sp.permanent) {
     const preset = { name: sp.name, kind: 'spell' as const, minutes: sp.permanent ? null : sp.durationMinutes ?? null, concentration: !!sp.concentration, shelter: /tiny hut|rope trick|magnificent mansion/i.test(sp.name) };
     if (preset.concentration) {

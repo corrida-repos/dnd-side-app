@@ -6,6 +6,7 @@ import { DENOMS, fmtPurse, type Denom } from '../rules/coins';
 import { fmtGp } from '../rules/money';
 import { Card, Meter, Num, Pill, Select, Text, Rule } from './common';
 import type { Stash } from '../state/types';
+import { WaysAround } from './WaysAround';
 
 export function StorageTab() {
   const s = useGame();
@@ -18,6 +19,7 @@ export function StorageTab() {
       {!s.stashes.length && (
         <Card title="Stashes, vaults and vehicles">
           <p className="muted">Nothing stored yet. Create a stash (a cache in the woods, a room at the inn), a bank vault, or a vehicle (a wagon, a ship) to keep things the characters aren&apos;t carrying.</p>
+          <WaysAround topic={'carrying'} />
         </Card>
       )}
     </div>

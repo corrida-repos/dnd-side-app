@@ -8,6 +8,9 @@ import { armorTime, ARMOR_LABEL } from '../rules/survival';
 import { spellInfo, RITUAL_EXTRA_MINUTES } from '../rules/rituals';
 import { formatDuration } from '../rules/calendar';
 import type { Character, CharacterSpell } from '../state/types';
+import { WaysAround } from './WaysAround';
+import { componentFor, TARGET_SPELLS } from '../rules/components';
+import { fmtGp } from '../rules/money';
 
 export function MorningTab() {
   const s = useGame();
@@ -18,6 +21,7 @@ export function MorningTab() {
       <p className="muted">
         Daily tasks reset after every Long Rest. {done}/{total} done.
       </p>
+      <WaysAround topic="rituals" />
       <div className="grid wide">
         {s.characters.filter((c) => c.kind !== 'mount').map((c) => (
           <MorningCard key={c.id} c={c} />
@@ -89,6 +93,7 @@ function CastPanel({ c }: { c: Character }) {
   const s = useGame();
   const known = c.spells.map((sp) => ({ sp, info: { ...sp, ...spellInfo(sp, s.spellLibrary) } as CharacterSpell }));
   const [name, setName] = useState('');
+  const [target, setTarget] = useState('');
   if (!known.length) return null;
   const pick = known.find((k) => k.sp.name === name) ?? known[0];
   const info = pick.info;
@@ -109,7 +114,7 @@ function CastPanel({ c }: { c: Character }) {
           className="small"
           disabled={info.level > 0 && !info.prepared && !info.alwaysPrepared}
           title={info.level > 0 && !info.prepared && !info.alwaysPrepared ? 'Not prepared' : ''}
-          onClick={() => dispatch((st, cx) => E.castSpell(st, cx, c.id, pick.sp.name, 'slot'))}
+          onClick={() => dispatch((st, cx) => E.castSpell(st, cx, c.id, pick.sp.name, 'slot', TARGET_SPELLS[pick.sp.name] ? target || null : null))}
         >
           Cast ({info.castTime ?? 'casting time'}
           {info.level > 0 ? (slots.length ? `, slot: ${slotLeft} left` : ', uses a slot') : ''})
@@ -118,6 +123,18 @@ function CastPanel({ c }: { c: Character }) {
           As ritual ({formatDuration(Math.max(1, Math.round(base + RITUAL_EXTRA_MINUTES)))}, no slot)
         </button>
       </div>
+      {TARGET_SPELLS[pick.sp.name] && (
+        <div className="btn-row tight">
+          <Select label="Target" value={target} onChange={setTarget} options={[{ value: '', label: 'Choose…' }, ...s.characters.map((x) => ({ value: x.id, label: `${x.name}${x.diedAt != null ? ' (dead)' : ''}` }))]} />
+          <span className="small muted">{TARGET_SPELLS[pick.sp.name]}</span>
+        </div>
+      )}
+      {componentFor(pick.sp.name) && (
+        <p className="small muted">
+          Needs {componentFor(pick.sp.name)!.what}
+          {componentFor(pick.sp.name)!.consumed ? ', used up' : ''}. {c.name} carries {fmtGp(E.componentValue(c, componentFor(pick.sp.name)!))} worth.
+        </p>
+      )}
       <p className="small muted">
         {info.ritual ? (ritualCheck.ok ? 'Ritual: casting time + 10 minutes, and no spell slot.' : ritualCheck.reason) : 'Not a ritual.'}{' '}
         {info.durationMinutes ? `Lasts ${formatDuration(info.durationMinutes)}${info.concentration ? ' (Concentration)' : ''}, and a timer starts on the Effects & Lights tab.` : info.permanent ? 'Lasts until dispelled.' : info.durationMinutes === null ? 'Instantaneous.' : ''}

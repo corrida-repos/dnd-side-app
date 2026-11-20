@@ -7,6 +7,7 @@ import { formatDuration } from '../rules/calendar';
 import { Card, Pill, Rule, Select, Toggle } from './common';
 import { senseText } from './senseView';
 import { BookAdvice } from './SettingsTab';
+import { WaysAround } from './WaysAround';
 
 type Act = CheckConditions['activity'];
 const ACT_LABEL: Record<Act, string> = { travel: 'Travelling', camp: 'In camp', rest: 'Long Rest', explore: 'Exploring a dungeon' };
@@ -59,6 +60,7 @@ function DangerCard() {
       </p>
       <SourceToggles />
       <BookAdvice />
+      <WaysAround topic={'encounters'} />
     </Card>
   );
 }

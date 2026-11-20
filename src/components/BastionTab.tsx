@@ -21,6 +21,9 @@ import type { Bastion, Facility } from '../state/types';
 import { COMMS, commCost, commDelay, type CommMethod } from '../rules/comms';
 import { formatDuration } from '../rules/calendar';
 import { SpeedUp } from './SpeedUp';
+import { BastionPeople, FacilityPlan, FacilityStatus } from './BastionPlan';
+import { FACILITY_OPTIONS } from '../rules/bastionOrders';
+import { WaysAround } from './WaysAround';
 
 const ORDER_HINT: Record<Order, string> = {
   Craft: 'What is being made, e.g. Longsword',
@@ -57,6 +60,7 @@ export function BastionTab() {
           </li>
           <li>Construction moves forward every in-game day, even while the party is away adventuring.</li>
         </ul>
+        <WaysAround topic={['building', 'messages']} />
       </Card>
     </div>
   );
@@ -145,6 +149,7 @@ function BastionCard({ b }: { b: Bastion }) {
         label={b.distanceMiles > 0 ? 'Draft: Maintain order for the whole Bastion' : 'Maintain order for the whole Bastion (no other orders; roll a Bastion event)'}
       />
       <RemoteCard b={b} />
+      <BastionPeople b={b} />
       <div className="btn-row">
         <button className="primary" disabled={due < 1 || !!b.abandoned} onClick={() => dispatch((st, cx) => E.resolveBastionTurn(st, cx, b.id))}>
           Resolve Bastion turn
@@ -240,13 +245,13 @@ function FacilityRow({ b, f }: { b: Bastion; f: Facility }) {
           </button>
         </span>
       </div>
-      {f.kind === 'special' && f.built && !maintain && (
+      {f.kind === 'special' && f.built && <FacilityStatus f={f} />}
+      {f.kind === 'special' && f.built && !maintain && (FACILITY_OPTIONS[f.name] ? <FacilityPlan b={b} f={f} /> : (
         <div className="form-row">
           <Select label={away ? 'Draft order' : 'Order'} value={order === 'Maintain' ? (SPECIAL_FACILITIES.find((x) => x.name === f.name)?.order ?? 'Craft') : order} onChange={(v: Order) => set(away ? { draftOrder: v } : { order: v })} options={ORDERS.filter((o) => o !== 'Maintain')} />
           <Text label="Details" value={note} onChange={(v) => set(away ? { draftNote: v } : { orderNote: v })} placeholder={ORDER_HINT[order]} />
-          {away && f.draftOrder && f.draftOrder !== f.order && <span className="small muted">In force: {f.order}</span>}
         </div>
-      )}
+      ))}
     </li>
   );
 }

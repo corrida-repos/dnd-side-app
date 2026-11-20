@@ -9,6 +9,7 @@ import { TERRAIN } from '../rules/terrain';
 import { foodNeedLb, fmtLb, fmtWater, proficiencyBonus, ARMOR_LABEL, armorTime, BOIL_MINUTES, PURIFY_SPELL, TAINTED_DC } from '../rules/survival';
 import { Card, Num, Pill, Select, Text, Toggle, Rule } from './common';
 import { POISON_HARVEST_DC } from '../rules/potions';
+import { WaysAround } from './WaysAround';
 
 export function CampTab() {
   return (
@@ -73,6 +74,7 @@ function FireCard() {
           Gather firewood (1 h, Survival DC {TERRAIN[s.place.terrain].forageDC})
         </button>
       </div>
+      <WaysAround topic={'fire'} />
     </Card>
   );
 }
@@ -98,6 +100,7 @@ function StoresCard() {
           Fill a 5 gal barrel
         </button>
       </div>
+      <WaysAround topic={['food', 'water']} />
     </Card>
   );
 }
@@ -158,6 +161,7 @@ function PurifyCard() {
         Table rules: boiling over a lit campfire makes all water safe, and cooking a hot meal uses up raw food first and makes it safe. Eating <b>raw food</b> means a DC {s.settings.rawFoodDC} Con save, or you
         are <b>Sick</b>: Poisoned (Disadvantage on attack rolls and ability checks) until you finish a Long Rest. Drinking <b>unpurified water</b> means a DC {TAINTED_DC} Con save, or you are Poisoned for 1 hour.
       </Rule>
+      <WaysAround topic={'tainted'} />
     </Card>
   );
 }
@@ -203,6 +207,7 @@ function ArmorCard() {
           ? ' Optional rule on: sleeping in Medium or Heavy armor means the Long Rest brings back only a quarter of spent Hit Point Dice and removes no Exhaustion.'
           : ' The 2024 rules have no penalty for sleeping in armor. You can switch on the optional Xanathar’s rule in Settings.'}
       </Rule>
+      <WaysAround topic={'armor'} />
     </Card>
   );
 }
@@ -358,6 +363,7 @@ function WatchCard() {
         Each watch is {formatDuration(len)}. A Long Rest allows up to 2 hours of light activity such as standing watch (4 hours for characters who Trance). In Dim Light passive Perception takes −5. In Darkness,
         anyone without Darkvision relies on hearing alone (👂), unless the campfire or a light source lasts the whole watch.
       </Rule>
+      <WaysAround topic={['watch', 'longRest']} />
     </Card>
   );
 }
@@ -451,6 +457,7 @@ function ForageCard() {
           Forage (1 h)
         </button>
       </div>
+      <WaysAround topic={'foraging'} />
     </Card>
   );
 }
@@ -510,6 +517,7 @@ function HuntCard() {
         Table rule: meat by size is Tiny 1 lb, Small 10, Medium 50, Large 200, Huge 1,000, Gargantuan 4,000. It lands in the camp stores as <b>raw food</b>, so cook it before eating. With a butcher, a DC {BUTCHER_DC} Wisdom
         (Survival) check stops half the meat going to waste. Constructs, elementals, oozes and undead give nothing.
       </Rule>
+      <WaysAround topic={'hunting'} />
     </Card>
   );
 }
@@ -559,6 +567,7 @@ function PoisonHarvestCard() {
       <Rule>
         2024 DMG: from a venomous creature that is dead or Incapacitated, using a Poisoner&apos;s Kit. Success yields one dose, and nothing more can be taken from that creature. Failing by 5 or more exposes the harvester to the poison. Buying poison is often illegal: it means criminal contacts, inquiries and bribes.
       </Rule>
+      <WaysAround topic={'poisonHarvest'} />
     </Card>
   );
 }
