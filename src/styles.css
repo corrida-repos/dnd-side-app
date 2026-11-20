@@ -762,3 +762,16 @@ td {
 .rules-list li {
   margin-bottom: 6px;
 }
+
+.rest-tracker {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.rest-tracker-head {
+  margin-bottom: 6px;
+}
+.wide-meter {
+  width: 100%;
+  height: 8px;
+}

@@ -458,3 +458,20 @@ describe('bastions', () => {
     expect(E.resolveBastionTurn(s, ctx(0.999), id).bastions[0].lastEvent).toBe('Turn 1: Treasure (d100 = 100)');
   });
 });
+
+describe('long rest countdown', () => {
+  it('counts down 16 hours after a Long Rest ends and logs when one is possible again', () => {
+    const s = fresh((d) => calm(d, 60, 40));
+    expect(E.minutesUntilLongRest(s)).toBe(0);
+    expect(E.minutesSinceLongRest(s)).toBeNull();
+    const rested = E.longRest(s, ctx(), false);
+    expect(E.minutesUntilLongRest(rested)).toBe(16 * 60);
+    const later = E.advance(rested, ctx(), 10 * 60 + 30);
+    expect(E.minutesUntilLongRest(later)).toBe(5 * 60 + 30);
+    expect(E.canLongRest(later).reason).toContain('5 h 30 min');
+    const ready = E.advance(later, ctx(), 5 * 60 + 30);
+    expect(E.minutesUntilLongRest(ready)).toBe(0);
+    expect(ready.log.some((l) => l.text.startsWith('A Long Rest is possible again'))).toBe(true);
+    expect(later.log.some((l) => l.text.startsWith('A Long Rest is possible again'))).toBe(false);
+  });
+});

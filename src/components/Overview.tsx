@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
 import { CLIMATES, environmentEffects, temperatureAt, weatherSummary, type ClimateId, type Weather } from '../rules/weather';
-import { formatClock, formatDate } from '../rules/calendar';
+import { formatClock, formatDate, formatDuration } from '../rules/calendar';
 import { ABUNDANCE_LABEL, PACES, foodNeedLb, waterNeedPints, fmtLb, fmtWater } from '../rules/survival';
 import { Card, ExhaustionBadge, Meter, Num, Pill, Select, Text, Toggle } from './common';
 import type { Abundance, Pace, Shelter, WaterQuality } from '../state/types';
@@ -54,9 +54,34 @@ function ClockCard() {
         <button className="primary" disabled={!lr.ok} title={lr.reason} onClick={() => dispatch((st, c) => E.longRest(st, c, false))}>
           Long Rest (8 h)
         </button>
-        {!lr.ok && <span className="muted small">{lr.reason}</span>}
       </div>
+      <LongRestTracker />
     </Card>
+  );
+}
+
+function LongRestTracker() {
+  const s = useGame();
+  const wait = E.minutesUntilLongRest(s);
+  const since = E.minutesSinceLongRest(s);
+  const pct = since == null ? 100 : Math.min(100, (since / E.LONG_REST_COOLDOWN) * 100);
+  return (
+    <div className="rest-tracker">
+      <div className="rest-tracker-head">
+        {wait > 0 ? (
+          <>
+            <b>Long Rest in {formatDuration(wait)}</b>
+            <span className="muted small"> · possible from {formatClock((s.minutes + wait) % E.MIN_PER_DAY)}{s.minutes + wait >= E.MIN_PER_DAY ? ' tomorrow' : ''}</span>
+          </>
+        ) : (
+          <b className="good-text">Long Rest available</b>
+        )}
+        <span className="muted small"> · {since == null ? 'no Long Rest tracked yet' : `${formatDuration(since)} since the last one ended`}</span>
+      </div>
+      <span className="meter wide-meter" role="meter" aria-valuenow={Math.round(pct)} aria-valuemax={100}>
+        <span className={`meter-fill ${wait > 0 ? 'meter-warn' : 'meter-good'}`} style={{ width: `${pct}%` }} />
+      </span>
+    </div>
   );
 }
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useGame } from './state/store';
 import * as E from './state/engine';
-import { formatClock, formatDate, lightAt } from './rules/calendar';
+import { formatClock, formatDate, formatDuration, lightAt } from './rules/calendar';
 import { weatherSummary } from './rules/weather';
 import { Overview } from './components/Overview';
 import { PartyTab } from './components/PartyTab';
@@ -49,6 +49,7 @@ export function App() {
   const light = lightAt(s.minutes, E.seasonOf(s));
   const Active = TABS.find((x) => x.id === tab)!.el;
   const pending = s.pending.length;
+  const restWait = E.minutesUntilLongRest(s);
   const danger = s.characters.filter((c) => c.exhaustion >= 3).length;
   return (
     <div className="app">
@@ -69,6 +70,9 @@ export function App() {
             <b>{t}°F</b> {weatherSummary(s.weather, t)}
           </span>
           {s.fire.lit && <span className="status-item good-text">🔥 {s.fire.fuelHours} h</span>}
+          <span className={`status-item ${restWait ? '' : 'good-text'}`} title="Only one Long Rest per 24 hours">
+            🛏 {restWait ? `Long Rest in ${formatDuration(restWait)}` : 'Long Rest ready'}
+          </span>
           {danger > 0 && <span className="status-item bad-text">⚠ {danger} badly exhausted</span>}
         </div>
       </header>

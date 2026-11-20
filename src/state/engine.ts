@@ -1,7 +1,7 @@
 import type { Activity, Bastion, Character, Facility, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
 import { BASIC_BUILD, BASTION_TURN_DAYS, ENLARGE, rollBastionEvent, SIZE_LABEL, SPECIAL_FACILITIES, type FacilitySize } from '../rules/bastion';
 import { d20, die, combineModes, signed, type Rng, type RollMode } from '../rules/dice';
-import { dateFromIndex, formatClock, formatDate } from '../rules/calendar';
+import { dateFromIndex, formatClock, formatDate, formatDuration } from '../rules/calendar';
 import { fireThreat, rollWeather, temperatureAt, CLIMATES } from '../rules/weather';
 import {
   exhaustionSummary,
@@ -259,9 +259,14 @@ export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activi
   while (remaining > 0) {
     const toNextHour = 60 - (s.minutes % 60);
     const step = Math.min(remaining, toNextHour);
+    const before = absNow(s);
     s.minutes += step;
     remaining -= step;
     expireConditions(s);
+    if (s.lastLongRestEnd != null) {
+      const ready = s.lastLongRestEnd + LONG_REST_COOLDOWN;
+      if (before < ready && absNow(s) >= ready) log(s, 'A Long Rest is possible again: 24 hours have passed since the last one began.', 'good');
+    }
     if (s.minutes % 60 === 0) tickHour(s, ctx, activity);
     if (s.minutes >= MIN_PER_DAY) endOfDay(s, ctx);
   }
@@ -278,14 +283,26 @@ export const advanceTo = act((d, ctx, targetMinutes: number, activity: Activity 
 
 // ---------------------------------------------------------------- rests
 
+/**
+ * Only one Long Rest per 24 hours. A Long Rest lasts 8 hours, so the next one may start
+ * 16 hours after the last one ended (24 hours after it started).
+ */
+export const LONG_REST_COOLDOWN = 16 * 60;
+
+/** Minutes since the last Long Rest ended, or null if none has been tracked yet. */
+export function minutesSinceLongRest(s: State): number | null {
+  return s.lastLongRestEnd == null ? null : absNow(s) - s.lastLongRestEnd;
+}
+
+/** Minutes until a Long Rest may start. 0 means you can rest now. */
+export function minutesUntilLongRest(s: State): number {
+  const since = minutesSinceLongRest(s);
+  return since == null ? 0 : Math.max(0, LONG_REST_COOLDOWN - since);
+}
+
 export function canLongRest(s: State): { ok: boolean; reason?: string } {
-  if (s.lastLongRestEnd != null) {
-    const since = absNow(s) - s.lastLongRestEnd;
-    if (since < 16 * 60) {
-      const wait = 16 * 60 - since;
-      return { ok: false, reason: `Only one Long Rest per 24 hours. Available in ${Math.floor(wait / 60)} h ${wait % 60} min.` };
-    }
-  }
+  const wait = minutesUntilLongRest(s);
+  if (wait > 0) return { ok: false, reason: `Only one Long Rest per 24 hours. Available in ${formatDuration(wait)}.` };
   return { ok: true };
 }
 
