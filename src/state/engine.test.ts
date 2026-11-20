@@ -578,3 +578,38 @@ describe('labelled debuffs', () => {
     expect(E.recoverExhaustion(legacy)).toBe('other');
   });
 });
+
+describe('staying awake too long', () => {
+  const awake = () =>
+    fresh((d) => {
+      calm(d, 60, 40);
+      d.characters = [newCharacter({ name: 'A', needsFood: false, needsWater: false, conSave: 0 })];
+      d.trackingStart = E.absNow(d);
+    });
+
+  it('calls for a DC 10 save after 24 hours without a Long Rest, then +5 per day', () => {
+    const s = awake();
+    s.settings.autoRollSaves = false;
+    expect(E.nextSleepCheck(s)).toEqual({ inMinutes: 1440, dc: 10 });
+    const day1 = E.advance(s, ctx(), 24 * 60);
+    expect(day1.pending.filter((p) => p.kind === 'sleep').map((p) => p.dc)).toEqual([10]);
+    const day2 = E.advance(day1, ctx(), 24 * 60);
+    expect(day2.pending.filter((p) => p.kind === 'sleep').map((p) => p.dc)).toEqual([10, 15]);
+    expect(E.nextSleepCheck(day2).dc).toBe(20);
+  });
+
+  it('labels failures as Sleep deprivation, and a Long Rest resets the count', () => {
+    const s = awake();
+    const tired = E.advance(s, LOW, 24 * 60);
+    expect(tired.characters[0].exhaustionCauses).toEqual(['sleep']);
+    const rested = E.longRest(tired, HIGH, false);
+    expect(E.minutesAwake(rested)).toBe(0);
+    expect(E.nextSleepCheck(rested)).toEqual({ inMinutes: 1440, dc: 10 });
+  });
+
+  it('does nothing when the rule is off', () => {
+    const s = awake();
+    s.settings.sleepDeprivation = false;
+    expect(E.advance(s, LOW, 48 * 60).characters[0].exhaustion).toBe(0);
+  });
+});

@@ -14,7 +14,7 @@ export type Pace = 'fast' | 'normal' | 'slow';
 export type Activity = 'camp' | 'rest' | 'travel' | 'work';
 export type Tone = 'info' | 'warn' | 'bad' | 'good';
 /** What caused each Exhaustion level. */
-export type ExhaustionCause = 'malnutrition' | 'dehydration' | 'cold' | 'heat' | 'march' | 'coldNight' | 'other';
+export type ExhaustionCause = 'malnutrition' | 'dehydration' | 'cold' | 'heat' | 'march' | 'coldNight' | 'sleep' | 'other';
 export type ArmorKind = 'none' | 'light' | 'medium' | 'heavy';
 export type WaterQuality = 'clean' | 'questionable';
 
@@ -126,7 +126,7 @@ export interface Stores {
   waterUnsafeGal: number;
 }
 
-export type SaveKind = 'cold' | 'heat' | 'march' | 'malnutrition' | 'tainted' | 'raw' | 'chill';
+export type SaveKind = 'cold' | 'heat' | 'march' | 'malnutrition' | 'tainted' | 'raw' | 'chill' | 'sleep';
 
 export interface PendingSave {
   id: string;
@@ -209,6 +209,8 @@ export interface Settings {
   /** Table rule: sleeping out at or below coldNightF without warm cover risks Exhaustion. */
   coldNights: boolean;
   coldNightF: number;
+  /** Optional rule (Xanathar's Guide): each 24 hours without a Long Rest, DC 10 Con save (+5 per further day) or 1 Exhaustion. */
+  sleepDeprivation: boolean;
 }
 
 export interface Travel {
@@ -235,6 +237,8 @@ export interface State {
   log: LogEntry[];
   travel: Travel;
   lastLongRestEnd: number | null;
+  /** When tracking began, used as the start of the party's waking time until the first Long Rest. */
+  trackingStart: number;
   settings: Settings;
   spellLibrary: SpellRef[];
   bastions: Bastion[];

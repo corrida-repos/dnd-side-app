@@ -79,9 +79,22 @@ function LongRestTracker() {
         )}
         <span className="muted small"> · {since == null ? 'no Long Rest tracked yet' : `${formatDuration(since)} since the last one ended`}</span>
       </div>
+      {s.settings.sleepDeprivation && <SleepLine />}
       <span className="meter wide-meter" role="meter" aria-valuenow={Math.round(pct)} aria-valuemax={100}>
         <span className={`meter-fill ${wait > 0 ? 'meter-warn' : 'meter-good'}`} style={{ width: `${pct}%` }} />
       </span>
+    </div>
+  );
+}
+
+function SleepLine() {
+  const s = useGame();
+  const awake = E.minutesAwake(s);
+  const next = E.nextSleepCheck(s);
+  const tone = next.inMinutes <= 4 * 60 || awake >= E.MIN_PER_DAY ? 'bad-text' : next.inMinutes <= 8 * 60 ? 'warn-text' : 'muted';
+  return (
+    <div className={`small ${tone}`}>
+      Awake for {formatDuration(awake)}. Sleep deprivation save (DC {next.dc}) in {formatDuration(next.inMinutes)} unless the party finishes a Long Rest.
     </div>
   );
 }
@@ -339,7 +352,14 @@ function TravelCard() {
       </div>
       <p className="small">
         {p.note}. About <b>{+miles.toFixed(1)} miles</b>. {s.travel.hoursToday} travel hour(s) since the last Long Rest
-        {counted > 8 && <span className="bad-text"> · this trip goes past 8 hours, so everyone makes forced march saves</span>}.
+        {counted > 8 && (
+          <span className="bad-text">
+            {' '}
+            · forced march: {counted - Math.max(8, s.travel.hoursToday)} hour(s) past 8, each needing a Con save (DC {11 + Math.max(0, s.travel.hoursToday - 8)}
+            {counted - Math.max(8, s.travel.hoursToday) > 1 ? ` to ${10 + (counted - 8)}` : ''}) or 1 Exhaustion level from Forced march
+          </span>
+        )}
+        .
       </p>
       <div className="field">
         <span className="field-label">Forage along the way (Wisdom (Survival), DC {({ abundant: 10, limited: 15, scarce: 20 } as const)[s.place.forage]})</span>

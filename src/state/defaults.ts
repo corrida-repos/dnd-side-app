@@ -105,7 +105,8 @@ export function createDefaultState(rng: Rng): State {
     log: [],
     travel: { pace: 'normal', hoursToday: 0, milesToday: 0 },
     lastLongRestEnd: null,
-    settings: { autoRollSaves: true, climateAdjustedPrecip: false, fireWarmsCamp: true, doubleWaterInHeat: false, wildNeedsPurifying: true, sleepInArmorPenalty: false, rawFoodRisk: true, rawFoodDC: 10, coldNights: true, coldNightF: 32 },
+    trackingStart: dayIndex * 1440 + 7 * 60,
+    settings: { autoRollSaves: true, climateAdjustedPrecip: false, fireWarmsCamp: true, doubleWaterInHeat: false, wildNeedsPurifying: true, sleepInArmorPenalty: false, rawFoodRisk: true, rawFoodDC: 10, coldNights: true, coldNightF: 32, sleepDeprivation: true },
     spellLibrary: [],
     bastions: [],
   };

@@ -21,6 +21,7 @@ Everything in D&D 5.5e (2024 *Player's Handbook* and *Dungeon Master's Guide*) t
 | Raw food (Con save or Sick until a Long Rest), unpurified water (Poisoned for 1 hour), purifying by spell, boiling or cooking | Per meal and drink, 1 hour, Long Rest |
 | Campfire fuel, lighting, weather putting it out, cooking, Chef treats | Hourly fuel burn |
 | Short Rest (1 h) and Long Rest (8 h), one Long Rest per 24 hours with a countdown | Rest timers |
+| Staying awake too long (Xanathar's: DC 10 Con, +5 per extra day without a Long Rest) | Every 24 hours awake |
 | Travel pace, miles, forced march saves after 8 hours, foraging | Hourly |
 | Putting armor on and taking it off (Light 1/1, Medium 5/1, Heavy 10/5 minutes) | Minutes |
 | Morning checklist and spell preparation by class rules | After each Long Rest |

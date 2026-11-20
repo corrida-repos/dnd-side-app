@@ -21,6 +21,7 @@ function migrate(raw: unknown): State | null {
     stores: { ...base.stores, ...parsed.stores, foodRawLb: parsed.stores?.foodRawLb ?? (parsed.stores as { foodUnsafeLb?: number } | undefined)?.foodUnsafeLb ?? 0 },
     place: { ...base.place, ...parsed.place },
     bastions: parsed.bastions ?? [],
+    trackingStart: parsed.trackingStart ?? (parsed.dayIndex ?? base.dayIndex) * 1440 + (parsed.minutes ?? 0),
   } as State;
   // Characters saved by older versions pick up any newly added fields.
   s.characters = s.characters.map((c) => ({ ...newCharacter(), ...c }));

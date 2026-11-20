@@ -120,7 +120,7 @@ export function heatProtection(c: Character, hasWater: boolean): string | null {
 
 // ---------------------------------------------------------------- saves & exhaustion
 
-const CAUSE_OF_SAVE: Partial<Record<SaveKind, ExhaustionCause>> = { cold: 'cold', heat: 'heat', march: 'march', malnutrition: 'malnutrition', chill: 'coldNight' };
+const CAUSE_OF_SAVE: Partial<Record<SaveKind, ExhaustionCause>> = { cold: 'cold', heat: 'heat', march: 'march', malnutrition: 'malnutrition', chill: 'coldNight', sleep: 'sleep' };
 
 export function gainExhaustion(s: State, c: Character, n: number, why: string, cause: ExhaustionCause = 'other'): void {
   if (!alive(c)) return;
@@ -273,6 +273,21 @@ function endOfDay(s: State, ctx: Ctx): void {
   newWeather(s, ctx);
 }
 
+/** Each time the party passes another full 24 hours awake, everyone saves against sleep deprivation. */
+function checkSleepDeprivation(s: State, ctx: Ctx, before: number): void {
+  const start = s.lastLongRestEnd ?? s.trackingStart;
+  const prevDays = Math.floor((before - start) / MIN_PER_DAY);
+  const days = Math.floor((absNow(s) - start) / MIN_PER_DAY);
+  for (let day = prevDays + 1; day <= days; day++) {
+    if (day < 1) continue;
+    const dc = sleepDeprivationDC(day);
+    log(s, `The party has gone ${day * 24} hours without a Long Rest.`, 'warn');
+    for (const c of s.characters) {
+      if (alive(c)) requestSave(s, ctx, c, 'sleep', dc, 'normal', `sleep deprivation (${day * 24} hours without a Long Rest)`);
+    }
+  }
+}
+
 function expireConditions(s: State): void {
   const now = absNow(s);
   for (const c of s.characters) {
@@ -297,6 +312,7 @@ export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activi
       const ready = s.lastLongRestEnd + LONG_REST_COOLDOWN;
       if (before < ready && absNow(s) >= ready) log(s, 'A Long Rest is possible again: 24 hours have passed since the last one began.', 'good');
     }
+    if (s.settings.sleepDeprivation && activity !== 'rest') checkSleepDeprivation(s, ctx, before);
     if (s.minutes % 60 === 0) tickHour(s, ctx, activity);
     if (s.minutes >= MIN_PER_DAY) endOfDay(s, ctx);
   }
@@ -320,6 +336,21 @@ export const advanceTo = act((d, ctx, targetMinutes: number, activity: Activity 
 export const LONG_REST_COOLDOWN = 16 * 60;
 /** Table rule: Con save after a cold night spent without warm cover. */
 export const COLD_NIGHT_DC = 10;
+
+/** Minutes the party has been awake: since the last Long Rest ended, or since tracking began. */
+export function minutesAwake(s: State): number {
+  return absNow(s) - (s.lastLongRestEnd ?? s.trackingStart);
+}
+
+/** DC of the next sleep deprivation save: 10 for the first 24 hours, +5 for each further 24 hours. */
+export const sleepDeprivationDC = (day: number): number => 10 + 5 * (day - 1);
+
+/** Minutes until the next sleep deprivation save, and its DC. */
+export function nextSleepCheck(s: State): { inMinutes: number; dc: number } {
+  const awake = minutesAwake(s);
+  const day = Math.floor(awake / MIN_PER_DAY) + 1;
+  return { inMinutes: day * MIN_PER_DAY - awake, dc: sleepDeprivationDC(day) };
+}
 
 /** Minutes since the last Long Rest ended, or null if none has been tracked yet. */
 export function minutesSinceLongRest(s: State): number | null {
