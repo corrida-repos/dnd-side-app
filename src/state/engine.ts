@@ -9,6 +9,7 @@ import { TERRAIN, clampPace } from '../rules/terrain';
 import { readSky, SKY_DC } from '../rules/skyclock';
 import { MESSENGER_GP_PER_MILE } from '../rules/hirelings';
 import { COMMS, commCost, commDelay, type CommMethod } from '../rules/comms';
+import { BUSINESS_DEBT_PENALTY, BUSINESS_MAX_DAYS, rollBusiness } from '../rules/business';
 import { HAZARDS, type GiftType, type HazardId } from '../rules/hazards';
 import { ARCANA_DC, STUDY_MINUTES, type StudyMethod } from '../rules/identify';
 import { FEED_LB_PER_DAY, MOUNT_CAPACITY, carryingCapacity, COINS_PER_LB, estimateWeight, loadLevel, parseInventory, RATION_WEIGHT, type LoadLevel } from '../rules/encumbrance';
@@ -1479,6 +1480,62 @@ export const downtimeDay = act((d, ctx, projectIds: string[]) => {
   if (d.minutes < 23 * 60) advanceMut(d, ctx, 23 * 60 - d.minutes, 'camp');
   const rested = longRest(d, ctx, false);
   Object.assign(d, rested);
+});
+
+// ---------------------------------------------------------------- businesses
+
+export const addBusiness = act((d, _ctx, name: string, ownerId: string, gpPerDay: number) => {
+  d.businesses.push({ id: uid(), name: name || 'Business', ownerId, gpPerDay: Math.max(0, gpPerDay), daysWorked: 0, debts: 0, unpaidGp: 0, netGp: 0, lastResult: '', notes: '' });
+});
+
+/** The owner spends whole downtime days minding the business (work, meals, then a Long Rest). */
+export const runBusiness = act((d, ctx, businessId: string, days: number) => {
+  for (let i = 0; i < Math.max(1, Math.round(days)); i++) {
+    const b = d.businesses.find((x) => x.id === businessId);
+    const owner = b && charById(d, b.ownerId);
+    if (!b || !owner || !alive(owner)) return;
+    Object.assign(d, downtimeDay(d, ctx, []));
+    const nb = d.businesses.find((x) => x.id === businessId)!;
+    nb.daysWorked += 1;
+    log(d, `${owner.name} spends the day running ${nb.name} (${nb.daysWorked} day${nb.daysWorked > 1 ? 's' : ''}${nb.daysWorked > BUSINESS_MAX_DAYS ? `, only ${BUSINESS_MAX_DAYS} count` : ''}).`);
+  }
+});
+
+/** Rolls on the Running a Business table for the days spent, then pays or collects. */
+export const settleBusiness = act((d, ctx, businessId: string) => {
+  const b = d.businesses.find((x) => x.id === businessId);
+  if (!b || b.daysWorked < 1) return;
+  const owner = charById(d, b.ownerId);
+  const days = Math.min(BUSINESS_MAX_DAYS, b.daysWorked);
+  const r = rollBusiness(ctx.rng, days, b.gpPerDay, b.debts);
+  const penalty = b.debts ? ` − ${b.debts * BUSINESS_DEBT_PENALTY} for unpaid debts` : '';
+  log(d, `${b.name}: d100 ${r.roll} + ${days} days${penalty} = ${r.total}. ${r.text}.`, r.payGp > 0 ? 'warn' : r.profitGp > 0 ? 'good' : 'info');
+  b.lastResult = `${r.text} (${r.total})`;
+  b.daysWorked = 0;
+  if (r.payGp > 0) {
+    if (owner && owner.gp >= r.payGp) {
+      payGold(d, [owner.id], r.payGp, `${b.name}'s maintenance`);
+      b.netGp -= r.payGp;
+    } else {
+      b.debts += 1;
+      b.unpaidGp = Math.round((b.unpaidGp + r.payGp) * 100) / 100;
+      log(d, `${owner?.name ?? 'The owner'} can't cover ${fmtGp(r.payGp)}, so ${b.name} begins to fail: −${BUSINESS_DEBT_PENALTY} to future rolls until the debt is paid.`, 'bad');
+    }
+  }
+  if (r.profitGp > 0 && owner) {
+    receiveGold(d, [owner.id], r.profitGp, `profit from ${b.name}`);
+    b.netGp += r.profitGp;
+  }
+});
+
+export const payBusinessDebts = act((d, _ctx, businessId: string) => {
+  const b = d.businesses.find((x) => x.id === businessId);
+  if (!b || !b.unpaidGp) return;
+  payGold(d, [b.ownerId], b.unpaidGp, `${b.name}'s debts`);
+  b.netGp -= b.unpaidGp;
+  log(d, `${b.name}'s debts are settled; its rolls are no longer penalized.`, 'good');
+  b.debts = 0;
+  b.unpaidGp = 0;
 });
 
 // ---------------------------------------------------------------- bastions

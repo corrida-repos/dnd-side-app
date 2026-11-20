@@ -424,6 +424,23 @@ export interface Facility {
   draftNote?: string;
 }
 
+export interface Business {
+  id: string;
+  name: string;
+  ownerId: string;
+  /** Daily maintenance cost in GP. */
+  gpPerDay: number;
+  /** Downtime days spent running it since the last roll (only 30 count). */
+  daysWorked: number;
+  /** Unpaid costs: each gives −10 to later rolls until paid. */
+  debts: number;
+  unpaidGp: number;
+  /** Lifetime profit minus what the owner paid in. */
+  netGp: number;
+  lastResult: string;
+  notes: string;
+}
+
 export interface Dispatch {
   id: string;
   bastionId: string;
@@ -540,6 +557,8 @@ export interface Settings {
   noTimepiece: boolean;
   /** Table rule: heavy precipitation and darkness each add +5 to the navigation DC. */
   poorVisibilityNav: boolean;
+  /** Optional 2014 DMG rule: running a business as a downtime activity. */
+  runningBusiness: boolean;
 }
 
 export interface Travel {
@@ -616,4 +635,6 @@ export interface State {
   recipeNames: string[];
   /** Messages travelling to and from distant Bastions. */
   dispatches: Dispatch[];
+  /** Businesses the characters own (optional Running a Business rule). */
+  businesses: Business[];
 }

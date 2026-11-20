@@ -18,6 +18,7 @@ import {
 import { Card, Meter, Num, Select, Text, Toggle, Rule } from './common';
 import { MAGIC_ITEM_VALUE, fmtGp } from '../rules/money';
 import { SPELLBOOK_COPY, ACTIVITY_PRESETS } from '../rules/longterm';
+import { BUSINESS_DEBT_PENALTY, BUSINESS_MAX_DAYS, BUSINESS_PRESETS } from '../rules/business';
 
 export function DowntimeTab() {
   const s = useGame();
@@ -29,6 +30,7 @@ export function DowntimeTab() {
     <div className="grid">
       <NewProject />
       <MaterialsCard />
+      {s.settings.runningBusiness && <BusinessCard />}
       <Card title="Projects" className="span-2">
         {active.length === 0 && <p className="muted">No active projects. Start one on the left.</p>}
         <ul className="projects">
@@ -370,6 +372,81 @@ function NewProject() {
       >
         Start project
       </button>
+    </Card>
+  );
+}
+
+function BusinessCard() {
+  const s = useGame();
+  const owners = s.characters.filter((c) => c.kind !== 'mount');
+  const [preset, setPreset] = useState(BUSINESS_PRESETS[0].name);
+  const [name, setName] = useState('');
+  const [owner, setOwner] = useState('');
+  const [cost, setCost] = useState(BUSINESS_PRESETS[0].gpPerDay);
+  const [days, setDays] = useState(7);
+  const ownerId = owners.find((c) => c.id === owner)?.id ?? owners[0]?.id ?? '';
+  return (
+    <Card title="Running a business (optional rule)">
+      {s.businesses.length === 0 && <p className="muted small">No businesses yet. Add one an adventurer owns, inherited or was given.</p>}
+      <ul className="plain">
+        {s.businesses.map((b) => {
+          const counted = Math.min(BUSINESS_MAX_DAYS, b.daysWorked);
+          return (
+            <li key={b.id} className="facility">
+              <div className="armor-row">
+                <span>
+                  <b>{b.name}</b> <span className="muted small">{E.charById(s, b.ownerId)?.name ?? 'no owner'} · {fmtGp(b.gpPerDay)}/day upkeep · net {fmtGp(b.netGp)}</span>
+                </span>
+                <button className="ghost small bad" aria-label={`Remove ${b.name}`} onClick={() => confirm(`Remove ${b.name}?`) && edit((d) => void (d.businesses = d.businesses.filter((x) => x.id !== b.id)))}>
+                  ✕
+                </button>
+              </div>
+              <p className="small">
+                {b.daysWorked} day(s) worked since the last roll{b.daysWorked > BUSINESS_MAX_DAYS ? ` (only ${BUSINESS_MAX_DAYS} count)` : ''}. Roll: d100 + {counted}
+                {b.debts > 0 && <> − {b.debts * BUSINESS_DEBT_PENALTY} for {b.debts} unpaid debt(s) ({fmtGp(b.unpaidGp)})</>}.
+                {b.lastResult && <span className="muted"> Last: {b.lastResult}.</span>}
+              </p>
+              <div className="btn-row tight">
+                <Num value={days} onChange={(v) => setDays(Math.max(1, Math.round(v)))} min={1} suffix="days" width={3} />
+                <button className="small" onClick={() => dispatch((st, cx) => E.runBusiness(st, cx, b.id, days))}>
+                  Spend {days} downtime day{days > 1 ? 's' : ''} running it
+                </button>
+                <button className="primary small" disabled={b.daysWorked < 1} onClick={() => dispatch((st, cx) => E.settleBusiness(st, cx, b.id))}>
+                  Roll for the period
+                </button>
+                {b.unpaidGp > 0 && (
+                  <button className="small" onClick={() => dispatch((st, cx) => E.payBusinessDebts(st, cx, b.id))}>
+                    Pay debts ({fmtGp(b.unpaidGp)})
+                  </button>
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      <details className="add-facility">
+        <summary>Add a business</summary>
+        <div className="form-row">
+          <Select
+            label="Kind"
+            value={preset}
+            onChange={(v) => {
+              setPreset(v);
+              setCost(BUSINESS_PRESETS.find((x) => x.name === v)?.gpPerDay ?? cost);
+            }}
+            options={BUSINESS_PRESETS.map((x) => x.name)}
+          />
+          <Text label="Name" value={name} onChange={setName} placeholder={`e.g. The Gilded ${preset.split(',')[0]}`} />
+          <Select label="Owner" value={ownerId} onChange={setOwner} options={owners.map((c) => ({ value: c.id, label: c.name }))} />
+          <Num label="Upkeep" value={cost} onChange={(v) => setCost(Math.max(0, v))} min={0} step={0.5} suffix="GP/day" width={4} />
+        </div>
+        <button className="small" disabled={!ownerId} onClick={() => dispatch((st, cx) => E.addBusiness(st, cx, name || preset, ownerId, cost))}>
+          Add business
+        </button>
+      </details>
+      <Rule>
+        2014 DMG: each downtime day the owner spends running the business counts (at most 30). Then roll d100 + days on the Running a Business table: low rolls mean paying 1½×, full or half the maintenance for those days; middling rolls break even; high rolls add a profit of 1d6, 2d8 or 3d10 × 5 GP. An unpaid cost makes the business start to fail: −10 to later rolls for each debt until it&apos;s paid. The 2024 rules have no equivalent, so this can be switched off in Settings.
+      </Rule>
     </Card>
   );
 }

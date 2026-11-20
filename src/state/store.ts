@@ -52,6 +52,7 @@ function migrate(raw: unknown): State | null {
     giftLibrary: parsed.giftLibrary ?? [],
     recipeNames: parsed.recipeNames ?? [],
     dispatches: parsed.dispatches ?? [],
+    businesses: parsed.businesses ?? [],
     trackingStart: parsed.trackingStart ?? (parsed.dayIndex ?? base.dayIndex) * 1440 + (parsed.minutes ?? 0),
   } as State;
   // Characters saved by older versions pick up any newly added fields.
