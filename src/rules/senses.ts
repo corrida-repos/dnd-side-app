@@ -48,7 +48,8 @@ export type SenseKey =
   | 'sleepsThrough'
   | 'heal'
   | 'hurt'
-  | 'hitDie';
+  | 'hitDie'
+  | 'encounter';
 
 /** How the change reaches the character: felt in the body, noticed with the senses, or not noticed at all. */
 export type Awareness = 'feels' | 'notices' | 'unaware';
@@ -109,6 +110,7 @@ export const SENSES: Record<SenseKey, SenseDef> = {
   heal: F('feels warmth spread and the pain recede'),
   hurt: F('feels pain lance through them'),
   hitDie: F('feels some strength return after catching their breath and binding wounds'),
+  encounter: N('notices movement at the edge of sight', 'hears something approaching'),
 };
 
 /** Picks a variant without using the dice; the same seed gives the same line, so a whole party shares one. */

@@ -62,7 +62,10 @@ describe('lights and timed effects', () => {
 
 describe('exploration turns, breath and frigid water', () => {
   it('passes 10 minutes and can roll wandering monsters', () => {
-    const s = fresh((d) => void (d.settings.exploreEncounterOn = 19));
+    const s = fresh((d) => {
+      d.settings.encounters = false;
+      d.settings.exploreEncounterOn = 19;
+    });
     const n = E.explorationTurn(s, HIGH, 'search the shrine');
     expect(n.minutes).toBe(s.minutes + 10);
     expect(n.log.some((l) => l.text.startsWith('Wandering monster'))).toBe(true);

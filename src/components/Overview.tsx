@@ -1,3 +1,4 @@
+import { DANGER, DANGERS, type Danger } from '../rules/encounters';
 import { useState } from 'react';
 import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
@@ -690,10 +691,11 @@ function PlaceCard() {
           onChange={(v: TerrainType) => set({ terrain: v })}
           options={(Object.keys(TERRAIN) as TerrainType[]).map((k) => ({ value: k, label: TERRAIN[k].label }))}
         />
+        <Select label="Danger" value={s.place.danger} onChange={(v: Danger) => set({ danger: v })} options={DANGERS.map((d) => ({ value: d, label: DANGER[d].label }))} />
       </div>
       <p className="small muted">
         {TERRAIN[s.place.terrain].label}: fastest pace {maxPaceFor(s.place.terrain, s.place.goodRoad)}, foraging DC {TERRAIN[s.place.terrain].forageDC}, navigation DC {TERRAIN[s.place.terrain].navigationDC}, search DC{' '}
-        {TERRAIN[s.place.terrain].searchDC}, encounters at {TERRAIN[s.place.terrain].encounterDistance}.
+        {TERRAIN[s.place.terrain].searchDC}, encounters at {TERRAIN[s.place.terrain].encounterDistance}. {DANGER[s.place.danger].label} danger: random encounter check every {DANGER[s.place.danger].everyHours} h on {DANGER[s.place.danger].on}+ (see the Encounters tab).
       </p>
       <div className="form-row">
         <Select

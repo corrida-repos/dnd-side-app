@@ -338,16 +338,20 @@ function WatchCard() {
           </span>
         ))}
       </div>
-      <div className="form-row">
-        <Num
-          label="Encounter on d20 of (0 = off)"
-          value={s.settings.encounterOn}
-          onChange={(v) => edit((d) => void (d.settings.encounterOn = Math.max(0, Math.min(20, Math.round(v)))))}
-          min={0}
-          max={20}
-          width={2}
-        />
-      </div>
+      {s.settings.encounters ? (
+        <p className="small muted">Random encounter checks during the rest follow this location&apos;s danger (Encounters tab) and name who is on watch.</p>
+      ) : (
+        <div className="form-row">
+          <Num
+            label="Encounter on d20 of (0 = off)"
+            value={s.settings.encounterOn}
+            onChange={(v) => edit((d) => void (d.settings.encounterOn = Math.max(0, Math.min(20, Math.round(v)))))}
+            min={0}
+            max={20}
+            width={2}
+          />
+        </div>
+      )}
       <Rule>
         Each watch is {formatDuration(len)}. A Long Rest allows up to 2 hours of light activity such as standing watch (4 hours for characters who Trance). In Dim Light passive Perception takes −5. In Darkness,
         anyone without Darkvision relies on hearing alone (👂), unless the campfire or a light source lasts the whole watch.

@@ -4,6 +4,7 @@ import * as E from '../state/engine';
 import { EFFECT_KIND_LABEL, EFFECT_PRESETS, EXPLORATION_TURN_MINUTES, holdBreathSeconds, type EffectKind } from '../rules/effects';
 import { abilityMod } from '../rules/upkeep';
 import { HAZARDS, type HazardId } from '../rules/hazards';
+import { DANGER } from '../rules/encounters';
 import { formatClock, formatDuration } from '../rules/calendar';
 import { Card, Meter, Num, Pill, Select, Text, Toggle, Rule } from './common';
 
@@ -163,16 +164,22 @@ function ExploreCard() {
           Explore {EXPLORATION_TURN_MINUTES} min
         </button>
       </div>
-      <div className="form-row">
-        <Num
-          label="Wandering monster on d20 of (0 = off)"
-          value={s.settings.exploreEncounterOn}
-          onChange={(v) => edit((d) => void (d.settings.exploreEncounterOn = Math.max(0, Math.min(20, Math.round(v)))))}
-          min={0}
-          max={20}
-          width={2}
-        />
-      </div>
+      {s.settings.encounters ? (
+        <p className="small muted">
+          Wandering monster checks follow this location&apos;s danger: every {DANGER[s.place.danger].everyTurns} turn{DANGER[s.place.danger].everyTurns > 1 ? 's' : ''} on {DANGER[s.place.danger].on}+ ({DANGER[s.place.danger].label}, Encounters tab).
+        </p>
+      ) : (
+        <div className="form-row">
+          <Num
+            label="Wandering monster on d20 of (0 = off)"
+            value={s.settings.exploreEncounterOn}
+            onChange={(v) => edit((d) => void (d.settings.exploreEncounterOn = Math.max(0, Math.min(20, Math.round(v)))))}
+            min={0}
+            max={20}
+            width={2}
+          />
+        </div>
+      )}
       <p className={`small ${lights.length ? '' : 'warn-text'}`}>
         {lights.length ? `Light: ${lights.map((l) => l.name).join(', ')}.` : 'No light source is burning. Without Darkvision the party is in Darkness underground.'}
       </p>

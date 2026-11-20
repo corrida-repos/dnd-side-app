@@ -47,6 +47,8 @@ import {
 import { isCaster, PREP_RULE, preparedCount, preparedLimit } from '../rules/spells';
 import { newCharacter, uid } from './defaults';
 import { sense, type SenseKey } from '../rules/senses';
+import { buildTable, checkModifiers, DANGER, DIFFICULTY_LABEL, firstSign, plural, rollOnTable, SRD_POOL, xpFor, type CheckConditions, type Danger, type EncounterCreature, type EncounterTable, type Party } from '../rules/encounters';
+import type { TerrainType } from '../rules/terrain';
 
 export interface Ctx {
   rng: Rng;
@@ -546,7 +548,7 @@ function standWatches(s: State, ctx: Ctx): Record<string, number> {
     const best = Math.max(...p.watchers.map((w) => w.passive));
     const who = p.watchers.map((w) => `${w.c.name} (passive Perception ${w.passive}${w.sight.blind ? ', hearing only' : w.sight.penalty ? ', dim' : ''})`).join(' and ');
     let note = `${when}: ${who}`;
-    if (s.settings.encounterOn > 0) {
+    if (!s.settings.encounters && s.settings.encounterOn > 0) {
       const r = die(20, ctx.rng);
       if (r >= s.settings.encounterOn) {
         note += ': encounter!';
@@ -591,7 +593,7 @@ function expireConditions(s: State): void {
 }
 
 /** Moves the clock forward, firing the hourly and end-of-day checks along the way. */
-export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activity): void {
+export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activity, opts: { exploring?: boolean } = {}): void {
   let remaining = Math.max(0, Math.round(minutes));
   while (remaining > 0) {
     const toNextHour = 60 - (s.minutes % 60);
@@ -612,6 +614,7 @@ export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activi
     deliverDispatches(s);
     if (s.minutes % 60 === 0) tickHour(s, ctx, activity);
     if (s.minutes >= MIN_PER_DAY) endOfDay(s, ctx);
+    if (s.settings.encounters && activity !== 'work' && !opts.exploring) overlandEncounterClock(s, ctx, step, activity);
   }
 }
 
@@ -686,7 +689,9 @@ export const longRest = act((d, ctx, force = false) => {
   }
   log(d, 'The party settles in for a Long Rest (8 hours: at least 6 asleep, no more than 2 of light activity).');
   const watched = standWatches(d, ctx);
+  d.restStart = absNow(d);
   advanceMut(d, ctx, 8 * 60, 'rest');
+  d.restStart = null;
   completeLongRest(d, ctx, watched);
 });
 
@@ -828,7 +833,13 @@ export const interruptedRest = act((d, ctx, o: InterruptOpts) => {
   const after = Math.max(0, Math.min(total - 1, Math.round(o.after)));
   log(d, `The party settles in for a ${o.kind === 'long' ? 'Long' : 'Short'} Rest.`);
   const watched = o.kind === 'long' ? standWatches(d, ctx) : {};
+  if (o.kind === 'long') d.restStart = absNow(d);
+  // The interruption is the encounter, so no automatic checks while it plays out.
+  const auto = d.settings.encounters;
+  d.settings.encounters = false;
   advanceMut(d, ctx, after, 'rest');
+  d.settings.encounters = auto;
+  d.restStart = null;
   log(d, `${formatDuration(Math.max(1, after))} in, the rest is interrupted: ${INTERRUPT_LABEL[o.reason]}.`, 'warn');
   if (o.kind === 'long') wakeTheCamp(d, after, o.reason === 'disturbance' ? o.noise : 'loud', o.dc);
   if (o.reason === 'exertion') advanceMut(d, ctx, 60, 'camp');
@@ -2060,8 +2071,15 @@ export const extendEffect = act((d, _ctx, effectId: string, minutes: number) => 
 /** A 10-minute exploration turn: searching, checking for traps, listening at doors. */
 export const explorationTurn = act((d, ctx, what: string) => {
   log(d, `Exploration turn (${EXPLORATION_TURN_MINUTES} min)${what ? `: ${what}` : ''}.`);
-  advanceMut(d, ctx, EXPLORATION_TURN_MINUTES, 'camp');
-  if (d.settings.exploreEncounterOn > 0) {
+  advanceMut(d, ctx, EXPLORATION_TURN_MINUTES, 'camp', { exploring: true });
+  if (d.settings.encounters) {
+    d.exploreTurns += 1;
+    const every = DANGER[d.place.danger].everyTurns;
+    if (d.exploreTurns >= every) {
+      d.exploreTurns = 0;
+      encounterCheck(d, ctx, 'explore', false);
+    }
+  } else if (d.settings.exploreEncounterOn > 0) {
     const r = die(20, ctx.rng);
     if (r >= d.settings.exploreEncounterOn) log(d, `Wandering monster check: d20 = ${r}. Something finds the party!`, 'warn');
   }
@@ -2879,4 +2897,123 @@ export const grantGift = act((d, _ctx, charId: string, type: GiftType, name: str
   d.effects.push({ id: uid(), name: `${type}: ${name}`, kind: type === 'Curse' ? 'curse' : 'gift', targetIds: [c.id], casterId: null, concentration: false, shelter: false, startedAt: absNow(d), endsAt: null, notes });
   if (type === 'Charm' && uses > 0) c.resources.push({ id: uid(), name: `Charm: ${name}`, max: uses, current: uses, recharge: 'manual' });
   log(d, `${c.name} ${type === 'Curse' ? 'is cursed' : 'receives a supernatural gift'}: ${type} of ${name}${type === 'Charm' && uses ? ` (${uses} use${uses > 1 ? 's' : ''})` : ''}.`, type === 'Curse' ? 'bad' : 'good');
+});
+
+// ---------------------------------------------------------------- random encounters
+
+/** Creatures available to the random encounter tables: the SRD list plus any imported bestiary entries with a CR and environment. */
+export function encounterPool(s: State): EncounterCreature[] {
+  const byName = new Map<string, EncounterCreature>();
+  if (s.settings.srdEncounters) for (const c of SRD_POOL) byName.set(c.name.toLowerCase(), c);
+  for (const c of s.bestiary) {
+    if (!c.cr || !c.env?.length) continue;
+    byName.set(c.name.toLowerCase(), { name: c.name, cr: c.cr, size: c.size, type: c.type.toLowerCase(), align: c.align ?? 'N', env: c.env, source: c.source });
+  }
+  const out = new Set(s.encounterExclude.map((n) => n.toLowerCase()));
+  return [...byName.values()].filter((c) => !out.has(c.name.toLowerCase()));
+}
+
+/** Party level (average, rounded) and size, from the living player characters. */
+export function encounterParty(s: State): Party {
+  const pcs = s.characters.filter((c) => c.kind !== 'mount' && alive(c));
+  if (!pcs.length) return { level: 1, size: 1 };
+  return { level: Math.max(1, Math.min(20, Math.round(pcs.reduce((a, c) => a + c.level, 0) / pcs.length))), size: pcs.length };
+}
+
+export function encounterTable(s: State, terrain: TerrainType = s.place.terrain, danger: Danger = s.place.danger): EncounterTable {
+  return buildTable(encounterPool(s), terrain, danger, encounterParty(s));
+}
+
+const isNight = (s: State): boolean => lightAt(s.minutes % MIN_PER_DAY, seasonOf(s)).phase === 'Night';
+const isUnderground = (s: State): boolean => !!CLIMATES[s.weather.climate].noWeather || s.place.terrain === 'underdark';
+
+/** The conditions that shift the encounter check right now. */
+export function encounterConditions(s: State, activity: CheckConditions['activity']): CheckConditions {
+  const now = absNow(s);
+  const lightOn = s.fire.lit || s.effects.some((e) => e.kind === 'light' && (e.endsAt == null || e.endsAt > now));
+  const shelterSpell = s.effects.some((e) => e.shelter && (e.endsAt == null || e.endsAt > now));
+  return {
+    activity,
+    night: isNight(s),
+    lightAtNight: lightOn,
+    pace: s.travel.pace,
+    goodRoad: s.place.onRoute && s.place.goodRoad,
+    foulWeather: s.weather.precip === 'heavy' || s.weather.wind === 'strong',
+    sheltered: s.place.shelter === 'building' || s.place.shelter === 'cave' || shelterSpell,
+    underground: isUnderground(s),
+    bigGroup: s.characters.filter(alive).length + s.hirelings.length > 6,
+  };
+}
+
+/** Accumulates overland time and rolls a check each time the danger level's interval passes. */
+function overlandEncounterClock(s: State, ctx: Ctx, step: number, activity: Activity): void {
+  const every = DANGER[s.place.danger].everyHours * 60;
+  s.encounterClock = Math.min(s.encounterClock, every) + step;
+  while (s.encounterClock >= every) {
+    s.encounterClock -= every;
+    encounterCheck(s, ctx, activity === 'rest' ? 'rest' : activity === 'travel' ? 'travel' : 'camp', false);
+  }
+}
+
+/** Who is on watch right now, if the party is in a Long Rest. */
+function onWatchNow(s: State): Character[] {
+  if (s.restStart == null) return [];
+  const len = watchMinutes(s.watchPlan.count);
+  const slot = Math.min(s.watchPlan.count - 1, Math.max(0, Math.floor((absNow(s) - s.restStart) / len)));
+  return (s.watchPlan.slots[slot] ?? []).map((id) => actorById(s, id)).filter((c): c is Character => !!c && alive(c));
+}
+
+/** One random encounter check: d20 plus the conditions, against the danger level's number. Returns true on an encounter. */
+export function encounterCheck(s: State, ctx: Ctx, activity: CheckConditions['activity'], announce: boolean): boolean {
+  const info = DANGER[s.place.danger];
+  const mods = checkModifiers(encounterConditions(s, activity));
+  const mod = mods.reduce((a, m) => a + m.value, 0);
+  const r = die(20, ctx.rng);
+  const total = r + mod;
+  const detail = `d20 ${r}${mod ? ` ${signed(mod)} (${mods.map((m) => `${m.label} ${signed(m.value)}`).join(', ')}) = ${total}` : ''}, encounter on ${info.on}+ or a natural 20 (${info.label} danger)`;
+  if (total < info.on && r < 20) {
+    if (announce) log(s, `Random encounter check: ${detail}. Nothing comes.`);
+    return false;
+  }
+  resolveEncounter(s, ctx, activity, detail);
+  return true;
+}
+
+const ACTIVITY_WHEN: Record<CheckConditions['activity'], string> = { travel: 'on the road', camp: 'in camp', rest: 'during the Long Rest', explore: 'while exploring' };
+
+/** Rolls on the location's table and logs what turns up, with what the characters notice first. */
+export function resolveEncounter(s: State, ctx: Ctx, activity: CheckConditions['activity'], checkDetail?: string): void {
+  const table = encounterTable(s);
+  const res = rollOnTable(table, ctx.rng);
+  if (!res) {
+    log(s, 'Random encounter, but the table is empty: import a bestiary or turn on the SRD creatures in the Encounters tab.', 'warn');
+    return;
+  }
+  const night = isNight(s) || isUnderground(s);
+  const watchers = activity === 'rest' ? onWatchNow(s) : [];
+  const when = `${ACTIVITY_WHEN[activity]} at ${formatClock(s.minutes % MIN_PER_DAY)}`;
+  const watchNote = activity === 'rest' ? (watchers.length ? ` On watch: ${watchers.map((c) => `${c.name} (passive Perception ${c.passivePerception})`).join(', ')}.` : ' Nobody is on watch.') : '';
+  const head = `Random encounter ${when}${checkDetail ? ` (${checkDetail})` : ''}. d100 = ${res.roll}:`;
+  if (res.row.kind === 'peaceful' || !res.row.creature) {
+    log(s, `${head} ${res.row.text}. About ${res.distanceFt} feet away.${watchNote}`, 'info');
+    return;
+  }
+  const c = res.row.creature;
+  const count = res.count ?? 1;
+  const xpEach = xpFor(c.cr);
+  const party = table.party;
+  const dm = `${head} ${count} ${count === 1 ? c.name : plural(c.name)} (CR ${c.cr}, ${res.row.count} rolled; ${res.xp} XP, ${DIFFICULTY_LABEL[res.difficulty ?? 'low']} for ${party.size} level-${party.level} characters; ${xpEach} XP each). Starting attitude: ${res.attitude?.attitude} (d20 ${res.attitude?.roll}). They are ${res.distanceFt} feet away (${res.distanceExpr}).${watchNote} Compare their Dexterity (Stealth) with the party's passive Perception for surprise.`;
+  const predicate = firstSign(c.type, night);
+  log(s, dm, res.attitude?.attitude === 'Hostile' ? 'bad' : 'warn', { charIds: watchers.map((w) => w.id), status: false, sense: predicate });
+  for (const w of watchers) s.statusLog.unshift({ id: uid(), stamp: stamp(s), at: absNow(s), charId: w.id, kind: 'encounter', text: `On watch, ${w.name} spots ${count === 1 ? `a ${c.name}` : plural(c.name)}.`, sense: predicate, tone: 'warn' });
+}
+
+/** Roll a random encounter check by hand, using what the party is doing now. */
+export const checkForEncounter = act((d, ctx, activity: CheckConditions['activity'] = 'camp') => {
+  encounterCheck(d, ctx, activity, true);
+});
+
+/** Skip the check: something turns up. Roll on the table. */
+export const rollRandomEncounter = act((d, ctx, activity: CheckConditions['activity'] = 'camp') => {
+  resolveEncounter(d, ctx, activity);
 });
