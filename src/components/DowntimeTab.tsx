@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import type { Business } from '../state/types';
+import type { Project } from '../state/types';
+import { SpeedUp } from './SpeedUp';
 import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
 import { uid } from '../state/defaults';
@@ -19,7 +20,7 @@ import {
 import { Card, Meter, Num, Select, Text, Toggle, Rule } from './common';
 import { MAGIC_ITEM_VALUE, fmtGp } from '../rules/money';
 import { SPELLBOOK_COPY, ACTIVITY_PRESETS } from '../rules/longterm';
-import { AWAY_PROGRESS, BUILD_SPELLS, CREW_COST_SHARE, CREW_SPEED, HELPER_SPEED, MAX_EXTRA_CREWS, BUILDING_PRESETS, BUSINESS_DEBT_PENALTY, BUSINESS_MAX_DAYS, BUSINESS_PRESETS } from '../rules/business';
+import { AWAY_PROGRESS, BUILDING_PRESETS, BUSINESS_DEBT_PENALTY, BUSINESS_MAX_DAYS, BUSINESS_PRESETS } from '../rules/business';
 import { WaysAround } from './WaysAround';
 
 export function DowntimeTab() {
@@ -43,10 +44,11 @@ export function DowntimeTab() {
                 <Meter value={p.daysDone} max={p.daysRequired} tone="good" />
                 <span className="small">
                   {p.daysDone}/{p.daysRequired} workdays · {p.costGp.toLocaleString()} GP ·{' '}
-                  {p.charIds.map((id) => E.charById(s, id)?.name).filter(Boolean).join(', ') || 'nobody assigned'} · about {calendarDays(p.daysRequired - p.daysDone, p.charIds.length, s.settings.extraCraftHelpers)} more day(s)
+                  {p.charIds.map((id) => E.charById(s, id)?.name).filter(Boolean).join(', ') || 'nobody assigned'} · about {calendarDays(p.daysRequired - p.daysDone, p.charIds.length + (E.ARTISAN_KINDS.includes(p.kind) ? (p.hiredArtisans ?? 0) : 0), s.settings.extraCraftHelpers)} more day(s)
                 </span>
                 {p.notes && <span className="muted small">{p.notes}</span>}
                 {p.materialsUsed && p.materialsUsed.length > 0 && <span className="muted small">Materials: {p.materialsUsed.map((u) => `${u.qty} × ${u.name}`).join(', ')}</span>}
+                {E.ARTISAN_KINDS.includes(p.kind) && <CraftSpeedUp p={p} />}
               </div>
               <span className="btn-row tight">
                 <button className="ghost small" onClick={() => edit((d) => void (d.projects.find((x) => x.id === p.id)!.daysDone = Math.min(p.daysRequired, p.daysDone + 1)))}>
@@ -426,7 +428,7 @@ function BusinessCard() {
                 <div className="small">
                   <Meter value={b.building.daysDone} max={b.building.totalDays} tone="good" /> Building ({b.building.what}): {Math.floor(b.building.daysDone)}/{b.building.totalDays} days, about {E.buildDaysLeft(s, b)} more at this pace.
                   <Toggle checked={!!b.overseeing} onChange={(v) => edit((d) => void (d.businesses.find((x) => x.id === b.id)!.overseeing = v))} label="Owner is on site overseeing the work (away: each day away adds 3 days)" />
-                  <SpeedUp b={b} />
+                  <SpeedUp target={{ kind: 'business', id: b.id }} />
                 </div>
               )}
               {!b.building && <><p className="small">
@@ -494,52 +496,34 @@ function BusinessCard() {
   );
 }
 
-function SpeedUp({ b }: { b: Business }) {
+
+function CraftSpeedUp({ p }: { p: Project }) {
   const s = useGame();
-  const [crews, setCrews] = useState(b.extraCrews ?? 0);
-  const [spell, setSpell] = useState(BUILD_SPELLS[0].name);
   const [caster, setCaster] = useState('');
-  const build = b.building!;
-  const left = 1 - build.daysDone / build.totalDays;
-  const added = Math.max(0, crews - (b.extraCrews ?? 0));
-  const crewCost = Math.round(build.costGp * CREW_COST_SHARE * left * added);
-  const people = s.characters.filter((c) => c.kind !== 'mount' && E.alive(c));
-  const helpers = b.helpers ?? [];
-  const setHelpers = (h: { charId: string; skilled: boolean }[]) => edit((d) => void (d.businesses.find((x) => x.id === b.id)!.helpers = h));
-  const sp = BUILD_SPELLS.find((x) => x.name === spell)!;
-  const casters = people.filter((c) => c.spells.some((x) => x.name.toLowerCase() === sp.name.toLowerCase()));
-  const casterId = casters.find((c) => c.id === caster)?.id ?? casters[0]?.id ?? '';
+  const hired = p.hiredArtisans ?? 0;
+  const workers = p.charIds.length + hired;
+  const capped = !s.settings.extraCraftHelpers && workers > 2;
+  const fabricators = s.characters.filter((c) => E.alive(c) && c.spells.some((x) => x.name.toLowerCase() === 'fabricate'));
+  const casterId = fabricators.find((c) => c.id === caster)?.id ?? fabricators[0]?.id ?? '';
   return (
     <details className="add-facility">
-      <summary>Speed up construction (table rules) · pace ×{Math.round(E.businessPace(s, b) * 100) / 100}</summary>
+      <summary className="small">Speed it up{hired ? ` · ${hired} hired artisan${hired > 1 ? 's' : ''}` : ''}</summary>
       <div className="btn-row tight">
-        <Num label="Extra crews" value={crews} onChange={(v) => setCrews(Math.max(0, Math.min(MAX_EXTRA_CREWS, Math.round(v))))} min={0} max={MAX_EXTRA_CREWS} width={2} />
-        <button className="small" disabled={crews === (b.extraCrews ?? 0)} onClick={() => dispatch((st, cx) => E.hireBuildCrews(st, cx, b.id, crews))}>
-          {added > 0 ? `Hire (${crewCost.toLocaleString()} GP)` : 'Set crews'}
-        </button>
+        <Num label="Hired artisans" value={hired} onChange={(v) => edit((d) => void (d.projects.find((x) => x.id === p.id)!.hiredArtisans = Math.max(0, Math.round(v))))} min={0} width={2} />
+        <span className="small muted">Skilled hirelings with the right tools, {fmtGp(2)} each per workday, charged as the work is done.</span>
       </div>
-      <p className="small muted">Each extra crew adds {CREW_SPEED * 100}% to the pace and costs {CREW_COST_SHARE * 100}% of the construction price for the work still left. At most {MAX_EXTRA_CREWS}.</p>
-      <div className="small">
-        <b>Party members working on site</b> (only while the owner oversees):
-        {people.map((c) => {
-          const h = helpers.find((x) => x.charId === c.id);
-          return (
-            <div key={c.id} className="btn-row tight">
-              <Toggle checked={!!h} onChange={(v) => setHelpers(v ? [...helpers, { charId: c.id, skilled: false }] : helpers.filter((x) => x.charId !== c.id))} label={c.name} />
-              {h && <Toggle checked={h.skilled} onChange={(v) => setHelpers(helpers.map((x) => (x.charId === c.id ? { ...x, skilled: v } : x)))} label="Carpenter's or mason's tools" />}
-            </div>
-          );
-        })}
-        <span className="muted">Each adds {HELPER_SPEED.untrained * 100}% to the pace, or {HELPER_SPEED.skilled * 100}% with carpenter&apos;s or mason&apos;s tools. Their days go to the building, not other downtime.</span>
-      </div>
-      <div className="btn-row tight">
-        <Select label="Spell" value={spell} onChange={setSpell} options={BUILD_SPELLS.map((x) => ({ value: x.name, label: `${x.name} (level ${x.level}, −${x.days} d)` }))} />
-        <Select label="Caster" value={casterId} onChange={setCaster} options={casters.length ? casters.map((c) => ({ value: c.id, label: c.name })) : [{ value: '', label: `Nobody knows ${sp.name}` }]} />
-        <button className="small" disabled={!casterId} onClick={() => dispatch((st, cx) => E.castBuildSpell(st, cx, b.id, casterId, spell))}>
-          Cast on site
-        </button>
-      </div>
-      <p className="small muted">{sp.note} Uses a level {sp.level}+ slot and saves about {sp.days} day(s) of work.</p>
+      {capped && <p className="small warn-text">Only one assistant normally helps (2024 PHB). Allow more in Settings, or the extra workers add nothing.</p>}
+      {p.kind === 'nonmagical' && (
+        <div className="btn-row tight">
+          <Select label="Fabricate" value={casterId} onChange={setCaster} options={fabricators.length ? fabricators.map((c) => ({ value: c.id, label: c.name })) : [{ value: '', label: 'Nobody knows Fabricate' }]} />
+          <button className="small" disabled={!casterId} onClick={() => dispatch((st, cx) => E.fabricateProject(st, cx, p.id, casterId))}>
+            Cast (level 4, 10 min)
+          </button>
+        </div>
+      )}
+      <Rule>
+        2024 PHB: helpers divide the crafting time. Normally one assistant can help; the DM may allow more. {p.kind === 'nonmagical' && 'Fabricate finishes a nonmagical object from its raw materials in 10 minutes (Large or smaller, Medium for metal or stone); weapons, armor and other skilled work need the caster to be proficient with the artisan\'s tools.'}
+      </Rule>
     </details>
   );
 }

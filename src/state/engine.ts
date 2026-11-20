@@ -9,6 +9,9 @@ import { TERRAIN, clampPace } from '../rules/terrain';
 import { readSky, SKY_DC } from '../rules/skyclock';
 import { MESSENGER_GP_PER_MILE } from '../rules/hirelings';
 import { COMMS, commCost, commDelay, type CommMethod } from '../rules/comms';
+import { CONTAGIONS, RECUPERATE_DAYS, RECUPERATE_DC, SIGHT_ROT_CURE_HOURS, type ContagionKind } from '../rules/contagion';
+import { neglectLimit } from '../rules/bastion';
+import { POISON_HARVEST_DC, POTION_MISCIBILITY } from '../rules/potions';
 import { AWAY_PROGRESS, BUILD_SPELLS, BUSINESS_DEBT_PENALTY, BUSINESS_MAX_DAYS, CREW_COST_SHARE, MAX_EXTRA_CREWS, buildPace, rollBusiness } from '../rules/business';
 import { HAZARDS, type GiftType, type HazardId } from '../rules/hazards';
 import { ARCANA_DC, STUDY_MINUTES, type StudyMethod } from '../rules/identify';
@@ -17,7 +20,7 @@ import { BUTCHER_DC, BUTCHER_MINUTES, isEdible, MEAT_LB, STRANGE_TYPES, yieldsHi
 import { addCoins, COIN_GP, coinCount, coinsFor, emptyPurse, exchange, fmtPurse, purseValue, spend, type Denom, type Purse } from '../rules/coins';
 import { detectContainer } from '../rules/containers';
 import type { DdbImport } from '../rules/ddb';
-import { FEED_GP_PER_DAY, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset } from '../rules/money';
+import { FEED_GP_PER_DAY, HIRELING_WAGE, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset } from '../rules/money';
 import { STABLE_WAKE_DIE, STABILIZE_DC } from '../rules/upkeep';
 import { RITUAL_EXTRA_MINUTES as RITUAL_TAG_MINUTES, spellInfo } from '../rules/rituals';
 import { maxWatchMinutes, slotTimes, watchMinutes, watchSight, type Sight } from '../rules/watch';
@@ -47,6 +50,8 @@ import {
 import { isCaster, PREP_RULE, preparedCount, preparedLimit } from '../rules/spells';
 import { newCharacter, uid } from './defaults';
 import { sense, type SenseKey } from '../rules/senses';
+import { buildTable, checkModifiers, DANGER, DIFFICULTY_LABEL, firstSign, rollOnTable, SRD_POOL, type CheckConditions, type Danger, type EncounterCreature, type EncounterTable, type Party } from '../rules/encounters';
+import type { TerrainType } from '../rules/terrain';
 
 export interface Ctx {
   rng: Rng;
@@ -96,6 +101,7 @@ const CAUSE_SENSE: Record<ExhaustionCause, SenseKey> = {
   frigid: 'frigid',
   suffocation: 'frigid',
   deepWater: 'frigid',
+  contagion: 'contagionOnset',
   other: 'sleep',
 };
 
@@ -131,6 +137,11 @@ export function payGold(s: State, payerIds: string[], amount: number, what: stri
     broke.length ? 'warn' : 'info',
   );
 }
+
+/** Pays for a service (fares, tolls, spellcasting), split among the payers. */
+export const payForService = act((d, _ctx, payerIds: string[], gp: number, what: string) => {
+  payGold(d, payerIds, Math.round(gp * 100) / 100, what);
+});
 
 export function receiveGold(s: State, payeeIds: string[], amount: number, what: string): void {
   if (!s.settings.chargeCosts || amount <= 0) return;
@@ -426,6 +437,7 @@ function atDawn(s: State, ctx: Ctx): void {
     }
   }
   if (refilled.length) log(s, `Dawn breaks. Recovered: ${refilled.join(', ')}.`, 'good');
+  contagionsAtDawn(s, ctx);
 }
 
 function checkItemsLeftBehind(s: State): void {
@@ -546,7 +558,7 @@ function standWatches(s: State, ctx: Ctx): Record<string, number> {
     const best = Math.max(...p.watchers.map((w) => w.passive));
     const who = p.watchers.map((w) => `${w.c.name} (passive Perception ${w.passive}${w.sight.blind ? ', hearing only' : w.sight.penalty ? ', dim' : ''})`).join(' and ');
     let note = `${when}: ${who}`;
-    if (s.settings.encounterOn > 0) {
+    if (!s.settings.encounters && s.settings.encounterOn > 0) {
       const r = die(20, ctx.rng);
       if (r >= s.settings.encounterOn) {
         note += ': encounter!';
@@ -591,7 +603,7 @@ function expireConditions(s: State): void {
 }
 
 /** Moves the clock forward, firing the hourly and end-of-day checks along the way. */
-export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activity): void {
+export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activity, opts: { exploring?: boolean } = {}): void {
   let remaining = Math.max(0, Math.round(minutes));
   while (remaining > 0) {
     const toNextHour = 60 - (s.minutes % 60);
@@ -610,8 +622,10 @@ export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activi
     checkItemsLeftBehind(s);
     tickEffects(s, before);
     deliverDispatches(s);
+    tickContagions(s);
     if (s.minutes % 60 === 0) tickHour(s, ctx, activity);
     if (s.minutes >= MIN_PER_DAY) endOfDay(s, ctx);
+    if (s.settings.encounters && activity !== 'work' && !opts.exploring) overlandEncounterClock(s, ctx, step, activity);
   }
 }
 
@@ -686,7 +700,9 @@ export const longRest = act((d, ctx, force = false) => {
   }
   log(d, 'The party settles in for a Long Rest (8 hours: at least 6 asleep, no more than 2 of light activity).');
   const watched = standWatches(d, ctx);
+  d.restStart = absNow(d);
   advanceMut(d, ctx, 8 * 60, 'rest');
+  d.restStart = null;
   completeLongRest(d, ctx, watched);
 });
 
@@ -709,7 +725,9 @@ function completeLongRest(d: State, ctx: Ctx, watched: Record<string, number>): 
     } else if (c.armorKind !== 'none' && !c.armorWorn) {
       log(d, `${c.name} wakes with their armor off. Putting it on takes ${armorTime(c, 'don')} min.`);
     }
-    if (c.exhaustion > 0 && !armorSpoiled) {
+    const restless = sewerWeakened(c);
+    if (restless) status(d, c, 'contagionWorse', `${c.name} has Sewer Plague: this Long Rest restores no HP and removes no Exhaustion.`, 'warn');
+    if (c.exhaustion > 0 && !armorSpoiled && !restless) {
       const gone = recoverExhaustion(c);
       if (gone) {
         status(d, c, 'exhaustionEases', `${c.name} recovers 1 Exhaustion level (${EXHAUSTION_CAUSE_LABEL[gone]}). Now level ${c.exhaustion}.`, 'good');
@@ -737,12 +755,16 @@ function completeLongRest(d: State, ctx: Ctx, watched: Record<string, number>): 
     applyRestFocus(d, c);
     if (c.hp <= 0) {
       log(d, `${c.name} started the rest at 0 HP, so it doesn't restore HP or Hit Point Dice.`, 'warn');
+    } else if (restless) {
+      const regained = c.hitDiceSpent;
+      c.hitDiceSpent = Math.max(0, c.hitDiceSpent - regained);
     } else {
       c.hp = c.maxHp;
       c.tempHp = 0;
       const regained = armorSpoiled ? Math.max(1, Math.floor(c.level / 4)) : c.hitDiceSpent;
       c.hitDiceSpent = Math.max(0, c.hitDiceSpent - regained);
     }
+    cackleSaveAfterRest(d, ctx, c);
     const got = restoreAfterRest(d, ctx, c, 'long');
     if (got.length) log(d, `${c.name} recovers: ${got.join(', ')}.`, 'good');
     if (isCaster(c.className)) {
@@ -828,7 +850,13 @@ export const interruptedRest = act((d, ctx, o: InterruptOpts) => {
   const after = Math.max(0, Math.min(total - 1, Math.round(o.after)));
   log(d, `The party settles in for a ${o.kind === 'long' ? 'Long' : 'Short'} Rest.`);
   const watched = o.kind === 'long' ? standWatches(d, ctx) : {};
+  if (o.kind === 'long') d.restStart = absNow(d);
+  // The interruption is the encounter, so no automatic checks while it plays out.
+  const auto = d.settings.encounters;
+  d.settings.encounters = false;
   advanceMut(d, ctx, after, 'rest');
+  d.settings.encounters = auto;
+  d.restStart = null;
   log(d, `${formatDuration(Math.max(1, after))} in, the rest is interrupted: ${INTERRUPT_LABEL[o.reason]}.`, 'warn');
   if (o.kind === 'long') wakeTheCamp(d, after, o.reason === 'disturbance' ? o.noise : 'loud', o.dc);
   if (o.reason === 'exertion') advanceMut(d, ctx, 60, 'camp');
@@ -893,6 +921,46 @@ export interface TravelOpts {
   gallop?: boolean;
   /** Sailing or flying aboard a vessel from the Storage tab: its speed, no pace, no forced march. */
   vesselId?: string | null;
+  /** Everyone flies (or ignores Difficult Terrain): Fast pace allowed whatever the terrain (2024 DMG). */
+  flying?: boolean;
+  /** Sailing into a strong wind (half speed), or downstream on a river (+3 mph for keelboats and rowboats). */
+  againstWind?: boolean;
+  downstream?: boolean;
+}
+
+/** Travelers slowed to half Speed or less, which forces a Slow pace (2024 DMG "Slower Travelers"). */
+export function slowTravelers(s: State): string[] {
+  return s.characters
+    .filter((c) => alive(c) && !c.dying && !c.stable)
+    .filter((c) => {
+      const base = c.speed || 30;
+      const lvl = carriedLoad(s, c).level;
+      const loadPenalty = lvl === 'over' ? base : lvl === 'heavy' && c.kind !== 'mount' ? 20 : 0;
+      const exhaustion = 5 * c.exhaustion;
+      return base - loadPenalty - exhaustion <= base / 2;
+    })
+    .map((c) => c.name);
+}
+
+/** Speed of a vessel today: no sail in a dead calm, half into a strong wind, plus the current downstream. */
+export function vesselSpeed(s: State, v: Stash, o: { againstWind?: boolean; downstream?: boolean }): { mph: number; note: string } {
+  const base = v.speedMph ?? 1;
+  const name = v.name.toLowerCase();
+  const oared = /keelboat|rowboat|galley|longship/.test(name);
+  const magic = /airship/.test(name);
+  if (!magic && s.weather.wind === 'none' && !oared) return { mph: 0, note: 'Dead calm: a ship that relies on sails can’t move and must be rowed or towed' };
+  let mph = base;
+  const notes: string[] = [];
+  if (!magic && s.weather.wind === 'none') notes.push('dead calm, so the crew rows');
+  if (o.againstWind && s.weather.wind === 'strong' && !magic) {
+    mph /= 2;
+    notes.push('half speed into a strong wind');
+  }
+  if (o.downstream && /keelboat|rowboat/.test(name)) {
+    mph += 3;
+    notes.push('+3 mph with the current');
+  }
+  return { mph: Math.round(mph * 10) / 10, note: notes.join('; ') };
 }
 
 /** The navigation DC right now, or null when following a road, river or coast. */
@@ -918,8 +986,13 @@ export const travel = act((d, ctx, o: TravelOpts) => travelMut(d, ctx, o));
 function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
   const vessel = o.vesselId ? d.stashes.find((x) => x.id === o.vesselId && x.speedMph) : undefined;
   if (vessel) return sail(d, ctx, vessel, o);
-  const allowed = clampPace(o.pace, d.place.terrain, d.place.goodRoad);
-  if (allowed !== o.pace) {
+  if (o.flying && o.difficult) o = { ...o, difficult: false };
+  const slow = slowTravelers(d);
+  const allowed = slow.length ? 'slow' : o.flying ? o.pace : clampPace(o.pace, d.place.terrain, d.place.goodRoad);
+  if (slow.length && o.pace !== 'slow') {
+    log(d, `${slow.join(', ')} ${slow.length > 1 ? 'are' : 'is'} down to half Speed or less (load or Exhaustion), so the party must travel at a Slow pace.`, 'warn');
+    o = { ...o, pace: 'slow' };
+  } else if (allowed !== o.pace) {
     log(d, `${TERRAIN[d.place.terrain].label} terrain${d.place.goodRoad ? ', even with a good road,' : ''} only allows a ${allowed} pace.`, 'warn');
     o = { ...o, pace: allowed };
   }
@@ -990,8 +1063,12 @@ function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
 
 /** Travel aboard a vessel: its own speed, no travel pace, and no forced march (the crew works in shifts). */
 function sail(d: State, ctx: Ctx, v: Stash, o: TravelOpts): number {
-  const mph = v.speedMph ?? 1;
-  log(d, `Aboard the ${v.name}, the party travels for ${o.hours} hour(s) at ${mph} mph.`);
+  const { mph, note } = vesselSpeed(d, v, o);
+  if (mph <= 0) {
+    log(d, `The ${v.name} goes nowhere: ${note}.`, 'warn');
+    return 0;
+  }
+  log(d, `Aboard the ${v.name}, the party travels for ${o.hours} hour(s) at ${mph} mph${note ? ` (${note})` : ''}.`);
   advanceMut(d, ctx, o.hours * 60, 'camp');
   const miles = Math.round(mph * o.hours * 10) / 10;
   d.travel.milesToday += miles;
@@ -1021,7 +1098,7 @@ export const runStage = act((d, ctx, stageId: string, o: Omit<TravelOpts, 'hours
     const st = stage()!;
     const vessel = o.vesselId ? d.stashes.find((x) => x.id === o.vesselId && x.speedMph) : undefined;
     const pace = clampPace(o.pace, st.terrain, st.goodRoad);
-    const mph = vessel?.speedMph ?? PACES[pace].mph * (st.difficult ? 0.5 : 1);
+    const mph = vessel ? Math.max(0.1, vesselSpeed(d, vessel, o).mph) : PACES[pace].mph * (st.difficult ? 0.5 : 1);
     const hours = Math.max(1, Math.min(vessel ? 24 : 8, Math.ceil((st.miles - st.milesDone) / mph)));
     const covered = travelMut(d, ctx, { ...o, pace, hours, difficult: st.difficult });
     st.milesDone = Math.min(st.miles, Math.round((st.milesDone + covered) * 10) / 10);
@@ -1443,15 +1520,26 @@ export const workOnProjects = act((d, ctx, projectIds: string[]) => {
   for (const p of projects) progress(d, p);
 });
 
+/** Project kinds that are hands-on work hired artisans can help with. */
+export const ARTISAN_KINDS: Project['kind'][] = ['nonmagical', 'potion'];
+
 function progress(s: State, p: Project): void {
-  const crafters = p.charIds.filter((id) => {
-    const c = charById(s, id);
-    return c && alive(c);
-  }).length;
+  const hired = ARTISAN_KINDS.includes(p.kind) ? (p.hiredArtisans ?? 0) : 0;
+  const crafters =
+    p.charIds.filter((id) => {
+      const c = charById(s, id);
+      return c && alive(c);
+    }).length + hired;
+  if (hired > 0) payGold(s, p.charIds, hired * HIRELING_WAGE.skilled, `${hired} hired artisan${hired > 1 ? 's' : ''} on ${p.name}`);
   // Normally only one other character can help (the DM can allow more).
   const amount = Math.max(1, s.settings.extraCraftHelpers ? crafters : Math.min(2, crafters));
   p.daysDone = Math.min(p.daysRequired, p.daysDone + amount);
-  if (p.daysDone >= p.daysRequired) {
+  if (p.daysDone >= p.daysRequired) progressFinish(s, p);
+  else log(s, `A day's work on ${p.name}: ${p.daysDone}/${p.daysRequired} workdays.`);
+}
+
+function progressFinish(s: State, p: Project): void {
+  {
     p.done = true;
     log(s, `Downtime project complete: ${p.name}.`, 'good');
     if (p.kind === 'activity' && p.notes) log(s, `${p.name} is done. Make the check: ${p.notes}. The DM decides the outcome.`);
@@ -1465,10 +1553,29 @@ function progress(s: State, p: Project): void {
         log(s, `${p.spell.name} is now in ${wiz.name}'s spellbook.`, 'good');
       }
     }
-  } else {
-    log(s, `A day's work on ${p.name}: ${p.daysDone}/${p.daysRequired} workdays.`);
   }
 }
+
+/**
+ * Fabricate (2024 PHB, level 4, 10 minutes): turns raw materials into a finished nonmagical object at once.
+ * Skilled work like weapons and armor needs the caster to be proficient with the artisan's tools.
+ */
+export const fabricateProject = act((d, ctx, projectId: string, casterId: string) => {
+  const p = d.projects.find((x) => x.id === projectId);
+  const caster = charById(d, casterId);
+  if (!p || p.done || p.kind !== 'nonmagical' || !caster || !alive(caster)) return;
+  if (!caster.spells.some((x) => x.name.toLowerCase() === 'fabricate')) {
+    log(d, `${caster.name} doesn't know Fabricate.`, 'warn');
+    return;
+  }
+  if (!useSlot(d, caster, 4, 'Fabricate')) return;
+  advanceMut(d, ctx, 10, 'work');
+  const np = d.projects.find((x) => x.id === projectId)!;
+  log(d, `${caster.name} casts Fabricate, and the raw materials reshape into ${np.name} in ten minutes.`, 'good');
+  np.daysDone = np.daysRequired;
+  np.hiredArtisans = 0;
+  progressFinish(d, np);
+});
 
 /** One full downtime day: work 8 hours, eat and drink, then Long Rest from 23:00. */
 export const downtimeDay = act((d, ctx, projectIds: string[]) => {
@@ -1481,6 +1588,169 @@ export const downtimeDay = act((d, ctx, projectIds: string[]) => {
   if (d.minutes < 23 * 60) advanceMut(d, ctx, 23 * 60 - d.minutes, 'camp');
   const rested = longRest(d, ctx, false);
   Object.assign(d, rested);
+});
+
+// ---------------------------------------------------------------- potions and poison
+
+/** 2024 DMG Potion Miscibility: roll when two potions are mixed (again for each extra potion). */
+export const mixPotions = act((d, ctx, what: string) => {
+  const roll = die(100, ctx.rng);
+  const r = POTION_MISCIBILITY.find((x) => roll <= x.upTo)!;
+  log(d, `Mixing ${what || 'potions'}: d100 = ${roll}. ${r.text}`, roll <= 25 ? 'bad' : roll >= 91 ? 'good' : 'info');
+});
+
+/** 2024 DMG: harvest one dose from a dead or Incapacitated venomous creature. 1d6 minutes, DC 20 Int (Nature) with a Poisoner's Kit. */
+export const harvestPoison = act((d, ctx, charId: string, bonus: number, creature: string) => {
+  const c = charById(d, charId);
+  if (!c || !alive(c)) return;
+  const mins = die(6, ctx.rng);
+  advanceMut(d, ctx, mins, 'camp');
+  const r = d20('normal', ctx.rng);
+  const total = r.value + bonus - 2 * c.exhaustion;
+  const name = creature || 'the creature';
+  const me = charById(d, charId)!;
+  if (total >= POISON_HARVEST_DC) {
+    me.inventory.push({ id: uid(), name: `Poison dose (${name})`, qty: 1, weight: 0, source: 'manual', valueGp: 0, container: null, ammo: null });
+    log(d, `${me.name} works over ${name} for ${mins} min with a Poisoner's Kit: Int (Nature) ${r.value} ${signed(bonus - 2 * c.exhaustion)} = ${total} vs DC ${POISON_HARVEST_DC}. One dose harvested; nothing more can be taken from it.`, 'good');
+  } else if (total <= POISON_HARVEST_DC - 5) {
+    log(d, `${me.name} botches the harvest from ${name} (${total} vs DC ${POISON_HARVEST_DC}, failed by 5 or more) and is exposed to its poison. Apply the creature's poison effect.`, 'bad');
+  } else {
+    log(d, `${me.name} spends ${mins} min on ${name} but can't extract any poison (${total} vs DC ${POISON_HARVEST_DC}).`, 'warn');
+  }
+});
+
+// ---------------------------------------------------------------- contagions
+
+const contagionMode = (s: State, c: Character): RollMode => (c.recuperatedUntil && c.recuperatedUntil > absNow(s) ? 'advantage' : 'normal');
+
+function sewerWeakened(c: Character): boolean {
+  return c.exhaustion > 0 && (c.contagions ?? []).some((x) => x.kind === 'sewer' && x.onset);
+}
+
+/** Removes a contagion and the Exhaustion it caused (Cackle Fever's fever lasts until the contagion ends). */
+function endContagion(s: State, c: Character, id: string, why: string): void {
+  const x = c.contagions.find((k) => k.id === id);
+  if (!x) return;
+  c.contagions = c.contagions.filter((k) => k.id !== id);
+  if (x.kind === 'cackle') {
+    const causes = causesOf(c);
+    const i = causes.lastIndexOf('contagion');
+    if (i >= 0) {
+      causes.splice(i, 1);
+      c.exhaustionCauses = causes;
+      c.exhaustion = causes.length;
+    }
+  }
+  status(s, c, 'contagionEnds', `${c.name} is free of ${CONTAGIONS[x.kind].name} (${why}).${x.kind === 'cackle' ? ' Immune to it for a year.' : ''}`, 'good');
+}
+
+/** Exposure to a contagion: optionally roll the save to resist, otherwise infect. */
+export const exposeContagion = act((d, ctx, charId: string, kind: ContagionKind, rollToResist: boolean) => {
+  const c = charById(d, charId);
+  if (!c || !alive(c)) return;
+  const info = CONTAGIONS[kind];
+  if (c.contagions.some((x) => x.kind === kind)) {
+    log(d, `${c.name} already has ${info.name}.`);
+    return;
+  }
+  if (rollToResist) {
+    const r = rollSave(c, info.catchDC, contagionMode(d, c), ctx.rng);
+    log(d, `${c.name} resists ${info.name}: DC ${info.catchDC} Con save. ${r.detail}${r.passed ? 'Resisted.' : 'Infected.'}`, r.passed ? 'good' : 'bad');
+    if (r.passed) return;
+  }
+  const now = absNow(d);
+  const onsetAt = info.incubates ? now + die(4, ctx.rng) * MIN_PER_DAY : now;
+  c.contagions.push({ id: uid(), kind, infectedAt: now, onsetAt, onset: false, successes: 0 });
+  if (info.incubates) log(d, `${c.name} carries ${info.name}. Symptoms start in ${formatDuration(onsetAt - now)} (1d4 days); the player doesn't know yet.`, 'warn');
+  tickContagions(d);
+});
+
+/** Starts symptoms when incubation ends, and counts Sight Rot ointment time. */
+function tickContagions(s: State): void {
+  const now = absNow(s);
+  for (const c of s.characters) {
+    for (const x of c.contagions ?? []) {
+      if (!x.onset && now >= x.onsetAt) {
+        x.onset = true;
+        if (x.kind === 'sightRot') status(s, c, 'blinded', `${c.name} has Sight Rot and is Blinded until it ends.`, 'bad');
+        else gainExhaustion(s, c, 1, CONTAGIONS[x.kind].name, 'contagion');
+      }
+      if (x.kind === 'sightRot' && x.suppressedUntil && now >= x.suppressedUntil) {
+        // A dose has run its full 24 hours.
+        x.suppressedUntil = undefined;
+        x.suppressedHours = (x.suppressedHours ?? 0) + 24;
+        if (x.suppressedHours >= SIGHT_ROT_CURE_HOURS) endContagion(s, c, x.id, '72 hours of ointment');
+        else status(s, c, 'blinded', `The ointment wears off and ${c.name}'s Sight Rot returns: Blinded (${x.suppressedHours}/72 hours treated).`, 'warn');
+      }
+    }
+  }
+}
+
+/** Sewer Plague: a save at dawn each day, worsening or easing by one Exhaustion level. */
+function contagionsAtDawn(s: State, ctx: Ctx): void {
+  for (const c of s.characters) {
+    if (!alive(c)) continue;
+    for (const x of [...(c.contagions ?? [])]) {
+      if (x.kind !== 'sewer' || !x.onset) continue;
+      const r = rollSave(c, CONTAGIONS.sewer.fightDC, contagionMode(s, c), ctx.rng);
+      if (!r.passed) {
+        log(s, `${c.name} fights Sewer Plague at dawn: DC 11 Con save. ${r.detail}Failed.`, 'bad');
+        gainExhaustion(s, c, 1, 'Sewer Plague worsens', 'contagion');
+        continue;
+      }
+      log(s, `${c.name} fights Sewer Plague at dawn: DC 11 Con save. ${r.detail}Success.`, 'good');
+      const causes = causesOf(c);
+      const i = causes.lastIndexOf('contagion');
+      causes.splice(i >= 0 ? i : causes.length - 1, 1);
+      c.exhaustionCauses = causes;
+      c.exhaustion = causes.length;
+      if (c.exhaustion === 0) endContagion(s, c, x.id, 'Exhaustion back to 0');
+      else status(s, c, 'contagionEases', `${c.name}'s Sewer Plague eases: Exhaustion level ${c.exhaustion}.`, 'good');
+    }
+  }
+}
+
+/** Cackle Fever: a save at the end of each Long Rest; three successes end it. */
+function cackleSaveAfterRest(s: State, ctx: Ctx, c: Character): void {
+  for (const x of [...(c.contagions ?? [])]) {
+    if (x.kind !== 'cackle' || !x.onset) continue;
+    const r = rollSave(c, CONTAGIONS.cackle.fightDC, contagionMode(s, c), ctx.rng);
+    if (r.passed) x.successes += 1;
+    log(s, `${c.name} fights Cackle Fever: DC 13 Con save. ${r.detail}${r.passed ? `Success (${x.successes}/3).` : 'Failed.'}`, r.passed ? 'good' : 'warn');
+    if (x.successes >= 3) endContagion(s, c, x.id, 'three successful saves');
+  }
+}
+
+/** Herbalism Kit ointment (1 hour to make): suppresses Sight Rot for 24 hours. */
+export const applySightRotOintment = act((d, ctx, charId: string, makerId: string) => {
+  const c = charById(d, charId);
+  const maker = charById(d, makerId);
+  const x = c?.contagions.find((k) => k.kind === 'sightRot');
+  if (!c || !x || !maker) return;
+  advanceMut(d, ctx, 60, 'camp');
+  const nx = charById(d, charId)!.contagions.find((k) => k.id === x.id);
+  if (!nx) return;
+  const now = absNow(d);
+  // Reapplying early: credit the hours the last dose has already covered.
+  if (nx.suppressedUntil) nx.suppressedHours = (nx.suppressedHours ?? 0) + Math.floor((now - (nx.suppressedUntil - 24 * 60)) / 60);
+  nx.suppressedUntil = now + 24 * 60;
+  log(d, `${maker.name} spends an hour with an Herbalism Kit and applies the ointment to ${c.name}'s eyes. Sight returns for 24 hours (${nx.suppressedHours ?? 0}/72 hours treated so far).`, 'good');
+});
+
+/** Magic or the DM ends a contagion (Heal or Lesser Restoration for Sight Rot). */
+export const cureContagion = act((d, _ctx, charId: string, contagionId: string, how: string) => {
+  const c = charById(d, charId);
+  if (c) endContagion(d, c, contagionId, how);
+});
+
+/** DMG: 3 days of recuperation, then a DC 15 Con save for Advantage on contagion saves for 24 hours. */
+export const recuperate = act((d, ctx, charId: string) => {
+  for (let i = 0; i < RECUPERATE_DAYS; i++) Object.assign(d, downtimeDay(d, ctx, []));
+  const c = charById(d, charId);
+  if (!c || !alive(c)) return;
+  const r = rollSave(c, RECUPERATE_DC, 'normal', ctx.rng);
+  log(d, `${c.name} spends ${RECUPERATE_DAYS} days recuperating, then makes a DC ${RECUPERATE_DC} Con save. ${r.detail}${r.passed ? 'Advantage on saves against contagions for the next 24 hours.' : 'No benefit this time.'}`, r.passed ? 'good' : 'warn');
+  if (r.passed) c.recuperatedUntil = absNow(d) + 24 * 60;
 });
 
 // ---------------------------------------------------------------- businesses
@@ -1513,75 +1783,154 @@ function useSlot(s: State, caster: Character, level: number, what: string): bool
   return true;
 }
 
-/** Daily construction pace for a business, counting crews, helpers and whether the owner is on site. */
-export function businessPace(s: State, b: Business): number {
-  const helpers = (b.helpers ?? []).filter((h) => {
+/** Something being built that crews, helpers and spells can speed up: a business or a Bastion facility. */
+export type BuildRef = { kind: 'business'; id: string } | { kind: 'facility'; bastionId: string; facilityId: string };
+
+interface BuildJob {
+  label: string;
+  what: string;
+  ownerId: string;
+  costGp: number;
+  totalDays: number;
+  doneDays: number;
+  crews: number;
+  helpers: { charId: string; skilled: boolean }[];
+  /** Business construction slows to a third while the owner is away; Bastion hirelings build regardless (2024 DMG). */
+  awayPenalty: boolean;
+  setDone: (n: number) => void;
+  setCrews: (n: number) => void;
+  setHelpers: (h: { charId: string; skilled: boolean }[]) => void;
+  finish: () => void;
+}
+
+export function buildJob(s: State, ref: BuildRef): BuildJob | null {
+  if (ref.kind === 'business') {
+    const b = s.businesses.find((x) => x.id === ref.id);
+    if (!b?.building) return null;
+    const w = b.building;
+    return {
+      label: b.name,
+      what: w.what,
+      ownerId: b.ownerId,
+      costGp: w.costGp,
+      totalDays: w.totalDays,
+      doneDays: w.daysDone,
+      crews: b.extraCrews ?? 0,
+      helpers: b.helpers ?? [],
+      awayPenalty: !b.overseeing,
+      setDone: (n) => void (w.daysDone = Math.round(Math.min(w.totalDays, n) * 1000) / 1000),
+      setCrews: (n) => void (b.extraCrews = n),
+      setHelpers: (h) => void (b.helpers = h),
+      finish: () => {
+        log(s, `${b.name} is built and open for business (${w.what}).`, 'good');
+        b.building = undefined;
+        b.extraCrews = 0;
+        b.helpers = [];
+      },
+    };
+  }
+  const bas = s.bastions.find((x) => x.id === ref.bastionId);
+  const f = bas?.facilities.find((x) => x.id === ref.facilityId);
+  if (!bas || !f?.building) return null;
+  const w = f.building;
+  return {
+    label: `${bas.name}: ${f.name}`,
+    what: w.what,
+    ownerId: bas.ownerId,
+    costGp: w.costGp,
+    totalDays: w.totalDays,
+    doneDays: w.totalDays - w.daysLeft,
+    crews: w.extraCrews ?? 0,
+    helpers: w.helpers ?? [],
+    awayPenalty: false,
+    setDone: (n) => void (w.daysLeft = Math.round(Math.max(0, w.totalDays - n) * 1000) / 1000),
+    setCrews: (n) => void (w.extraCrews = n),
+    setHelpers: (h) => void (w.helpers = h),
+    finish: () => {
+      log(s, `${bas.name}: ${w.what} is finished.`, 'good');
+      f.size = w.toSize;
+      f.built = true;
+      f.building = null;
+    },
+  };
+}
+
+/** Daily pace of a construction job, counting crews, helpers and the away penalty. */
+export function jobPace(s: State, job: BuildJob): number {
+  if (job.awayPenalty) return buildPace(job.crews, 0, 0) * AWAY_PROGRESS;
+  const helpers = job.helpers.filter((h) => {
     const c = charById(s, h.charId);
     return c && alive(c);
   });
-  const pace = buildPace(b.extraCrews ?? 0, helpers.filter((h) => h.skilled).length, helpers.filter((h) => !h.skilled).length);
-  // Helpers only work while the owner keeps the site going; away, everything slows to a third.
-  return b.overseeing ? pace : buildPace(b.extraCrews ?? 0, 0, 0) * AWAY_PROGRESS;
+  return buildPace(job.crews, helpers.filter((h) => h.skilled).length, helpers.filter((h) => !h.skilled).length);
+}
+
+export function businessPace(s: State, b: Business): number {
+  const job = buildJob(s, { kind: 'business', id: b.id });
+  return job ? jobPace(s, job) : 1;
+}
+
+/** Days left at the current pace for any construction job. */
+export function jobDaysLeft(s: State, ref: BuildRef): number {
+  const job = buildJob(s, ref);
+  if (!job) return 0;
+  return Math.ceil(Math.round(((job.totalDays - job.doneDays) / jobPace(s, job)) * 1000) / 1000);
+}
+
+/** Moves a job forward by a number of workdays and finishes it if done. */
+function advanceJob(job: BuildJob, days: number): void {
+  job.setDone(job.doneDays + days);
+  if (job.doneDays + days >= job.totalDays - 1e-6) job.finish();
 }
 
 /** Hires extra crews for the rest of the work: each costs half the construction price for the share still left. */
-export const hireBuildCrews = act((d, _ctx, businessId: string, crews: number) => {
-  const b = d.businesses.find((x) => x.id === businessId);
-  if (!b?.building) return;
+export const hireBuildCrews = act((d, _ctx, ref: BuildRef, crews: number) => {
+  const job = buildJob(d, ref);
+  if (!job) return;
   const want = Math.max(0, Math.min(MAX_EXTRA_CREWS, Math.round(crews)));
-  const added = want - (b.extraCrews ?? 0);
+  const added = want - job.crews;
+  job.setCrews(want);
   if (added <= 0) {
-    b.extraCrews = want;
-    if (added < 0) log(d, `${b.name}: extra crews let go; ${want} remain.`);
+    if (added < 0) log(d, `${job.label}: extra crews let go; ${want} remain.`);
     return;
   }
-  const left = 1 - b.building.daysDone / b.building.totalDays;
-  const cost = Math.round(b.building.costGp * CREW_COST_SHARE * left * added);
-  payGold(d, [b.ownerId], cost, `${added} extra building crew${added > 1 ? 's' : ''} for ${b.name}`);
-  b.netGp -= cost;
-  b.extraCrews = want;
-  log(d, `${b.name}: ${want} extra crew${want > 1 ? 's' : ''} on site. About ${buildDaysLeft(d, b)} days of work left.`);
+  const left = 1 - job.doneDays / job.totalDays;
+  const cost = Math.round(job.costGp * CREW_COST_SHARE * left * added);
+  payGold(d, [job.ownerId], cost, `${added} extra building crew${added > 1 ? 's' : ''} for ${job.label}`);
+  if (ref.kind === 'business') d.businesses.find((x) => x.id === ref.id)!.netGp -= cost;
+  else d.bastions.find((x) => x.id === ref.bastionId)!.goldSpent += cost;
+  log(d, `${job.label}: ${want} extra crew${want > 1 ? 's' : ''} on site. About ${jobDaysLeft(d, ref)} days of work left.`);
 });
 
 /** A caster uses a construction spell on the site: that much work is done at once. */
-export const castBuildSpell = act((d, ctx, businessId: string, casterId: string, spellName: string) => {
-  const b = d.businesses.find((x) => x.id === businessId);
+export const castBuildSpell = act((d, ctx, ref: BuildRef, casterId: string, spellName: string) => {
   const sp = BUILD_SPELLS.find((x) => x.name === spellName);
   const caster = charById(d, casterId);
-  if (!b?.building || !sp || !caster || !alive(caster)) return;
+  if (!buildJob(d, ref) || !sp || !caster || !alive(caster)) return;
   if (!caster.spells.some((x) => x.name.toLowerCase() === sp.name.toLowerCase())) {
     log(d, `${caster.name} doesn't know ${sp.name}.`, 'warn');
     return;
   }
   if (!useSlot(d, caster, sp.level, sp.name)) return;
   advanceMut(d, ctx, sp.name === 'Move Earth' ? 120 : 10, 'work');
-  const nb = d.businesses.find((x) => x.id === businessId)!;
-  if (!nb.building) return;
-  nb.building.daysDone = Math.min(nb.building.totalDays, nb.building.daysDone + sp.days);
-  log(d, `${caster.name} casts ${sp.name} on the ${nb.building.what}, saving about ${sp.days} day${sp.days > 1 ? 's' : ''} of work (${Math.floor(nb.building.daysDone)}/${nb.building.totalDays}).`, 'good');
-  if (nb.building.daysDone >= nb.building.totalDays) {
-    log(d, `${nb.name} is built and open for business (${nb.building.what}).`, 'good');
-    nb.building = undefined;
-  }
+  const job = buildJob(d, ref);
+  if (!job) return;
+  log(d, `${caster.name} casts ${sp.name} on the ${job.what}, saving about ${sp.days} day${sp.days > 1 ? 's' : ''} of work (${Math.floor(Math.min(job.totalDays, job.doneDays + sp.days))}/${job.totalDays}).`, 'good');
+  advanceJob(job, sp.days);
 });
 
 /** Each midnight: construction advances a day if the owner oversees it, a third of a day if not. */
 function progressBusinesses(s: State): void {
   for (const b of s.businesses) {
     if (!b.building) continue;
-    b.building.daysDone = Math.round((b.building.daysDone + businessPace(s, b)) * 1000) / 1000;
-    if (b.building.daysDone >= b.building.totalDays) {
-      log(s, `${b.name} is built and open for business (${b.building.what}).`, 'good');
-      b.building = undefined;
-    }
+    const job = buildJob(s, { kind: 'business', id: b.id })!;
+    advanceJob(job, jobPace(s, job));
   }
 }
 
 /** Days left on construction at the current pace. */
 export function buildDaysLeft(s: State, b: Business): number {
-  if (!b.building) return 0;
-  const left = b.building.totalDays - b.building.daysDone;
-  return Math.ceil(Math.round((left / businessPace(s, b)) * 1000) / 1000);
+  return jobDaysLeft(s, { kind: 'business', id: b.id });
 }
 
 /** The owner spends whole downtime days minding the business (work, meals, then a Long Rest). */
@@ -1650,13 +1999,8 @@ function progressBastions(s: State): void {
   for (const b of s.bastions) {
     for (const f of b.facilities) {
       if (!f.building) continue;
-      f.building.daysLeft -= 1;
-      if (f.building.daysLeft <= 0) {
-        log(s, `${b.name}: ${f.building.what} is finished (${f.building.totalDays} days).`, 'good');
-        f.size = f.building.toSize;
-        f.built = true;
-        f.building = null;
-      }
+      const job = buildJob(s, { kind: 'facility', bastionId: b.id, facilityId: f.id })!;
+      advanceJob(job, jobPace(s, job));
     }
     if ((s.dayIndex - b.lastTurnDay) % BASTION_TURN_DAYS === 0 && s.dayIndex > b.lastTurnDay) {
       log(s, `${b.name}: a Bastion turn is due. Give your special facilities their orders.`, 'warn');
@@ -1724,7 +2068,7 @@ export const enlargeFacility = act((d, _ctx, bastionId: string, facilityId: stri
 /** Resolves one Bastion turn: logs each order, and rolls a Bastion event if every special facility was told to Maintain. */
 export const resolveBastionTurn = act((d, ctx, bastionId: string) => {
   const b = d.bastions.find((x) => x.id === bastionId);
-  if (!b || turnsDue(d, b) < 1) return;
+  if (!b || b.abandoned || turnsDue(d, b) < 1) return;
   b.lastTurnDay += BASTION_TURN_DAYS;
   b.turns += 1;
   const working = b.facilities.filter((f) => f.kind === 'special' && f.built);
@@ -1734,7 +2078,18 @@ export const resolveBastionTurn = act((d, ctx, bastionId: string) => {
   if (away && !b.ordersArrived && !b.maintain) log(d, `No new orders reached ${b.name} before this turn, so its hirelings Maintain.`, 'warn');
   const orders = maintain ? ['Maintain (the whole Bastion)'] : working.map((f) => `${f.name}: ${f.order}${f.orderNote ? ` (${f.orderNote})` : ''}`);
   log(d, `${b.name}, Bastion turn ${b.turns}. Orders: ${orders.join('; ') || 'none'}.`);
+  // Neglect: an owner who is dead, or away with no orders arriving, issues no orders this turn.
+  const owner = charById(d, b.ownerId);
+  const noOrders = !owner || !alive(owner) || (away && !b.ordersArrived);
+  b.neglectedTurns = noOrders ? (b.neglectedTurns ?? 0) + 1 : 0;
   b.ordersArrived = false;
+  const limit = neglectLimit(owner?.level ?? 1);
+  if (noOrders && b.neglectedTurns >= limit) {
+    b.abandoned = true;
+    log(d, `${b.name} has had no orders for ${b.neglectedTurns} turns in a row (the owner's level is ${owner?.level ?? '?'}). The hirelings abandon it, and the site will be looted. A new Bastion can be founded later, perhaps amid the ruins (2024 DMG).`, 'bad');
+    return;
+  }
+  if (noOrders && b.neglectedTurns >= limit - 1) log(d, `${b.name}: ${b.neglectedTurns} turn(s) without orders. One more and the hirelings walk away.`, 'warn');
   if (maintain || !working.length) {
     const e = rollBastionEvent(ctx.rng);
     b.lastEvent = `Turn ${b.turns}: ${e.event} (d100 = ${e.roll})`;
@@ -1842,7 +2197,9 @@ export const spendHitDie = act((d, ctx, charId: string) => {
   }
   const roll = die(c.hitDie, ctx.rng);
   const mod = abilityMod(c.conScore);
-  const healed = Math.max(1, roll + mod);
+  const weak = sewerWeakened(c);
+  const healed = Math.max(1, weak ? Math.floor((roll + mod) / 2) : roll + mod);
+  if (weak) log(d, `${c.name} has Sewer Plague and is Exhausted: Hit Point Dice heal only half.`, 'warn');
   const before = c.hp;
   c.hp = Math.min(c.maxHp, c.hp + healed);
   c.hitDiceSpent += 1;
@@ -2060,8 +2417,15 @@ export const extendEffect = act((d, _ctx, effectId: string, minutes: number) => 
 /** A 10-minute exploration turn: searching, checking for traps, listening at doors. */
 export const explorationTurn = act((d, ctx, what: string) => {
   log(d, `Exploration turn (${EXPLORATION_TURN_MINUTES} min)${what ? `: ${what}` : ''}.`);
-  advanceMut(d, ctx, EXPLORATION_TURN_MINUTES, 'camp');
-  if (d.settings.exploreEncounterOn > 0) {
+  advanceMut(d, ctx, EXPLORATION_TURN_MINUTES, 'camp', { exploring: true });
+  if (d.settings.encounters) {
+    d.exploreTurns += 1;
+    const every = DANGER[d.place.danger].everyTurns;
+    if (d.exploreTurns >= every) {
+      d.exploreTurns = 0;
+      encounterCheck(d, ctx, 'explore', false);
+    }
+  } else if (d.settings.exploreEncounterOn > 0) {
     const r = die(20, ctx.rng);
     if (r >= d.settings.exploreEncounterOn) log(d, `Wandering monster check: d20 = ${r}. Something finds the party!`, 'warn');
   }
@@ -2879,4 +3243,121 @@ export const grantGift = act((d, _ctx, charId: string, type: GiftType, name: str
   d.effects.push({ id: uid(), name: `${type}: ${name}`, kind: type === 'Curse' ? 'curse' : 'gift', targetIds: [c.id], casterId: null, concentration: false, shelter: false, startedAt: absNow(d), endsAt: null, notes });
   if (type === 'Charm' && uses > 0) c.resources.push({ id: uid(), name: `Charm: ${name}`, max: uses, current: uses, recharge: 'manual' });
   log(d, `${c.name} ${type === 'Curse' ? 'is cursed' : 'receives a supernatural gift'}: ${type} of ${name}${type === 'Charm' && uses ? ` (${uses} use${uses > 1 ? 's' : ''})` : ''}.`, type === 'Curse' ? 'bad' : 'good');
+});
+
+// ---------------------------------------------------------------- random encounters
+
+/** Creatures available to the random encounter tables: the SRD list plus any imported bestiary entries with a CR and environment. */
+export function encounterPool(s: State): EncounterCreature[] {
+  const byName = new Map<string, EncounterCreature>();
+  if (s.settings.srdEncounters) for (const c of SRD_POOL) byName.set(c.name.toLowerCase(), c);
+  for (const c of s.bestiary) {
+    if (!c.cr || !c.env?.length) continue;
+    byName.set(c.name.toLowerCase(), { name: c.name, cr: c.cr, size: c.size, type: c.type.toLowerCase(), align: c.align ?? 'N', env: c.env, source: c.source, flags: c.flags });
+  }
+  const out = new Set(s.encounterExclude.map((n) => n.toLowerCase()));
+  return [...byName.values()].filter((c) => !out.has(c.name.toLowerCase()));
+}
+
+/** Party level (average, rounded) and size, from the living player characters. */
+export function encounterParty(s: State): Party {
+  const pcs = s.characters.filter((c) => c.kind !== 'mount' && alive(c));
+  if (!pcs.length) return { level: 1, size: 1 };
+  return { level: Math.max(1, Math.min(20, Math.round(pcs.reduce((a, c) => a + c.level, 0) / pcs.length))), size: pcs.length };
+}
+
+export function encounterTable(s: State, terrain: TerrainType = s.place.terrain, danger: Danger = s.place.danger): EncounterTable {
+  return buildTable(encounterPool(s), terrain, danger, encounterParty(s));
+}
+
+const isNight = (s: State): boolean => lightAt(s.minutes % MIN_PER_DAY, seasonOf(s)).phase === 'Night';
+const isUnderground = (s: State): boolean => !!CLIMATES[s.weather.climate].noWeather || s.place.terrain === 'underdark';
+
+/** The conditions that shift the encounter check right now. */
+export function encounterConditions(s: State, activity: CheckConditions['activity']): CheckConditions {
+  const now = absNow(s);
+  const lightOn = s.fire.lit || s.effects.some((e) => e.kind === 'light' && (e.endsAt == null || e.endsAt > now));
+  const shelterSpell = s.effects.some((e) => e.shelter && (e.endsAt == null || e.endsAt > now));
+  return {
+    activity,
+    night: isNight(s),
+    lightAtNight: lightOn,
+    pace: s.travel.pace,
+    goodRoad: s.place.onRoute && s.place.goodRoad,
+    foulWeather: s.weather.precip === 'heavy' || s.weather.wind === 'strong',
+    sheltered: s.place.shelter === 'building' || s.place.shelter === 'cave' || shelterSpell,
+    underground: isUnderground(s),
+    bigGroup: s.characters.filter(alive).length + s.hirelings.length > 6,
+  };
+}
+
+/** Accumulates overland time and rolls a check each time the danger level's interval passes. */
+function overlandEncounterClock(s: State, ctx: Ctx, step: number, activity: Activity): void {
+  const every = DANGER[s.place.danger].everyHours * 60;
+  s.encounterClock = Math.min(s.encounterClock, every) + step;
+  while (s.encounterClock >= every) {
+    s.encounterClock -= every;
+    encounterCheck(s, ctx, activity === 'rest' ? 'rest' : activity === 'travel' ? 'travel' : 'camp', false);
+  }
+}
+
+/** Who is on watch right now, if the party is in a Long Rest. */
+function onWatchNow(s: State): Character[] {
+  if (s.restStart == null) return [];
+  const len = watchMinutes(s.watchPlan.count);
+  const slot = Math.min(s.watchPlan.count - 1, Math.max(0, Math.floor((absNow(s) - s.restStart) / len)));
+  return (s.watchPlan.slots[slot] ?? []).map((id) => actorById(s, id)).filter((c): c is Character => !!c && alive(c));
+}
+
+/** One random encounter check: d20 plus the conditions, against the danger level's number. Returns true on an encounter. */
+export function encounterCheck(s: State, ctx: Ctx, activity: CheckConditions['activity'], announce: boolean): boolean {
+  const info = DANGER[s.place.danger];
+  const mods = checkModifiers(encounterConditions(s, activity));
+  const mod = mods.reduce((a, m) => a + m.value, 0);
+  const r = die(20, ctx.rng);
+  const total = r + mod;
+  const detail = `d20 ${r}${mod ? ` ${signed(mod)} (${mods.map((m) => `${m.label} ${signed(m.value)}`).join(', ')}) = ${total}` : ''}, encounter on ${info.on}+ or a natural 20 (${info.label} danger)`;
+  if (total < info.on && r < 20) {
+    if (announce) log(s, `Random encounter check: ${detail}. Nothing comes.`);
+    return false;
+  }
+  resolveEncounter(s, ctx, activity, detail);
+  return true;
+}
+
+const ACTIVITY_WHEN: Record<CheckConditions['activity'], string> = { travel: 'on the road', camp: 'in camp', rest: 'during the Long Rest', explore: 'while exploring' };
+
+/** Rolls on the location's table and logs what turns up, with what the characters notice first. */
+export function resolveEncounter(s: State, ctx: Ctx, activity: CheckConditions['activity'], checkDetail?: string): void {
+  const table = encounterTable(s);
+  const res = rollOnTable(table, ctx.rng);
+  if (!res) {
+    log(s, 'Random encounter, but the table is empty: import a bestiary or turn on the SRD creatures in the Encounters tab.', 'warn');
+    return;
+  }
+  const night = isNight(s) || isUnderground(s);
+  const watchers = activity === 'rest' ? onWatchNow(s) : [];
+  const when = `${ACTIVITY_WHEN[activity]} at ${formatClock(s.minutes % MIN_PER_DAY)}`;
+  const watchNote = activity === 'rest' ? (watchers.length ? ` On watch: ${watchers.map((c) => `${c.name} (passive Perception ${c.passivePerception})`).join(', ')}.` : ' Nobody is on watch.') : '';
+  const head = `Random encounter ${when}${checkDetail ? ` (${checkDetail})` : ''}. d100 = ${res.roll}:`;
+  if (res.row.kind === 'peaceful' || !res.row.creature) {
+    log(s, `${head} ${res.row.text}. About ${res.distanceFt} feet away.${watchNote}`, 'info');
+    return;
+  }
+  const c = res.row.creature;
+  const party = table.party;
+  const dm = `${head} ${res.summary} (CR ${c.cr}${res.row.followers ? ` and ${res.row.followers.creature.cr}` : ''}, rolled ${res.row.count}${res.row.followers ? ` and ${res.row.followers.count}` : ''}; ${res.xp} XP total, ${DIFFICULTY_LABEL[res.difficulty ?? 'low']} for ${party.size} level-${party.level} characters). Starting attitude: ${res.attitude?.attitude} (d20 ${res.attitude?.roll}). They are ${res.distanceFt} feet away (${res.distanceExpr}).${watchNote} Compare their Dexterity (Stealth) with the party's passive Perception for surprise.`;
+  const predicate = firstSign(c.type, night);
+  log(s, dm, res.attitude?.attitude === 'Hostile' ? 'bad' : 'warn', { charIds: watchers.map((w) => w.id), status: false, sense: predicate });
+  for (const w of watchers) s.statusLog.unshift({ id: uid(), stamp: stamp(s), at: absNow(s), charId: w.id, kind: 'encounter', text: `On watch, ${w.name} spots ${res.summary}.`, sense: predicate, tone: 'warn' });
+}
+
+/** Roll a random encounter check by hand, using what the party is doing now. */
+export const checkForEncounter = act((d, ctx, activity: CheckConditions['activity'] = 'camp') => {
+  encounterCheck(d, ctx, activity, true);
+});
+
+/** Skip the check: something turns up. Roll on the table. */
+export const rollRandomEncounter = act((d, ctx, activity: CheckConditions['activity'] = 'camp') => {
+  resolveEncounter(d, ctx, activity);
 });

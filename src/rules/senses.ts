@@ -48,7 +48,13 @@ export type SenseKey =
   | 'sleepsThrough'
   | 'heal'
   | 'hurt'
-  | 'hitDie';
+  | 'hitDie'
+  | 'contagionOnset'
+  | 'contagionWorse'
+  | 'contagionEases'
+  | 'contagionEnds'
+  | 'blinded'
+  | 'encounter';
 
 /** How the change reaches the character: felt in the body, noticed with the senses, or not noticed at all. */
 export type Awareness = 'feels' | 'notices' | 'unaware';
@@ -80,6 +86,11 @@ export const SENSES: Record<SenseKey, SenseDef> = {
   exhaustionStuck: F('feels just as drained as before, the body craving food or water more than sleep', 'feels a deep weariness that sleep alone won’t fix'),
   foodPoisoning: F('feels violent stomach cramps and cold sweats', 'feels a churning gut and shaking hands'),
   foodPoisoningEnds: F('feels the cramps gone at last, weak but settled', 'feels hollow but well again'),
+  contagionOnset: F('feels feverish and achy, with a heaviness settling into the limbs', 'feels a creeping, sweaty fatigue that sleep does not touch'),
+  contagionWorse: F('feels the sickness dig in deeper, weaker than yesterday', 'feels feverish and drained, worse than the day before'),
+  contagionEases: F('feels a little stronger as the sickness loosens its grip', 'feels the fever ebb somewhat'),
+  contagionEnds: F('feels the last of the sickness lift', 'feels truly well again for the first time in days'),
+  blinded: F('feels the eyes burn and cloud over until nothing can be seen', 'feels a gritty sting in the eyes as the world fades to grey darkness'),
   waterIllness: F('feels a gurgling, clammy queasiness', 'feels the stomach lurch and the vision swim'),
   waterIllnessEnds: F('feels the queasiness fade', 'feels steady again'),
   dying: U('collapses and slips away into darkness, aware of nothing', 'crumples to the ground, unconscious'),
@@ -109,6 +120,7 @@ export const SENSES: Record<SenseKey, SenseDef> = {
   heal: F('feels warmth spread and the pain recede'),
   hurt: F('feels pain lance through them'),
   hitDie: F('feels some strength return after catching their breath and binding wounds'),
+  encounter: N('notices movement at the edge of sight', 'hears something approaching'),
 };
 
 /** Picks a variant without using the dice; the same seed gives the same line, so a whole party shares one. */

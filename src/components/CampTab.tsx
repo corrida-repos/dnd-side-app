@@ -8,6 +8,7 @@ import { autoAssign, maxWatchMinutes, WATCH_COUNTS, watchCapacity, watchMinutes 
 import { TERRAIN } from '../rules/terrain';
 import { foodNeedLb, fmtLb, fmtWater, proficiencyBonus, ARMOR_LABEL, armorTime, BOIL_MINUTES, PURIFY_SPELL, TAINTED_DC } from '../rules/survival';
 import { Card, Num, Pill, Select, Text, Toggle, Rule } from './common';
+import { POISON_HARVEST_DC } from '../rules/potions';
 import { WaysAround } from './WaysAround';
 
 export function CampTab() {
@@ -21,6 +22,7 @@ export function CampTab() {
       <MealsCard />
       <ForageCard />
       <HuntCard />
+      <PoisonHarvestCard />
       <RulesCard />
     </div>
   );
@@ -343,16 +345,20 @@ function WatchCard() {
           </span>
         ))}
       </div>
-      <div className="form-row">
-        <Num
-          label="Encounter on d20 of (0 = off)"
-          value={s.settings.encounterOn}
-          onChange={(v) => edit((d) => void (d.settings.encounterOn = Math.max(0, Math.min(20, Math.round(v)))))}
-          min={0}
-          max={20}
-          width={2}
-        />
-      </div>
+      {s.settings.encounters ? (
+        <p className="small muted">Random encounter checks during the rest follow this location&apos;s danger (Encounters tab) and name who is on watch.</p>
+      ) : (
+        <div className="form-row">
+          <Num
+            label="Encounter on d20 of (0 = off)"
+            value={s.settings.encounterOn}
+            onChange={(v) => edit((d) => void (d.settings.encounterOn = Math.max(0, Math.min(20, Math.round(v)))))}
+            min={0}
+            max={20}
+            width={2}
+          />
+        </div>
+      )}
       <Rule>
         Each watch is {formatDuration(len)}. A Long Rest allows up to 2 hours of light activity such as standing watch (4 hours for characters who Trance). In Dim Light passive Perception takes −5. In Darkness,
         anyone without Darkvision relies on hearing alone (👂), unless the campfire or a light source lasts the whole watch.
@@ -537,6 +543,31 @@ function RulesCard() {
           <p>At 0 °F or below: DC 10 Con save each hour. At 100 °F or above with no water: Con save each hour, starting at DC 5 and going up by 1 each hour. A failure means 1 Exhaustion level.</p>
         </div>
       </div>
+    </Card>
+  );
+}
+
+function PoisonHarvestCard() {
+  const s = useGame();
+  const people = s.characters.filter((c) => c.kind !== 'mount' && E.alive(c));
+  const [who, setWho] = useState('');
+  const [bonus, setBonus] = useState(0);
+  const [creature, setCreature] = useState('');
+  const whoId = people.find((c) => c.id === who)?.id ?? people[0]?.id ?? '';
+  return (
+    <Card title="Harvesting poison">
+      <div className="form-row">
+        <Select label="Harvester" value={whoId} onChange={setWho} options={people.map((c) => ({ value: c.id, label: c.name }))} />
+        <Num label="Int (Nature) bonus" value={bonus} onChange={setBonus} width={3} />
+        <Text label="Creature" value={creature} onChange={setCreature} placeholder="e.g. Giant Spider" />
+      </div>
+      <button className="small" disabled={!whoId} onClick={() => dispatch((st, cx) => E.harvestPoison(st, cx, whoId, bonus, creature))}>
+        Harvest (1d6 min, DC {POISON_HARVEST_DC})
+      </button>
+      <Rule>
+        2024 DMG: from a venomous creature that is dead or Incapacitated, using a Poisoner&apos;s Kit. Success yields one dose, and nothing more can be taken from that creature. Failing by 5 or more exposes the harvester to the poison. Buying poison is often illegal: it means criminal contacts, inquiries and bribes.
+      </Rule>
+      <WaysAround topic={'poisonHarvest'} />
     </Card>
   );
 }

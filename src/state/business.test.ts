@@ -77,15 +77,48 @@ describe('running a business', () => {
     ];
     s = E.addBusiness(s, ctx(), 'Inn', s.characters[0].id, 5, { what: 'Inn', costGp: 4000, days: 40, landGp: 0 });
     const id = s.businesses[0].id;
-    s = E.hireBuildCrews(s, ctx(), id, 2);
+    s = E.hireBuildCrews(s, ctx(), { kind: 'business', id }, 2);
     expect(s.characters[0].gp).toBe(10000 - 4000 - 4000);
     expect(E.buildDaysLeft(s, s.businesses[0])).toBe(20);
     s.businesses[0].helpers = [{ charId: s.characters[1].id, skilled: true }];
     expect(E.businessPace(s, s.businesses[0])).toBeCloseTo(2.1);
-    s = E.castBuildSpell(s, ctx(), id, s.characters[1].id, 'Wall of Stone');
+    s = E.castBuildSpell(s, ctx(), { kind: 'business', id }, s.characters[1].id, 'Wall of Stone');
     expect(s.businesses[0].building!.daysDone).toBe(5);
     expect(s.characters[1].resources[0].current).toBe(0);
-    s = E.castBuildSpell(s, ctx(), id, s.characters[1].id, 'Wall of Stone');
+    s = E.castBuildSpell(s, ctx(), { kind: 'business', id }, s.characters[1].id, 'Wall of Stone');
     expect(s.businesses[0].building!.daysDone).toBe(5);
+  });
+});
+
+describe('speeding up other manual work', () => {
+  it('Bastion construction takes crews and finishes sooner', () => {
+    let s = createDefaultState(() => 0);
+    s.settings.sleepDeprivation = false;
+    s.characters = [newCharacter({ name: 'Lord', gp: 5000, level: 5, needsFood: false, needsWater: false })];
+    s = E.foundBastion(s, ctx(), s.characters[0].id, 'Keep');
+    const b = s.bastions[0];
+    b.facilities.push({ id: 'f', name: 'Storehouse', kind: 'basic', size: 'roomy', order: 'Maintain', orderNote: '', built: false, building: { what: 'Storehouse', daysLeft: 10, totalDays: 10, costGp: 1000, toSize: 'roomy' } });
+    const ref = { kind: 'facility' as const, bastionId: b.id, facilityId: 'f' };
+    s = E.hireBuildCrews(s, ctx(), ref, 2);
+    expect(s.characters[0].gp).toBe(4000);
+    expect(E.jobDaysLeft(s, ref)).toBe(5);
+    s = E.advance(s, ctx(), 5 * 24 * 60);
+    expect(s.bastions[0].facilities.find((f) => f.id === 'f')!.built).toBe(true);
+  });
+
+  it('hired artisans assist crafting for wages, and Fabricate finishes a nonmagical item', () => {
+    let s = createDefaultState(() => 0);
+    s.settings.sleepDeprivation = false;
+    const smith = newCharacter({ name: 'Smith', gp: 100, needsFood: false, needsWater: false, spells: [{ name: 'Fabricate', level: 4, prepared: true, alwaysPrepared: false }] });
+    s.characters = [smith];
+    s.projects = [
+      { id: 'p', name: 'Shield', kind: 'nonmagical', charIds: [smith.id], daysRequired: 4, daysDone: 0, costGp: 0, notes: '', done: false, hiredArtisans: 1 },
+      { id: 'q', name: 'Plate', kind: 'nonmagical', charIds: [smith.id], daysRequired: 150, daysDone: 0, costGp: 0, notes: '', done: false },
+    ];
+    s = E.workOnProjects(s, ctx(), ['p']);
+    expect(s.projects[0].daysDone).toBe(2);
+    expect(s.characters[0].gp).toBe(98);
+    s = E.fabricateProject(s, ctx(), 'q', smith.id);
+    expect(s.projects[1].done).toBe(true);
   });
 });

@@ -67,7 +67,11 @@ export type TopicId =
   | 'messages'
   | 'building'
   | 'dailyCasting'
-  | 'fear';
+  | 'fear'
+  | 'disease'
+  | 'encounters'
+  | 'services'
+  | 'poisonHarvest';
 
 export interface Topic {
   id: TopicId;
@@ -398,6 +402,10 @@ export const TOPICS: Topic[] = [
         'Tireless works when you finish a Short Rest; whether the spell counts is the DM’s call.',
       ]),
       feature('Monk', 14, 'Disciplined Survivor', 'Proficiency in all saves, and spend 1 Focus Point to reroll a failed save: forced march, cold and heat saves included.'),
+      feature('Paladin', 6, 'Aura of Protection', 'Allies within 10 feet add the Paladin’s Charisma modifier to every save: cold, heat, forced march and malnutrition saves alike.', [
+        'The aura is only 10 feet, and it switches off while the Paladin is Incapacitated (asleep, for instance).',
+      ]),
+      spell('Bless', '+1d4 to saves for three creatures.', ['Only 1 minute, so it suits a single dangerous save rather than an hourly one.']),
       species('Human (Resourceful)', 'Heroic Inspiration after every Long Rest: reroll a failed Exhaustion save.'),
       species('Halfling (Luck)', 'Reroll a 1 on any save.'),
     ],
@@ -836,6 +844,82 @@ export const TOPICS: Topic[] = [
       feat('Inspiring Leader', 'Temporary HP for six allies after each rest.'),
       feat('Musician', 'Heroic Inspiration for allies after each rest.'),
       bastion('Meditation Chamber', 13, 'Seven days of meditation give Advantage on two kinds of saves for a week.'),
+    ],
+  },
+  {
+    id: 'disease',
+    title: 'Diseases (magical contagions)',
+    problem: 'Cackle Fever, Sewer Plague and Sight Rot bring Exhaustion or blindness and are fought off with Con saves over days.',
+    ways: [
+      spell('Lesser Restoration', 'Ends Sight Rot immediately (the DMG names it).', ['The 2024 spell lists no general disease cure: it doesn’t end Cackle Fever or Sewer Plague.']),
+      spell('Heal', 'Ends Sight Rot immediately and restores 70 HP.'),
+      spell('Greater Restoration', 'Sewer Plague ends when the creature’s Exhaustion reaches 0, so removing its last level cures it.', [
+        'Cackle Fever’s Exhaustion lasts until the contagion ends; whether magic can remove it early is the DM’s call.',
+      ]),
+      item('Potion of Vitality', 'very rare', false, 'Removes all Exhaustion, which ends Sewer Plague outright.'),
+      feature('Ranger', 10, 'Tireless', 'Each Short Rest removes an Exhaustion level, which can bring Sewer Plague to 0 and end it.'),
+      spell('Purify Food and Drink', 'Sight Rot is caught by drinking tainted water: purifying the water first should keep it out (DM’s call on “rot”). Ritual.'),
+      gear('Herbalism Kit', 'An hour makes an ointment that suppresses Sight Rot for 24 hours; three days of it end the disease.'),
+      species('Gnome', 'Immune to Cackle Fever.'),
+      feature('Paladin', 6, 'Aura of Protection', 'Allies within 10 feet add the Paladin’s Charisma modifier to every save, the contagion saves included.'),
+      feature('Monk', 14, 'Disciplined Survivor', 'Proficiency in all saves, and reroll a failed one with a Focus Point.'),
+      feat('Resilient', 'Proficiency in Constitution saves.'),
+      species('Human (Resourceful)', 'Heroic Inspiration after each Long Rest: reroll the save at the end of that rest.'),
+    ],
+  },
+  {
+    id: 'encounters',
+    title: 'Random encounters',
+    problem: 'Travel, camping and exploration all carry a chance of an encounter, more often in dangerous places.',
+    ways: [
+      spell('Pass without Trace', '+10 to Stealth for everyone within 30 feet and no tracks, so far fewer creatures notice you.'),
+      spell("Leomund's Tiny Hut", 'Opaque from outside and nothing can come in: a night camp that wanderers can’t reach. Ritual.'),
+      spell('Rope Trick', 'An invisible pocket for up to eight creatures for an hour.'),
+      spell("Mordenkainen's Magnificent Mansion", 'A hidden door to a house for 24 hours.'),
+      spell('Alarm', 'Warning before an encounter reaches the camp. Ritual.'),
+      spell("Mordenkainen's Faithful Hound", 'A guard dog with Truesight that bites intruders.'),
+      spell('Invisibility', 'One creature (more with higher slots) goes unseen for an hour.'),
+      spell('Nondetection', 'Hidden from divination, so hunters using magic can’t find you.'),
+      spell('Find Familiar', 'Scout ahead and avoid what you see first.'),
+      spell('Speak with Animals', 'Ask local beasts what dangers are nearby. Ritual.'),
+      spell('Teleport', 'Skip the dangerous stretch entirely.'),
+      { ...gear('Slow pace', 'Advantage on Perception checks and no penalty to Stealth, at the cost of distance.'), source: 'PHB rule' },
+    ],
+  },
+  {
+    id: 'services',
+    title: 'Paying for spellcasting and passage',
+    problem: 'Hiring a caster costs from 30 GP for a cantrip to 100,000 GP for level 9, plus costly components, and higher levels only in towns or cities.',
+    ways: [
+      feature('Cleric', 10, 'Divine Intervention', 'Cast any Cleric spell of level 5 or lower with no slot and no Material component, once per Long Rest.'),
+      bastion(
+        'Teleportation Circle',
+        9,
+        'A Recruit order may bring an NPC caster who casts one Wizard spell of level 4 or lower for you (8 or lower from level 17); you pay only for costly components.',
+      ),
+      bastion('Reliquary', 13, 'A talisman replaces one spell’s components worth up to 1,000 GP, without being consumed.'),
+      bastion('Arcane Study', 5, 'A Charm to cast Identify for free.'),
+      bastion('Sanctuary', 5, 'A Charm to cast Healing Word for free.'),
+      bastion('Scriptorium', 9, 'Buy Spell Scrolls at crafting cost instead of a caster’s fee.'),
+      feat('Magic Initiate', 'Learn two cantrips and a level 1 spell yourself.'),
+      feat('Ritual Caster', 'Learn level 1 rituals yourself, such as Identify or Purify Food and Drink.'),
+      spell('Teleportation Circle', 'Travel between permanent circles instead of paying for a ship’s passage.'),
+    ],
+  },
+  {
+    id: 'poisonHarvest',
+    title: 'Harvesting poison',
+    problem: 'Harvesting poison from a creature takes 1d6 minutes and a DC 20 Intelligence (Nature) check with a Poisoner’s Kit; failing by 5 or more exposes you to the poison.',
+    ways: [
+      spell('Guidance', '+1d4 to the Nature check.'),
+      spell('Enhance Ability', 'Advantage on Intelligence checks.'),
+      spell('Protection from Poison', 'Advantage on saves against the poison and Poison Resistance if the harvest goes wrong.'),
+      feature('Wizard', 2, 'Scholar', 'Expertise in Nature (or another lore skill).'),
+      feat('Keen Mind', 'Proficiency, or Expertise, in Nature.'),
+      species('Dwarf (Dwarven Resilience)', 'Advantage against Poisoned and Poison Resistance if you’re exposed.'),
+      item('Periapt of Proof against Poison', 'rare', true, 'Immune to the poison if the harvest fails.'),
+      bastion('Greenhouse', 9, 'Harvest Assassin’s Blood, Malice, Pale Tincture or Truth Serum in 7 days, with no check.'),
+      bastion('Garden (Poison)', 5, 'Two vials of Antitoxin or one of Basic Poison per Harvest order.'),
     ],
   },
 ];

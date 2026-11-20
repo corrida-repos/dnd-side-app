@@ -1,3 +1,4 @@
+import type { Danger } from '../rules/encounters';
 import type { ClimateId, Weather } from '../rules/weather';
 import type { Calendar } from '../rules/calendar';
 import type { ProjectKind } from '../rules/crafting';
@@ -10,6 +11,7 @@ import type { Creature } from '../rules/hunting';
 import type { TerrainType } from '../rules/terrain';
 import type { ItemRef } from '../rules/hazards';
 import type { CommMethod } from '../rules/comms';
+import type { ContagionKind } from '../rules/contagion';
 import type { HirelingRole } from '../rules/hirelings';
 import type { ClueKind, StudyMethod } from '../rules/identify';
 import type { WeightSource } from '../rules/encumbrance';
@@ -26,7 +28,7 @@ export type Pace = 'fast' | 'normal' | 'slow';
 export type Activity = 'camp' | 'rest' | 'travel' | 'work';
 export type Tone = 'info' | 'warn' | 'bad' | 'good';
 /** What caused each Exhaustion level. */
-export type ExhaustionCause = 'malnutrition' | 'dehydration' | 'cold' | 'heat' | 'march' | 'coldNight' | 'sleep' | 'frigid' | 'suffocation' | 'deepWater' | 'other';
+export type ExhaustionCause = 'malnutrition' | 'dehydration' | 'cold' | 'heat' | 'march' | 'coldNight' | 'sleep' | 'frigid' | 'suffocation' | 'deepWater' | 'contagion' | 'other';
 export type ArmorKind = 'none' | 'light' | 'medium' | 'heavy';
 export type WaterQuality = 'clean' | 'questionable';
 
@@ -290,6 +292,10 @@ export interface Character {
   poisonedUntil: number | null;
   /** Sick from eating raw food: Poisoned until the creature finishes a Long Rest. */
   sick: boolean;
+  /** Magical contagions (2024 DMG): Cackle Fever, Sewer Plague, Sight Rot. */
+  contagions: Contagion[];
+  /** Advantage on saves against contagions until this minute (after recuperating). */
+  recuperatedUntil?: number;
   needsFood: boolean;
   needsWater: boolean;
   rationsLb: number;
@@ -333,6 +339,8 @@ export interface Place {
   waterQuality: WaterQuality;
   /** In a town or city: lifestyle expenses are charged and cover meals. */
   settlement: boolean;
+  /** How dangerous the area is: sets how often to check for random encounters and how tough they are. */
+  danger: Danger;
 }
 
 export interface Fire {
@@ -397,6 +405,8 @@ export interface Project {
   product?: { name: string; qty: number; magic?: boolean; valueGp?: number };
   /** For copying a spell: its name and level, and whose spellbook gets it. */
   spell?: { name: string; level: number };
+  /** Skilled hirelings with the right tools assisting the work, paid 2 GP each per workday. */
+  hiredArtisans?: number;
 }
 
 export interface Construction {
@@ -406,6 +416,9 @@ export interface Construction {
   costGp: number;
   /** Size the facility becomes when the work is done. */
   toSize: FacilitySize;
+  /** Extra paid crews and party members helping (table rule). */
+  extraCrews?: number;
+  helpers?: { charId: string; skilled: boolean }[];
 }
 
 export interface Facility {
@@ -449,6 +462,20 @@ export interface Business {
   helpers?: { charId: string; skilled: boolean }[];
 }
 
+export interface Contagion {
+  id: string;
+  kind: ContagionKind;
+  infectedAt: number;
+  /** When symptoms start. */
+  onsetAt: number;
+  onset: boolean;
+  /** Cackle Fever: successful Long Rest saves so far (three end it). */
+  successes: number;
+  /** Sight Rot: ointment keeps it suppressed until this minute, and the total hours suppressed so far. */
+  suppressedUntil?: number;
+  suppressedHours?: number;
+}
+
 export interface Dispatch {
   id: string;
   bastionId: string;
@@ -486,6 +513,10 @@ export interface Bastion {
   ordersArrived: boolean;
   /** How the Bastion sends its turn reports to an absent owner. */
   reportMethod: CommMethod;
+  /** Consecutive turns with no orders from the owner (2024 DMG: as many as the owner's level and the hirelings leave). */
+  neglectedTurns?: number;
+  /** The hirelings have abandoned it (neglect or divestiture). */
+  abandoned?: boolean;
   notes: string;
 }
 
@@ -567,6 +598,10 @@ export interface Settings {
   poorVisibilityNav: boolean;
   /** Optional 2014 DMG rule: running a business as a downtime activity. */
   runningBusiness: boolean;
+  /** Roll random encounter checks automatically by the location's danger while travelling, camping, resting and exploring. */
+  encounters: boolean;
+  /** Use the built-in SRD 5.2 creatures for random encounter tables (imported bestiaries are always used). */
+  srdEncounters: boolean;
 }
 
 export interface Travel {
@@ -645,4 +680,12 @@ export interface State {
   dispatches: Dispatch[];
   /** Businesses the characters own (optional Running a Business rule). */
   businesses: Business[];
+  /** Minutes of overland time since the last automatic random encounter check. */
+  encounterClock: number;
+  /** Exploration turns since the last automatic wandering monster check. */
+  exploreTurns: number;
+  /** Creatures left out of the random encounter tables. */
+  encounterExclude: string[];
+  /** When the current Long Rest began (absolute minute), so encounters know who is on watch. */
+  restStart: number | null;
 }

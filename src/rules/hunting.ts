@@ -6,6 +6,14 @@ export interface Creature {
   /** Creature type, e.g. beast, monstrosity, dragon. */
   type: string;
   source?: string;
+  /** Challenge Rating as written ("1/4", "5"), for random encounter tables. */
+  cr?: string;
+  /** 5etools environments (forest, underdark, any…), for random encounter tables. */
+  env?: string[];
+  /** E evil, G good, N neutral, U unaligned: sets a starting attitude. */
+  align?: 'E' | 'G' | 'N' | 'U';
+  /** L legendary, s swims, f flies. */
+  flags?: string;
 }
 
 /** Built-in game animals, so hunting works without importing anything. */
@@ -53,7 +61,7 @@ const SIZE_CODES: Record<string, Size> = { T: 'Tiny', S: 'Small', M: 'Medium', L
 
 /**
  * Reads 5etools-style bestiary JSON (`{ "monster": [...] }` or a plain array) that you supply yourself.
- * Keeps only the name, size, creature type and source.
+ * Keeps only the name, size, creature type, source, Challenge Rating, environments and alignment.
  */
 export function parse5eToolsBestiary(json: unknown): Creature[] {
   const arr: unknown[] = Array.isArray(json)
@@ -76,7 +84,14 @@ export function parse5eToolsBestiary(json: unknown): Creature[] {
     const key = `${r.name}|${source ?? ''}`.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ name: r.name, size, type, source });
+    const crRaw = r.cr && typeof r.cr === 'object' ? (r.cr as { cr?: unknown }).cr : r.cr;
+    const cr = typeof crRaw === 'string' ? crRaw : typeof crRaw === 'number' ? String(crRaw) : undefined;
+    const env = Array.isArray(r.environment) ? r.environment.filter((e): e is string => typeof e === 'string') : undefined;
+    const al = Array.isArray(r.alignment) ? r.alignment.filter((a): a is string => typeof a === 'string') : [];
+    const align = al.includes('E') ? 'E' : al.includes('G') ? 'G' : al.includes('U') ? 'U' : al.length ? 'N' : undefined;
+    const speed = r.speed && typeof r.speed === 'object' ? (r.speed as Record<string, unknown>) : {};
+    const flags = `${r.legendary ? 'L' : ''}${speed.swim ? 's' : ''}${speed.fly ? 'f' : ''}`;
+    out.push({ name: r.name, size, type: type.toLowerCase(), source, ...(cr ? { cr } : {}), ...(env?.length ? { env } : {}), ...(align ? { align } : {}), ...(flags ? { flags } : {}) });
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }

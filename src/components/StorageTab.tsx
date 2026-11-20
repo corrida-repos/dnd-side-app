@@ -141,7 +141,9 @@ function StashCard({ st }: { st: Stash }) {
           Withdraw to {giver?.name ?? '…'}
         </button>
       </div>
-      <Rule>Things in storage don&apos;t count toward anyone&apos;s load. Containers keep their contents when moved. Coins weigh 50 to the pound.</Rule>
+      <Rule>
+        Things in storage don&apos;t count toward anyone&apos;s load. Containers keep their contents when moved. Coins weigh 50 to the pound. 2024 PHB vehicles: an animal pulling a cart, wagon or sled moves up to five times its carrying capacity, vehicle included (add several animals together). Ships bigger than a keelboat need a crew of skilled hirelings, can sail up to 24 hours a day, and move at half speed into a strong wind; in a dead calm, sails are useless and the ship must be rowed. Repairing a ship takes 1 day and 20 GP per Hit Point, halved in a well-supplied shipyard.
+      </Rule>
     </Card>
   );
 }

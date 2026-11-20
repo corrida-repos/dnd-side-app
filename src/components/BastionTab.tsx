@@ -12,6 +12,7 @@ import {
   SIZE_SQUARES,
   SPECIAL_FACILITIES,
   specialSlots,
+  neglectLimit,
   type FacilitySize,
   type Order,
 } from '../rules/bastion';
@@ -19,6 +20,7 @@ import { Card, Meter, Num, Pill, Select, Text, Toggle, Rule } from './common';
 import type { Bastion, Facility } from '../state/types';
 import { COMMS, commCost, commDelay, type CommMethod } from '../rules/comms';
 import { formatDuration } from '../rules/calendar';
+import { SpeedUp } from './SpeedUp';
 import { WaysAround } from './WaysAround';
 
 const ORDER_HINT: Record<Order, string> = {
@@ -114,6 +116,12 @@ function BastionCard({ b }: { b: Bastion }) {
         Owner: {owner ? `${owner.name}, level ${owner.level}` : 'unknown'} · {b.turns} turn(s) resolved · {b.goldSpent.toLocaleString()} GP spent on construction
         {b.lastEvent && <> · Last turn: {b.lastEvent}</>}
       </p>
+      {b.abandoned && <p className="bad-text small">Abandoned: the hirelings left after {b.neglectedTurns} turns without orders. Delete it and found a new Bastion when ready (it starts with two basic facilities).</p>}
+      {!b.abandoned && (b.neglectedTurns ?? 0) > 0 && (
+        <p className="warn-text small">
+          {b.neglectedTurns} turn(s) in a row without orders. At {neglectLimit(owner?.level ?? 1)} (the owner&apos;s level) the hirelings abandon it (2024 DMG).
+        </p>
+      )}
 
       <h3>
         Special facilities{' '}
@@ -140,7 +148,7 @@ function BastionCard({ b }: { b: Bastion }) {
       />
       <RemoteCard b={b} />
       <div className="btn-row">
-        <button className="primary" disabled={due < 1} onClick={() => dispatch((st, cx) => E.resolveBastionTurn(st, cx, b.id))}>
+        <button className="primary" disabled={due < 1 || !!b.abandoned} onClick={() => dispatch((st, cx) => E.resolveBastionTurn(st, cx, b.id))}>
           Resolve Bastion turn
         </button>
         <span className="muted small">
@@ -161,13 +169,16 @@ function BastionCard({ b }: { b: Bastion }) {
           <h3>Under construction</h3>
           <ul className="plain">
             {building.map((f) => (
-              <li key={f.id} className="armor-row">
+              <li key={f.id} className="facility">
+                <div className="armor-row">
                 <span>
                   {f.building!.what} <span className="muted small">({f.building!.costGp.toLocaleString()} GP)</span>
                 </span>
                 <span className="small">
-                  <Meter value={f.building!.totalDays - f.building!.daysLeft} max={f.building!.totalDays} tone="good" /> {f.building!.daysLeft} day(s) left
+                  <Meter value={f.building!.totalDays - f.building!.daysLeft} max={f.building!.totalDays} tone="good" /> {Math.ceil(f.building!.daysLeft)} workday(s) left
                 </span>
+                </div>
+                <SpeedUp target={{ kind: 'facility', bastionId: b.id, facilityId: f.id }} />
               </li>
             ))}
           </ul>
