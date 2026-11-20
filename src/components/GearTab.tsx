@@ -644,7 +644,7 @@ function ItemsBlock({ c }: { c: Character }) {
       </details>
       <Rule>
         Attuning takes a Short Rest focused on the item while touching it, with a maximum of {MAX_ATTUNED} items. Identifying works the same way, or with the Identify spell. Attunement ends if the item is more
-        than 100 feet away for 24 hours.
+        than 100 feet away for 24 hours, if you die, or if someone else attunes to it. Ending it voluntarily takes another Short Rest, and the attuning rest can&apos;t be the same one used to learn the item&apos;s properties. A cursed item&apos;s attunement can&apos;t be ended until the curse is broken (Remove Curse), and identifying doesn&apos;t reveal curses. Items that need a class or spellcasting can only be attuned by someone who qualifies. You can&apos;t attune to two copies of the same item.
       </Rule>
     </>
   );

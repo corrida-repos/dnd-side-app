@@ -82,6 +82,7 @@ export const EXHAUSTION_CAUSE_LABEL: Record<ExhaustionCause, string> = {
   frigid: 'Frigid water',
   suffocation: 'Suffocation',
   deepWater: 'Deep water',
+  contagion: 'Contagion',
   other: 'Other',
 };
 
@@ -94,7 +95,7 @@ export function causesOf(c: Character): ExhaustionCause[] {
 
 /** Exhaustion from malnutrition or dehydration can't be removed until the creature has eaten or drunk a full day's worth. */
 export function isLocked(c: Character, cause: ExhaustionCause): boolean {
-  return (cause === 'malnutrition' && c.malnourished) || (cause === 'dehydration' && c.dehydrated);
+  return (cause === 'malnutrition' && c.malnourished) || (cause === 'dehydration' && c.dehydrated) || (cause === 'contagion' && (c.contagions ?? []).some((x) => x.onset && x.kind !== 'sightRot'));
 }
 
 /** Groups the levels by cause, e.g. [{ cause: 'cold', count: 2, locked: false }]. */

@@ -469,6 +469,10 @@ function TravelCard() {
   const [navigator, setNavigator] = useState<string>(s.travel.navigatorId ?? s.characters.filter((c) => c.kind !== 'mount').sort((a, b) => b.survival - a.survival)[0]?.id ?? '');
   const nav = E.currentNavigationDC(s);
   const [gallop, setGallop] = useState(false);
+  const [flying, setFlying] = useState(false);
+  const [againstWind, setAgainstWind] = useState(false);
+  const [downstream, setDownstream] = useState(false);
+  const slow = E.slowTravelers(s);
   const vessels = s.stashes.filter((x) => x.speedMph);
   const [vesselId, setVesselId] = useState('');
   const [seeker, setSeeker] = useState(s.characters[0]?.id ?? '');
@@ -494,6 +498,9 @@ function TravelCard() {
         {s.characters.some((c) => c.kind === 'mount') && (
           <Toggle checked={gallop} onChange={setGallop} label={s.travel.gallopUsed ? 'Gallop (mounts need a rest first)' : 'Gallop: double distance for 1 hour'} />
         )}
+        <Toggle checked={flying} onChange={setFlying} label="Flying, or ignoring Difficult Terrain (Fast pace anywhere)" />
+        {vesselId && <Toggle checked={againstWind} onChange={setAgainstWind} label="Sailing into the wind" />}
+        {vesselId && <Toggle checked={downstream} onChange={setDownstream} label="Downstream on a river" />}
         {vessels.length > 0 && (
           <Select
             label="Aboard"
@@ -503,6 +510,7 @@ function TravelCard() {
           />
         )}
       </div>
+      {slow.length > 0 && !vesselId && <p className="small warn-text">{slow.join(', ')} {slow.length > 1 ? 'are' : 'is'} at half Speed or less (load or Exhaustion): the party must travel at a Slow pace.</p>}
       <p className="small">
         {p.note}. About <b>{+miles.toFixed(1)} miles</b>. {s.travel.hoursToday} travel hour(s) since the last Long Rest
         {counted > 8 && (
@@ -557,7 +565,7 @@ function TravelCard() {
         </div>
       </div>
       <div className="btn-row">
-        <button className="primary" onClick={() => dispatch((st, c) => E.travel(st, c, { hours, pace, difficult, foragerIds: foragers, navigatorId: navigator || null, gallop, vesselId: vesselId || null }))}>
+        <button className="primary" onClick={() => dispatch((st, c) => E.travel(st, c, { hours, pace, difficult, foragerIds: foragers, navigatorId: navigator || null, gallop, vesselId: vesselId || null, flying, againstWind, downstream }))}>
           Travel {hours} h
         </button>
         <button className="ghost" onClick={() => edit((d) => ((d.travel.hoursToday = 0), (d.travel.milesToday = 0)))}>

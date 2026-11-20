@@ -8,6 +8,7 @@ import { Card, Num, Pill, Select, Text, Toggle, Rule } from './common';
 import { HIRELING_ROLES, MESSENGER_GP_PER_MILE, type HirelingRole } from '../rules/hirelings';
 import { coinCount, DENOMS, purseValue, type Denom } from '../rules/coins';
 import type { Hireling } from '../state/types';
+import { COMMON_SPELL_REQUESTS, PASSAGE, SPELL_SERVICES, spellServiceAvailable, type Settlement } from '../rules/services';
 
 export function MoneyTab() {
   return (
@@ -15,6 +16,7 @@ export function MoneyTab() {
       <PurseCard />
       <HirelingsCard />
       <MountsCard />
+      <ServicesCard />
     </div>
   );
 }
@@ -266,6 +268,55 @@ function MountsCard() {
         Add {name.trim() || p.name}
       </button>
       <Rule>Mounts follow the same food, water, temperature and Exhaustion rules as everyone else. Party meals feed them from their feed, and town lifestyle doesn&apos;t cover them, so water them every day (for example with &quot;Top up today&apos;s water&quot;).</Rule>
+    </Card>
+  );
+}
+
+function ServicesCard() {
+  const s = useGame();
+  const pcs = s.characters.filter((c) => c.kind !== 'mount' && E.alive(c));
+  const [payer, setPayer] = useState('party');
+  const [fare, setFare] = useState(PASSAGE[0].id);
+  const [amount, setAmount] = useState(20);
+  const [people, setPeople] = useState(pcs.length || 1);
+  const [here, setHere] = useState<Settlement>('town');
+  const [spell, setSpell] = useState(COMMON_SPELL_REQUESTS[0].name);
+  const [custom, setCustom] = useState(1);
+  const payers = payer === 'party' ? pcs.map((c) => c.id) : [payer];
+  const f = PASSAGE.find((x) => x.id === fare)!;
+  const fareGp = ((f.gpPerMile ?? 0) * amount + (f.gpPerDay ?? 0) * amount + (f.gpFlat ?? 0)) * people;
+  const req = COMMON_SPELL_REQUESTS.find((x) => x.name === spell);
+  const level = req ? req.level : custom;
+  const tier = [...SPELL_SERVICES].reverse().find((t) => level >= t.minLevel)!;
+  const available = spellServiceAvailable(tier.where, here);
+  const spellGp = tier.gp + (req?.componentGp ?? 0);
+  return (
+    <Card title="Services: passage and spellcasting">
+      <Select label="Who pays" value={payer} onChange={setPayer} options={[{ value: 'party', label: 'Split across the party' }, ...pcs.map((c) => ({ value: c.id, label: c.name }))]} />
+      <h3>Passage and tolls</h3>
+      <div className="form-row">
+        <Select label="Fare" value={fare} onChange={setFare} options={PASSAGE.map((x) => ({ value: x.id, label: x.label }))} />
+        {!f.gpFlat && <Num label={f.gpPerDay ? 'Days' : 'Miles'} value={amount} onChange={(v) => setAmount(Math.max(0, Math.round(v)))} min={0} width={5} />}
+        <Num label="Passengers" value={people} onChange={(v) => setPeople(Math.max(1, Math.round(v)))} min={1} width={3} />
+      </div>
+      <button className="small" onClick={() => dispatch((st, cx) => E.payForService(st, cx, payers, fareGp, `${f.label.replace(/ \(.*\)/, '')} for ${people}`))}>
+        Pay {fmtGp(fareGp)}
+      </button>
+      <h3>Spellcasting</h3>
+      <div className="form-row">
+        <Select label="Settlement" value={here} onChange={setHere} options={[{ value: 'village', label: 'Village' }, { value: 'town', label: 'Town' }, { value: 'city', label: 'City' }]} />
+        <Select label="Spell" value={spell} onChange={setSpell} options={[...COMMON_SPELL_REQUESTS.map((x) => ({ value: x.name, label: `${x.name} (level ${x.level})` })), { value: '', label: 'Another spell…' }]} />
+        {!req && <Num label="Spell level" value={custom} onChange={(v) => setCustom(Math.max(0, Math.min(9, Math.round(v))))} min={0} max={9} width={2} />}
+      </div>
+      <p className="small">
+        {tier.level}: {fmtGp(tier.gp)}
+        {req?.componentGp ? ` + ${fmtGp(req.componentGp)} components` : ''}. {available ? 'A caster can be found here.' : `Only found in a ${tier.where === 'city' ? 'city' : 'town or city'}.`}
+        {req && <span className="muted"> {req.note}</span>}
+      </p>
+      <button className="small" disabled={!available} onClick={() => dispatch((st, cx) => E.payForService(st, cx, payers, spellGp, `having ${req ? req.name : `a level ${custom} spell`} cast`))}>
+        Pay {fmtGp(spellGp)}
+      </button>
+      <Rule>2024 PHB services. Higher-level casters are harder to find: level 3+ only in towns and cities, level 6+ only in cities. Spells with costly components add their cost. Daily food and lodging are already part of lifestyle expenses.</Rule>
     </Card>
   );
 }

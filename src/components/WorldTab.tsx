@@ -105,10 +105,10 @@ function FactionsCard() {
           <li key={f.id} className="facility">
             <div className="armor-row">
               <span>
-                <b>{f.name}</b> <Pill tone={f.renown > 0 ? 'good' : f.renown < 0 ? 'bad' : 'muted'}>Renown {f.renown}</Pill>
+                <b>{f.name}</b> <Pill tone={f.renown > 0 ? 'good' : 'muted'}>Renown {f.renown}</Pill> {renownPerk(f.renown) && <span className="small muted">{renownPerk(f.renown)}</span>}
               </span>
               <span className="btn-row tight">
-                <button className="small" onClick={() => (set(f.id, (x) => void (x.renown -= 1)), dispatch((st) => (E.log(st, `Renown with ${f.name} drops to ${f.renown - 1}.`, 'warn'), st)))}>
+                <button className="small" disabled={f.renown <= 0} onClick={() => (set(f.id, (x) => void (x.renown = Math.max(0, x.renown - 1))), dispatch((st) => (E.log(st, `Renown with ${f.name} drops to ${Math.max(0, f.renown - 1)}.`, 'warn'), st)))}>
                   −
                 </button>
                 <button className="small" onClick={() => (set(f.id, (x) => void (x.renown += 1)), dispatch((st) => (E.log(st, `Renown with ${f.name} rises to ${f.renown + 1}.`, 'good'), st)))}>
@@ -129,6 +129,9 @@ function FactionsCard() {
           Add faction
         </button>
       </div>
+      <Rule>
+        2024 DMG renown: 3+ means a respected member (members are Friendly, and offer lodging and food in dire need; perhaps a contact, safe house or gear discount). 10+ might open access to potions and scrolls, favors and backup. 50+ might mean a small army, a Rare magic item or a helpful spellcaster. Only serious offenses against the group cost renown, and it never drops below 0. A common pace is +1 for a mission that serves the group, or +1 per level with level-based renown.
+      </Rule>
     </Card>
   );
 }
@@ -291,4 +294,11 @@ function GiftsCard() {
       <Rule>Blessings and Boons last until the DM ends them. A Charm&apos;s uses appear with the character&apos;s limited uses on the Gear tab. Curses last until lifted, for example by Remove Curse.</Rule>
     </Card>
   );
+}
+
+function renownPerk(r: number): string {
+  if (r >= 50) return 'Could call on a small army, a Rare item or a spellcaster';
+  if (r >= 10) return 'Potions and scrolls, favors, backup';
+  if (r >= 3) return 'Respected: Friendly members, shelter in need';
+  return '';
 }

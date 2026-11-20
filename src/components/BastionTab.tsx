@@ -12,6 +12,7 @@ import {
   SIZE_SQUARES,
   SPECIAL_FACILITIES,
   specialSlots,
+  neglectLimit,
   type FacilitySize,
   type Order,
 } from '../rules/bastion';
@@ -113,6 +114,12 @@ function BastionCard({ b }: { b: Bastion }) {
         Owner: {owner ? `${owner.name}, level ${owner.level}` : 'unknown'} · {b.turns} turn(s) resolved · {b.goldSpent.toLocaleString()} GP spent on construction
         {b.lastEvent && <> · Last turn: {b.lastEvent}</>}
       </p>
+      {b.abandoned && <p className="bad-text small">Abandoned: the hirelings left after {b.neglectedTurns} turns without orders. Delete it and found a new Bastion when ready (it starts with two basic facilities).</p>}
+      {!b.abandoned && (b.neglectedTurns ?? 0) > 0 && (
+        <p className="warn-text small">
+          {b.neglectedTurns} turn(s) in a row without orders. At {neglectLimit(owner?.level ?? 1)} (the owner&apos;s level) the hirelings abandon it (2024 DMG).
+        </p>
+      )}
 
       <h3>
         Special facilities{' '}
@@ -139,7 +146,7 @@ function BastionCard({ b }: { b: Bastion }) {
       />
       <RemoteCard b={b} />
       <div className="btn-row">
-        <button className="primary" disabled={due < 1} onClick={() => dispatch((st, cx) => E.resolveBastionTurn(st, cx, b.id))}>
+        <button className="primary" disabled={due < 1 || !!b.abandoned} onClick={() => dispatch((st, cx) => E.resolveBastionTurn(st, cx, b.id))}>
           Resolve Bastion turn
         </button>
         <span className="muted small">

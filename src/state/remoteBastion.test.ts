@@ -53,3 +53,39 @@ describe('managing a Bastion from afar', () => {
     expect(s.bastions[0].ordersArrived).toBe(true);
   });
 });
+
+describe('Bastion neglect', () => {
+  it('hirelings abandon a Bastion after as many order-less turns as the owner’s level', () => {
+    let s = withBastion(24);
+    s.characters[0].level = 2;
+    for (let i = 0; i < 2; i++) {
+      s.bastions[0].lastTurnDay = s.dayIndex - 7;
+      s = E.resolveBastionTurn(s, ctx(), s.bastions[0].id);
+    }
+    expect(s.bastions[0].abandoned).toBe(true);
+    const turns = s.bastions[0].turns;
+    s.bastions[0].lastTurnDay = s.dayIndex - 7;
+    expect(E.resolveBastionTurn(s, ctx(), s.bastions[0].id).bastions[0].turns).toBe(turns);
+  });
+
+  it('orders that arrive reset the count', () => {
+    let s = withBastion(24);
+    s.bastions[0].neglectedTurns = 3;
+    s.bastions[0].ordersArrived = true;
+    s.bastions[0].lastTurnDay = s.dayIndex - 7;
+    s = E.resolveBastionTurn(s, ctx(), s.bastions[0].id);
+    expect(s.bastions[0].neglectedTurns).toBe(0);
+  });
+});
+
+describe('potions and poison', () => {
+  it('rolls potion miscibility and harvests poison against DC 20', () => {
+    let s = withBastion(0);
+    s = E.mixPotions(s, ctx(0.995), 'Healing and Speed');
+    expect(s.log[0].text).toMatch(/d100 = 100.*permanent/);
+    s = E.harvestPoison(s, ctx(0.99), s.characters[0].id, 2, 'Giant Spider');
+    expect(s.characters[0].inventory.some((i) => i.name === 'Poison dose (Giant Spider)')).toBe(true);
+    s = E.harvestPoison(s, ctx(0.1), s.characters[0].id, 2, 'Wyvern');
+    expect(s.log[0].text).toMatch(/exposed to its poison/);
+  });
+});
