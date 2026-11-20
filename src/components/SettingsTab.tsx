@@ -97,6 +97,9 @@ function RulesCard() {
           daylight favors Radiant, night favors Necrotic, and humid swamp air favors Poison. The Underdark favors Necrotic and hinders Radiant. Favored means +1 damage per damage die, hindered means −1 per die
           (minimum 1).
         </Rule>
+        <Toggle checked={s.settings.noTimepiece} onChange={(v) => set('noTimepiece', v)} label="Nobody has a timepiece: show the time as nature's cues" />
+        <Rule>The header and the Time card show the part of the day (Dawn, Mid-morning, Dusk and so on) instead of the exact clock. The DM can peek at the exact time on the Time card.</Rule>
+        <Toggle checked={s.settings.poorVisibilityNav} onChange={(v) => set('poorVisibilityNav', v)} label="Heavy rain or snow, and darkness, each make navigating harder (+5 DC, table rule)" />
         <Toggle checked={s.settings.climateAdjustedPrecip} onChange={(v) => set('climateAdjustedPrecip', v)} label="Adjust the precipitation roll for climate (deserts drier, jungles wetter)" />
         <Rule>When this is off, the plain DMG d20 table is used everywhere.</Rule>
         <Toggle checked={s.settings.doubleWaterInHeat} onChange={(v) => set('doubleWaterInHeat', v)} label="Double water needs on days of 100 °F or hotter (2014 rule)" />

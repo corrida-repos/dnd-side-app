@@ -182,6 +182,9 @@ const SUN: Record<Season, [number, number]> = {
   autumn: [6.5, 18],
 };
 
+/** Sunrise and sunset in hours for a season. */
+export const sunTimes = (season: Season): [number, number] => SUN[season];
+
 /** Sunrise as minutes after midnight. */
 export const sunriseMinutes = (season: Season): number => Math.round(SUN[season][0] * 60);
 

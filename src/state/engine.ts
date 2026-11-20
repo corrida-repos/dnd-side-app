@@ -1,9 +1,11 @@
 import type { ActiveEffect, Activity, Ritual, Bastion, Character, ExhaustionCause, Facility, MagicItem, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
 import { BASIC_BUILD, BASTION_TURN_DAYS, ENLARGE, rollBastionEvent, SIZE_LABEL, SPECIAL_FACILITIES, type FacilitySize } from '../rules/bastion';
 import { d20, die, combineModes, rollExpr, signed, type Rng, type RollMode } from '../rules/dice';
-import { dateFromIndex, formatClock, formatDate, formatDuration, sunriseMinutes } from '../rules/calendar';
+import { dateFromIndex, formatClock, formatDate, formatDuration, lightAt, sunriseMinutes } from '../rules/calendar';
 import { EXPLORATION_TURN_MINUTES, LIGHT_WARNING_MINUTES, type EffectPreset } from '../rules/effects';
 import { divinationFailChance, SPELLBOOK_REPLACE } from '../rules/longterm';
+import { LOST_RECHECK_DIE, navigationDC } from '../rules/navigation';
+import { readSky, SKY_DC } from '../rules/skyclock';
 import { BUTCHER_DC, BUTCHER_MINUTES, isEdible, MEAT_LB, STRANGE_TYPES, yieldsHide, type Creature } from '../rules/hunting';
 import { FEED_GP_PER_DAY, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset } from '../rules/money';
 import { abilityMod, ATTUNE_AWAY_MINUTES, IDENTIFY_MINUTES, MAX_ATTUNED, RITUAL_EXTRA_MINUTES, WATCH_HOURS } from '../rules/upkeep';
@@ -633,6 +635,26 @@ export interface TravelOpts {
   pace: Pace;
   difficult: boolean;
   foragerIds: string[];
+  /** Who finds the way when the party leaves the road. */
+  navigatorId?: string | null;
+}
+
+/** The navigation DC right now, or null when following a road, river or coast. */
+export function currentNavigationDC(s: State) {
+  const dark = lightAt(s.minutes % MIN_PER_DAY, seasonOf(s)).phase === 'Night' || !!CLIMATES[s.weather.climate].noWeather;
+  return navigationDC(s.place.navigation, { heavyPrecip: s.weather.precip === 'heavy', dark, poorVisibilityRule: s.settings.poorVisibilityNav });
+}
+
+/** The navigator's Wisdom (Survival) check. Slow pace gives Advantage, Fast pace Disadvantage. */
+function navigate(s: State, ctx: Ctx, nav: Character, pace: Pace): boolean | null {
+  const { dc, reasons } = currentNavigationDC(s);
+  if (dc == null) return null;
+  const mode = combineModes(pace === 'slow' ? 'advantage' : 'normal', pace === 'fast' ? 'disadvantage' : 'normal');
+  const r = d20(mode, ctx.rng);
+  const mod = nav.survival - 2 * nav.exhaustion;
+  const ok = r.value + mod >= dc;
+  log(s, `${nav.name} navigates: Wisdom (Survival) ${r.rolls.join('/')} ${signed(mod)} = ${r.value + mod} against DC ${dc} (${reasons.join(', ')}). ${ok ? 'On course.' : 'The party strays off course without realising it.'}`, ok ? 'good' : 'warn');
+  return ok;
 }
 
 export const travel = act((d, ctx, o: TravelOpts) => {
@@ -644,11 +666,32 @@ export const travel = act((d, ctx, o: TravelOpts) => {
   const p = PACES[o.pace];
   const altitude = d.place.altitudeFt >= 10000;
   let miles = 0;
+  let offCourse = 0;
   log(d, `The party sets out at a ${o.pace} pace for ${o.hours} hour(s)${o.difficult ? ' over Difficult Terrain' : ''}. ${p.note}.`);
+  const navId = o.navigatorId === undefined ? d.travel.navigatorId : o.navigatorId;
+  d.travel.navigatorId = navId ?? null;
+  const nav = navId ? charById(d, navId) : undefined;
+  if (nav && alive(nav) && !d.travel.lost && navigate(d, ctx, nav, o.pace) === false) {
+    d.travel.lost = true;
+    d.travel.lostRecheckIn = die(LOST_RECHECK_DIE, ctx.rng);
+  }
   for (let i = 0; i < o.hours; i++) {
     advanceMut(d, ctx, 60, 'travel');
     d.travel.hoursToday += altitude ? 2 : 1;
-    miles += p.mph * (o.difficult ? 0.5 : 1);
+    const step = p.mph * (o.difficult ? 0.5 : 1);
+    miles += step;
+    if (d.travel.lost) {
+      offCourse += step;
+      d.travel.lostRecheckIn -= 1;
+      if (d.travel.lostRecheckIn <= 0 && nav && alive(nav)) {
+        if (navigate(d, ctx, nav, o.pace) !== false) {
+          d.travel.lost = false;
+          log(d, `${nav.name} realises the party has gone astray and finds the way again, ${+(d.travel.milesOffCourse + offCourse).toFixed(1)} miles off course.`, 'good');
+          d.travel.milesOffCourse = 0;
+          offCourse = 0;
+        } else d.travel.lostRecheckIn = die(LOST_RECHECK_DIE, ctx.rng);
+      }
+    }
     if (d.travel.hoursToday > 8) {
       const dc = 10 + (d.travel.hoursToday - 8);
       for (const c of d.characters) {
@@ -657,6 +700,8 @@ export const travel = act((d, ctx, o: TravelOpts) => {
     }
   }
   d.travel.milesToday += miles;
+  if (d.travel.lost) d.travel.milesOffCourse += offCourse;
+  if (offCourse > 0 && d.travel.lost) log(d, `${+offCourse.toFixed(1)} of those miles went the wrong way. The party is still lost.`, 'warn');
   log(d, `Covered ${+miles.toFixed(1)} miles. That makes ${+d.travel.milesToday.toFixed(1)} miles and ${d.travel.hoursToday} travel hour(s) since the last Long Rest.`);
   for (const id of o.foragerIds) {
     const c = charById(d, id);
@@ -1586,3 +1631,31 @@ export function currentAffinities(s: State): Affinity[] {
   const indoors = s.place.shelter === 'building' || s.place.shelter === 'cave' || s.effects.some((e) => e.shelter);
   return weatherDamageAffinities({ weather: s.weather, tempNow: tempNow(s), minutes: s.minutes, sheltered: indoors });
 }
+
+// ---------------------------------------------------------------- navigation helpers and reading the sky
+
+export const foundTheWay = act((d) => {
+  if (!d.travel.lost) return;
+  log(d, `The party finds the way again after ${+d.travel.milesOffCourse.toFixed(1)} miles off course.`, 'good');
+  d.travel.lost = false;
+  d.travel.milesOffCourse = 0;
+  d.travel.lostRecheckIn = 0;
+});
+
+/** Judging the hour from the sun, stars and nature: Wisdom (Survival) check (table rule). */
+export const readTheSky = act((d, ctx, charId: string) => {
+  const c = charById(d, charId);
+  if (!c) return;
+  const underground = !!CLIMATES[d.weather.climate].noWeather;
+  const sky = readSky(d.minutes % MIN_PER_DAY, seasonOf(d), d.weather, underground);
+  const dc = SKY_DC[sky.view];
+  const r = d20('normal', ctx.rng);
+  const total = r.value + c.survival - 2 * c.exhaustion;
+  const trueHour = Math.round(d.minutes / 60) % 24;
+  const guess = total >= dc ? trueHour : (trueHour + (ctx.rng() < 0.5 ? -1 : 1) * die(4, ctx.rng) + 24) % 24;
+  log(
+    d,
+    `${c.name} reads the ${underground ? 'darkness' : 'sky'}: Wisdom (Survival) ${r.value} ${signed(c.survival - 2 * c.exhaustion)} = ${total} against DC ${dc}. They reckon it's about ${String(guess).padStart(2, '0')}:00${total >= dc ? ' (right to within the hour)' : ` (wrong: it's really about ${String(trueHour).padStart(2, '0')}:00)`}.`,
+    total >= dc ? 'good' : 'warn',
+  );
+});

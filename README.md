@@ -32,6 +32,8 @@ A time, place and survival tracker for D&D 5.5e (the 2024 *Player's Handbook* an
 | **Hunting** | Pick a kill from built-in game animals or any creature in a 5etools bestiary you import. Butchering gives raw meat by size (table rule: Tiny 1 lb up to Gargantuan 4,000 lb) into the camp stores, with an optional DC 10 Survival check to avoid wasting half. Big beasts leave hides for crafting, and constructs, elementals, oozes and undead give nothing. |
 | **Crafting materials** | A stash of materials with amounts and values. Projects can use them, and their value counts toward the cost, with the rest paid in gold. |
 | **Renown, fear and stress** | Per-character trackers with reasons logged. Stress and Fear show with the debuffs, and a Long Rest eases each by an amount you choose. |
+| **Getting lost** | Off-road travel calls for a navigator's Wisdom (Survival) check against the terrain: DC 5 for grassland, 10 for arctic, desert, hills or sea under clear skies, and 15 for forest, jungle, swamp, mountains or sea under clouds. Roads, rivers and coasts need no check. Slow pace gives Advantage and fast pace Disadvantage, and (table rule) heavy rain or snow and darkness each add +5. On a failure the party wanders off course unknowingly, and the navigator can try again every 1d6 travel hours. |
+| **Telling time by nature** | Each part of the day has its sky cues (shadows, birdsong, dawn colors, stars). They get vaguer under cloud and vanish underground. "No timepiece" mode shows these cues instead of the clock (the DM can peek), and a "Read the sky" Wisdom (Survival) check (DC 10 clear, 15 overcast, 20 underground) gives a guess that's off by 1d4 hours on a failure. |
 | **Chronicle** | A searchable log of every roll and event. |
 
 ## Deployment

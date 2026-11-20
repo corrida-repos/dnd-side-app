@@ -840,3 +840,25 @@ td {
   gap: 2px;
   margin: 2px 0;
 }
+
+.sky {
+  margin-top: 8px;
+  padding: 6px 10px;
+  background: var(--surface-2);
+  border-radius: 8px;
+}
+.sky p {
+  margin: 0 0 4px;
+}
+
+select {
+  max-width: 100%;
+  text-overflow: ellipsis;
+}
+.field {
+  min-width: 0;
+  max-width: 100%;
+}
+.form-row > * {
+  max-width: 100%;
+}

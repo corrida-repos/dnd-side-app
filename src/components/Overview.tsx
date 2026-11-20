@@ -7,6 +7,8 @@ import { ABUNDANCE_LABEL, PACES, foodNeedLb, waterNeedPints, fmtLb, fmtWater } f
 import { Card, Meter, Num, Pill, Select, Text, Toggle } from './common';
 import { Debuffs } from './Debuffs';
 import type { Abundance, Pace, Shelter, WaterQuality } from '../state/types';
+import { NAV_LABEL, NAV_FOR_CLIMATE, type NavTerrain } from '../rules/navigation';
+import { readSky, rangeLabel } from '../rules/skyclock';
 
 export function Overview() {
   return (
@@ -28,12 +30,21 @@ function ClockCard() {
   const [custom, setCustom] = useState(30);
   const lr = E.canLongRest(s);
   const adv = (m: number) => dispatch((st, c) => E.advance(st, c, m, 'camp'));
+  const [peek, setPeek] = useState(false);
+  const sky = readSky(s.minutes % 1440, E.seasonOf(s), s.weather, !!CLIMATES[s.weather.climate].noWeather);
+  const hidden = s.settings.noTimepiece && !peek;
   return (
     <Card title="Time" className="span-2">
       <div className="clock">
-        <div className="clock-time">{formatClock(s.minutes)}</div>
+        <div className="clock-time">{hidden ? sky.phase : formatClock(s.minutes)}</div>
         <div className="clock-date">{formatDate(s.calendar, s.startYear, s.dayIndex)}</div>
+        {s.settings.noTimepiece && (
+          <button className="ghost small" onClick={() => setPeek(!peek)} title="For the DM: show or hide the exact clock">
+            {peek ? 'Hide exact time' : 'DM: show exact time'}
+          </button>
+        )}
       </div>
+      <SkyLine />
       <div className="btn-row">
         <button onClick={() => adv(10)}>+10 min</button>
         <button onClick={() => adv(60)}>+1 hour</button>
@@ -59,6 +70,29 @@ function ClockCard() {
       <LongRestTracker />
       <RestPlans />
     </Card>
+  );
+}
+
+function SkyLine() {
+  const s = useGame();
+  const sky = readSky(s.minutes % 1440, E.seasonOf(s), s.weather, !!CLIMATES[s.weather.climate].noWeather);
+  const pcs = s.characters.filter((c) => c.kind !== 'mount' && c.diedAt == null);
+  const [who, setWho] = useState(pcs[0]?.id ?? '');
+  return (
+    <div className="sky">
+      <p className="small">
+        <b>
+          {sky.phase} ({rangeLabel(sky)})
+        </b>
+        : {sky.cue}
+      </p>
+      <div className="btn-row tight">
+        <Select value={who} onChange={setWho} options={pcs.map((c) => ({ value: c.id, label: c.name }))} />
+        <button className="small" disabled={!who} onClick={() => dispatch((st, cx) => E.readTheSky(st, cx, who))}>
+          Read the sky (Survival DC {({ clear: 10, overcast: 15, none: 20 } as const)[sky.view]})
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -362,6 +396,8 @@ function TravelCard() {
   const [pace, setPace] = useState<Pace>(s.travel.pace);
   const [difficult, setDifficult] = useState(false);
   const [foragers, setForagers] = useState<string[]>([]);
+  const [navigator, setNavigator] = useState<string>(s.travel.navigatorId ?? s.characters.filter((c) => c.kind !== 'mount').sort((a, b) => b.survival - a.survival)[0]?.id ?? '');
+  const nav = E.currentNavigationDC(s);
   const p = PACES[pace];
   const miles = hours * p.mph * (difficult ? 0.5 : 1);
   const counted = s.travel.hoursToday + hours * (s.place.altitudeFt >= 10000 ? 2 : 1);
@@ -392,6 +428,31 @@ function TravelCard() {
         )}
         .
       </p>
+      <div className="form-row">
+        <Select
+          label="Navigator"
+          value={navigator}
+          onChange={setNavigator}
+          options={[{ value: '', label: 'Nobody (no check)' }, ...s.characters.filter((c) => c.kind !== 'mount').map((c) => ({ value: c.id, label: `${c.name} (Survival ${c.survival >= 0 ? '+' : ''}${c.survival})` }))]}
+        />
+        <span className="small">
+          {nav.dc == null ? (
+            <span className="muted">Following a road, river or coast: no check needed.</span>
+          ) : (
+            <>
+              Navigation: <b>DC {nav.dc}</b> <span className="muted">({nav.reasons.join(', ')})</span>
+            </>
+          )}
+        </span>
+      </div>
+      {s.travel.lost && (
+        <p className="small bad-text">
+          The party is lost: {+s.travel.milesOffCourse.toFixed(1)} miles off course so far. The navigator can try again in {Math.max(0, s.travel.lostRecheckIn)} travel hour(s).{' '}
+          <button className="ghost small" onClick={() => dispatch(E.foundTheWay)}>
+            Found the way
+          </button>
+        </p>
+      )}
       <div className="field">
         <span className="field-label">Forage along the way (Wisdom (Survival), DC {({ abundant: 10, limited: 15, scarce: 20 } as const)[s.place.forage]})</span>
         <div className="chips">
@@ -406,7 +467,7 @@ function TravelCard() {
         </div>
       </div>
       <div className="btn-row">
-        <button className="primary" onClick={() => dispatch((st, c) => E.travel(st, c, { hours, pace, difficult, foragerIds: foragers }))}>
+        <button className="primary" onClick={() => dispatch((st, c) => E.travel(st, c, { hours, pace, difficult, foragerIds: foragers, navigatorId: navigator || null }))}>
           Travel {hours} h
         </button>
         <button className="ghost" onClick={() => edit((d) => ((d.travel.hoursToday = 0), (d.travel.milesToday = 0)))}>
@@ -460,6 +521,17 @@ function PlaceCard() {
           onChange={(v: Abundance) => set({ forage: v })}
           options={(['abundant', 'limited', 'scarce'] as Abundance[]).map((k) => ({ value: k, label: ABUNDANCE_LABEL[k] }))}
         />
+        <Select
+          label="Finding the way"
+          value={s.place.navigation}
+          onChange={(v: NavTerrain) => set({ navigation: v })}
+          options={(Object.keys(NAV_LABEL) as NavTerrain[]).map((k) => ({ value: k, label: NAV_LABEL[k] }))}
+        />
+        {s.place.navigation === 'road' && NAV_FOR_CLIMATE[s.place.climate] !== 'road' && (
+          <button className="ghost small" onClick={() => set({ navigation: NAV_FOR_CLIMATE[s.place.climate] })}>
+            Off the road here: {NAV_LABEL[NAV_FOR_CLIMATE[s.place.climate]]}
+          </button>
+        )}
         <Toggle checked={s.place.settlement} onChange={(v) => set({ settlement: v })} label="Town or city (lifestyle covers meals)" />
         <Toggle checked={s.place.waterSource} onChange={(v) => set({ waterSource: v })} label="Water source nearby" />
         {s.place.waterSource && (

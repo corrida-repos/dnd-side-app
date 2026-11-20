@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { useGame } from './state/store';
 import * as E from './state/engine';
 import { formatClock, formatDate, formatDuration, lightAt } from './rules/calendar';
-import { weatherSummary } from './rules/weather';
+import { weatherSummary, CLIMATES } from './rules/weather';
+import { readSky } from './rules/skyclock';
 import { Overview } from './components/Overview';
 import { PartyTab } from './components/PartyTab';
 import { CampTab } from './components/CampTab';
@@ -55,6 +56,7 @@ export function App() {
   }, [tab]);
   const t = E.tempNow(s);
   const light = lightAt(s.minutes, E.seasonOf(s));
+  const sky = readSky(s.minutes % 1440, E.seasonOf(s), s.weather, !!CLIMATES[s.weather.climate].noWeather);
   const Active = TABS.find((x) => x.id === tab)!.el;
   const pending = s.pending.length;
   const restWait = E.minutesUntilLongRest(s);
@@ -73,8 +75,14 @@ export function App() {
           </span>
         </div>
         <div className="status">
-          <span className="status-item">
-            <b>{formatClock(s.minutes)}</b> {light.phase}
+          <span className="status-item" title={s.settings.noTimepiece ? 'No timepiece: the sky is the only clock' : undefined}>
+            {s.settings.noTimepiece ? (
+              <b>{sky.phase}</b>
+            ) : (
+              <>
+                <b>{formatClock(s.minutes)}</b> {light.phase}
+              </>
+            )}
           </span>
           <span className="status-item">{formatDate(s.calendar, s.startYear, s.dayIndex)}</span>
           <span className={`status-item ${t <= 0 ? 'cold' : t >= 100 ? 'hot' : ''}`}>

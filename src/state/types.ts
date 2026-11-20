@@ -7,6 +7,7 @@ import type { EffectKind } from '../rules/effects';
 import type { Lifestyle } from '../rules/money';
 import type { Rarity } from '../rules/crafting';
 import type { Creature } from '../rules/hunting';
+import type { NavTerrain } from '../rules/navigation';
 
 export type Season = 'winter' | 'spring' | 'summer' | 'autumn';
 export type Size = 'Tiny' | 'Small' | 'Medium' | 'Large' | 'Huge' | 'Gargantuan';
@@ -228,6 +229,8 @@ export interface Place {
   waterQuality: WaterQuality;
   /** In a town or city: lifestyle expenses are charged and cover meals. */
   settlement: boolean;
+  /** How hard it is to find the way here. */
+  navigation: NavTerrain;
 }
 
 export interface Fire {
@@ -361,6 +364,10 @@ export interface Settings {
   fearPerLongRest: number;
   /** Table rule: weather favors or hinders certain damage types (+1 or -1 per damage die). */
   weatherDamage: boolean;
+  /** Nobody has a timepiece: show the time as nature's cues instead of a clock. */
+  noTimepiece: boolean;
+  /** Table rule: heavy precipitation and darkness each add +5 to the navigation DC. */
+  poorVisibilityNav: boolean;
 }
 
 export interface Travel {
@@ -368,6 +375,12 @@ export interface Travel {
   /** Hours counted toward the forced march limit since the last Long Rest. */
   hoursToday: number;
   milesToday: number;
+  /** The party has strayed off course without realising it. */
+  lost: boolean;
+  /** Travel hours left before the navigator can try to get their bearings again. */
+  lostRecheckIn: number;
+  milesOffCourse: number;
+  navigatorId: string | null;
 }
 
 export interface State {
