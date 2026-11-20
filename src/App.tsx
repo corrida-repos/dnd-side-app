@@ -12,6 +12,7 @@ import { BastionTab } from './components/BastionTab';
 import { GearTab } from './components/GearTab';
 import { EffectsTab } from './components/EffectsTab';
 import { MoneyTab } from './components/MoneyTab';
+import { WorldTab } from './components/WorldTab';
 import { LogTab } from './components/LogTab';
 import { SettingsTab } from './components/SettingsTab';
 
@@ -25,6 +26,7 @@ const TABS = [
   { id: 'money', label: 'Money & Mounts', el: MoneyTab },
   { id: 'downtime', label: 'Downtime', el: DowntimeTab },
   { id: 'bastions', label: 'Bastions', el: BastionTab },
+  { id: 'world', label: 'World', el: WorldTab },
   { id: 'log', label: 'Chronicle', el: LogTab },
   { id: 'settings', label: 'Settings', el: SettingsTab },
 ] as const;

@@ -17,7 +17,7 @@ import {
 } from '../rules/crafting';
 import { Card, Meter, Num, Select, Text, Toggle, Rule } from './common';
 import { MAGIC_ITEM_VALUE, fmtGp } from '../rules/money';
-import { SPELLBOOK_COPY } from '../rules/longterm';
+import { SPELLBOOK_COPY, ACTIVITY_PRESETS } from '../rules/longterm';
 
 export function DowntimeTab() {
   const s = useGame();
@@ -161,7 +161,15 @@ function NewProject() {
       break;
     }
     default:
-      calc = { days, gp: cost, label: name || 'Downtime activity', note: 'Set the time and cost with your DM.' };
+      calc = {
+        days,
+        gp: cost,
+        label: name || 'Downtime activity',
+        note: (() => {
+          const a = ACTIVITY_PRESETS.find((x) => x.name === name);
+          return a ? `Check when it's done: ${a.check}. The DM decides the outcome. These times and costs are suggestions.` : 'Set the time and cost with your DM.';
+        })(),
+      };
   }
   const cal = calendarDays(calc.days, crafters.length);
 
@@ -218,6 +226,19 @@ function NewProject() {
         )}
         {kind === 'activity' && (
           <>
+            <Select
+              label="Activity"
+              value={ACTIVITY_PRESETS.some((a) => a.name === name) ? name : ''}
+              onChange={(v) => {
+                const a = ACTIVITY_PRESETS.find((x) => x.name === v);
+                if (a) {
+                  setName(a.name);
+                  setDays(a.days);
+                  setCost(a.gp);
+                }
+              }}
+              options={[{ value: '', label: 'Custom…' }, ...ACTIVITY_PRESETS.map((a) => ({ value: a.name, label: a.name }))]}
+            />
             <Num label="Workdays" value={days} onChange={(v) => setDays(Math.max(1, Math.round(v)))} min={1} width={4} />
             <Num label="Cost" value={cost} onChange={setCost} min={0} suffix="GP" width={6} />
           </>
@@ -247,7 +268,7 @@ function NewProject() {
             daysRequired: calc.days,
             daysDone: 0,
             costGp: trade ? 0 : calc.gp,
-            notes: '',
+            notes: kind === 'activity' ? (ACTIVITY_PRESETS.find((a) => a.name === name)?.check ?? '') : '',
             done: false,
             ...(trade ? { rarity, dealGp: calc.gp } : {}),
             ...(kind === 'spellcopy' ? { spell: { name: spellName.trim() || 'Unnamed spell', level: spellLevel } } : {}),

@@ -88,6 +88,31 @@ export interface ActiveEffect {
   notes: string;
 }
 
+export interface Ritual {
+  id: string;
+  spell: string;
+  place: string;
+  casterId: string | null;
+  requiredDays: number;
+  streak: number;
+  lastCastDay: number | null;
+  permanent: boolean;
+}
+
+export interface Faction {
+  id: string;
+  name: string;
+  renown: number;
+  notes: string;
+}
+
+export interface Holiday {
+  id: string;
+  name: string;
+  monthIndex: number;
+  day: number;
+}
+
 export interface Character {
   id: string;
   /** Mounts and animals use the same survival rules but skip spells, tasks and watches. */
@@ -110,6 +135,12 @@ export interface Character {
   passivePerception: number;
   items: MagicItem[];
   resources: Resource[];
+  /** Absolute minute of death, or null while alive. */
+  diedAt: number | null;
+  /** Minutes spent dead under Gentle Repose, which don't count toward resurrection limits. */
+  reposeMinutes: number;
+  /** Divination castings since the last Long Rest, by spell name. */
+  divinationCasts: Record<string, number>;
   /** What the character focuses on during the next rest: attuning, identifying or ending attunement. */
   restFocus: RestFocus | null;
   wisMod: number;
@@ -299,6 +330,8 @@ export interface Settings {
   exploreEncounterOn: number;
   /** Charge crafting, construction, lifestyle and wages to characters' gold. */
   chargeCosts: boolean;
+  /** Shifts the moon cycle so its phases match your campaign. */
+  moonOffset: number;
 }
 
 export interface Travel {
@@ -334,4 +367,7 @@ export interface State {
   watchOrder: string[];
   effects: ActiveEffect[];
   hirelings: Hireling[];
+  rituals: Ritual[];
+  factions: Faction[];
+  holidays: Holiday[];
 }

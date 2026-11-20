@@ -115,6 +115,11 @@ export function formatClock(minutes: number): string {
 }
 
 export function formatDuration(minutes: number): string {
+  if (minutes >= 24 * 60) {
+    const days = Math.floor(minutes / (24 * 60));
+    const hours = Math.floor((minutes % (24 * 60)) / 60);
+    return hours ? `${days} d ${hours} h` : `${days} d`;
+  }
   const h = Math.floor(minutes / 60);
   const mm = minutes % 60;
   if (!h) return `${mm} min`;

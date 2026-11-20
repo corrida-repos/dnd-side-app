@@ -1,0 +1,232 @@
+import { useState } from 'react';
+import { useGame, dispatch, edit } from '../state/store';
+import * as E from '../state/engine';
+import { uid } from '../state/defaults';
+import { dateFromIndex, formatDuration } from '../rules/calendar';
+import { DIVINATION_SPELLS, divinationFailChance, moonPhase, RESURRECTION_SPELLS, RITUAL_PRESETS } from '../rules/longterm';
+import { Card, Meter, Num, Pill, Select, Text, Rule } from './common';
+
+export function WorldTab() {
+  return (
+    <div className="grid">
+      <SkyCard />
+      <FactionsCard />
+      <RitualsCard />
+      <DeathCard />
+      <DivinationCard />
+    </div>
+  );
+}
+
+function SkyCard() {
+  const s = useGame();
+  const today = dateFromIndex(s.calendar, s.startYear, s.dayIndex);
+  const moon = moonPhase(s.dayIndex, s.settings.moonOffset);
+  const [name, setName] = useState('');
+  const [month, setMonth] = useState(0);
+  const [day, setDay] = useState(1);
+  const yearLen = s.calendar.months.reduce((a, m) => a + m.days, 0);
+  const upcoming = s.holidays
+    .map((h) => {
+      const start = s.calendar.months.slice(0, h.monthIndex).reduce((a, m) => a + m.days, 0) + h.day - 1;
+      const inDays = (start - today.dayOfYear + yearLen) % yearLen;
+      return { ...h, inDays };
+    })
+    .sort((a, b) => a.inDays - b.inDays);
+  const todays = [...(today.month.festival ? [today.month.name] : []), ...upcoming.filter((h) => h.inDays === 0).map((h) => h.name)];
+  return (
+    <Card title="Calendar, moon and holidays">
+      <p>
+        <span className="moon" style={{ ['--lit' as string]: `${Math.round((1 - Math.abs(moon.fraction - 0.5) * 2) * 100)}%` }} aria-hidden /> <b>{moon.name}</b>
+        <span className="muted small"> · {moon.daysToFull === 0 ? 'full tonight' : `full moon in ${moon.daysToFull} day(s)`}</span>
+      </p>
+      <p className="small">
+        Season: <b>{today.month.season}</b>
+        {todays.length > 0 && (
+          <>
+            {' '}
+            · Today: <Pill tone="good">{todays.join(', ')}</Pill>
+          </>
+        )}
+      </p>
+      <div className="form-row">
+        <Num label="Moon offset (days)" value={s.settings.moonOffset} onChange={(v) => edit((d) => void (d.settings.moonOffset = Math.round(v)))} width={3} />
+      </div>
+      <h3>Holidays and events</h3>
+      {upcoming.length === 0 && <p className="muted small">None added yet. Festival days in the calendar show up automatically.</p>}
+      <ul className="plain small">
+        {upcoming.map((h) => (
+          <li key={h.id} className="armor-row">
+            <span>
+              <b>{h.name}</b> · {h.day} {s.calendar.months[h.monthIndex]?.name} · {h.inDays === 0 ? 'today' : `in ${h.inDays} day(s)`}
+            </span>
+            <button className="ghost tiny" aria-label={`Remove ${h.name}`} onClick={() => edit((d) => void (d.holidays = d.holidays.filter((x) => x.id !== h.id)))}>
+              ✕
+            </button>
+          </li>
+        ))}
+      </ul>
+      <div className="form-row">
+        <Text label="Name" value={name} onChange={setName} placeholder="e.g. Harvest fair in Daggerford" />
+        <Select label="Month" value={String(month)} onChange={(v) => setMonth(Number(v))} options={s.calendar.months.map((m, i) => ({ value: String(i), label: m.name }))} />
+        <Num label="Day" value={day} onChange={(v) => setDay(Math.max(1, Math.round(v)))} min={1} max={s.calendar.months[month]?.days ?? 30} width={2} />
+      </div>
+      <button disabled={!name.trim()} onClick={() => (edit((d) => void d.holidays.push({ id: uid(), name: name.trim(), monthIndex: month, day })), setName(''))}>
+        Add
+      </button>
+    </Card>
+  );
+}
+
+function FactionsCard() {
+  const s = useGame();
+  const [name, setName] = useState('');
+  const set = (id: string, fn: (f: (typeof s.factions)[number]) => void) => edit((d) => fn(d.factions.find((x) => x.id === id)!));
+  return (
+    <Card title="Factions and renown">
+      {s.factions.length === 0 && <p className="muted small">No factions tracked yet.</p>}
+      <ul className="plain">
+        {s.factions.map((f) => (
+          <li key={f.id} className="facility">
+            <div className="armor-row">
+              <span>
+                <b>{f.name}</b> <Pill tone={f.renown > 0 ? 'good' : f.renown < 0 ? 'bad' : 'muted'}>Renown {f.renown}</Pill>
+              </span>
+              <span className="btn-row tight">
+                <button className="small" onClick={() => (set(f.id, (x) => void (x.renown -= 1)), dispatch((st) => (E.log(st, `Renown with ${f.name} drops to ${f.renown - 1}.`, 'warn'), st)))}>
+                  −
+                </button>
+                <button className="small" onClick={() => (set(f.id, (x) => void (x.renown += 1)), dispatch((st) => (E.log(st, `Renown with ${f.name} rises to ${f.renown + 1}.`, 'good'), st)))}>
+                  +
+                </button>
+                <button className="ghost tiny" aria-label={`Remove ${f.name}`} onClick={() => edit((d) => void (d.factions = d.factions.filter((x) => x.id !== f.id)))}>
+                  ✕
+                </button>
+              </span>
+            </div>
+            <Text value={f.notes} onChange={(v) => set(f.id, (x) => void (x.notes = v))} placeholder="Notes: contacts, favors owed, rumors" />
+          </li>
+        ))}
+      </ul>
+      <div className="btn-row">
+        <Text value={name} onChange={setName} placeholder="e.g. Harpers, Zhentarim" />
+        <button disabled={!name.trim()} onClick={() => (edit((d) => void d.factions.push({ id: uid(), name: name.trim(), renown: 0, notes: '' })), setName(''))}>
+          Add faction
+        </button>
+      </div>
+    </Card>
+  );
+}
+
+function RitualsCard() {
+  const s = useGame();
+  const [spell, setSpell] = useState(RITUAL_PRESETS[0].spell);
+  const [place, setPlace] = useState('');
+  const [caster, setCaster] = useState('');
+  const preset = RITUAL_PRESETS.find((r) => r.spell === spell)!;
+  return (
+    <Card title="Spells cast every day">
+      <p className="small muted">Some spells become permanent when cast in the same place every day. Missing a single day starts the count again.</p>
+      <ul className="plain">
+        {s.rituals.map((r) => (
+          <li key={r.id} className="facility">
+            <div className="armor-row">
+              <span>
+                <b>{r.spell}</b> <span className="muted small">{r.place}</span>{' '}
+                {r.permanent ? <Pill tone="good">Permanent</Pill> : r.lastCastDay === s.dayIndex ? <Pill tone="good">Cast today</Pill> : <Pill tone="warn">Not cast today</Pill>}
+              </span>
+              <span className="btn-row tight">
+                {!r.permanent && (
+                  <button className="small primary" disabled={r.lastCastDay === s.dayIndex} onClick={() => dispatch((st, cx) => E.castRitual(st, cx, r.id))}>
+                    Cast today
+                  </button>
+                )}
+                <button className="ghost tiny" aria-label={`Remove ${r.spell}`} onClick={() => edit((d) => void (d.rituals = d.rituals.filter((x) => x.id !== r.id)))}>
+                  ✕
+                </button>
+              </span>
+            </div>
+            {!r.permanent && (
+              <div className="small">
+                <Meter value={r.streak} max={r.requiredDays} tone="good" /> {r.streak}/{r.requiredDays} days in a row
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+      <div className="form-row">
+        <Select label="Spell" value={spell} onChange={setSpell} options={RITUAL_PRESETS.map((r) => ({ value: r.spell, label: `${r.spell} (${r.days} days)` }))} />
+        <Text label="Place" value={place} onChange={setPlace} placeholder="e.g. the tower's top floor" />
+        <Select label="Caster" value={caster} onChange={setCaster} options={[{ value: '', label: 'Anyone' }, ...s.characters.filter((c) => c.kind !== 'mount').map((c) => ({ value: c.id, label: c.name }))]} />
+      </div>
+      <button onClick={() => (dispatch((st, cx) => E.addRitual(st, cx, preset.spell, preset.days, place.trim(), caster || null)), setPlace(''))}>Start daily casting</button>
+      <Rule>For long castings and slow magic, such as Clone growing for 120 days or a Geas lasting 30 days, use timers on the Effects & Lights tab.</Rule>
+    </Card>
+  );
+}
+
+function DeathCard() {
+  const s = useGame();
+  const [who, setWho] = useState('');
+  const living = s.characters.filter((c) => c.diedAt == null);
+  const dead = s.characters.filter((c) => c.diedAt != null);
+  return (
+    <Card title="Death and resurrection">
+      {dead.length === 0 && <p className="muted small">Everyone is alive.</p>}
+      {dead.map((c) => {
+        const t = E.deadFor(s, c) ?? 0;
+        return (
+          <div key={c.id} className="facility">
+            <div className="armor-row">
+              <span>
+                <b>{c.name}</b> <Pill tone="bad">Dead {formatDuration(t)}</Pill>
+                {c.reposeMinutes > 0 && <span className="muted small"> ({formatDuration(c.reposeMinutes)} under Gentle Repose, not counted)</span>}
+              </span>
+              <button className="small good" onClick={() => dispatch((st, cx) => E.markDead(st, cx, c.id, false))}>
+                Brought back
+              </button>
+            </div>
+            <ul className="plain small">
+              {RESURRECTION_SPELLS.map((r) => (
+                <li key={r.spell} className={t <= r.limit ? 'good-text' : 'muted'}>
+                  {t <= r.limit ? '✓' : '✗'} {r.spell}: {r.note}
+                  {t <= r.limit && r.limit - t < 24 * 60 * 365 ? ` ${formatDuration(r.limit - t)} left.` : ''}
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })}
+      <div className="btn-row">
+        <Select value={who} onChange={setWho} options={[{ value: '', label: 'Who died?' }, ...living.map((c) => ({ value: c.id, label: c.name }))]} />
+        <button className="bad" disabled={!who} onClick={() => (dispatch((st, cx) => E.markDead(st, cx, who, true)), setWho(''))}>
+          Mark as dead
+        </button>
+      </div>
+      <Rule>Put a Gentle Repose timer on the body (Effects & Lights tab) and the days it lasts won&apos;t count toward these limits.</Rule>
+    </Card>
+  );
+}
+
+function DivinationCard() {
+  const s = useGame();
+  const casters = s.characters.filter((c) => c.kind !== 'mount' && c.diedAt == null);
+  const [who, setWho] = useState(casters[0]?.id ?? '');
+  const [spell, setSpell] = useState(DIVINATION_SPELLS[0]);
+  const c = casters.find((x) => x.id === who) ?? casters[0];
+  if (!c) return null;
+  const casts = c.divinationCasts[spell] ?? 0;
+  return (
+    <Card title="Divination limits">
+      <div className="form-row">
+        <Select label="Caster" value={c.id} onChange={setWho} options={casters.map((x) => ({ value: x.id, label: x.name }))} />
+        <Select label="Spell" value={spell} onChange={setSpell} options={DIVINATION_SPELLS} />
+      </div>
+      <p className="small">
+        Cast {casts} time(s) since the last Long Rest. The next casting has a <b>{divinationFailChance(casts)}%</b> chance of going wrong.
+      </p>
+      <button onClick={() => dispatch((st, cx) => E.castDivination(st, cx, c.id, spell))}>Cast {spell}</button>
+      <Rule>Each extra casting before a Long Rest adds a cumulative 25% chance of a random or missing answer. Counts reset when the caster finishes a Long Rest. Check the exact wording of each spell.</Rule>
+    </Card>
+  );
+}

@@ -823,3 +823,13 @@ td {
     overflow-x: visible;
   }
 }
+
+.moon {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  vertical-align: -3px;
+  background: radial-gradient(circle, #f5edd6 var(--lit), #3a342c calc(var(--lit) + 1%));
+  border: 1px solid var(--border);
+}

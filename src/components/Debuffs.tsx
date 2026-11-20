@@ -7,7 +7,7 @@ import { Pill } from './common';
 export function Debuffs({ c, now, empty = true }: { c: Character; now: number; empty?: boolean }) {
   const parts = exhaustionBreakdown(c);
   const items: JSX.Element[] = [];
-  if (c.exhaustion >= 6) items.push(<Pill key="dead" tone="bad">Dead (Exhaustion 6)</Pill>);
+  if (c.diedAt != null || c.exhaustion >= 6) items.push(<Pill key="dead" tone="bad">{c.exhaustion >= 6 ? 'Dead (Exhaustion 6)' : 'Dead'}</Pill>);
   else if (c.exhaustion > 0)
     items.push(
       <Pill key="exh" tone={c.exhaustion >= 4 ? 'bad' : 'warn'} title={exhaustionSummary(c.exhaustion)}>

@@ -119,19 +119,19 @@ These all happen during Short and Long Rests or at dawn, so they fit straight in
 
 ---
 
-## Phase 4: Long downtime and the wider world 📋
+## Phase 4: Long downtime and the wider world ✅
 
-### Wizard spellbook 📋
+### Wizard spellbook ✅
 - **Copying a spell** into a spellbook takes **2 hours and 50 GP per spell level**.
 - **Replacing a lost book**, for spells you already have prepared, takes 1 hour and 10 GP per spell level.
 - **To build:** a downtime project type that adds the spell to the Wizard's book when it finishes.
 
-### Other downtime activities 📋
+### Other downtime activities ✅
 - Carousing, crime, gambling, pit fighting, relaxation, religious service, research, and training for a tool or language.
 - Most of these take a set number of days and end with a check and a table roll.
 - **To build:** activity presets with their own time, cost and outcome tables, sitting next to crafting.
 
-### Spells that build up over days 💭
+### Spells that build up over days ✅
 - *Teleportation Circle*, *Guards and Wards*, *Mordenkainen's Private Sanctum*: permanent if cast in the same place every day for a year.
 - *Forbiddance*: permanent if cast every day for 30 days.
 - *Hallow*: 24 hours to cast.
@@ -139,20 +139,20 @@ These all happen during Short and Long Rests or at dawn, so they fit straight in
 - *Simulacrum*: 12 hours to cast.
 - **To build:** long-running magic projects with a day counter that warns if a day is missed.
 
-### Resurrection windows 💭
+### Resurrection windows ✅
 - Time since death decides which spell still works: *Revivify* within 1 minute, *Raise Dead* and *Reincarnate* within 10 days, *Resurrection* within 100 years.
 - *Gentle Repose* (10 days) stops the clock.
 - **To build:** time of death on the character, with a list of which spells still work.
 
-### Divination limits 💭
+### Divination limits ✅
 - *Augury*, *Commune* and *Divination* become unreliable when cast more than once before a Long Rest.
 - **To build:** cast counts that reset on a Long Rest, with the extra failure chance shown.
 
-### Curses and long effects 💭
+### Curses and long effects ✅
 - *Geas* (30 days), *Bestow Curse*, lycanthropy and similar.
 - **To build:** long timers in the same active-effects list.
 
-### World clock 💭
+### World clock ✅
 - Moon phases (Selûne), festivals and holy days, tides, and the changing seasons.
 - Faction renown and standing that change over weeks, news and rumors arriving on a schedule.
 
@@ -164,7 +164,7 @@ These all happen during Short and Long Rests or at dawn, so they fit straight in
 
 ---
 
-## Suggested build order
+## Build order (done)
 
 1. **Attunement and identifying.** Both are Short Rest focus activities, so they share one rest dialog.
 2. **Class resources, HP and Hit Point Dice.** Makes every rest worth pressing.

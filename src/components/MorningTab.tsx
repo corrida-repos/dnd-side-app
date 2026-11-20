@@ -203,7 +203,13 @@ function SpellPrep({ c }: { c: Character }) {
         <button className="primary" onClick={() => dispatch((st, cx) => E.finishPreparation(st, cx, c.id))}>
           Finish preparing
         </button>
+        {c.className === 'Wizard' && (
+          <button className="ghost small" title="1 hour and 10 GP per level of each prepared spell" onClick={() => confirm('Rewrite all prepared spells into a new spellbook?') && dispatch((st, cx) => E.replaceSpellbook(st, cx, c.id))}>
+            Replace a lost spellbook
+          </button>
+        )}
       </div>
+      {c.className === 'Wizard' && <Rule>Copy new spells into the spellbook from the Downtime tab (2 hours and 50 GP per spell level).</Rule>}
 
       <details>
         <summary>Add spells to {c.className === 'Wizard' ? 'spellbook' : 'the list'}</summary>

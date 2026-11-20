@@ -1,8 +1,9 @@
-import type { ActiveEffect, Activity, Bastion, Character, ExhaustionCause, Facility, MagicItem, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
+import type { ActiveEffect, Activity, Ritual, Bastion, Character, ExhaustionCause, Facility, MagicItem, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
 import { BASIC_BUILD, BASTION_TURN_DAYS, ENLARGE, rollBastionEvent, SIZE_LABEL, SPECIAL_FACILITIES, type FacilitySize } from '../rules/bastion';
 import { d20, die, combineModes, rollExpr, signed, type Rng, type RollMode } from '../rules/dice';
 import { dateFromIndex, formatClock, formatDate, formatDuration, sunriseMinutes } from '../rules/calendar';
 import { EXPLORATION_TURN_MINUTES, LIGHT_WARNING_MINUTES, type EffectPreset } from '../rules/effects';
+import { divinationFailChance, SPELLBOOK_REPLACE } from '../rules/longterm';
 import { FEED_GP_PER_DAY, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset } from '../rules/money';
 import { abilityMod, ATTUNE_AWAY_MINUTES, IDENTIFY_MINUTES, MAX_ATTUNED, RITUAL_EXTRA_MINUTES, WATCH_HOURS } from '../rules/upkeep';
 import { fireThreat, rollWeather, temperatureAt, CLIMATES } from '../rules/weather';
@@ -43,7 +44,7 @@ export const stamp = (s: State): string => `${formatDate(s.calendar, s.startYear
 export const seasonOf = (s: State) => dateFromIndex(s.calendar, s.startYear, s.dayIndex).month.season;
 export const tempNow = (s: State): number => temperatureAt(s.weather, s.minutes % MIN_PER_DAY);
 export const charById = (s: State, id: string): Character | undefined => s.characters.find((c) => c.id === id);
-const alive = (c: Character) => c.exhaustion < 6;
+const alive = (c: Character) => c.exhaustion < 6 && c.diedAt == null;
 
 export function log(s: State, text: string, tone: Tone = 'info'): void {
   s.log.unshift({ id: uid(), stamp: stamp(s), text, tone });
@@ -162,7 +163,10 @@ export function gainExhaustion(s: State, c: Character, n: number, why: string, c
   c.exhaustion = Math.min(6, c.exhaustion + add);
   c.exhaustionCauses = causes;
   log(s, `${c.name} gains ${n} Exhaustion level${n > 1 ? 's' : ''} from ${EXHAUSTION_CAUSE_LABEL[cause]} (${why}). Now level ${c.exhaustion}: ${exhaustionSummary(c.exhaustion)}.`, 'bad');
-  if (c.exhaustion >= 6) log(s, `${c.name} dies of exhaustion.`, 'bad');
+  if (c.exhaustion >= 6) {
+    c.diedAt = absNow(s);
+    log(s, `${c.name} dies of exhaustion.`, 'bad');
+  }
 }
 
 /** Removes the newest level that isn't locked by malnutrition or dehydration. Returns its cause, or null if none could go. */
@@ -284,6 +288,7 @@ function dailyCosts(s: State): void {
 
 function endOfDay(s: State, ctx: Ctx): void {
   dailyCosts(s);
+  checkRituals(s);
   const hotDay = s.weather.high >= 100;
   for (const c of s.characters) {
     if (!alive(c)) continue;
@@ -578,6 +583,7 @@ export const longRest = act((d, ctx, force = false) => {
       log(d, `${c.name} sleeps off the Food poisoning and is no longer Poisoned.`, 'good');
     }
     for (const t of c.tasks) if (t.daily) t.done = false;
+    c.divinationCasts = {};
     applyRestFocus(d, c);
     if (c.hp <= 0) {
       log(d, `${c.name} started the rest at 0 HP, so it doesn't restore HP or Hit Point Dice.`, 'warn');
@@ -1059,6 +1065,7 @@ function progress(s: State, p: Project): void {
   if (p.daysDone >= p.daysRequired) {
     p.done = true;
     log(s, `Downtime project complete: ${p.name}.`, 'good');
+    if (p.kind === 'activity' && p.notes) log(s, `${p.name} is done. Make the check: ${p.notes}. The DM decides the outcome.`);
     if (p.kind === 'buyMagic' && p.dealGp) payGold(s, p.charIds, p.dealGp, p.name);
     if (p.kind === 'sellMagic' && p.dealGp) receiveGold(s, p.charIds, p.dealGp, p.name);
     if (p.kind === 'spellcopy' && p.spell) {
@@ -1263,6 +1270,13 @@ const effectWho = (s: State, e: ActiveEffect): string => {
 
 function tickEffects(s: State, before: number): void {
   const now = absNow(s);
+  for (const e of s.effects) {
+    if (!/gentle repose/i.test(e.name)) continue;
+    for (const id of e.targetIds) {
+      const c = charById(s, id);
+      if (c && c.diedAt != null) c.reposeMinutes += now - before;
+    }
+  }
   const ended: ActiveEffect[] = [];
   for (const e of s.effects) {
     if (e.endsAt == null) continue;
@@ -1394,4 +1408,99 @@ export const adjustGold = act((d, _ctx, charId: string, amount: number, reason: 
   if (!c || !amount) return;
   c.gp = Math.round((c.gp + amount) * 100) / 100;
   log(d, `${c.name} ${amount > 0 ? 'gains' : 'spends'} ${fmtGp(Math.abs(amount))}${reason ? ` (${reason})` : ''}. Now ${fmtGp(c.gp)}.`, amount > 0 ? 'good' : 'info');
+});
+
+// ---------------------------------------------------------------- long-term magic, death, divination
+
+/** At midnight: a ritual that wasn't cast during the day that just ended loses its streak. */
+function checkRituals(s: State): void {
+  for (const r of s.rituals) {
+    if (r.permanent || r.streak === 0) continue;
+    if (r.lastCastDay !== s.dayIndex) {
+      log(s, `${r.spell} at ${r.place || 'its site'} was not cast today, so the ${r.streak}-day streak is lost. It starts again from day 1.`, 'warn');
+      r.streak = 0;
+    }
+  }
+}
+
+export const castRitual = act((d, _ctx, ritualId: string) => {
+  const r = d.rituals.find((x) => x.id === ritualId);
+  if (!r || r.permanent) return;
+  if (r.lastCastDay === d.dayIndex) {
+    log(d, `${r.spell} has already been cast today.`, 'warn');
+    return;
+  }
+  r.streak += 1;
+  r.lastCastDay = d.dayIndex;
+  const caster = r.casterId ? charById(d, r.casterId)?.name : null;
+  if (r.streak >= r.requiredDays) {
+    r.permanent = true;
+    log(d, `${caster ? `${caster} casts` : 'Cast:'} ${r.spell} at ${r.place || 'its site'} for the ${r.requiredDays}th day in a row. The effect is now permanent!`, 'good');
+  } else {
+    log(d, `${caster ? `${caster} casts` : 'Cast:'} ${r.spell} at ${r.place || 'its site'}: day ${r.streak} of ${r.requiredDays}.`);
+  }
+});
+
+export const addRitual = act((d, _ctx, spell: string, days: number, place: string, casterId: string | null) => {
+  d.rituals.push({ id: uid(), spell, place, casterId, requiredDays: days, streak: 0, lastCastDay: null, permanent: false } satisfies Ritual);
+  log(d, `Started a daily casting of ${spell}${place ? ` at ${place}` : ''}: ${days} days in a row makes it permanent.`);
+});
+
+export const markDead = act((d, _ctx, charId: string, dead: boolean) => {
+  const c = charById(d, charId);
+  if (!c) return;
+  if (dead) {
+    c.diedAt = absNow(d);
+    c.reposeMinutes = 0;
+    c.hp = 0;
+    log(d, `${c.name} has died.`, 'bad');
+  } else {
+    c.diedAt = null;
+    c.reposeMinutes = 0;
+    if (c.exhaustion >= 6) {
+      c.exhaustion = 5;
+      c.exhaustionCauses = causesOf(c);
+    }
+    c.hp = Math.max(1, c.hp);
+    log(d, `${c.name} is brought back to life!`, 'good');
+  }
+});
+
+/** Minutes dead that count toward resurrection limits (Gentle Repose time doesn't). */
+export function deadFor(s: State, c: Character): number | null {
+  return c.diedAt == null ? null : Math.max(0, absNow(s) - c.diedAt - c.reposeMinutes);
+}
+
+/** Casting Augury, Divination or Commune: each extra casting before a Long Rest adds a 25% chance it fails. */
+export const castDivination = act((d, ctx, charId: string, spell: string) => {
+  const c = charById(d, charId);
+  if (!c) return;
+  const before = c.divinationCasts[spell] ?? 0;
+  const chance = divinationFailChance(before);
+  c.divinationCasts = { ...c.divinationCasts, [spell]: before + 1 };
+  if (chance === 0) {
+    log(d, `${c.name} casts ${spell} (first time since their last Long Rest): the answer comes normally.`, 'good');
+    return;
+  }
+  const roll = die(100, ctx.rng);
+  const failed = roll <= chance;
+  log(
+    d,
+    `${c.name} casts ${spell} again before a Long Rest: ${chance}% chance it goes wrong, d100 = ${roll}. ${failed ? 'It fails or gives a random reading (see the spell).' : 'The answer comes normally.'}`,
+    failed ? 'warn' : 'good',
+  );
+});
+
+/** Replacing a lost spellbook: 1 hour and 10 GP per level of each prepared spell. */
+export const replaceSpellbook = act((d, ctx, charId: string) => {
+  const c = charById(d, charId);
+  if (!c) return;
+  const levels = c.spells.filter((x) => (x.prepared || x.alwaysPrepared) && x.level > 0).reduce((a, x) => a + x.level, 0);
+  if (!levels) {
+    log(d, `${c.name} has no prepared spells to rewrite.`, 'warn');
+    return;
+  }
+  advanceMut(d, ctx, levels * SPELLBOOK_REPLACE.hoursPerLevel * 60, 'work');
+  payGold(d, [c.id], levels * SPELLBOOK_REPLACE.gpPerLevel, 'a replacement spellbook');
+  log(d, `${c.name} rewrites their prepared spells into a new spellbook (${levels} hours).`, 'good');
 });
