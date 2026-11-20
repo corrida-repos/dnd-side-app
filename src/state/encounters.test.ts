@@ -101,6 +101,7 @@ describe('random encounters by location danger', () => {
   it('leaves out excluded creatures and adds imported ones', () => {
     const s = fresh((d) => {
       d.settings.srdEncounters = false;
+      d.settings.encounterBooks = [];
       d.bestiary = [{ name: 'Mire Lurker', size: 'Large', type: 'monstrosity', cr: '2', env: ['forest'], align: 'U' }];
     });
     const t = E.encounterTable(s);
@@ -114,9 +115,34 @@ describe('book switches', () => {
   it('leaves switched-off books out of the tables', () => {
     const s = fresh((d) => {
       d.settings.srdEncounters = false;
+      d.settings.encounterBooks = [];
       d.bestiary = [{ name: 'Mi-Go', size: 'Medium', type: 'plant', cr: '1', env: ['forest'], align: 'E', source: 'RHW' }];
     });
     expect(E.encounterTable(s).rows.some((r) => r.creature?.name === 'Mi-Go')).toBe(true);
     expect(E.encounterTable({ ...s, encounterSourcesOff: ['RHW'] }).rows.some((r) => r.creature)).toBe(false);
+  });
+});
+
+describe('built-in books', () => {
+  it('adds the core books by default, and the campaign books on request', () => {
+    const s = fresh((d) => (d.place.terrain = 'underdark'));
+    expect(s.settings.encounterBooks).toEqual(['XMM', 'MPMM', 'FRAiF']);
+    const names = new Set(E.encounterPool(s).map((c) => c.name));
+    expect(names.has('Drow House Captain')).toBe(true); // Monsters of the Multiverse
+    expect(names.has('Mi-Go')).toBe(false); // Ravenloft, off by default
+    const horror = new Set(E.encounterPool({ ...s, settings: { ...s.settings, encounterBooks: [...s.settings.encounterBooks, 'RHW'] } }).map((c) => c.name));
+    expect(horror.has('Mi-Go')).toBe(true);
+    const srdOnly = E.encounterPool({ ...s, settings: { ...s.settings, encounterBooks: [] } });
+    expect(srdOnly.every((c) => c.source === 'SRD 5.2')).toBe(true);
+  });
+
+  it('fills high-level tables', () => {
+    const s = fresh((d) => {
+      d.place.terrain = 'grassland';
+      d.place.danger = 'moderate';
+      d.characters = d.characters.map((c) => ({ ...c, level: 15 }));
+    });
+    const fights = E.encounterTable(s).rows.filter((r) => r.creature);
+    expect(fights.length).toBeGreaterThanOrEqual(6);
   });
 });

@@ -127,7 +127,7 @@ export function App() {
         <a href="https://creativecommons.org/licenses/by/4.0/legalcode" target="_blank" rel="noreferrer">
           CC BY 4.0
         </a>{' '}
-        license. Not affiliated with Wizards of the Coast or 5etools.
+        license. Random encounter tables also list creatures from other Dungeons &amp; Dragons books by name and Challenge Rating only, as a reference for owners of those books. Not affiliated with Wizards of the Coast or 5etools.
       </footer>
     </div>
   );

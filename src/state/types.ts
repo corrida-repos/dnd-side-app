@@ -677,6 +677,8 @@ export interface Settings {
   encounters: boolean;
   /** Use the built-in SRD 5.2 creatures for random encounter tables (imported bestiaries are always used). */
   srdEncounters: boolean;
+  /** Built-in creatures from other books (5etools source codes) used in the random encounter tables. */
+  encounterBooks: string[];
 }
 
 export interface Travel {

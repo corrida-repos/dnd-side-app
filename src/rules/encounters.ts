@@ -2,6 +2,7 @@ import type { Size } from '../state/types';
 import type { TerrainType } from './terrain';
 import { TERRAIN } from './terrain';
 import { SRD_CREATURES } from './encounterData';
+import { BOOK_CREATURES } from './bookData';
 import { die, rollExpr, type Rng } from './dice';
 
 // ---------------------------------------------------------------- danger and when to roll
@@ -95,11 +96,11 @@ export function checkModifiers(c: CheckConditions): CheckMod[] {
  * environment tags, aren't named individuals, and aren't already in the 2024 Monster Manual.
  */
 export const RECOMMENDED_BESTIARIES: { file: string; name: string; kind: 'core' | 'campaign' | 'skip'; why: string }[] = [
-  { file: 'bestiary-xmm.json', name: 'Monster Manual (2025)', kind: 'core', why: 'the rest of the 2024 Monster Manual, about 200 creatures beyond the built-in SRD ones. Load this first.' },
-  { file: 'bestiary-mpmm.json', name: 'Monsters of the Multiverse', kind: 'core', why: '227 creatures with environments: drow, duergar, gnolls, giants, hags, fiends and more. Fills almost every gap at levels 11–20.' },
-  { file: 'bestiary-fraif.json', name: 'Forgotten Realms: Adventures in Faerûn', kind: 'core', why: '32 creatures for 2024 rules: deep and spirit dragons, Lolth’s drow, araneas, rusted constructs, Zhentarim.' },
-  { file: 'bestiary-rhw.json', name: 'Ravenloft: The Horrors Within', kind: 'campaign', why: '47 horror creatures (star spawn, mi-go, strigoi, death’s heads). Load it for gothic or cosmic horror games; leave its book switched off otherwise.' },
-  { file: 'bestiary-au.json', name: 'Arcana Unleashed', kind: 'campaign', why: '18 creatures, mostly specialist archmages and living spells for magic-heavy cities.' },
+  { file: 'bestiary-xmm.json', name: 'Monster Manual (2025)', kind: 'core', why: 'the rest of the 2024 Monster Manual: 136 creatures beyond the SRD ones, with environments. Built in.' },
+  { file: 'bestiary-mpmm.json', name: 'Monsters of the Multiverse', kind: 'core', why: '227 creatures with environments: drow, duergar, gnolls, giants, hags, fiends and more. Fills almost every gap at levels 11–20. Built in.' },
+  { file: 'bestiary-fraif.json', name: 'Forgotten Realms: Adventures in Faerûn', kind: 'core', why: '32 creatures for 2024 rules: deep and spirit dragons, Lolth’s drow, araneas, rusted constructs, Zhentarim. Built in.' },
+  { file: 'bestiary-rhw.json', name: 'Ravenloft: The Horrors Within', kind: 'campaign', why: '47 horror creatures (star spawn, mi-go, strigoi, death’s heads). Built in, off by default: switch it on for gothic or cosmic horror games.' },
+  { file: 'bestiary-au.json', name: 'Arcana Unleashed', kind: 'campaign', why: '18 creatures, mostly specialist archmages and living spells for magic-heavy cities. Built in, off by default.' },
   { file: 'bestiary-wow.json', name: 'World of Warcraft', kind: 'skip', why: 'a crossover setting (murlocs, felguards, dragonflights). Only for that setting.' },
   { file: 'bestiary-mm.json, -vgm.json, -mtf.json', name: '2014 books', kind: 'skip', why: 'almost everything is reprinted in the 2024 Monster Manual or Monsters of the Multiverse; reprints are skipped automatically.' },
   { file: 'adventure files (cos, toa, skt…)', name: 'Adventures', kind: 'skip', why: 'their creatures have no environment tags, so they can be hunted but never appear in tables; many are named NPCs.' },
@@ -121,6 +122,19 @@ export interface EncounterCreature {
 const SIZE: Record<string, Size> = { T: 'Tiny', S: 'Small', M: 'Medium', L: 'Large', H: 'Huge', G: 'Gargantuan' };
 
 export const SRD_POOL: EncounterCreature[] = SRD_CREATURES.map(([name, cr, size, type, align, env, flags]) => ({ name, cr, size: SIZE[size] ?? 'Medium', type, align, env: env.split(' '), source: 'SRD 5.2', flags }));
+
+/** Creatures from other books, built in so the tables work without importing anything. */
+export const BOOKS: { src: string; name: string; core: boolean; blurb: string }[] = [
+  { src: 'XMM', name: 'Monster Manual (2025)', core: true, blurb: 'the rest of the 2024 Monster Manual' },
+  { src: 'MPMM', name: 'Monsters of the Multiverse', core: true, blurb: 'drow, duergar, gnolls, giants, hags, fiends and more' },
+  { src: 'FRAiF', name: 'Forgotten Realms: Adventures in Faerûn', core: true, blurb: 'deep and spirit dragons, Lolth’s drow, Zhentarim' },
+  { src: 'RHW', name: 'Ravenloft: The Horrors Within', core: false, blurb: 'gothic and cosmic horror' },
+  { src: 'AU', name: 'Arcana Unleashed', core: false, blurb: 'specialist archmages and living spells' },
+];
+export const DEFAULT_BOOKS = BOOKS.filter((b) => b.core).map((b) => b.src);
+export const BOOK_POOL: Record<string, EncounterCreature[]> = Object.fromEntries(
+  Object.entries(BOOK_CREATURES).map(([src, rows]) => [src, rows.map(([name, cr, size, type, align, env, flags]) => ({ name, cr, size: SIZE[size] ?? 'Medium', type, align, env: env.split(' '), source: src, flags }))]),
+);
 
 /** Experience points by Challenge Rating. */
 export const CR_XP: Record<string, number> = {
