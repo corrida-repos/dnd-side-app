@@ -300,8 +300,10 @@ export interface Character {
   waterUnsafe: boolean;
   /** Absolute minute when the Poisoned condition from tainted water ends. */
   poisonedUntil: number | null;
-  /** Sick from eating raw food: Poisoned until the creature finishes a Long Rest. */
+  /** Sick from raw food or unpurified water: Poisoned until the creature finishes a Long Rest. */
   sick: boolean;
+  /** What made them Sick: 'raw food', 'unpurified water' or both. */
+  sickFrom?: string;
   /** Magical contagions (2024 DMG): Cackle Fever, Sewer Plague, Sight Rot. */
   contagions: Contagion[];
   /** Languages and tools learned through downtime training. */

@@ -317,15 +317,27 @@ describe('purifying food and water', () => {
     expect(E.eat(s, LOW, s.characters[0].id, 0.5, 'stores').characters[0].sick).toBe(false);
   });
 
-  it('still gives an hour of Poisoned for unpurified water', () => {
+  it('makes you Sick from unpurified water, Poisoned until a Long Rest', () => {
     const s = fresh((d) => {
       wild(d);
       d.characters[0].waterPints = 0;
     });
     const n = E.drink(s, LOW, s.characters[0].id, 2, 'stores');
-    expect(n.characters[0].poisonedUntil).toBe(E.absNow(n) + 60);
-    expect(n.characters[0].sick).toBe(false);
-    expect(E.advance(n, ctx(), 60).characters[0].poisonedUntil).toBeNull();
+    expect(n.characters[0]).toMatchObject({ sick: true, sickFrom: 'unpurified water', poisonedUntil: null });
+    expect(E.advance(n, ctx(), 6 * 60).characters[0].sick).toBe(true);
+    expect(E.longRest(n, ctx(), false).characters[0]).toMatchObject({ sick: false, sickFrom: '' });
+  });
+
+  it('records both causes, and anything that ends Poisoned ends the sickness', () => {
+    const s = fresh((d) => {
+      wild(d);
+      d.characters[0].waterPints = 0;
+      d.stores.foodRawLb = 2;
+    });
+    const id = s.characters[0].id;
+    const n = E.eat(E.drink(s, LOW, id, 2, 'stores'), LOW, id, 0.5, 'stores');
+    expect(n.characters[0].sickFrom).toBe('raw food and unpurified water');
+    expect(E.curePoison(n, ctx(), id).characters[0].sick).toBe(false);
   });
 
   it('prefers safe water and only risks the questionable stream when it has to', () => {
@@ -335,7 +347,7 @@ describe('purifying food and water', () => {
     });
     const n = E.partyDrink(s, LOW, 'day');
     expect(n.characters[0].waterPints).toBe(0);
-    expect(n.characters[0].poisonedUntil).toBeNull();
+    expect(n.characters[0].sick).toBe(false);
   });
 
   it('purifies everything with the spell, as a ritual or with a slot', () => {
@@ -365,7 +377,7 @@ describe('purifying food and water', () => {
     expect(boiled.stores).toMatchObject({ waterGal: 2, waterUnsafeGal: 0 });
     const cooked = E.cookMeal(s, LOW, null);
     expect(cooked.stores.foodRawLb).toBe(2.5);
-    expect(cooked.characters[0].poisonedUntil).toBeNull();
+    expect(cooked.characters[0].sick).toBe(false);
   });
 });
 

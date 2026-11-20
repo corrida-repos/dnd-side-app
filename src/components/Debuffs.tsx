@@ -56,14 +56,14 @@ export function Debuffs({ c, now, empty = true, load }: { c: Character; now: num
   }
   if (c.sick)
     items.push(
-      <Pill key="sick" tone="bad" title="Ate raw food and failed the save: Poisoned (Disadvantage on attack rolls and ability checks) until the next Long Rest">
-        Food poisoning · Poisoned until Long Rest
+      <Pill key="sick" tone="bad" title={`Sick from ${c.sickFrom || 'raw food or unpurified water'}: Poisoned (Disadvantage on attack rolls and ability checks) until the next Long Rest. Lesser Restoration or Lay on Hands ends it sooner.`}>
+        Sick · Poisoned until Long Rest
       </Pill>,
     );
   if (c.poisonedUntil != null && c.poisonedUntil > now)
     items.push(
-      <Pill key="water" tone="bad" title="Drank unpurified water and failed the save: Poisoned (Disadvantage on attack rolls and ability checks)">
-        Waterborne illness · Poisoned {formatDuration(c.poisonedUntil - now)}
+      <Pill key="water" tone="bad" title="Poisoned (Disadvantage on attack rolls and ability checks)">
+        Poisoned · {formatDuration(c.poisonedUntil - now)}
       </Pill>,
     );
   if (c.malnourished && !parts.some((p) => p.cause === 'malnutrition'))

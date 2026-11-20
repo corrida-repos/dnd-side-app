@@ -209,15 +209,15 @@ export const TOPICS: Topic[] = [
   },
   {
     id: 'tainted',
-    title: 'Raw food, dirty water and food poisoning',
-    problem: 'Raw food and questionable water call for Con saves; a failure means Poisoned (until a Long Rest for food, 1 hour for water).',
+    title: 'Raw food, dirty water and getting Sick',
+    problem: 'Eating raw food or drinking unpurified water calls for a Con save; a failure means the character is Sick: Poisoned until they finish a Long Rest.',
     ways: [
       spell('Purify Food and Drink', 'Removes poison and rot from all nonmagical food and drink in a 5-foot-radius sphere. A ritual, so no slot is needed.', [
         'Pile everything together: the sphere is small.',
         'It doesn’t cook raw food, but it removes the reason raw food is dangerous.',
         'It doesn’t work on magical potions or poisons.',
       ]),
-      spell('Lesser Restoration', 'Ends the Poisoned condition right away. Only a Bonus Action in 2024.'),
+      spell('Lesser Restoration', 'Ends the Poisoned condition right away, and with it the sickness. Only a Bonus Action in 2024.'),
       spell('Protection from Poison', 'Ends Poisoned and gives Advantage on saves to avoid it for an hour: cast it before a doubtful meal.'),
       spell("Heroes' Feast", 'Immunity to the Poisoned condition for 24 hours.'),
       feature('Paladin', 1, 'Lay on Hands', 'Spend 5 points from the pool to remove the Poisoned condition.'),

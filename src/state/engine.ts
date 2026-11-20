@@ -52,7 +52,6 @@ import {
   ARMOR_LABEL,
   PURIFY_SPELL,
   TAINTED_DC,
-  TAINTED_POISON_MINUTES,
   BOIL_MINUTES,
 } from '../rules/survival';
 import { isCaster, PREP_RULE, preparedCount, preparedLimit } from '../rules/spells';
@@ -286,14 +285,20 @@ export function recoverExhaustion(c: Character): ExhaustionCause | null {
 function applySaveResult(s: State, c: Character, p: Omit<PendingSave, 'id' | 'stamp'>, passed: boolean, detail: string): void {
   log(s, `${c.name}: Constitution save, DC ${p.dc}, against ${p.reason}. ${detail}${passed ? 'Success.' : 'Failure.'}`, passed ? 'good' : 'warn');
   if (!passed) {
-    if (p.kind === 'tainted') {
-      c.poisonedUntil = absNow(s) + TAINTED_POISON_MINUTES;
-      status(s, c, 'waterIllness', `${c.name} has a Waterborne illness from ${p.reason}: Poisoned for an hour (Disadvantage on attack rolls and ability checks).`, 'bad');
-      return;
-    }
-    if (p.kind === 'raw') {
+    if (p.kind === 'tainted' || p.kind === 'raw') {
+      const from = p.kind === 'raw' ? 'raw food' : 'unpurified water';
+      const was = c.sick;
+      c.sickFrom = was && c.sickFrom && c.sickFrom !== from ? 'raw food and unpurified water' : was && c.sickFrom ? c.sickFrom : from;
       c.sick = true;
-      status(s, c, 'foodPoisoning', `${c.name} has Food poisoning from ${p.reason}: Poisoned (Disadvantage on attack rolls and ability checks) until they finish a Long Rest.`, 'bad');
+      status(
+        s,
+        c,
+        p.kind === 'raw' ? 'foodPoisoning' : 'waterIllness',
+        was
+          ? `${c.name} feels worse from ${p.reason}, already Sick: still Poisoned until they finish a Long Rest.`
+          : `${c.name} is Sick from ${p.reason}: Poisoned (Disadvantage on attack rolls and ability checks) until they finish a Long Rest.`,
+        'bad',
+      );
       return;
     }
     if (p.kind === 'malnutrition') c.malnourished = true;
@@ -625,7 +630,7 @@ function expireConditions(s: State): void {
   for (const c of s.characters) {
     if (c.poisonedUntil != null && now >= c.poisonedUntil) {
       c.poisonedUntil = null;
-      status(s, c, 'waterIllnessEnds', `${c.name} recovers from the Waterborne illness and is no longer Poisoned.`, 'good');
+      status(s, c, 'waterIllnessEnds', `${c.name} is no longer Poisoned.`, 'good');
     }
     if (c.stable && c.wakesAt != null && now >= c.wakesAt && c.diedAt == null) {
       c.stable = false;
@@ -773,7 +778,8 @@ function completeLongRest(d: State, ctx: Ctx, watched: Record<string, number>): 
     }
     if (c.sick) {
       c.sick = false;
-      status(d, c, 'foodPoisoningEnds', `${c.name} sleeps off the Food poisoning and is no longer Poisoned.`, 'good');
+      c.sickFrom = '';
+      status(d, c, 'foodPoisoningEnds', `${c.name} sleeps off the sickness and is no longer Poisoned.`, 'good');
     }
     for (const t of c.tasks) if (t.daily) t.done = false;
     c.divinationCasts = {};
@@ -1377,7 +1383,7 @@ function takeWater(s: State, c: Character, pints: number, source: WaterSource): 
 
 /**
  * Table rules. Raw food: Con save (DC from Settings) or Sick, which means Poisoned until a Long Rest.
- * Unpurified water: DC 10 Con save or Poisoned for an hour.
+ * Unpurified water: DC 10 Con save or Sick in the same way.
  */
 function riskTainted(s: State, ctx: Ctx, c: Character, unsafe: number, what: 'food' | 'water'): void {
   if (unsafe <= 0) return;
@@ -2050,6 +2056,8 @@ function applySpellTo(s: State, ctx: Ctx, spell: string, targetId: string): void
   const t = charById(s, targetId);
   if (!t) return;
   const endPoison = () => {
+    t.sick = false;
+    t.sickFrom = '';
     t.poisonedUntil = null;
     t.poisonTimers = [];
     s.effects = s.effects.filter((e) => !(e.name.startsWith('Poisoned') && e.targetIds.includes(t.id)));
@@ -2060,7 +2068,7 @@ function applySpellTo(s: State, ctx: Ctx, spell: string, targetId: string): void
   };
   switch (spell) {
     case 'Lesser Restoration': {
-      const poisoned = t.poisonedUntil != null || (t.poisonTimers ?? []).length > 0 || s.effects.some((e) => e.name.startsWith('Poisoned') && e.targetIds.includes(t.id));
+      const poisoned = t.sick || t.poisonedUntil != null || (t.poisonTimers ?? []).length > 0 || s.effects.some((e) => e.name.startsWith('Poisoned') && e.targetIds.includes(t.id));
       if (poisoned) {
         endPoison();
         return void log(s, `${spell} ends the Poisoned condition on ${t.name}.`, 'good');
@@ -2222,8 +2230,10 @@ export const curePoison = act((d, _ctx, charId: string) => {
   if (!c) return;
   c.poisonTimers = [];
   c.poisonedUntil = null;
+  c.sick = false;
+  c.sickFrom = '';
   d.effects = d.effects.filter((e) => !(e.name.startsWith('Poisoned') && e.targetIds.includes(c.id)));
-  log(d, `${c.name} is no longer Poisoned; any lingering poison is neutralized.`, 'good');
+  log(d, `${c.name} is no longer Poisoned; any lingering poison or sickness is neutralized.`, 'good');
 });
 
 // ---------------------------------------------------------------- contagions

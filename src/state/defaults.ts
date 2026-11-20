@@ -84,6 +84,7 @@ export function newCharacter(partial: Partial<Character> = {}): Character {
     waterUnsafe: false,
     poisonedUntil: null,
     sick: false,
+    sickFrom: '',
     contagions: [],
     needsFood: true,
     needsWater: true,
