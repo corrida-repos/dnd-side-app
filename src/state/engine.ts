@@ -1368,6 +1368,7 @@ function progress(s: State, p: Project): void {
     p.done = true;
     log(s, `Downtime project complete: ${p.name}.`, 'good');
     if (p.kind === 'activity' && p.notes) log(s, `${p.name} is done. Make the check: ${p.notes}. The DM decides the outcome.`);
+    deliverProduct(s, p);
     if (p.kind === 'buyMagic' && p.dealGp) payGold(s, p.charIds, p.dealGp, p.name);
     if (p.kind === 'sellMagic' && p.dealGp) receiveGold(s, p.charIds, p.dealGp, p.name);
     if (p.kind === 'spellcopy' && p.spell) {
@@ -2353,3 +2354,55 @@ export function containerLoad(items: InventoryItem[], containerId: string): numb
 export const holderValue = (items: InventoryItem[], purse: Purse): number => Math.round((purseValue(purse) + items.reduce((a, i) => a + (i.valueGp ?? 0) * i.qty, 0)) * 100) / 100;
 
 void fmtPurse;
+
+// ---------------------------------------------------------------- ammunition and crafted goods
+
+/** Fires (or throws) ammunition: the count drops and the spent ones can be looked for after the fight. */
+export const fireAmmo = act((d, _ctx, charId: string, itemId: string, n: number) => {
+  const c = charById(d, charId);
+  const it = c?.inventory.find((i) => i.id === itemId);
+  if (!c || !it || n <= 0) return;
+  const shot = Math.min(n, it.qty);
+  it.qty -= shot;
+  it.ammo = { spent: (it.ammo?.spent ?? 0) + shot };
+  if (it.qty === 0) log(d, `${c.name} is out of ${it.name}!`, 'warn');
+});
+
+/** After a fight, a minute of searching recovers half the spent ammunition, rounded down. */
+export const recoverAmmo = act((d, ctx, charIds: string[]) => {
+  const lines: string[] = [];
+  for (const id of charIds) {
+    const c = charById(d, id);
+    if (!c) continue;
+    for (const it of c.inventory) {
+      const spent = it.ammo?.spent ?? 0;
+      if (!spent) continue;
+      const back = Math.floor(spent / 2);
+      it.qty += back;
+      it.ammo = { spent: 0 };
+      lines.push(`${c.name} recovers ${back} of ${spent} ${it.name} (${it.qty} now)`);
+    }
+  }
+  if (!lines.length) return;
+  advanceMut(d, ctx, 1, 'camp');
+  log(d, `After a minute of searching the area: ${lines.join('; ')}.`, 'good');
+});
+
+/** A finished crafting project puts what was made into the first crafter's hands. */
+function deliverProduct(s: State, p: Project): void {
+  if (!p.product) return;
+  const c = charById(s, p.charIds[0]) ?? s.characters.find((x) => x.kind !== 'mount');
+  if (!c) return;
+  const { name, qty, magic, valueGp } = p.product;
+  if (magic) {
+    c.items.push({ id: uid(), name, requiresAttunement: false, attuned: false, identified: true, charges: null, maxCharges: null, regain: 'all', regainAt: 'never', awaySince: null, notes: 'Crafted', magicKnown: true, clues: [], findings: [] });
+  } else {
+    const same = c.inventory.find((i) => i.name.toLowerCase() === name.toLowerCase() && !i.containerId);
+    if (same) same.qty += qty;
+    else {
+      const est = estimateWeight(name);
+      c.inventory.push({ id: uid(), name, qty, weight: est.weight, source: est.source, valueGp, container: detectContainer(name), ammo: isAmmo(name) ? { spent: 0 } : null });
+    }
+  }
+  log(s, `${c.name} now has ${qty > 1 ? `${qty} × ` : ''}${name}${magic ? ' (with their magic items)' : ' (in their inventory)'}.`, 'good');
+}

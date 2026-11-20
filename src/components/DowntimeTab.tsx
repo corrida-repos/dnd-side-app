@@ -225,6 +225,16 @@ function NewProject() {
       };
   }
   const cal = calendarDays(calc.days, crafters.length, s.settings.extraCraftHelpers);
+  const productFor = (): { name: string; qty: number; magic?: boolean; valueGp?: number } | undefined => {
+    if (kind === 'nonmagical') {
+      const item = GEAR_CATALOG.find((g) => g.name === gear);
+      return { name: name.trim() || item?.name || 'Crafted item', qty: 1, valueGp: price };
+    }
+    if (kind === 'potion') return { name: 'Potion of Healing', qty: potions };
+    if (kind === 'scroll') return { name: `Spell Scroll (${scrollLevel === 0 ? 'cantrip' : `level ${scrollLevel}`})`, qty: 1 };
+    if (kind === 'magic') return { name: name.trim() || `${RARITY_LABEL[rarity]} magic item`, qty: 1, magic: true };
+    return undefined;
+  };
 
   return (
     <Card title="New downtime project">
@@ -344,6 +354,7 @@ function NewProject() {
             done: false,
             ...(trade ? { rarity, dealGp: calc.gp } : {}),
             ...(kind === 'spellcopy' ? { spell: { name: spellName.trim() || 'Unnamed spell', level: spellLevel } } : {}),
+            product: productFor(),
             materialsUsed: Object.entries(useMats)
               .filter(([, q]) => q > 0)
               .map(([materialId, qty]) => {

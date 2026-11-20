@@ -24,6 +24,7 @@ export function GearTab() {
   return (
     <div className="grid wide">
       <MysteryOverview />
+      <AfterTheFight />
       <PartyKnowledgeCard />
       {s.characters.map((c) => (
         <Card key={c.id} title={`${c.name} · ${c.className} ${c.level}`}>
@@ -31,6 +32,7 @@ export function GearTab() {
           {c.kind !== 'mount' && <ResourcesBlock c={c} />}
           {c.kind !== 'mount' && <ItemsBlock c={c} />}
           <InventoryBlock c={c} />
+          <AmmoBlock c={c} />
         </Card>
       ))}
     </div>
@@ -159,6 +161,52 @@ function KnowledgePanel({ c, it }: { c: Character; it: MagicItem }) {
         </>
       )}
     </details>
+  );
+}
+
+function AfterTheFight() {
+  const s = useGame();
+  const spent = s.characters.flatMap((c) => c.inventory.filter((i) => (i.ammo?.spent ?? 0) > 0).map((i) => ({ c, i })));
+  if (!spent.length) return null;
+  return (
+    <Card title="After the fight" className="span-2">
+      <p className="small">
+        Spent ammunition: {spent.map(({ c, i }) => `${c.name} ${i.ammo!.spent} ${i.name}`).join(', ')}. A minute of searching recovers half, rounded down.
+      </p>
+      <button className="primary" onClick={() => dispatch((st, cx) => E.recoverAmmo(st, cx, s.characters.map((c) => c.id)))}>
+        Search the area and recover ammunition (1 min)
+      </button>
+    </Card>
+  );
+}
+
+function AmmoBlock({ c }: { c: Character }) {
+  const ammo = c.inventory.filter((i) => i.ammo);
+  const [n, setN] = useState(1);
+  if (!ammo.length) return null;
+  return (
+    <>
+      <h3>Ammunition</h3>
+      <ul className="plain small">
+        {ammo.map((i) => (
+          <li key={i.id} className="armor-row">
+            <span>
+              <b>{i.name}</b> {i.qty} left{i.ammo!.spent ? <span className="warn-text"> · {i.ammo!.spent} spent since the last search</span> : null}
+            </span>
+            <span className="btn-row tight">
+              <Num value={n} onChange={(v) => setN(Math.max(1, Math.round(v)))} min={1} width={2} />
+              <button className="small" disabled={i.qty <= 0} onClick={() => dispatch((st, cx) => E.fireAmmo(st, cx, c.id, i.id, n))}>
+                Fire {n}
+              </button>
+              <button className="small ghost" disabled={!i.ammo!.spent} onClick={() => dispatch((st, cx) => E.recoverAmmo(st, cx, [c.id]))}>
+                Recover half
+              </button>
+            </span>
+          </li>
+        ))}
+      </ul>
+      <Rule>After a fight, spending a minute searching recovers half of the ammunition used, rounded down. The rest is lost or broken.</Rule>
+    </>
   );
 }
 

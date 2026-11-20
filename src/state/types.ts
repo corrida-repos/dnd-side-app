@@ -381,6 +381,8 @@ export interface Project {
   dealGp?: number;
   /** Materials taken from the stash when the project started. */
   materialsUsed?: MaterialUse[];
+  /** What the project produces, added to the first crafter's inventory when it's done. */
+  product?: { name: string; qty: number; magic?: boolean; valueGp?: number };
   /** For copying a spell: its name and level, and whose spellbook gets it. */
   spell?: { name: string; level: number };
 }
