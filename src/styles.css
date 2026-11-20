@@ -901,3 +901,17 @@ select {
 .cast-panel h3 {
   margin-top: 4px;
 }
+
+.sense {
+  display: block;
+  font-style: italic;
+  color: var(--muted);
+  font-size: 0.86rem;
+  margin-top: 1px;
+}
+.sense-only {
+  font-style: italic;
+}
+.status-history {
+  margin: 8px 0;
+}

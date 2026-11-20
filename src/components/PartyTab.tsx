@@ -34,6 +34,34 @@ export function PartyTab() {
   );
 }
 
+function StatusHistory({ c }: { c: Character }) {
+  const s = useGame();
+  const [all, setAll] = useState(false);
+  const mine = s.statusLog.filter((e) => e.charId === c.id);
+  if (!mine.length) return null;
+  return (
+    <details className="status-history">
+      <summary>
+        Status history ({mine.length}) · latest: {mine[0].text.slice(0, 60)}
+        {mine[0].text.length > 60 ? '…' : ''}
+      </summary>
+      <ul className="log">
+        {(all ? mine : mine.slice(0, 8)).map((e) => (
+          <li key={e.id} className={`log-${e.tone}`}>
+            <span className="muted small">{e.stamp}</span> {e.text}
+            <span className="sense">“{e.sense}”</span>
+          </li>
+        ))}
+      </ul>
+      {mine.length > 8 && (
+        <button className="ghost small" onClick={() => setAll(!all)}>
+          {all ? 'Show fewer' : `Show all ${mine.length}`}
+        </button>
+      )}
+    </details>
+  );
+}
+
 function Trackers({ c }: { c: Character }) {
   const [reason, setReason] = useState('');
   const row = (track: Track, label: string, hint: string) => (
@@ -214,6 +242,7 @@ function CharacterCard({ c }: { c: Character }) {
           </Rule>
         </div>
       )}
+      <StatusHistory c={c} />
       <label className="field grow">
         <span className="field-label">Notes</span>
         <textarea value={c.notes} rows={2} onChange={(e) => set({ notes: e.target.value })} />

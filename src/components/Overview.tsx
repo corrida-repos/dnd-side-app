@@ -558,6 +558,7 @@ function RecentLog() {
         {s.log.slice(0, 12).map((l) => (
           <li key={l.id} className={`log-${l.tone}`}>
             <span className="muted small">{l.stamp}</span> {l.text}
+            {l.sense && <span className="sense">“{l.sense}”</span>}
           </li>
         ))}
         {!s.log.length && <li className="muted">Nothing has happened yet. Advance time, travel or rest to begin.</li>}

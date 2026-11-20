@@ -1,4 +1,4 @@
-import type { ActiveEffect, Activity, CharacterSpell, Ritual, Bastion, Character, ExhaustionCause, Facility, MagicItem, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
+import type { ActiveEffect, Activity, CharacterSpell, LogEntry, Ritual, Bastion, Character, ExhaustionCause, Facility, MagicItem, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
 import { BASIC_BUILD, BASTION_TURN_DAYS, ENLARGE, rollBastionEvent, SIZE_LABEL, SPECIAL_FACILITIES, type FacilitySize } from '../rules/bastion';
 import { d20, die, combineModes, rollExpr, signed, type Rng, type RollMode } from '../rules/dice';
 import { dateFromIndex, formatClock, formatDate, formatDuration, lightAt, sunriseMinutes } from '../rules/calendar';
@@ -37,6 +37,7 @@ import {
 } from '../rules/survival';
 import { isCaster, PREP_RULE, preparedCount, preparedLimit } from '../rules/spells';
 import { newCharacter, uid } from './defaults';
+import { sense, type SenseKey } from '../rules/senses';
 
 export interface Ctx {
   rng: Rng;
@@ -52,10 +53,39 @@ export const tempNow = (s: State): number => temperatureAt(s.weather, s.minutes 
 export const charById = (s: State, id: string): Character | undefined => s.characters.find((c) => c.id === id);
 const alive = (c: Character) => c.exhaustion < 6 && c.diedAt == null;
 
-export function log(s: State, text: string, tone: Tone = 'info'): void {
-  s.log.unshift({ id: uid(), stamp: stamp(s), text, tone });
+export function log(s: State, text: string, tone: Tone = 'info', extra?: Pick<LogEntry, 'charIds' | 'status' | 'sense'>): void {
+  s.log.unshift({ id: uid(), stamp: stamp(s), text, tone, ...extra });
   if (s.log.length > LOG_MAX) s.log.length = LOG_MAX;
 }
+
+const STATUS_MAX = 5000;
+
+/** Something the characters notice (with or without a specific character): logged with a sensory description. */
+export function noticed(s: State, kind: SenseKey, chars: Character[], text: string, tone: Tone = 'info'): void {
+  const feel = sense(kind, s.statusLog.length + text.length);
+  log(s, text, tone, { charIds: chars.map((c) => c.id), status: chars.length > 0, sense: feel });
+  for (const c of chars) {
+    s.statusLog.unshift({ id: uid(), stamp: stamp(s), at: absNow(s), charId: c.id, kind, text, sense: feel, tone });
+  }
+  if (s.statusLog.length > STATUS_MAX) s.statusLog.length = STATUS_MAX;
+}
+
+/** Logs a change to one character's condition, with what they notice, in both the Chronicle and the status log. */
+export function status(s: State, c: Character, kind: SenseKey, text: string, tone: Tone = 'info'): void {
+  noticed(s, kind, [c], text, tone);
+}
+
+const CAUSE_SENSE: Record<ExhaustionCause, SenseKey> = {
+  malnutrition: 'malnutrition',
+  dehydration: 'dehydration',
+  cold: 'cold',
+  heat: 'heat',
+  march: 'march',
+  coldNight: 'coldNight',
+  sleep: 'sleep',
+  frigid: 'frigid',
+  other: 'sleep',
+};
 
 const adventurers = (s: State) => s.characters.filter((c) => c.kind !== 'mount' && alive(c));
 
@@ -168,10 +198,10 @@ export function gainExhaustion(s: State, c: Character, n: number, why: string, c
   for (let i = 0; i < add; i++) causes.push(cause);
   c.exhaustion = Math.min(6, c.exhaustion + add);
   c.exhaustionCauses = causes;
-  log(s, `${c.name} gains ${n} Exhaustion level${n > 1 ? 's' : ''} from ${EXHAUSTION_CAUSE_LABEL[cause]} (${why}). Now level ${c.exhaustion}: ${exhaustionSummary(c.exhaustion)}.`, 'bad');
+  status(s, c, CAUSE_SENSE[cause], `${c.name} gains ${n} Exhaustion level${n > 1 ? 's' : ''} from ${EXHAUSTION_CAUSE_LABEL[cause]} (${why}). Now level ${c.exhaustion}: ${exhaustionSummary(c.exhaustion)}.`, 'bad');
   if (c.exhaustion >= 6) {
     c.diedAt = absNow(s);
-    log(s, `${c.name} dies of exhaustion.`, 'bad');
+    status(s, c, 'death', `${c.name} dies of exhaustion.`, 'bad');
   }
 }
 
@@ -193,12 +223,12 @@ function applySaveResult(s: State, c: Character, p: Omit<PendingSave, 'id' | 'st
   if (!passed) {
     if (p.kind === 'tainted') {
       c.poisonedUntil = absNow(s) + TAINTED_POISON_MINUTES;
-      log(s, `${c.name} has a Waterborne illness from ${p.reason}: Poisoned for an hour (Disadvantage on attack rolls and ability checks).`, 'bad');
+      status(s, c, 'waterIllness', `${c.name} has a Waterborne illness from ${p.reason}: Poisoned for an hour (Disadvantage on attack rolls and ability checks).`, 'bad');
       return;
     }
     if (p.kind === 'raw') {
       c.sick = true;
-      log(s, `${c.name} has Food poisoning from ${p.reason}: Poisoned (Disadvantage on attack rolls and ability checks) until they finish a Long Rest.`, 'bad');
+      status(s, c, 'foodPoisoning', `${c.name} has Food poisoning from ${p.reason}: Poisoned (Disadvantage on attack rolls and ability checks) until they finish a Long Rest.`, 'bad');
       return;
     }
     if (p.kind === 'malnutrition') c.malnourished = true;
@@ -248,10 +278,10 @@ function tickHour(s: State, ctx: Ctx, activity: Activity): void {
     const indoors = s.place.shelter === 'building' || s.place.shelter === 'cave';
     if (threat && !s.fire.sheltered && !indoors) {
       s.fire.lit = false;
-      log(s, `The ${threat} puts out the campfire.`, 'warn');
+      noticed(s, 'fireOut', [], `The ${threat} puts out the campfire.`, 'warn');
     } else if (s.fire.fuelHours <= 0) {
       s.fire.lit = false;
-      log(s, 'The campfire burns down to embers and goes out.', 'warn');
+      noticed(s, 'fireOut', [], 'The campfire burns down to embers and goes out.', 'warn');
     }
   }
 
@@ -305,7 +335,7 @@ function endOfDay(s: State, ctx: Ctx): void {
         gainExhaustion(s, c, 1, `drank ${fmtWater(c.drankPintsToday)} of ${fmtWater(need)}`, 'dehydration');
       } else if (c.drankPintsToday >= need && c.dehydrated) {
         c.dehydrated = false;
-        log(s, `${c.name} is fully rehydrated, so dehydration Exhaustion can be removed again.`, 'good');
+        status(s, c, 'rehydrated', `${c.name} is fully rehydrated, so dehydration Exhaustion can be removed again.`, 'good');
       }
     }
     if (c.needsFood) {
@@ -315,14 +345,14 @@ function endOfDay(s: State, ctx: Ctx): void {
         if (c.daysWithoutFood >= 5) {
           c.malnourished = true;
           gainExhaustion(s, c, 1, `day ${c.daysWithoutFood} without food`, 'malnutrition');
-        } else log(s, `${c.name} ate nothing today (${c.daysWithoutFood} day${c.daysWithoutFood > 1 ? 's' : ''} without food).`, 'warn');
+        } else status(s, c, c.daysWithoutFood >= 3 ? 'starving' : 'hungry', `${c.name} ate nothing today (${c.daysWithoutFood} day${c.daysWithoutFood > 1 ? 's' : ''} without food).`, 'warn');
       } else {
         c.daysWithoutFood = 0;
         if (c.ateLbToday < need / 2) {
           requestSave(s, ctx, c, 'malnutrition', 10, 'normal', `malnutrition: ate ${fmtLb(c.ateLbToday)} of ${fmtLb(need)}`);
         } else if (c.ateLbToday >= need && c.malnourished) {
           c.malnourished = false;
-          log(s, `${c.name} ate a full day's food, so malnutrition Exhaustion can be removed again.`, 'good');
+          status(s, c, 'fed', `${c.name} ate a full day's food, so malnutrition Exhaustion can be removed again.`, 'good');
         }
       }
     }
@@ -368,7 +398,7 @@ function checkItemsLeftBehind(s: State): void {
     for (const it of c.items) {
       if (it.attuned && it.awaySince != null && now - it.awaySince >= ATTUNE_AWAY_MINUTES) {
         it.attuned = false;
-        log(s, `${c.name}'s attunement to ${it.name} ends: it has been more than 100 feet away for 24 hours.`, 'warn');
+        status(s, c, 'attunementEnds', `${c.name}'s attunement to ${it.name} ends: it has been more than 100 feet away for 24 hours.`, 'warn');
       }
     }
   }
@@ -404,7 +434,7 @@ function applyRestFocus(s: State, c: Character): void {
     log(s, `${c.name} spends the rest focused on the ${it.name} and learns its properties${it.requiresAttunement ? ', including that it needs attunement' : ''}.`, 'good');
   } else if (f.action === 'unattune') {
     it.attuned = false;
-    log(s, `${c.name} ends their attunement to the ${it.name}.`);
+    status(s, c, 'attunementEnds', `${c.name} ends their attunement to the ${it.name}.`);
   } else {
     const count = c.items.filter((x) => x.attuned).length;
     if (count >= MAX_ATTUNED) log(s, `${c.name} can't attune to the ${it.name}: already attuned to ${MAX_ATTUNED} items.`, 'warn');
@@ -412,7 +442,7 @@ function applyRestFocus(s: State, c: Character): void {
     else {
       it.attuned = true;
       it.identified = true;
-      log(s, `${c.name} attunes to the ${it.name} (${count + 1}/${MAX_ATTUNED}).`, 'good');
+      status(s, c, 'attuned', `${c.name} attunes to the ${it.name} (${count + 1}/${MAX_ATTUNED}).`, 'good');
     }
   }
 }
@@ -507,13 +537,13 @@ function expireConditions(s: State): void {
   for (const c of s.characters) {
     if (c.poisonedUntil != null && now >= c.poisonedUntil) {
       c.poisonedUntil = null;
-      log(s, `${c.name} recovers from the Waterborne illness and is no longer Poisoned.`, 'good');
+      status(s, c, 'waterIllnessEnds', `${c.name} recovers from the Waterborne illness and is no longer Poisoned.`, 'good');
     }
     if (c.stable && c.wakesAt != null && now >= c.wakesAt && c.diedAt == null) {
       c.stable = false;
       c.wakesAt = null;
       c.hp = Math.max(1, c.hp);
-      log(s, `${c.name} stirs and regains consciousness with 1 HP.`, 'good');
+      status(s, c, 'wakesFromStable', `${c.name} stirs and regains consciousness with 1 HP.`, 'good');
     }
   }
 }
@@ -638,27 +668,27 @@ export const longRest = act((d, ctx, force = false) => {
     if (c.exhaustion > 0 && !armorSpoiled) {
       const gone = recoverExhaustion(c);
       if (gone) {
-        log(d, `${c.name} recovers 1 Exhaustion level (${EXHAUSTION_CAUSE_LABEL[gone]}). Now level ${c.exhaustion}.`, 'good');
+        status(d, c, 'exhaustionEases', `${c.name} recovers 1 Exhaustion level (${EXHAUSTION_CAUSE_LABEL[gone]}). Now level ${c.exhaustion}.`, 'good');
       } else {
         const why = [c.malnourished && 'Malnutrition (needs a full day of food)', c.dehydrated && 'Dehydration (needs a full day of water)'].filter(Boolean).join(' and ');
-        log(d, `${c.name} can't shed Exhaustion yet: every level left comes from ${why}.`, 'warn');
+        status(d, c, 'exhaustionStuck', `${c.name} can't shed Exhaustion yet: every level left comes from ${why}.`, 'warn');
       }
     }
     if (c.sick) {
       c.sick = false;
-      log(d, `${c.name} sleeps off the Food poisoning and is no longer Poisoned.`, 'good');
+      status(d, c, 'foodPoisoningEnds', `${c.name} sleeps off the Food poisoning and is no longer Poisoned.`, 'good');
     }
     for (const t of c.tasks) if (t.daily) t.done = false;
     c.divinationCasts = {};
     if (d.settings.stressPerLongRest > 0 && c.stress > 0) {
       const before = c.stress;
       c.stress = Math.max(0, c.stress - d.settings.stressPerLongRest);
-      log(d, `${c.name}'s Stress eases from ${before} to ${c.stress}.`, 'good');
+      status(d, c, 'stressDown', `${c.name}'s Stress eases from ${before} to ${c.stress}.`, 'good');
     }
     if (d.settings.fearPerLongRest > 0 && c.fear > 0) {
       const before = c.fear;
       c.fear = Math.max(0, c.fear - d.settings.fearPerLongRest);
-      log(d, `${c.name}'s Fear eases from ${before} to ${c.fear}.`, 'good');
+      status(d, c, 'fearDown', `${c.name}'s Fear eases from ${before} to ${c.fear}.`, 'good');
     }
     applyRestFocus(d, c);
     if (c.hp <= 0) {
@@ -1330,7 +1360,7 @@ export const spendHitDie = act((d, ctx, charId: string) => {
   const before = c.hp;
   c.hp = Math.min(c.maxHp, c.hp + healed);
   c.hitDiceSpent += 1;
-  log(d, `${c.name} spends a Hit Point Die: d${c.hitDie} = ${roll} ${signed(mod)} = ${healed}. HP ${before} → ${c.hp}/${c.maxHp} (${c.level - c.hitDiceSpent} dice left).`, 'good');
+  status(d, c, 'hitDie', `${c.name} spends a Hit Point Die: d${c.hitDie} = ${roll} ${signed(mod)} = ${healed}. HP ${before} → ${c.hp}/${c.maxHp} (${c.level - c.hitDiceSpent} dice left).`, 'good');
 });
 
 export const changeHp = act((d, _ctx, charId: string, amount: number) => {
@@ -1344,13 +1374,13 @@ export const changeHp = act((d, _ctx, charId: string, amount: number) => {
     const wasUp = c.hp > 0;
     const leftover = dmg - c.hp;
     c.hp = Math.max(0, c.hp - dmg);
-    log(d, `${c.name} takes ${-amount} damage${absorbed ? ` (${absorbed} absorbed by Temporary HP)` : ''}. HP ${c.hp}/${c.maxHp}.`, c.hp === 0 ? 'bad' : 'warn');
+    status(d, c, 'hurt', `${c.name} takes ${-amount} damage${absorbed ? ` (${absorbed} absorbed by Temporary HP)` : ''}. HP ${c.hp}/${c.maxHp}.`, c.hp === 0 ? 'bad' : 'warn');
     if (wasUp && c.hp === 0) {
       if (leftover >= c.maxHp) {
         killOutright(d, c, `massive damage (${leftover} beyond 0 HP, at least their HP maximum)`);
       } else {
         Object.assign(c, { dying: true, stable: false, deathSuccesses: 0, deathFailures: 0, wakesAt: null });
-        log(d, `${c.name} falls Unconscious and is dying. Roll death saves.`, 'bad');
+        status(d, c, 'dying', `${c.name} falls Unconscious and is dying. Roll death saves.`, 'bad');
       }
     } else if (!wasUp && dmg > 0 && c.diedAt == null) {
       // Damage at 0 HP: a death save failure (the stable stop being stable).
@@ -1359,7 +1389,7 @@ export const changeHp = act((d, _ctx, charId: string, amount: number) => {
   } else {
     const wasDown = c.hp === 0;
     c.hp = Math.min(c.maxHp, c.hp + amount);
-    log(d, `${c.name} heals ${amount}. HP ${c.hp}/${c.maxHp}.`, 'good');
+    status(d, c, 'heal', `${c.name} heals ${amount}. HP ${c.hp}/${c.maxHp}.`, 'good');
     if (wasDown && c.hp > 0) wakeUp(d, c, 'healing');
   }
 });
@@ -1367,18 +1397,18 @@ export const changeHp = act((d, _ctx, charId: string, amount: number) => {
 function wakeUp(s: State, c: Character, why: string): void {
   const was = c.dying || c.stable;
   Object.assign(c, { dying: false, stable: false, deathSuccesses: 0, deathFailures: 0, wakesAt: null });
-  if (was) log(s, `${c.name} regains consciousness from ${why}.`, 'good');
+  if (was) status(s, c, 'wakesFromStable', `${c.name} regains consciousness from ${why}.`, 'good');
 }
 
 function killOutright(s: State, c: Character, why: string): void {
   Object.assign(c, { dying: false, stable: false, wakesAt: null, diedAt: absNow(s), reposeMinutes: 0, hp: 0 });
-  log(s, `${c.name} dies: ${why}.`, 'bad');
+  status(s, c, 'death', `${c.name} dies: ${why}.`, 'bad');
 }
 
 function makeStable(s: State, ctx: Ctx, c: Character, how: string): void {
   const hours = die(STABLE_WAKE_DIE, ctx.rng);
   Object.assign(c, { dying: false, stable: true, deathSuccesses: 0, deathFailures: 0, wakesAt: absNow(s) + hours * 60 });
-  log(s, `${c.name} is stable (${how}). Still Unconscious, they regain 1 HP in ${hours} hour${hours > 1 ? 's' : ''} (1d4).`, 'good');
+  status(s, c, 'stable', `${c.name} is stable (${how}). Still Unconscious, they regain 1 HP in ${hours} hour${hours > 1 ? 's' : ''} (1d4).`, 'good');
 }
 
 function addDeathFailures(s: State, c: Character, n: number, why: string): void {
@@ -1396,7 +1426,7 @@ export const deathSave = act((d, ctx, charId: string) => {
   if (r === 20) {
     c.hp = 1;
     wakeUp(d, c, 'a natural 20 on a death save');
-    log(d, `${c.name} rolls a 20 on the death save and is back on their feet with 1 HP!`, 'good');
+    status(d, c, 'wakesFromStable', `${c.name} rolls a 20 on the death save and is back on their feet with 1 HP!`, 'good');
     return;
   }
   if (r === 1) return addDeathFailures(d, c, 2, 'a natural 1 on a death save');
@@ -1459,6 +1489,9 @@ export const leaveItem = act((d, _ctx, ownerId: string, itemId: string, away: bo
 
 // ---------------------------------------------------------------- active effects, exploration, frigid water
 
+const effectChars = (s: State, e: ActiveEffect): Character[] =>
+  [...e.targetIds, ...(e.casterId ? [e.casterId] : [])].map((id) => charById(s, id)).filter((c, i, a): c is Character => !!c && a.indexOf(c) === i);
+
 const effectWho = (s: State, e: ActiveEffect): string => {
   const names = e.targetIds.map((id) => charById(s, id)?.name).filter(Boolean);
   return names.length ? ` (${names.join(', ')})` : '';
@@ -1478,14 +1511,14 @@ function tickEffects(s: State, before: number): void {
     if (e.endsAt == null) continue;
     if (e.kind === 'light' && e.endsAt - e.startedAt > LIGHT_WARNING_MINUTES) {
       const warn = e.endsAt - LIGHT_WARNING_MINUTES;
-      if (before < warn && now >= warn && now < e.endsAt) log(s, `${e.name}${effectWho(s, e)} is burning low: ${LIGHT_WARNING_MINUTES} minutes left.`, 'warn');
+      if (before < warn && now >= warn && now < e.endsAt) noticed(s, 'lightLow', effectChars(s, e), `${e.name}${effectWho(s, e)} is burning low: ${LIGHT_WARNING_MINUTES} minutes left.`, 'warn');
     }
     if (now >= e.endsAt) ended.push(e);
   }
   if (!ended.length) return;
   s.effects = s.effects.filter((e) => !ended.includes(e));
   for (const e of ended) {
-    log(s, e.kind === 'light' ? `${e.name}${effectWho(s, e)} goes out.` : `${e.name}${effectWho(s, e)} ends.`, e.kind === 'light' || e.shelter ? 'warn' : 'info');
+    noticed(s, e.kind === 'light' ? 'lightOut' : e.shelter ? 'shelterEnds' : 'effectEnds', effectChars(s, e), e.kind === 'light' ? `${e.name}${effectWho(s, e)} goes out.` : `${e.name}${effectWho(s, e)} ends.`, e.kind === 'light' || e.shelter ? 'warn' : 'info');
   }
 }
 
@@ -1631,7 +1664,7 @@ export const adjustTrack = act((d, _ctx, charId: string, track: Track, delta: nu
   if (!c || !delta) return;
   c[track] = track === 'renown' ? c[track] + delta : Math.max(0, c[track] + delta);
   const tone: Tone = track === 'renown' ? (delta > 0 ? 'good' : 'warn') : delta > 0 ? 'warn' : 'good';
-  log(d, `${c.name}'s ${TRACK_LABEL[track]} ${delta > 0 ? 'rises' : 'falls'} by ${Math.abs(delta)} to ${c[track]}${reason ? ` (${reason})` : ''}.`, tone);
+  status(d, c, (`${track}${delta > 0 ? 'Up' : 'Down'}` as SenseKey), `${c.name}'s ${TRACK_LABEL[track]} ${delta > 0 ? 'rises' : 'falls'} by ${Math.abs(delta)} to ${c[track]}${reason ? ` (${reason})` : ''}.`, tone);
 });
 
 export const addMount = act((d, _ctx, preset: MountPreset, name: string, buyerId: string | null) => {
@@ -1714,7 +1747,7 @@ export const markDead = act((d, _ctx, charId: string, dead: boolean) => {
     c.reposeMinutes = 0;
     c.hp = 0;
     Object.assign(c, { dying: false, stable: false, wakesAt: null });
-    log(d, `${c.name} has died.`, 'bad');
+    status(d, c, 'death', `${c.name} has died.`, 'bad');
   } else {
     c.diedAt = null;
     c.reposeMinutes = 0;
@@ -1724,7 +1757,7 @@ export const markDead = act((d, _ctx, charId: string, dead: boolean) => {
       c.exhaustionCauses = causesOf(c);
     }
     c.hp = Math.max(1, c.hp);
-    log(d, `${c.name} is brought back to life!`, 'good');
+    status(d, c, 'revived', `${c.name} is brought back to life!`, 'good');
   }
 });
 

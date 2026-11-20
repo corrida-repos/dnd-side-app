@@ -152,6 +152,7 @@ export function createDefaultState(rng: Rng): State {
     holidays: [],
     materials: [],
     bestiary: [],
+    statusLog: [],
   };
   const ids = state.characters.map((c) => c.id);
   state.watchPlan = { count: 4, slots: autoAssign(ids, 4, 1, Object.fromEntries(state.characters.map((c) => [c.id, watchCapacity(4, c.trance)]))) };

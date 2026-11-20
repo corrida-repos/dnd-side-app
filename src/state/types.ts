@@ -349,6 +349,24 @@ export interface LogEntry {
   stamp: string;
   text: string;
   tone: Tone;
+  /** Characters this entry is about. */
+  charIds?: string[];
+  /** A change to someone's condition: kept in the status log too. */
+  status?: boolean;
+  /** What the character notices, for the players. */
+  sense?: string;
+}
+
+export interface StatusEntry {
+  id: string;
+  stamp: string;
+  /** Absolute minute it happened. */
+  at: number;
+  charId: string;
+  kind: string;
+  text: string;
+  sense: string;
+  tone: Tone;
 }
 
 export interface Settings {
@@ -437,4 +455,6 @@ export interface State {
   materials: Material[];
   /** Creatures imported from a bestiary file, for hunting. */
   bestiary: Creature[];
+  /** Every status change in the game, per character (kept much longer than the Chronicle). */
+  statusLog: StatusEntry[];
 }
