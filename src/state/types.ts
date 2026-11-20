@@ -686,6 +686,8 @@ export interface State {
   exploreTurns: number;
   /** Creatures left out of the random encounter tables. */
   encounterExclude: string[];
+  /** Imported books (5etools source codes) left out of the random encounter tables. */
+  encounterSourcesOff: string[];
   /** When the current Long Rest began (absolute minute), so encounters know who is on watch. */
   restStart: number | null;
 }

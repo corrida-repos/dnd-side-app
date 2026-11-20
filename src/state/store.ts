@@ -56,6 +56,7 @@ function migrate(raw: unknown): State | null {
     encounterClock: parsed.encounterClock ?? 0,
     exploreTurns: parsed.exploreTurns ?? 0,
     encounterExclude: parsed.encounterExclude ?? [],
+    encounterSourcesOff: parsed.encounterSourcesOff ?? [],
     restStart: null,
     trackingStart: parsed.trackingStart ?? (parsed.dayIndex ?? base.dayIndex) * 1440 + (parsed.minutes ?? 0),
   } as State;

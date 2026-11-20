@@ -12,7 +12,7 @@ export interface Creature {
   env?: string[];
   /** E evil, G good, N neutral, U unaligned: sets a starting attitude. */
   align?: 'E' | 'G' | 'N' | 'U';
-  /** L legendary, s swims, f flies. */
+  /** L legendary, N a named individual (never a random encounter), s swims, f flies. */
   flags?: string;
 }
 
@@ -75,6 +75,8 @@ export function parse5eToolsBestiary(json: unknown): Creature[] {
     if (!raw || typeof raw !== 'object') continue;
     const r = raw as Record<string, unknown>;
     if (typeof r.name !== 'string') continue;
+    // Superseded by a newer printing (e.g. 2014 Monster Manual entries reprinted in 2024): keep only the new one.
+    if (Array.isArray(r.reprintedAs) && r.reprintedAs.length) continue;
     const sizeCode = Array.isArray(r.size) ? r.size[0] : r.size;
     const size = typeof sizeCode === 'string' ? SIZE_CODES[sizeCode] : undefined;
     if (!size) continue;
@@ -90,8 +92,14 @@ export function parse5eToolsBestiary(json: unknown): Creature[] {
     const al = Array.isArray(r.alignment) ? r.alignment.filter((a): a is string => typeof a === 'string') : [];
     const align = al.includes('E') ? 'E' : al.includes('G') ? 'G' : al.includes('U') ? 'U' : al.length ? 'N' : undefined;
     const speed = r.speed && typeof r.speed === 'object' ? (r.speed as Record<string, unknown>) : {};
-    const flags = `${r.legendary ? 'L' : ''}${speed.swim ? 's' : ''}${speed.fly ? 'f' : ''}`;
+    const flags = `${r.legendary ? 'L' : ''}${r.isNamedCreature ? 'N' : ''}${speed.swim ? 's' : ''}${speed.fly ? 'f' : ''}`;
     out.push({ name: r.name, size, type: type.toLowerCase(), source, ...(cr ? { cr } : {}), ...(env?.length ? { env } : {}), ...(align ? { align } : {}), ...(flags ? { flags } : {}) });
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** How many entries in a 5etools bestiary file were left out because a newer printing replaces them. */
+export function countReprinted(json: unknown): number {
+  const arr = json && typeof json === 'object' && Array.isArray((json as { monster?: unknown }).monster) ? (json as { monster: unknown[] }).monster : Array.isArray(json) ? json : [];
+  return arr.filter((r) => r && typeof r === 'object' && Array.isArray((r as { reprintedAs?: unknown }).reprintedAs) && (r as { reprintedAs: unknown[] }).reprintedAs.length).length;
 }

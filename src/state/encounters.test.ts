@@ -109,3 +109,14 @@ describe('random encounters by location danger', () => {
     expect(out.rows.every((r) => r.kind === 'peaceful')).toBe(true);
   });
 });
+
+describe('book switches', () => {
+  it('leaves switched-off books out of the tables', () => {
+    const s = fresh((d) => {
+      d.settings.srdEncounters = false;
+      d.bestiary = [{ name: 'Mi-Go', size: 'Medium', type: 'plant', cr: '1', env: ['forest'], align: 'E', source: 'RHW' }];
+    });
+    expect(E.encounterTable(s).rows.some((r) => r.creature?.name === 'Mi-Go')).toBe(true);
+    expect(E.encounterTable({ ...s, encounterSourcesOff: ['RHW'] }).rows.some((r) => r.creature)).toBe(false);
+  });
+});

@@ -252,6 +252,7 @@ Checked against the 2024 *Player's Handbook* and *Dungeon Master's Guide* data t
 - Every place has a danger level (Safe, Low, Moderate, High, Deadly). Danger sets how often to check (every 12/8/4/2/1 hours overland, every 6/6/3/2/1 exploration turns in a dungeon) and the d20 number that brings an encounter (20, 19+, then 18+). A natural 20 always does. *Table rule:* the 2024 DMG leaves the frequency to the DM.
 - Rolling conditions add to or take from the d20: night, a light in the dark, fast pace, a large group (+1); slow pace, a good road, foul weather, a sheltered camp (−1).
 - d100 tables for each terrain are built from the 2024 Monster Manual's SRD 5.2 creatures (CC BY 4.0, taken from 5etools with `scripts/build-encounter-data.mjs`) plus any imported bestiary. Group sizes follow the 2024 DMG XP budget for the danger level's difficulty, and big creatures stay in small numbers.
+- Other 5etools books can be imported (several files at once) and switched in or out per book. Checked for usefulness: the rest of the 2024 Monster Manual, *Monsters of the Multiverse* and *Adventures in Faerûn* fill nearly every gap; *Ravenloft: The Horrors Within* and *Arcana Unleashed* suit particular campaigns; 2014 reprints and named NPCs are skipped, and adventure books have no environment tags.
 - An encounter rolls the group size, a starting attitude from alignment, and the distance (Travel Terrain table). It names who is on watch during a Long Rest, and tells the players what their characters notice first.
 
 ## Verified correct ✅
