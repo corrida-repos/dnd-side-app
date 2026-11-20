@@ -146,7 +146,7 @@ function SpellLibraryCard() {
   return (
     <Card title={`Spell library (${s.spellLibrary.length})`}>
       <Rule>
-        Load spell data you have access to, such as a 5etools <code>spells-xphb.json</code> file. Only the name, level, school, source and ritual/concentration flags are kept. No book text is stored, and the app ships with no
+        Load spell data you have access to, such as a 5etools <code>spells-xphb.json</code> file. Only the name, level, school, source, ritual and concentration tags, casting time and duration are kept, which is enough to time ritual casting. No book text is stored, and the app ships with no
         spell data.
       </Rule>
       <div className="btn-row">

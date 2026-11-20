@@ -1,4 +1,4 @@
-import type { ActiveEffect, Activity, Ritual, Bastion, Character, ExhaustionCause, Facility, MagicItem, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
+import type { ActiveEffect, Activity, CharacterSpell, Ritual, Bastion, Character, ExhaustionCause, Facility, MagicItem, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
 import { BASIC_BUILD, BASTION_TURN_DAYS, ENLARGE, rollBastionEvent, SIZE_LABEL, SPECIAL_FACILITIES, type FacilitySize } from '../rules/bastion';
 import { d20, die, combineModes, rollExpr, signed, type Rng, type RollMode } from '../rules/dice';
 import { dateFromIndex, formatClock, formatDate, formatDuration, lightAt, sunriseMinutes } from '../rules/calendar';
@@ -9,6 +9,7 @@ import { readSky, SKY_DC } from '../rules/skyclock';
 import { BUTCHER_DC, BUTCHER_MINUTES, isEdible, MEAT_LB, STRANGE_TYPES, yieldsHide, type Creature } from '../rules/hunting';
 import { FEED_GP_PER_DAY, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset } from '../rules/money';
 import { STABLE_WAKE_DIE, STABILIZE_DC } from '../rules/upkeep';
+import { RITUAL_EXTRA_MINUTES as RITUAL_TAG_MINUTES, spellInfo } from '../rules/rituals';
 import { maxWatchMinutes, slotTimes, watchMinutes, watchSight, type Sight } from '../rules/watch';
 import { abilityMod, ATTUNE_AWAY_MINUTES, IDENTIFY_MINUTES, MAX_ATTUNED, RITUAL_EXTRA_MINUTES } from '../rules/upkeep';
 import { fireThreat, rollWeather, temperatureAt, CLIMATES, weatherDamageAffinities, type Affinity } from '../rules/weather';
@@ -1799,4 +1800,75 @@ export const readTheSky = act((d, ctx, charId: string) => {
     `${c.name} reads the ${underground ? 'darkness' : 'sky'}: Wisdom (Survival) ${r.value} ${signed(c.survival - 2 * c.exhaustion)} = ${total} against DC ${dc}. They reckon it's about ${String(guess).padStart(2, '0')}:00${total >= dc ? ' (right to within the hour)' : ` (wrong: it's really about ${String(trueHour).padStart(2, '0')}:00)`}.`,
     total >= dc ? 'good' : 'warn',
   );
+});
+
+// ---------------------------------------------------------------- casting spells (normally or as rituals)
+
+export function canCastAsRitual(c: Character, sp: CharacterSpell): { ok: boolean; reason: string } {
+  if (!sp.ritual) return { ok: false, reason: `${sp.name} doesn't have the Ritual tag.` };
+  if (sp.prepared || sp.alwaysPrepared) return { ok: true, reason: '' };
+  if (c.className === 'Wizard') return { ok: true, reason: '' }; // Ritual Adept: straight from the spellbook
+  return { ok: false, reason: `${c.name} needs ${sp.name} prepared to cast it as a ritual.` };
+}
+
+/** Casts a known spell: as a ritual (+10 minutes, no slot) or normally (uses a tracked slot of its level or higher). */
+export const castSpell = act((d, ctx, charId: string, spellName: string, mode: 'ritual' | 'slot') => {
+  const c = charById(d, charId);
+  const own = c?.spells.find((x) => x.name === spellName);
+  if (!c || !own || !alive(c)) return;
+  const sp = { ...own, ...spellInfo(own, d.spellLibrary) } as CharacterSpell;
+  const base = sp.castMinutes ?? 0;
+  if (mode === 'ritual') {
+    const check = canCastAsRitual(c, sp);
+    if (!check.ok) {
+      log(d, check.reason, 'warn');
+      return;
+    }
+  } else if (sp.level > 0) {
+    if (!sp.prepared && !sp.alwaysPrepared) {
+      log(d, `${c.name} doesn't have ${sp.name} prepared.`, 'warn');
+      return;
+    }
+    const slots = c.resources
+      .filter((r) => /(spell|pact) slots \(level (\d)\)/i.test(r.name))
+      .map((r) => ({ r, lvl: Number(/level (\d)/i.exec(r.name)![1]) }))
+      .filter((x) => x.lvl >= sp.level)
+      .sort((a, b) => a.lvl - b.lvl);
+    if (slots.length) {
+      const free = slots.find((x) => x.r.current > 0);
+      if (!free) {
+        log(d, `${c.name} has no spell slots of level ${sp.level} or higher left for ${sp.name}.`, 'warn');
+        return;
+      }
+      free.r.current -= 1;
+    }
+  }
+  const minutes = base + (mode === 'ritual' ? RITUAL_TAG_MINUTES : 0);
+  if (minutes > 0) advanceMut(d, ctx, minutes, 'camp');
+  const timeTxt = mode === 'ritual' ? `as a ritual (${sp.castTime ?? 'its casting time'} + 10 minutes = ${formatDuration(Math.max(1, Math.round(minutes)))}, no spell slot)` : `(${sp.castTime ?? 'its casting time'}${sp.level > 0 ? ', using a spell slot' : ''})`;
+  log(d, `${c.name} casts ${sp.name} ${timeTxt}.`, 'good');
+  if (sp.durationMinutes || sp.permanent) {
+    const preset = { name: sp.name, kind: 'spell' as const, minutes: sp.permanent ? null : sp.durationMinutes ?? null, concentration: !!sp.concentration, shelter: /tiny hut|rope trick|magnificent mansion/i.test(sp.name) };
+    if (preset.concentration) {
+      const dropped = d.effects.filter((e) => e.concentration && e.casterId === c.id);
+      if (dropped.length) {
+        d.effects = d.effects.filter((e) => !dropped.includes(e));
+        log(d, `${c.name} stops concentrating on ${dropped.map((e) => e.name).join(', ')}.`, 'warn');
+      }
+    }
+    const now = absNow(d);
+    d.effects.push({
+      id: uid(),
+      name: sp.name,
+      kind: 'spell',
+      targetIds: [],
+      casterId: c.id,
+      concentration: preset.concentration,
+      shelter: preset.shelter,
+      startedAt: now,
+      endsAt: preset.minutes == null ? null : now + preset.minutes,
+      notes: '',
+    });
+    log(d, `${sp.name} lasts ${preset.minutes == null ? 'until dispelled' : formatDuration(preset.minutes)}${preset.concentration ? ' (Concentration)' : ''}. Its timer is on the Effects & Lights tab.`);
+  }
 });

@@ -31,6 +31,14 @@ export interface SpellRef {
   source?: string;
   ritual?: boolean;
   concentration?: boolean;
+  /** Casting time as written, e.g. "1 action" or "10 minutes". */
+  castTime?: string;
+  /** Casting time in minutes (0 for an action, bonus action or reaction). */
+  castMinutes?: number;
+  /** Duration in minutes; null for instantaneous. */
+  durationMinutes?: number | null;
+  /** Lasts until dispelled. */
+  permanent?: boolean;
 }
 
 export interface CharacterSpell extends SpellRef {

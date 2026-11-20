@@ -891,3 +891,13 @@ select {
   text-align: left;
   white-space: nowrap;
 }
+
+.cast-panel {
+  margin: 10px 0;
+  padding: 6px 10px;
+  background: var(--surface-2);
+  border-radius: 8px;
+}
+.cast-panel h3 {
+  margin-top: 4px;
+}

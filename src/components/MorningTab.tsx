@@ -5,6 +5,8 @@ import { uid } from '../state/defaults';
 import { isCaster, levelLabel, PREP_RULE, PREP_RULE_TEXT, preparedCount, preparedLimit } from '../rules/spells';
 import { Card, Num, Pill, Select, Text, Toggle, Rule } from './common';
 import { armorTime, ARMOR_LABEL } from '../rules/survival';
+import { spellInfo, RITUAL_EXTRA_MINUTES } from '../rules/rituals';
+import { formatDuration } from '../rules/calendar';
 import type { Character, CharacterSpell } from '../state/types';
 
 export function MorningTab() {
@@ -83,6 +85,48 @@ function MorningCard({ c }: { c: Character }) {
   );
 }
 
+function CastPanel({ c }: { c: Character }) {
+  const s = useGame();
+  const known = c.spells.map((sp) => ({ sp, info: { ...sp, ...spellInfo(sp, s.spellLibrary) } as CharacterSpell }));
+  const [name, setName] = useState('');
+  if (!known.length) return null;
+  const pick = known.find((k) => k.sp.name === name) ?? known[0];
+  const info = pick.info;
+  const ritualCheck = E.canCastAsRitual(c, info);
+  const base = info.castMinutes ?? 0;
+  const slots = c.resources.filter((r) => /(spell|pact) slots \(level (\d)\)/i.test(r.name) && Number(/level (\d)/i.exec(r.name)![1]) >= info.level);
+  const slotLeft = slots.reduce((a, r) => a + r.current, 0);
+  return (
+    <div className="cast-panel">
+      <h3>Cast a spell</h3>
+      <div className="btn-row tight">
+        <Select
+          value={pick.sp.name}
+          onChange={setName}
+          options={known.map((k) => ({ value: k.sp.name, label: `${k.sp.name}${k.info.ritual ? ' (R)' : ''}${k.info.level ? ` · L${k.info.level}` : ' · cantrip'}` }))}
+        />
+        <button
+          className="small"
+          disabled={info.level > 0 && !info.prepared && !info.alwaysPrepared}
+          title={info.level > 0 && !info.prepared && !info.alwaysPrepared ? 'Not prepared' : ''}
+          onClick={() => dispatch((st, cx) => E.castSpell(st, cx, c.id, pick.sp.name, 'slot'))}
+        >
+          Cast ({info.castTime ?? 'casting time'}
+          {info.level > 0 ? (slots.length ? `, slot: ${slotLeft} left` : ', uses a slot') : ''})
+        </button>
+        <button className="small primary" disabled={!ritualCheck.ok} title={ritualCheck.reason} onClick={() => dispatch((st, cx) => E.castSpell(st, cx, c.id, pick.sp.name, 'ritual'))}>
+          As ritual ({formatDuration(Math.max(1, Math.round(base + RITUAL_EXTRA_MINUTES)))}, no slot)
+        </button>
+      </div>
+      <p className="small muted">
+        {info.ritual ? (ritualCheck.ok ? 'Ritual: casting time + 10 minutes, and no spell slot.' : ritualCheck.reason) : 'Not a ritual.'}{' '}
+        {info.durationMinutes ? `Lasts ${formatDuration(info.durationMinutes)}${info.concentration ? ' (Concentration)' : ''}, and a timer starts on the Effects & Lights tab.` : info.permanent ? 'Lasts until dispelled.' : info.durationMinutes === null ? 'Instantaneous.' : ''}
+        {info.castMinutes === undefined && ' Casting time unknown: import a 5etools spell file for exact times.'}
+      </p>
+    </div>
+  );
+}
+
 function SpellPrep({ c }: { c: Character }) {
   const s = useGame();
   const [setup, setSetup] = useState(false);
@@ -156,8 +200,15 @@ function SpellPrep({ c }: { c: Character }) {
                     onChange={() => dispatch((st, cx) => E.togglePrepared(st, cx, c.id, sp.name, setup || sp.level === 0))}
                   />
                   {sp.name}
-                  {sp.ritual && <sup title="Ritual">R</sup>}
-                  {sp.concentration && <sup title="Concentration">C</sup>}
+                  {(() => {
+                    const info = spellInfo(sp, s.spellLibrary);
+                    return (
+                      <>
+                        {info.ritual && <sup title={`Ritual: ${info.castTime ?? 'casting time'} + 10 minutes, no slot`}>R</sup>}
+                        {info.concentration && <sup title="Concentration">C</sup>}
+                      </>
+                    );
+                  })()}
                 </label>
                 {setup && (
                   <>
@@ -183,6 +234,8 @@ function SpellPrep({ c }: { c: Character }) {
           </div>
         </div>
       ))}
+
+      <CastPanel c={c} />
 
       {c.swapsLeft > 0 && !setup && (
         <div className="btn-row">

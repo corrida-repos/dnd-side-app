@@ -85,7 +85,32 @@ export function parse5eToolsSpells(json: unknown): SpellRef[] {
       source,
       ritual: !!meta?.ritual,
       concentration: duration.some((d) => !!d?.concentration),
+      ...readCastTime(r.time),
+      ...readDuration(r.duration),
     });
   }
   return out.sort((a, b) => a.level - b.level || a.name.localeCompare(b.name));
+}
+
+const UNIT_MINUTES: Record<string, number> = { action: 0, bonus: 0, reaction: 0, round: 0.1, minute: 1, hour: 60, day: 1440 };
+
+/** 5etools `time: [{ number, unit }]` → a label and minutes. */
+export function readCastTime(time: unknown): { castTime?: string; castMinutes?: number } {
+  const t = Array.isArray(time) ? (time[0] as { number?: number; unit?: string } | undefined) : undefined;
+  if (!t || typeof t.unit !== 'string') return {};
+  const n = typeof t.number === 'number' ? t.number : 1;
+  const unit = t.unit === 'bonus' ? 'bonus action' : t.unit;
+  return { castTime: `${n} ${unit}${n > 1 ? 's' : ''}`, castMinutes: (UNIT_MINUTES[t.unit] ?? 0) * n };
+}
+
+/** 5etools `duration: [{ type, duration: { type, amount } }]` → minutes, instantaneous (null) or until dispelled. */
+export function readDuration(duration: unknown): { durationMinutes?: number | null; permanent?: boolean } {
+  const d = Array.isArray(duration) ? (duration[0] as { type?: string; duration?: { type?: string; amount?: number } } | undefined) : undefined;
+  if (!d || typeof d.type !== 'string') return {};
+  if (d.type === 'instant') return { durationMinutes: null };
+  if (d.type === 'permanent') return { durationMinutes: null, permanent: true };
+  if (d.type === 'timed' && d.duration && typeof d.duration.type === 'string') {
+    return { durationMinutes: Math.max(1, Math.round((UNIT_MINUTES[d.duration.type] ?? 1) * (d.duration.amount ?? 1))) };
+  }
+  return {};
 }
