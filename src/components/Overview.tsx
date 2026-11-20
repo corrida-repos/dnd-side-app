@@ -409,7 +409,7 @@ function PartyStatusCard() {
                     </div>
                   </td>
                   <td>
-                    <Debuffs c={c} now={E.absNow(s)} />
+                    <Debuffs c={c} now={E.absNow(s)} load={E.carriedLoad(s, c)} />
                     {c.armorKind !== 'none' && !c.armorWorn && <Pill tone="warn">Armor off</Pill>}
                     {s.settings.coldNights && s.weather.low <= s.settings.coldNightF && !E.hasWarmCover(c) && <Pill tone="warn" title="No Bedroll, Blanket or cold weather gear for tonight">No warm cover</Pill>}
                   </td>

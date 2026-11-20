@@ -2,9 +2,11 @@ import type { Character } from '../state/types';
 import { exhaustionBreakdown, exhaustionSummary } from '../rules/survival';
 import { formatDuration } from '../rules/calendar';
 import { Pill } from './common';
+import { LOAD_LABEL } from '../rules/encumbrance';
+import type { Load } from '../state/engine';
 
 /** Every debuff on a character, each labelled with what caused it. */
-export function Debuffs({ c, now, empty = true }: { c: Character; now: number; empty?: boolean }) {
+export function Debuffs({ c, now, empty = true, load }: { c: Character; now: number; empty?: boolean; load?: Load }) {
   const parts = exhaustionBreakdown(c);
   const items: JSX.Element[] = [];
   if (c.diedAt != null || c.exhaustion >= 6) items.push(<Pill key="dead" tone="bad">{c.exhaustion >= 6 ? 'Dead (Exhaustion 6)' : 'Dead'}</Pill>);
@@ -67,6 +69,12 @@ export function Debuffs({ c, now, empty = true }: { c: Character; now: number; e
     items.push(
       <Pill key="starve" tone={c.daysWithoutFood >= 4 ? 'bad' : 'warn'} title="From the 5th day without food, 1 Exhaustion level is gained every day">
         Starving: {c.daysWithoutFood} day{c.daysWithoutFood > 1 ? 's' : ''} without food
+      </Pill>,
+    );
+  if (load && load.level !== 'light')
+    items.push(
+      <Pill key="load" tone={load.level === 'encumbered' ? 'warn' : 'bad'} title={`${load.total} of ${load.capacity} lb carried`}>
+        {LOAD_LABEL[load.level].split(' (')[0]}
       </Pill>,
     );
   if (c.stress > 0)

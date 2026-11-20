@@ -6,7 +6,8 @@ import { abilityMod, MAX_ATTUNED, RECHARGE_LABEL, RESOURCE_PRESETS, spellSlotsFo
 import { isCaster } from '../rules/spells';
 import { formatClock, formatDuration } from '../rules/calendar';
 import { Card, Meter, Num, Pill, Select, Text, Toggle, Rule } from './common';
-import type { Character, MagicItem, Resource } from '../state/types';
+import type { Character, InventoryItem, MagicItem, Resource } from '../state/types';
+import { LOAD_LABEL, RATION_WEIGHT } from '../rules/encumbrance';
 import { ARCANA_DC, CLUE_KIND_LABEL, SCHOOLS_OF_MAGIC, STUDY_LABEL, STUDY_MINUTES, type ClueKind } from '../rules/identify';
 import { RARITY_LABEL, type Rarity } from '../rules/crafting';
 
@@ -26,6 +27,7 @@ export function GearTab() {
           <HpBlock c={c} />
           {c.kind !== 'mount' && <ResourcesBlock c={c} />}
           {c.kind !== 'mount' && <ItemsBlock c={c} />}
+          <InventoryBlock c={c} />
         </Card>
       ))}
     </div>
@@ -146,6 +148,76 @@ function KnowledgePanel({ c, it }: { c: Character; it: MagicItem }) {
         everything except curses. Attuning reveals a curse (table rule).
       </Rule>
     </details>
+  );
+}
+
+function InventoryBlock({ c }: { c: Character }) {
+  const s = useGame();
+  const [text, setText] = useState('');
+  const load = E.carriedLoad(s, c);
+  const set = (iid: string, fn: (i: InventoryItem) => void) => setChar(c.id, (x) => fn(x.inventory.find((i) => i.id === iid)!));
+  const tone = load.level === 'light' ? 'good' : load.level === 'over' || load.level === 'heavy' ? 'bad' : 'warn';
+  const guesses = c.inventory.filter((i) => i.source === 'guess').length;
+  return (
+    <>
+      <h3>
+        Inventory and load <Pill tone={tone}>{LOAD_LABEL[load.level].split(' (')[0]}</Pill>
+      </h3>
+      <div className="hp-line">
+        <b>
+          {load.total} / {load.capacity} lb
+        </b>
+        <Meter value={load.total} max={load.capacity} tone={tone} />
+        {c.kind !== 'mount' && <Num label="Strength" value={c.strScore} onChange={(v) => setChar(c.id, (x) => void (x.strScore = Math.max(1, Math.round(v))))} min={1} max={30} width={2} />}
+        {c.kind === 'mount' && (
+          <Num label="Capacity" value={load.capacity} onChange={(v) => setChar(c.id, (x) => void (x.carryCapacity = Math.max(0, Math.round(v))))} min={0} suffix="lb" width={5} />
+        )}
+      </div>
+      <p className="small muted">
+        Gear {Math.round(load.gear * 10) / 10} lb · food {load.food} lb ({RATION_WEIGHT} lb per day of Rations) · water {Math.round(load.water)} lb
+        {load.coins ? ` · coins ${Math.round(load.coins * 10) / 10} lb` : ''}
+        {load.magic ? ` · magic items ${load.magic} lb` : ''}. {LOAD_LABEL[load.level]}.
+      </p>
+      {c.inventory.length > 0 && (
+        <details>
+          <summary>
+            {c.inventory.length} item line(s){guesses ? `, ${guesses} with guessed weights` : ''}
+          </summary>
+          <ul className="plain small">
+            {c.inventory.map((i) => (
+              <li key={i.id} className="armor-row">
+                <span>
+                  {i.name} {i.qty > 1 && <span className="muted">×{i.qty}</span>}{' '}
+                  <Pill tone={i.source === 'guess' ? 'warn' : 'muted'} title={i.source === 'book' ? 'From the PHB equipment list' : i.source === 'pasted' ? 'Weight from the pasted text' : i.source === 'guess' ? 'Guessed from the name' : 'Set by hand'}>
+                    {i.source === 'book' ? 'PHB' : i.source}
+                  </Pill>
+                </span>
+                <span className="btn-row tight">
+                  <Num value={i.qty} onChange={(v) => set(i.id, (x) => void (x.qty = Math.max(0, Math.round(v))))} min={0} width={2} />
+                  <Num value={i.weight} onChange={(v) => set(i.id, (x) => ((x.weight = Math.max(0, v)), (x.source = 'manual')))} min={0} step={0.5} suffix="lb" width={3} />
+                  <button className="ghost tiny" aria-label={`Remove ${i.name}`} onClick={() => setChar(c.id, (x) => void (x.inventory = x.inventory.filter((y) => y.id !== i.id)))}>
+                    ✕
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+          <button className="ghost small bad" onClick={() => confirm(`Clear ${c.name}'s inventory list?`) && setChar(c.id, (x) => void (x.inventory = []))}>
+            Clear list
+          </button>
+        </details>
+      )}
+      <textarea rows={3} value={text} onChange={(e) => setText(e.target.value)} placeholder={'Paste from D&D Beyond or type one item per line, e.g.\n2 Torches\nLongsword\nRope, hempen (50 feet)'} />
+      <div className="btn-row tight">
+        <button className="small" disabled={!text.trim()} onClick={() => (dispatch((st, cx) => E.addInventory(st, cx, c.id, text)), setText(''))}>
+          Add to inventory
+        </button>
+      </div>
+      <Rule>
+        No weights needed: each item is looked up in the 2024 PHB equipment list, guessed from its name, or set to 1 lb. A weight in the pasted text is used as is, and you can correct any line. Rations, water and
+        coins (50 to a pound) are added from the tracker.
+      </Rule>
+    </>
   );
 }
 

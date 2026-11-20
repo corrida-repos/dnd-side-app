@@ -8,6 +8,7 @@ import { LOST_RECHECK_DIE, navigationDC } from '../rules/navigation';
 import { readSky, SKY_DC } from '../rules/skyclock';
 import { MESSENGER_GP_PER_MILE } from '../rules/hirelings';
 import { ARCANA_DC, STUDY_MINUTES, type StudyMethod } from '../rules/identify';
+import { MOUNT_CAPACITY, carryingCapacity, COINS_PER_LB, estimateWeight, loadLevel, parseInventory, RATION_WEIGHT, type LoadLevel } from '../rules/encumbrance';
 import { BUTCHER_DC, BUTCHER_MINUTES, isEdible, MEAT_LB, STRANGE_TYPES, yieldsHide, type Creature } from '../rules/hunting';
 import { FEED_GP_PER_DAY, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset } from '../rules/money';
 import { STABLE_WAKE_DIE, STABILIZE_DC } from '../rules/upkeep';
@@ -1800,6 +1801,7 @@ export const addMount = act((d, _ctx, preset: MountPreset, name: string, buyerId
     waterCapacityPints: 0,
     gp: 0,
     conScore: 14,
+    carryCapacity: MOUNT_CAPACITY[preset.name] ?? null,
   });
   d.characters.push(m);
   log(d, `${m.name} (${preset.name}, ${preset.size}, Speed ${preset.speed} ft) joins the party. It needs food and water every day like everyone else.`);
@@ -2151,4 +2153,44 @@ export const setClueKnown = act((d, _ctx, ownerId: string, itemId: string, clueI
   if (!it || !c) return;
   c.known = known;
   if (known) addFinding(d, it, 'dm', `Learned: ${c.text}.`);
+});
+
+// ---------------------------------------------------------------- carried weight
+
+export interface Load {
+  gear: number;
+  food: number;
+  water: number;
+  coins: number;
+  magic: number;
+  total: number;
+  capacity: number;
+  level: LoadLevel;
+}
+
+/** Everything a character carries, in pounds, with the estimate broken down. */
+export function carriedLoad(s: State, c: Character): Load {
+  const gear = c.inventory.reduce((a, i) => a + i.weight * i.qty, 0);
+  const food = c.rationsLb * RATION_WEIGHT;
+  const skins = c.waterCapacityPints > 0 ? Math.ceil(c.waterCapacityPints / 4) : 0;
+  const water = c.waterPints + skins; // a pint of water weighs about a pound; each empty skin about a pound
+  const coins = s.settings.coinWeight && c.kind !== 'mount' ? Math.max(0, c.gp) / COINS_PER_LB : 0;
+  const listed = new Set(c.inventory.map((i) => i.name.toLowerCase()));
+  // Magic items count once: skip any that also appear in the pasted inventory.
+  const magic = c.items.filter((it) => !listed.has(it.name.toLowerCase()) && !listed.has((it.partyName ?? '').toLowerCase())).reduce((a, it) => a + estimateWeight(it.name).weight, 0);
+  const total = Math.round((gear + food + water + coins + magic) * 10) / 10;
+  const capacity = c.carryCapacity ?? carryingCapacity(c.strScore, c.size);
+  return { gear, food, water, coins, magic, total, capacity, level: loadLevel(total, capacity, c.kind === 'mount' ? 0 : c.strScore, s.settings.variantEncumbrance) };
+}
+
+export const addInventory = act((d, _ctx, charId: string, text: string) => {
+  const c = charById(d, charId);
+  if (!c) return;
+  const parsed = parseInventory(text);
+  for (const p of parsed) {
+    const same = c.inventory.find((i) => i.name.toLowerCase() === p.name.toLowerCase());
+    if (same) same.qty += p.qty;
+    else c.inventory.push({ id: uid(), ...p });
+  }
+  if (parsed.length) log(d, `${c.name}'s inventory: added ${parsed.length} line(s), ${parsed.filter((p) => p.source === 'guess').length} with guessed weights.`);
 });

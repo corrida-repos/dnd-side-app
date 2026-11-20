@@ -200,7 +200,8 @@ Checked against the 2024 *Player's Handbook* and *Dungeon Master's Guide* data t
 - 🔜 **Raw materials cost half the price, rounded down**: 37 GP for Chain Mail, not 37.5.
 - 🔜 **Normally only one other character can help with crafting.** The DM can allow more. Limit crafters to two, with an override.
 - 🔜 **Lifestyle is paid at the start of each week or month** (DM's choice). Offer that alongside the current daily charge.
-- 🔜 **Animal feed weighs 10 lb per day** (5 CP). Track the weight once encumbrance exists.
+- 🔜 **Animal feed weighs 10 lb per day** (5 CP). Encumbrance exists now, so count feed carried by mounts at 10 lb per day.
+- ✅ **Rations weigh 2 lb per day** in 2024. Carried food now counts at 2 lb per day of Rations.
 
 ### Bastions
 - 🔜 **A new Bastion starts with two free basic facilities** (one Cramped, one Roomy) and two special facilities.
@@ -225,7 +226,7 @@ Checked against the 2024 *Player's Handbook* and *Dungeon Master's Guide* data t
 - 📋 **Searching and tracking** DCs by terrain.
 
 ### Load and gear
-- 📋 **Encumbrance:**
+- ✅ **Encumbrance:**
   - Carrying capacity is Strength × 15 lb for Small or Medium creatures, ×7.5 for Tiny, ×30 for Large, ×60 for Huge, ×120 for Gargantuan.
   - Mount capacities: Camel 450 lb, Elephant 1,320, Draft Horse 540, Riding Horse 480, Mastiff 195, Mule 420, Pony 225, Warhorse 540.
   - Weights: rations 1 lb, water 8 lb per gallon, feed 10 lb per day.

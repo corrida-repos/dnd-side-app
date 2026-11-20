@@ -10,6 +10,7 @@ import type { Creature } from '../rules/hunting';
 import type { NavTerrain } from '../rules/navigation';
 import type { HirelingRole } from '../rules/hirelings';
 import type { ClueKind, StudyMethod } from '../rules/identify';
+import type { WeightSource } from '../rules/encumbrance';
 
 export type Season = 'winter' | 'spring' | 'summer' | 'autumn';
 export type Size = 'Tiny' | 'Small' | 'Medium' | 'Large' | 'Huge' | 'Gargantuan';
@@ -95,6 +96,15 @@ export interface ItemFinding {
   stamp: string;
   method: StudyMethod;
   text: string;
+}
+
+export interface InventoryItem {
+  id: string;
+  name: string;
+  qty: number;
+  /** Weight of one, in pounds. */
+  weight: number;
+  source: WeightSource;
 }
 
 export interface Resource {
@@ -191,6 +201,11 @@ export interface Character {
   /** Trances instead of sleeping: a Long Rest needs only 4 hours of rest, so they can watch for 4. */
   trance: boolean;
   items: MagicItem[];
+  /** Everyday gear, usually pasted from D&D Beyond; weights are estimated. */
+  inventory: InventoryItem[];
+  strScore: number;
+  /** Fixed carrying capacity (mounts); null means Strength × size. */
+  carryCapacity: number | null;
   resources: Resource[];
   /** Personal renown, fear and stress trackers. */
   renown: number;
@@ -433,6 +448,10 @@ export interface Settings {
   fearPerLongRest: number;
   /** Table rule: weather favors or hinders certain damage types (+1 or -1 per damage die). */
   weatherDamage: boolean;
+  /** Optional older rule: Encumbered over 5 × Strength, Heavily Encumbered over 10 × Strength. */
+  variantEncumbrance: boolean;
+  /** Count coins toward carried weight (50 coins per pound, treating gold as coins). */
+  coinWeight: boolean;
   /** Nobody has a timepiece: show the time as nature's cues instead of a clock. */
   noTimepiece: boolean;
   /** Table rule: heavy precipitation and darkness each add +5 to the navigation DC. */
