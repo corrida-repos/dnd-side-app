@@ -43,6 +43,8 @@ export const TOPIC_PLACES: Record<TopicId, { tab: string; tabLabel: string; card
   tainted: { tab: 'camp', tabLabel: 'Camp & Survival', card: 'Raw food and dirty water' },
   poisonHarvest: { tab: 'camp', tabLabel: 'Camp & Survival', card: 'Harvesting poison' },
   disease: { tab: 'effects', tabLabel: 'Effects & Lights', card: 'Diseases' },
+  poison: { tab: 'effects', tabLabel: 'Effects & Lights', card: 'Poisons' },
+  shopping: { tab: 'money', tabLabel: 'Money & Mounts', card: 'Shop and loot' },
   cold: { tab: 'overview', tabLabel: 'Overview', card: 'Conditions right now' },
   heat: { tab: 'overview', tabLabel: 'Overview', card: 'Conditions right now' },
   weather: { tab: 'overview', tabLabel: 'Overview', card: 'Conditions right now' },

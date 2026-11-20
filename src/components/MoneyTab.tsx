@@ -419,6 +419,7 @@ function ShopCard() {
       <Rule>
         2024 PHB prices. Selling: equipment in good condition fetches half its price; gems, jewelry, art objects and trade goods keep their full value. Magic items are sold as downtime deals (Downtime tab). Table rules: what each settlement stocks, and a {Math.round(RENOWN_DISCOUNT * 100)}% discount through a faction where you have Renown 3+.
       </Rule>
+      <WaysAround topic={'shopping'} />
     </Card>
   );
 }

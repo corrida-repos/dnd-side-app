@@ -88,7 +88,9 @@ export type TopicId =
   | 'saves'
   | 'concentration'
   | 'bastionEvents'
-  | 'timekeeping';
+  | 'timekeeping'
+  | 'poison'
+  | 'shopping';
 
 export interface Topic {
   id: TopicId;
@@ -995,17 +997,60 @@ export const TOPICS: Topic[] = [
       { ...gear('No clocks in 2024', 'Neither the 2024 Player’s Handbook nor the Dungeon Master’s Guide sells a clock or timepiece, so a working one is a DM-placed treasure.'), source: 'Note' },
     ],
   },
+  {
+    id: 'poison',
+    title: 'Poisons and the Poisoned condition',
+    problem: 'A poison calls for a Con save; a failure means Poison damage, the Poisoned condition (Disadvantage on attack rolls and ability checks) or worse, for minutes or hours.',
+    ways: [
+      spell('Protection from Poison', 'Ends Poisoned, then Advantage on saves against it and Poison Resistance for an hour.'),
+      spell('Lesser Restoration', 'Ends Poisoned as a Bonus Action.'),
+      spell('Heal', 'Ends Poisoned (and Blinded and Deafened) and restores 70 HP.'),
+      spell("Heroes' Feast", 'Immunity to Poisoned and Poison Resistance for 24 hours: cast it before entering a poisoner’s lair.'),
+      feature('Paladin', 1, 'Lay on Hands', '5 points from the pool remove Poisoned.'),
+      sub('Monk', 'Warrior of Mercy', 6, "Physician's Touch", 'Hand of Healing ends Poisoned.'),
+      feature('Monk', 10, 'Self-Restoration', 'Ends Poisoned on yourself at the end of each of your turns.'),
+      sub('Druid', 'Circle of the Land', 10, "Nature's Ward", 'Immune to the Poisoned condition.'),
+      species('Dwarf (Dwarven Resilience)', 'Advantage on saves to avoid or end Poisoned, and Poison Resistance.'),
+      species('Tiefling (Abyssal)', 'Poison Resistance (halves the damage, though not the condition).', undefined, undefined, { choice: ['abyssal'] }),
+      feat('Boon of Energy Resistance', 'Choose Poison Resistance.'),
+      gear('Antitoxin', 'Bonus Action: Advantage on saves against Poisoned for 1 hour (50 GP).'),
+      item('Periapt of Proof against Poison', 'rare', true, 'Immunity to Poisoned and Poison damage.'),
+      item('Periapt of Health', 'uncommon', true, 'Advantage on saves to avoid or end Poisoned, and 2d4 + 2 HP once per dawn.'),
+      item('Potion of Vitality', 'very rare', false, 'Ends Poisoned and removes Exhaustion.'),
+      item('Ring of Poison Resistance', 'rare', false, 'Permanent Poison Resistance.'),
+      bastion('Garden (Poison)', 5, 'Two vials of Antitoxin per Harvest order.'),
+      bastion('Greenhouse', 9, 'Fruits of Restoration act as Lesser Restoration, three a day.'),
+    ],
+  },
+  {
+    id: 'shopping',
+    title: 'Buying gear and selling loot',
+    problem: 'Shops charge full price, small settlements may not stock what you need, and selling usually fetches half.',
+    ways: [
+      feat('Crafter', '20% off every nonmagical item you buy.'),
+      { ...gear('Make it yourself', 'Crafting needs raw materials worth half the price, so a proficient crafter halves the cost (and takes a day per 10 GP).'), source: 'PHB rule' },
+      bastion('Storehouse', 5, 'A hireling procures nonmagical goods worth up to 500 GP in 7 days (2,000 GP from level 9, 5,000 from 13), and sells your goods for 10% to 100% over the standard price.'),
+      bastion('Stable', 9, 'Sell mounts for 20% over the standard price (50% from level 13, 100% from 17).'),
+      bastion('Smithy', 5, 'Hirelings craft Smith’s Tools items, so you pay for materials, not the shop price.'),
+      bastion('Workshop', 5, 'Hirelings craft adventuring gear with the Workshop’s tools.'),
+      spell('Mending', 'Repair torn or broken gear instead of replacing it.'),
+      spell('Fabricate', 'Turn raw materials into finished goods in 10 minutes (proficiency needed for weapons and armor).'),
+      feature('Artificer', 1, "Tinker's Magic", 'Conjure common gear (rope, a lamp, caltrops and more) that lasts until your next Long Rest.', undefined, 'EFA'),
+      spell('Teleportation Circle', 'Reach a city’s permanent circle when the village shop doesn’t have it.'),
+      spell('Sending', 'Ask a merchant or contact in another town whether they have it before you make the trip.'),
+    ],
+  },
 ];
 
 /** How the topics are grouped on the Ways Around tab. */
 export const TOPIC_GROUPS: { title: string; topics: TopicId[] }[] = [
-  { title: 'Food, water and illness', topics: ['food', 'water', 'foraging', 'hunting', 'tainted', 'disease', 'poisonHarvest'] },
+  { title: 'Food, water, poison and illness', topics: ['food', 'water', 'foraging', 'hunting', 'tainted', 'poison', 'disease', 'poisonHarvest'] },
   { title: 'Weather and the wild', topics: ['cold', 'heat', 'weather', 'altitude', 'breath', 'hazards'] },
   { title: 'Rest, recovery and saves', topics: ['shortRest', 'longRest', 'watch', 'exhaustion', 'saves', 'dying', 'death', 'fear'] },
   { title: 'Travel and exploration', topics: ['march', 'lost', 'tracking', 'encounters', 'exploration', 'mounts', 'timekeeping'] },
   { title: 'Camp and gear', topics: ['fire', 'light', 'armor', 'carrying', 'ammo'] },
   { title: 'Magic', topics: ['rituals', 'concentration', 'identify', 'attunement', 'divination', 'dailyCasting'] },
-  { title: 'Money, downtime and Bastions', topics: ['lifestyle', 'hirelings', 'services', 'crafting', 'spellbook', 'downtime', 'messages', 'building', 'bastionEvents'] },
+  { title: 'Money, downtime and Bastions', topics: ['lifestyle', 'shopping', 'hirelings', 'services', 'crafting', 'spellbook', 'downtime', 'messages', 'building', 'bastionEvents'] },
 ];
 
 /** The sections options are sorted into, in display order. */
