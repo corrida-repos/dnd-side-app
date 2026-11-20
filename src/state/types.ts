@@ -469,7 +469,9 @@ export interface Facility {
   shutTurns?: number;
   /** Garden: one type for a Roomy garden, two for a Vast one, each with its chosen product. */
   gardens?: { type: string; product: string }[];
-  /** Guildhall guild, Training Area trainer, Pub beverage. */
+  /** Museum: the owner has studied the treasure for 7 days, so the next Long Rest here grants its Charm. */
+  studied?: boolean;
+  /** Guildhall guild, Training Area trainer, Pub beverage, Museum treasure origin. */
   guild?: string;
   trainer?: string;
   pubSpecial?: string;
@@ -586,7 +588,10 @@ export interface Bastion {
   abandoned?: boolean;
   /** Bastion Defenders housed in Barracks (Menagerie creatures are listed separately). */
   defenders?: number;
-  menagerie?: { name: string; size: 'Small' | 'Medium' | 'Large'; defends: boolean }[];
+  menagerie?: { name: string; size: 'Tiny' | 'Small' | 'Medium' | 'Large' | 'Huge'; defends: boolean; origin?: 'menagerie' | 'construct' | 'grove' }[];
+  /** Red Wizard Necropolis: Undead Bastion Defenders, and the days destroyed ones come back. */
+  undead?: number;
+  undeadReturning?: number[];
   armoryStocked?: boolean;
   lieutenants?: number;
   army?: { guards: number; horses: number } | null;
@@ -679,6 +684,8 @@ export interface Settings {
   noTimepiece: boolean;
   /** Table rule: heavy precipitation and darkness each add +5 to the navigation DC. */
   poorVisibilityNav: boolean;
+  /** Which 2025 setting books' Bastion facilities to offer. */
+  facilityBooks: ('FRHoF' | 'EFA')[];
   /** Table rule: weekly risks and attention from lifestyle in town. */
   lifestyleRisks: boolean;
   /** Optional Xanathar's rules resolve downtime activities with checks and tables. */
@@ -697,6 +704,10 @@ export interface Settings {
 
 export interface Travel {
   pace: Pace;
+  /** Zhentarim reconnaissance: Advantage on Survival to forage and navigate until the journey ends. */
+  reconAdvantage?: boolean;
+  /** A Long Rest at a Zhentarim Travel Station raises the maximum pace one step until the next Long Rest elsewhere. */
+  paceBoost?: boolean;
   /** Hours counted toward the forced march limit since the last Long Rest. */
   hoursToday: number;
   milesToday: number;

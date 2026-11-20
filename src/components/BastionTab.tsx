@@ -316,7 +316,9 @@ function AddFacility({ b, ownerLevel, slotsLeft }: { b: Bastion; ownerLevel: num
   const [size, setSize] = useState<FacilitySize>('cramped');
   const [special, setSpecial] = useState('');
   const [already, setAlready] = useState(false);
-  const allowed = SPECIAL_FACILITIES.filter((f) => f.level <= ownerLevel && !b.facilities.some((x) => x.name === f.name));
+  const s0 = useGame();
+  const books = s0.settings.facilityBooks ?? ['FRHoF', 'EFA'];
+  const allowed = SPECIAL_FACILITIES.filter((f) => f.level <= ownerLevel && (!f.book || books.includes(f.book)) && !b.facilities.some((x) => x.name === f.name));
   const specialChoice = allowed.find((f) => f.name === special)?.name ?? allowed[0]?.name ?? '';
   const cost = BASIC_BUILD[size];
   const specialSizes = SPECIAL_FACILITIES.find((f) => f.name === specialChoice)?.sizes ?? ['roomy'];
@@ -342,7 +344,7 @@ function AddFacility({ b, ownerLevel, slotsLeft }: { b: Bastion; ownerLevel: num
           </>
         ) : (
           <>
-            <Select label="Facility" value={specialChoice} onChange={setSpecial} options={allowed.map((f) => ({ value: f.name, label: `${f.name} (level ${f.level}, ${f.order})` }))} />
+            <Select label="Facility" value={specialChoice} onChange={setSpecial} options={allowed.map((f) => ({ value: f.name, label: `${f.name} (level ${f.level}, ${f.order}${f.book ? `, ${f.book === 'FRHoF' ? 'Forgotten Realms' : 'Eberron'}` : ''})` }))} />
             {specialSizes.length > 1 && <Select label="Size" value={specialSize} onChange={(v) => setSpecialSize(v as FacilitySize)} options={specialSizes.map((x) => ({ value: x, label: SIZE_LABEL[x] }))} />}
           </>
         )}

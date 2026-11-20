@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
-import { FACILITY_OPTIONS, GARDEN_PRODUCTS, GARDEN_TYPES, GUILDS, PUB_SPECIALS, RARITIES_CRAFTABLE, SHIPS, TRAINERS, facilityHirelings, type GardenType } from '../rules/bastionOrders';
+import { MUSEUM_ORIGINS, FACILITY_OPTIONS, GARDEN_PRODUCTS, GARDEN_TYPES, GUILDS, PUB_SPECIALS, RARITIES_CRAFTABLE, SHIPS, TRAINERS, facilityHirelings, type GardenType } from '../rules/bastionOrders';
 import { GEAR_CATALOG } from '../rules/crafting';
 import { Num, Pill, Select, Text, Toggle, Rule } from './common';
 import type { Bastion, Facility, OrderPlan } from '../state/types';
@@ -101,6 +101,13 @@ export function FacilityPlan({ b, f }: { b: Bastion; f: Facility }) {
       )}
       {f.name === 'Training Area' && <Select label="Trainer" value={f.trainer ?? TRAINERS[0].name} onChange={(v) => setF({ trainer: v })} options={TRAINERS.map((t) => t.name)} />}
       {f.name === 'Pub' && <Select label="On tap" value={f.pubSpecial ?? PUB_SPECIALS[0]} onChange={(v) => setF({ pubSpecial: v })} options={PUB_SPECIALS} />}
+      {f.name === 'Museum' && (
+        <div className="btn-row tight">
+          <Select label="Treasure origin" value={f.guild ?? MUSEUM_ORIGINS[0]} onChange={(v) => setF({ guild: v })} options={MUSEUM_ORIGINS} />
+          <Toggle checked={!!f.studied} onChange={(v) => setF({ studied: v })} label="Owner has studied it for 7 days (Charm on the next Long Rest here)" />
+        </div>
+      )}
+      {/Helm$/.test(f.name) && <Text label="Destination" value={plan.text ?? ''} onChange={(v) => setPlan({ text: v })} />}
       <p className="small muted">
         {opt.note} {facilityHirelings(f.name, f.size)} hireling(s).
       </p>
