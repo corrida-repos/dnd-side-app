@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
-import { checkChance, checkModifiers, naturalNeeded, DANGER, DANGERS, DIFFICULTY_LABEL, encountersPerDay, type CheckConditions, type Danger, type Difficulty } from '../rules/encounters';
+import { BOOK_POOL, BOOKS, checkChance, checkModifiers, naturalNeeded, DANGER, DANGERS, DIFFICULTY_LABEL, encountersPerDay, type CheckConditions, type Danger, type Difficulty } from '../rules/encounters';
 import { TERRAIN, type TerrainType } from '../rules/terrain';
 import { formatDuration } from '../rules/calendar';
 import { Card, Pill, Rule, Select, Toggle } from './common';
@@ -56,7 +56,7 @@ function DangerCard() {
         <Toggle checked={s.settings.srdEncounters} onChange={(v) => edit((d) => void (d.settings.srdEncounters = v))} label="Use the built-in SRD 5.2 creatures" />
       </div>
       <p className="small muted">
-        Imported bestiaries (Settings) with Challenge Ratings and environments are added to the tables automatically, and replace SRD creatures of the same name.
+        Creatures from other books are built in (switch each book below). Bestiaries you import in Settings are added too, and replace built-in creatures of the same name.
       </p>
       <SourceToggles />
       <BookAdvice />
@@ -70,21 +70,36 @@ function SourceToggles() {
   const s = useGame();
   const counts = new Map<string, number>();
   for (const c of s.bestiary) if (c.cr && c.env?.length && !c.flags?.includes('N')) counts.set(c.source ?? '?', (counts.get(c.source ?? '?') ?? 0) + 1);
-  if (!counts.size) return null;
   return (
-    <div className="form-row">
-      <span className="small">Books in the tables:</span>
-      {[...counts.entries()]
-        .sort((a, b) => b[1] - a[1])
-        .map(([src, n]) => (
+    <>
+      <div className="form-row">
+        <span className="small">Built-in books:</span>
+        {BOOKS.map((b) => (
           <Toggle
-            key={src}
-            checked={!s.encounterSourcesOff.includes(src)}
-            onChange={(v) => edit((d) => void (d.encounterSourcesOff = v ? d.encounterSourcesOff.filter((x) => x !== src) : [...d.encounterSourcesOff, src]))}
-            label={`${src} (${n})`}
+            key={b.src}
+            checked={s.settings.encounterBooks.includes(b.src)}
+            onChange={(v) => edit((d) => void (d.settings.encounterBooks = v ? [...d.settings.encounterBooks.filter((x) => x !== b.src), b.src] : d.settings.encounterBooks.filter((x) => x !== b.src)))}
+            label={`${b.name} (${BOOK_POOL[b.src]?.length ?? 0})`}
+            title={b.blurb}
           />
         ))}
-    </div>
+      </div>
+      {counts.size > 0 && (
+        <div className="form-row">
+          <span className="small">Imported books:</span>
+          {[...counts.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .map(([src, n]) => (
+              <Toggle
+                key={src}
+                checked={!s.encounterSourcesOff.includes(src)}
+                onChange={(v) => edit((d) => void (d.encounterSourcesOff = v ? d.encounterSourcesOff.filter((x) => x !== src) : [...d.encounterSourcesOff, src]))}
+                label={`${src} (${n})`}
+              />
+            ))}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -261,11 +276,11 @@ function TableCard({ act }: { act: Act }) {
         const fights = t.rows.filter((r) => r.creature).reduce((a, r) => a + r.to - r.from + 1, 0);
         return fights > 0 && triv / fights > 0.3 && t.danger !== 'safe' ? (
           <p className="small warn-text">
-            Few creatures that live here are a match for level {t.party.level}, so some rows are trivial filler. Importing a full bestiary (Settings) adds more, or treat this area as a legendary creature&apos;s domain.
+            Few creatures that live here are a match for level {t.party.level}, so some rows are trivial filler. Switching on more books above adds more, or treat this area as a legendary creature&apos;s domain.
           </p>
         ) : null;
       })()}
-      {t.rows.every((r) => r.kind === 'peaceful') && <p className="small warn-text">No creatures fit this terrain and party. Turn on the SRD creatures or import a bestiary in Settings.</p>}
+      {t.rows.every((r) => r.kind === 'peaceful') && <p className="small warn-text">No creatures fit this terrain and party. Switch on the SRD creatures or more books above.</p>}
       {s.encounterExclude.length > 0 && (
         <p className="small">
           Left out:{' '}

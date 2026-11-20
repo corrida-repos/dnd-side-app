@@ -54,7 +54,9 @@ export type SenseKey =
   | 'contagionEases'
   | 'contagionEnds'
   | 'blinded'
-  | 'encounter';
+  | 'encounter'
+  | 'groundHeavy'
+  | 'groundClear';
 
 /** How the change reaches the character: felt in the body, noticed with the senses, or not noticed at all. */
 export type Awareness = 'feels' | 'notices' | 'unaware';
@@ -91,6 +93,8 @@ export const SENSES: Record<SenseKey, SenseDef> = {
   contagionEases: F('feels a little stronger as the sickness loosens its grip', 'feels the fever ebb somewhat'),
   contagionEnds: F('feels the last of the sickness lift', 'feels truly well again for the first time in days'),
   blinded: F('feels the eyes burn and cloud over until nothing can be seen', 'feels a gritty sting in the eyes as the world fades to grey darkness'),
+  groundHeavy: N('notices boots sinking deep with every step', 'notices the ground dragging at every stride'),
+  groundClear: N('notices the ground firm and easy underfoot again', 'notices the going is easier now'),
   waterIllness: F('feels a gurgling, clammy queasiness', 'feels the stomach lurch and the vision swim'),
   waterIllnessEnds: F('feels the queasiness fade', 'feels steady again'),
   dying: U('collapses and slips away into darkness, aware of nothing', 'crumples to the ground, unconscious'),

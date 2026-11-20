@@ -252,19 +252,20 @@ Checked against the 2024 *Player's Handbook* and *Dungeon Master's Guide* data t
 - Every place has a danger level (Safe, Low, Moderate, High, Deadly). Danger sets how often to check (every 12/8/4/2/1 hours overland, every 6/6/3/2/1 exploration turns in a dungeon) and the d20 number that brings an encounter (20, 19+, then 18+). A natural 20 always does. *Table rule:* the 2024 DMG leaves the frequency to the DM.
 - Rolling conditions add to or take from the d20: night, a light in the dark, fast pace, a large group (+1); slow pace, a good road, foul weather, a sheltered camp (−1).
 - d100 tables for each terrain are built from the 2024 Monster Manual's SRD 5.2 creatures (CC BY 4.0, taken from 5etools with `scripts/build-encounter-data.mjs`) plus any imported bestiary. Group sizes follow the 2024 DMG XP budget for the danger level's difficulty, and big creatures stay in small numbers.
+- Built in and on by default: the rest of the 2024 Monster Manual (136), *Monsters of the Multiverse* (227) and *Adventures in Faerûn* (32), as names, CRs and environments only (`scripts/build-book-data.mjs`). *Ravenloft: The Horrors Within* (47) and *Arcana Unleashed* (18) are built in but off.
 - Other 5etools books can be imported (several files at once) and switched in or out per book. Checked for usefulness: the rest of the 2024 Monster Manual, *Monsters of the Multiverse* and *Adventures in Faerûn* fill nearly every gap; *Ravenloft: The Horrors Within* and *Arcana Unleashed* suit particular campaigns; 2014 reprints and named NPCs are skipped, and adventure books have no environment tags.
 - An encounter rolls the group size, a starting attitude from alignment, and the distance (Travel Terrain table). It names who is on watch during a Long Rest, and tells the players what their characters notice first.
 
-## Phase 7: Firming up vague mechanics 🔜
+## Phase 7: Firming up vague mechanics ✅
 
 An audit of the gameplay flow for places where the tracker stops at "make the check", "the DM decides" or a logged roll with no result. Each item says what happens **now**, which **rules** cover it, and what **to build**. Items are ordered by how often they come up at the table.
 
-### Bastion orders that produce something 🔜
+### Bastion orders that produce something ✅
 - **Now:** resolving a turn logs "orders carried out". A Smithy told to Craft, a Garden told to Harvest or a Library told to Research produce nothing, and the order details are free text.
 - **Rules (2024 DMG, chapter 8):** each of the 70 facilities lists its order options and exact results, e.g. Garden harvests (healing herbs, poisons, rations), Smithy crafts with Smith's Tools or makes Common/Uncommon armaments at level 9+, Storehouse trades goods for profit, Barrack recruits Bastion Defenders, Library researches a topic. The 5etools `bastions.json` has all of them.
 - **To build:** pick an order option per facility from the data. Results are applied on the turn: items go to a Bastion stash, gold to the owner, defenders to a roster, research to a notes log. Multi-turn crafts track progress.
 
-### Bastion events with consequences 🔜
+### Bastion events with consequences ✅
 - **Now:** the d100 event is rolled and named, and you read the DMG entry and apply it yourself.
 - **Rules (2024 DMG):**
   - Attack: 6d6, each 1 kills a Bastion Defender; with no defenders, a random facility shuts down for a turn.
@@ -280,54 +281,54 @@ An audit of the gameplay flow for places where the tracker stops at "make the ch
   - All Is Well: a flavor d8.
 - **To build:** a Bastion Defender roster and facility hireling counts. Each event rolls its own dice, offers its choice (pay the bribe? take the opportunity? send how many defenders?) and applies the gold, losses, shutdowns and guests. Shut facilities skip their next order.
 
-### Downtime activities with outcomes 📋
+### Downtime activities with outcomes ✅
 - **Now:** carousing, crime, gambling, pit fighting, religious service, research and working end with "make the check, the DM decides". Training ends with a message but doesn't add the language or tool to the character.
 - **Rules:** the 2024 books give these no tables. *Xanathar's Guide* (2014) has full tables: checks against DCs, complications, contacts made, gold won or lost, and research that yields lore. That's an optional rule, so it goes behind a switch.
 - **To build:** roll the listed checks (or take a total), apply the result table (gold, contacts, complications as log entries, Renown changes), and record the new proficiency or language from training on the character.
 
-### Buying and selling gear 📋
+### Buying and selling gear ✅
 - **Now:** purchases are free-form gold changes. The item doesn't land in the inventory, and selling loot has no rule.
 - **Rules (2024 PHB, chapter 6):** list prices for all equipment. Selling: equipment in good condition sells for half its price, while gems, art and trade goods keep their full value. Magic items are sold as downtime deals (already built).
 - **To build:** a shop on the Money tab, using the PHB catalog the crafting picker already has. Buying pays and adds the item with its weight. Selling removes it and pays half, or full for gems, art and trade goods. A loot split divides treasure across the party. An optional faction discount applies at Renown 3+.
 
-### Services and spells that take effect 📋
+### Services and spells that take effect ✅
 - **Now:** paying for *Lesser Restoration*, *Raise Dead* or *Remove Curse* charges the gold but changes nothing. Costly material components aren't checked or used up when a character casts.
 - **Rules (2024 PHB):** component costs per spell (a 100 GP pearl for *Identify*, 300 GP of diamonds consumed by *Revivify*, and so on). Resurrection spells have time limits, which are already tracked.
 - **To build:**
   - Services apply the spell: end a contagion or condition, end a curse and allow ending attunement, or revive within the window.
   - A component pouch of costly components in the inventory. Casting checks for them, and spends them when the spell consumes them.
 
-### Poisons that do something 📋
+### Poisons that do something ✅
 - **Now:** a harvested dose is just an inventory line. A botched harvest or a "poison" potion-mixing result says "apply the poison" with nothing to apply.
 - **Rules (2024 DMG):** sample poisons with type (contact, ingested, inhaled, injury), save DC, effect and price (e.g. Assassin's Blood, Burnt Othur Fumes, Serpent Venom). The PHB adds Basic Poison (100 GP).
 - **To build:** a poison catalog. Each dose names its poison. Exposure rolls the save and applies the damage, Poisoned condition and duration as a timed effect. Doses can be coated onto weapons or slipped into food and drink.
 
-### Journey obstacles 📋
+### Journey obstacles ✅
 - **Now:** journey stages handle encounters, getting lost, foraging and searching, but not obstacles.
 - **Rules (2024 DMG "Journey Stage Challenges"):** an obstacle (a cliff, a blizzard, a forest fire) is passed by a plan or a check. Failure costs a few hours to a couple of days of delay, damage, 1d4 Exhaustion levels or a condition.
 - **To build:** obstacles on a stage, with a check to pass. A failure applies the chosen consequence: delay added to the stage, Exhaustion with its cause label, a condition timer, or damage.
 
-### Snow and mud that change the ground 📋
+### Snow and mud that change the ground ✅
 - **Now:** heavy snow says "may become Difficult Terrain (DM's call)".
 - **Rules:** the 2024 DMG leaves it to the DM.
 - **To build (table rule):** track snow depth from days of snowfall and melting temperatures, and mud after heavy rain. Past a threshold, travel counts as Difficult Terrain automatically, with a sensory line when it starts.
 
-### Lifestyle consequences 💭
+### Lifestyle consequences ✅
 - **Now:** lifestyle is charged but has no effect beyond covering food and lodging.
 - **Rules (2024 PHB):** lifestyles have no inherent consequences, but Wretched means sleeping outside exposed to danger, Squalid means unhealthy conditions and criminals, and Aristocratic draws attention.
 - **To build (table rule, switchable):** Wretched counts as sleeping in the open for weather and cold nights. Squalid gives a weekly chance of Sewer Plague exposure or theft. Aristocratic gives a weekly chance of a visitor, a request or a pickpocket.
 
-### Encounter follow-through 💭
+### Encounter follow-through ✅
 - **Now:** an encounter rolls creatures, attitude and distance, and says what the characters notice first.
 - **Rules (2024 PHB/DMG):** compare Stealth with passive Perception, with travel pace affecting Stealth and Perception. A surprised creature has Disadvantage on Initiative.
 - **To build:** roll the creatures' Stealth against the party's passive Perception (with pace and light), say who is surprised, and hand off to combat. Optionally, the reaction to a parley follows the starting attitude.
 
-### Renown that moves on its own 💭
+### Renown that moves on its own ✅
 - **Now:** renown changes only with the + and − buttons.
 - **Rules (2024 DMG):** +1 for completing a mission that serves the group, or level-based renown (+1 per level).
 - **To build:** a "mission done for this faction" action, an optional level-up hook, and perks at 3+, 10+ and 50+ that do something (shelter in need, shop discounts, access to potions and scrolls).
 
-### Mixed potions that apply 💭
+### Mixed potions that apply ✅
 - **Now:** the miscibility result is logged.
 - **To build:** pick the two potions from the inventory. Use them up, and apply the result (halved or doubled durations on the effect timer, a poison, or an explosion's damage).
 

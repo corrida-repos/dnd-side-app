@@ -403,6 +403,7 @@ function ShopCard() {
           </button>
         </>
       )}
+      {Math.max(0, ...s.factions.map((f) => f.renown)) >= 10 && <FactionSupply buyerId={whoId} />}
       <h3>Split loot</h3>
       <div className="form-row">
         <Num label="Coin" value={loot} onChange={(v) => setLoot(Math.max(0, v))} min={0} suffix="GP" width={6} />
@@ -421,5 +422,23 @@ function ShopCard() {
       </Rule>
       <WaysAround topic={'shopping'} />
     </Card>
+  );
+}
+
+function FactionSupply({ buyerId }: { buyerId: string }) {
+  const [name, setName] = useState('Potion of Greater Healing');
+  const [rarity, setRarity] = useState<'common' | 'uncommon'>('uncommon');
+  return (
+    <>
+      <h3>Faction supply (Renown 10+)</h3>
+      <div className="form-row">
+        <Text label="Potion or scroll" value={name} onChange={setName} />
+        <Select label="Rarity" value={rarity} onChange={setRarity} options={[{ value: 'common', label: 'Common (50 GP)' }, { value: 'uncommon', label: 'Uncommon (200 GP)' }]} />
+      </div>
+      <button className="small" disabled={!name.trim() || !buyerId} onClick={() => dispatch((st, cx) => E.factionSupply(st, cx, buyerId, name.trim(), rarity))}>
+        Get it through contacts
+      </button>
+      <p className="small muted">DMG: Renown 10+ can open access to potions and scrolls. Priced at half the 2024 DMG value for consumables (table rule).</p>
+    </>
   );
 }

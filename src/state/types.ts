@@ -194,6 +194,8 @@ export interface Faction {
   name: string;
   renown: number;
   notes: string;
+  /** Level-based renown: follows this character's level (DMG option). */
+  levelOf?: string | null;
 }
 
 export interface Holiday {
@@ -357,6 +359,8 @@ export interface Place {
   settlement: boolean;
   /** How dangerous the area is: sets how often to check for random encounters and how tough they are. */
   danger: Danger;
+  /** Snow on the ground and days of mud (table rule). */
+  ground?: { snowIn: number; mudDays: number };
 }
 
 export interface Fire {
@@ -679,6 +683,8 @@ export interface Settings {
   noTimepiece: boolean;
   /** Table rule: heavy precipitation and darkness each add +5 to the navigation DC. */
   poorVisibilityNav: boolean;
+  /** Table rule: weekly risks and attention from lifestyle in town. */
+  lifestyleRisks: boolean;
   /** Optional Xanathar's rules resolve downtime activities with checks and tables. */
   downtimeOutcomes: boolean;
   /** Costly Material components must be in the caster's inventory and are used up (2024 PHB). */
@@ -689,6 +695,8 @@ export interface Settings {
   encounters: boolean;
   /** Use the built-in SRD 5.2 creatures for random encounter tables (imported bestiaries are always used). */
   srdEncounters: boolean;
+  /** Built-in creatures from other books (5etools source codes) used in the random encounter tables. */
+  encounterBooks: string[];
 }
 
 export interface Travel {
@@ -717,6 +725,21 @@ export interface JourneyStage {
   milesDone: number;
   done: boolean;
   notes: string;
+  /** Obstacles on this stage (2024 DMG journey stage challenges). */
+  obstacles?: Obstacle[];
+}
+
+export interface Obstacle {
+  id: string;
+  name: string;
+  check: string;
+  dc: number;
+  group: boolean;
+  consequence: 'delay' | 'exhaustion' | 'damage' | 'condition';
+  amount: string;
+  condition?: string;
+  minutes?: number;
+  resolved?: 'passed' | 'failed';
 }
 
 export interface State {
