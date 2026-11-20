@@ -10,6 +10,7 @@ import { MorningTab } from './components/MorningTab';
 import { DowntimeTab } from './components/DowntimeTab';
 import { BastionTab } from './components/BastionTab';
 import { GearTab } from './components/GearTab';
+import { EffectsTab } from './components/EffectsTab';
 import { LogTab } from './components/LogTab';
 import { SettingsTab } from './components/SettingsTab';
 
@@ -17,6 +18,7 @@ const TABS = [
   { id: 'overview', label: 'Overview', el: Overview },
   { id: 'party', label: 'Party', el: PartyTab },
   { id: 'gear', label: 'Gear & Resources', el: GearTab },
+  { id: 'effects', label: 'Effects & Lights', el: EffectsTab },
   { id: 'camp', label: 'Camp & Survival', el: CampTab },
   { id: 'morning', label: 'Morning & Spells', el: MorningTab },
   { id: 'downtime', label: 'Downtime', el: DowntimeTab },
@@ -53,6 +55,7 @@ export function App() {
   const pending = s.pending.length;
   const restWait = E.minutesUntilLongRest(s);
   const now = E.absNow(s);
+  const nextEffect = [...s.effects].filter((e) => e.endsAt != null).sort((a, b) => a.endsAt! - b.endsAt!)[0];
   const debuffed = s.characters.filter((c) => c.exhaustion > 0 || c.sick || (c.poisonedUntil != null && c.poisonedUntil > now)).length;
   const danger = s.characters.filter((c) => c.exhaustion >= 3).length;
   return (
@@ -74,6 +77,11 @@ export function App() {
             <b>{t}°F</b> {weatherSummary(s.weather, t)}
           </span>
           {s.fire.lit && <span className="status-item good-text">🔥 {s.fire.fuelHours} h</span>}
+          {nextEffect && (
+            <button className="status-item status-link" onClick={() => setTab('effects')} title="Soonest-ending effect">
+              {nextEffect.kind === 'light' ? '🕯' : '✨'} {nextEffect.name} {formatDuration(Math.max(0, nextEffect.endsAt! - now))}
+            </button>
+          )}
           <span className={`status-item ${restWait ? '' : 'good-text'}`} title="Only one Long Rest per 24 hours">
             🛏 {restWait ? `Long Rest in ${formatDuration(restWait)}` : 'Long Rest ready'}
           </span>

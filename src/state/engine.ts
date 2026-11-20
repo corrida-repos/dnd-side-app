@@ -1,7 +1,8 @@
-import type { Activity, Bastion, Character, ExhaustionCause, Facility, MagicItem, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
+import type { ActiveEffect, Activity, Bastion, Character, ExhaustionCause, Facility, MagicItem, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
 import { BASIC_BUILD, BASTION_TURN_DAYS, ENLARGE, rollBastionEvent, SIZE_LABEL, SPECIAL_FACILITIES, type FacilitySize } from '../rules/bastion';
 import { d20, die, combineModes, rollExpr, signed, type Rng, type RollMode } from '../rules/dice';
 import { dateFromIndex, formatClock, formatDate, formatDuration, sunriseMinutes } from '../rules/calendar';
+import { EXPLORATION_TURN_MINUTES, LIGHT_WARNING_MINUTES, type EffectPreset } from '../rules/effects';
 import { abilityMod, ATTUNE_AWAY_MINUTES, IDENTIFY_MINUTES, MAX_ATTUNED, RITUAL_EXTRA_MINUTES, WATCH_HOURS } from '../rules/upkeep';
 import { fireThreat, rollWeather, temperatureAt, CLIMATES } from '../rules/weather';
 import {
@@ -90,6 +91,8 @@ export interface Exposure {
 }
 
 export function exposure(s: State, activity: Activity): Exposure {
+  const magicShelter = activity !== 'travel' && s.effects.find((e) => e.shelter);
+  if (magicShelter) return { cold: false, heat: false, reason: `Inside ${magicShelter.name}` };
   const indoors = s.place.shelter === 'building' || s.place.shelter === 'cave';
   if (activity !== 'travel' && indoors) return { cold: false, heat: false, reason: s.place.shelter === 'cave' ? 'Sheltered in a cave' : 'Indoors' };
   if (activity !== 'travel' && s.fire.lit && s.settings.fireWarmsCamp) return { cold: false, heat: true, reason: 'Warmed by the campfire' };
@@ -121,7 +124,7 @@ export function heatProtection(c: Character, hasWater: boolean): string | null {
 
 // ---------------------------------------------------------------- saves & exhaustion
 
-const CAUSE_OF_SAVE: Partial<Record<SaveKind, ExhaustionCause>> = { cold: 'cold', heat: 'heat', march: 'march', malnutrition: 'malnutrition', chill: 'coldNight', sleep: 'sleep' };
+const CAUSE_OF_SAVE: Partial<Record<SaveKind, ExhaustionCause>> = { cold: 'cold', heat: 'heat', march: 'march', malnutrition: 'malnutrition', chill: 'coldNight', sleep: 'sleep', frigid: 'frigid' };
 
 export function gainExhaustion(s: State, c: Character, n: number, why: string, cause: ExhaustionCause = 'other'): void {
   if (!alive(c)) return;
@@ -419,6 +422,7 @@ export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activi
     const dawn = s.dayIndex * MIN_PER_DAY + sunriseMinutes(seasonOf(s));
     if (before < dawn && absNow(s) >= dawn) atDawn(s, ctx);
     checkItemsLeftBehind(s);
+    tickEffects(s, before);
     if (s.minutes % 60 === 0) tickHour(s, ctx, activity);
     if (s.minutes >= MIN_PER_DAY) endOfDay(s, ctx);
   }
@@ -1189,4 +1193,101 @@ export const leaveItem = act((d, _ctx, ownerId: string, itemId: string, away: bo
   if (!it) return;
   it.awaySince = away ? absNow(d) : null;
   if (away && it.attuned) log(d, `The ${it.name} is left more than 100 feet behind. Attunement ends in 24 hours unless it's recovered.`, 'warn');
+});
+
+// ---------------------------------------------------------------- active effects, exploration, frigid water
+
+const effectWho = (s: State, e: ActiveEffect): string => {
+  const names = e.targetIds.map((id) => charById(s, id)?.name).filter(Boolean);
+  return names.length ? ` (${names.join(', ')})` : '';
+};
+
+function tickEffects(s: State, before: number): void {
+  const now = absNow(s);
+  const ended: ActiveEffect[] = [];
+  for (const e of s.effects) {
+    if (e.endsAt == null) continue;
+    if (e.kind === 'light' && e.endsAt - e.startedAt > LIGHT_WARNING_MINUTES) {
+      const warn = e.endsAt - LIGHT_WARNING_MINUTES;
+      if (before < warn && now >= warn && now < e.endsAt) log(s, `${e.name}${effectWho(s, e)} is burning low: ${LIGHT_WARNING_MINUTES} minutes left.`, 'warn');
+    }
+    if (now >= e.endsAt) ended.push(e);
+  }
+  if (!ended.length) return;
+  s.effects = s.effects.filter((e) => !ended.includes(e));
+  for (const e of ended) {
+    log(s, e.kind === 'light' ? `${e.name}${effectWho(s, e)} goes out.` : `${e.name}${effectWho(s, e)} ends.`, e.kind === 'light' || e.shelter ? 'warn' : 'info');
+  }
+}
+
+export interface NewEffect {
+  preset: EffectPreset;
+  minutes: number | null;
+  targetIds: string[];
+  casterId: string | null;
+}
+
+export const addEffect = act((d, _ctx, ne: NewEffect) => {
+  const now = absNow(d);
+  const conc = !!ne.preset.concentration;
+  if (conc && ne.casterId) {
+    const dropped = d.effects.filter((e) => e.concentration && e.casterId === ne.casterId);
+    if (dropped.length) {
+      d.effects = d.effects.filter((e) => !dropped.includes(e));
+      const caster = charById(d, ne.casterId);
+      log(d, `${caster?.name ?? 'The caster'} stops concentrating on ${dropped.map((e) => e.name).join(', ')}.`, 'warn');
+    }
+  }
+  const e: ActiveEffect = {
+    id: uid(),
+    name: ne.preset.name,
+    kind: ne.preset.kind,
+    targetIds: ne.targetIds,
+    casterId: ne.casterId,
+    concentration: conc,
+    shelter: !!ne.preset.shelter,
+    startedAt: now,
+    endsAt: ne.minutes == null ? null : now + Math.max(1, Math.round(ne.minutes)),
+    notes: ne.preset.note ?? '',
+  };
+  d.effects.push(e);
+  const caster = ne.casterId ? charById(d, ne.casterId) : undefined;
+  log(d, `${caster ? `${caster.name}: ` : ''}${e.name}${effectWho(d, e)} begins${e.endsAt == null ? ' (until ended)' : `, lasting ${formatDuration(e.endsAt - now)}`}${conc ? ' (Concentration)' : ''}.`);
+});
+
+export const endEffect = act((d, _ctx, effectId: string) => {
+  const e = d.effects.find((x) => x.id === effectId);
+  if (!e) return;
+  d.effects = d.effects.filter((x) => x.id !== effectId);
+  log(d, `${e.name}${effectWho(d, e)} is ended early.`);
+});
+
+export const extendEffect = act((d, _ctx, effectId: string, minutes: number) => {
+  const e = d.effects.find((x) => x.id === effectId);
+  if (!e || e.endsAt == null) return;
+  e.endsAt += minutes;
+  log(d, `${e.name}${effectWho(d, e)} gets ${formatDuration(minutes)} more (e.g. a fresh flask of oil).`);
+});
+
+/** A 10-minute exploration turn: searching, checking for traps, listening at doors. */
+export const explorationTurn = act((d, ctx, what: string) => {
+  log(d, `Exploration turn (${EXPLORATION_TURN_MINUTES} min)${what ? `: ${what}` : ''}.`);
+  advanceMut(d, ctx, EXPLORATION_TURN_MINUTES, 'camp');
+  if (d.settings.exploreEncounterOn > 0) {
+    const r = die(20, ctx.rng);
+    if (r >= d.settings.exploreEncounterOn) log(d, `Wandering monster check: d20 = ${r}. Something finds the party!`, 'warn');
+  }
+});
+
+/** Frigid water: safe for minutes equal to the Con score, then a DC 10 Con save each minute or 1 Exhaustion level. */
+export const frigidWater = act((d, ctx, charId: string, minutes: number) => {
+  const c = charById(d, charId);
+  if (!c) return;
+  const safe = c.conScore;
+  const resistant = c.coldResist !== 'none';
+  log(d, `${c.name} spends ${minutes} minute(s) in frigid water (${resistant ? 'unaffected thanks to their Cold ' + (c.coldResist === 'immunity' ? 'Immunity' : 'Resistance') : `safe for ${safe} minutes, their Constitution score`}).`);
+  for (let m = 1; m <= minutes; m++) {
+    advanceMut(d, ctx, 1, 'camp');
+    if (m > safe && alive(c) && !resistant) requestSave(d, ctx, c, 'frigid', 10, 'normal', `frigid water (minute ${m})`);
+  }
 });

@@ -3,6 +3,7 @@ import type { Calendar } from '../rules/calendar';
 import type { ProjectKind } from '../rules/crafting';
 import type { FacilitySize, Order } from '../rules/bastion';
 import type { Recharge } from '../rules/upkeep';
+import type { EffectKind } from '../rules/effects';
 
 export type Season = 'winter' | 'spring' | 'summer' | 'autumn';
 export type Size = 'Tiny' | 'Small' | 'Medium' | 'Large' | 'Huge' | 'Gargantuan';
@@ -15,7 +16,7 @@ export type Pace = 'fast' | 'normal' | 'slow';
 export type Activity = 'camp' | 'rest' | 'travel' | 'work';
 export type Tone = 'info' | 'warn' | 'bad' | 'good';
 /** What caused each Exhaustion level. */
-export type ExhaustionCause = 'malnutrition' | 'dehydration' | 'cold' | 'heat' | 'march' | 'coldNight' | 'sleep' | 'other';
+export type ExhaustionCause = 'malnutrition' | 'dehydration' | 'cold' | 'heat' | 'march' | 'coldNight' | 'sleep' | 'frigid' | 'other';
 export type ArmorKind = 'none' | 'light' | 'medium' | 'heavy';
 export type WaterQuality = 'clean' | 'questionable';
 
@@ -68,6 +69,21 @@ export interface Resource {
 export interface RestFocus {
   itemId: string;
   action: 'attune' | 'identify' | 'unattune';
+}
+
+export interface ActiveEffect {
+  id: string;
+  name: string;
+  kind: EffectKind;
+  /** Who it's on, or carried by. Empty means the whole party or the area. */
+  targetIds: string[];
+  casterId: string | null;
+  concentration: boolean;
+  shelter: boolean;
+  startedAt: number;
+  /** Absolute minute it ends, or null if it lasts until ended. */
+  endsAt: number | null;
+  notes: string;
 }
 
 export interface Character {
@@ -167,7 +183,7 @@ export interface Stores {
   waterUnsafeGal: number;
 }
 
-export type SaveKind = 'cold' | 'heat' | 'march' | 'malnutrition' | 'tainted' | 'raw' | 'chill' | 'sleep';
+export type SaveKind = 'cold' | 'heat' | 'march' | 'malnutrition' | 'tainted' | 'raw' | 'chill' | 'sleep' | 'frigid';
 
 export interface PendingSave {
   id: string;
@@ -254,6 +270,8 @@ export interface Settings {
   sleepDeprivation: boolean;
   /** Random encounter check per watch: an encounter on a d20 roll of this or higher. 0 turns it off. */
   encounterOn: number;
+  /** Random encounter check per 10-minute exploration turn (d20 at or above). 0 turns it off. */
+  exploreEncounterOn: number;
 }
 
 export interface Travel {
@@ -287,4 +305,5 @@ export interface State {
   bastions: Bastion[];
   /** Order of characters taking 2-hour watches during a Long Rest. */
   watchOrder: string[];
+  effects: ActiveEffect[];
 }

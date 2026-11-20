@@ -67,14 +67,14 @@ These all happen during Short and Long Rests or at dawn, so they fit straight in
 
 ---
 
-## Phase 2: Things that burn down 📋
+## Phase 2: Things that burn down ✅
 
-### Light sources 📋
+### Light sources ✅
 - **Torch:** 1 hour. **Candle:** 1 hour. **Lamp and Hooded Lantern:** 6 hours per flask of oil.
 - **Spells:** *Light* lasts 1 hour, *Continual Flame* is permanent, *Daylight* lasts 1 hour.
 - **To build:** light sources with burn time left, ticked by the clock, with a warning before they go dark. This matters most underground.
 
-### Spell durations and concentration 📋
+### Spell durations and concentration ✅
 - Long buffs to track: *Mage Armor* 8 h, *Aid* 8 h, *Darkvision* 8 h, *Longstrider* 1 h, *Heroes' Feast* 24 h.
 - Camp spells: *Leomund's Tiny Hut* 8 h, *Rope Trick* 1 h, *Alarm* 8 h.
 - *Goodberry* berries last 24 h.
@@ -82,15 +82,15 @@ These all happen during Short and Long Rests or at dawn, so they fit straight in
 - Ritual casting adds 10 minutes.
 - **To build:** active effects with an end time on the clock, a concentration flag per caster, expiry alerts, and camp spells that count as shelter (*Tiny Hut* blocks the weather).
 
-### Potions and consumables with durations 📋
+### Potions and consumables with durations ✅
 - Examples: *Potion of Invisibility*, *Flying* and *Water Breathing* (1 hour each), *Heroism*, *Giant Strength*.
 - **To build:** reuse the active-effects timer from spell durations.
 
-### Exploration turns 📋
+### Exploration turns ✅
 - Dungeon time passes in ~10-minute blocks of careful exploration: searching a room, checking for traps, listening at doors.
 - **To build:** an "exploration turn" button (10 minutes) that ticks lights and spells and can roll a random encounter check.
 
-### Holding breath and frigid water 📋
+### Holding breath and frigid water ✅
 - **Holding breath:** 1 + Constitution modifier minutes (minimum 30 seconds).
 - **Frigid water:** a creature can stay in it for minutes equal to its Constitution score, then makes a DC 10 Con save each minute or gains Exhaustion.
 - **To build:** small timers, triggered by hand.
