@@ -103,3 +103,8 @@ export function spellSlotsFor(cls: CasterClass, level: number): SlotRow[] {
 
 /** Night watch: a Long Rest is split into 2-hour watches. */
 export const WATCH_HOURS = 2;
+
+/** A stable creature regains 1 HP after 1d4 hours (PHB). */
+export const STABLE_WAKE_DIE = 4;
+/** Wisdom (Medicine) DC to stabilize a dying creature. */
+export const STABILIZE_DC = 10;

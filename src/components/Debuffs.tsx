@@ -14,6 +14,18 @@ export function Debuffs({ c, now, empty = true }: { c: Character; now: number; e
         Exhaustion {c.exhaustion}
       </Pill>,
     );
+  if (c.diedAt == null && c.dying)
+    items.push(
+      <Pill key="dying" tone="bad" title="At 0 HP and making death saves">
+        Unconscious · dying ({c.deathSuccesses}✓ {c.deathFailures}✗)
+      </Pill>,
+    );
+  if (c.diedAt == null && c.stable)
+    items.push(
+      <Pill key="stable" tone="warn" title="Stable at 0 HP: regains 1 HP after 1d4 hours">
+        Unconscious · stable{c.wakesAt != null ? `, wakes in ${formatDuration(Math.max(0, c.wakesAt - now))}` : ''}
+      </Pill>,
+    );
   for (const p of parts) {
     items.push(
       <Pill

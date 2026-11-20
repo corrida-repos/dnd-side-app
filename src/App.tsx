@@ -62,7 +62,7 @@ export function App() {
   const restWait = E.minutesUntilLongRest(s);
   const now = E.absNow(s);
   const nextEffect = [...s.effects].filter((e) => e.endsAt != null).sort((a, b) => a.endsAt! - b.endsAt!)[0];
-  const debuffed = s.characters.filter((c) => c.exhaustion > 0 || c.sick || (c.poisonedUntil != null && c.poisonedUntil > now)).length;
+  const debuffed = s.characters.filter((c) => c.exhaustion > 0 || c.sick || c.dying || c.stable || (c.poisonedUntil != null && c.poisonedUntil > now)).length;
   const danger = s.characters.filter((c) => c.exhaustion >= 3).length;
   return (
     <div className="app">

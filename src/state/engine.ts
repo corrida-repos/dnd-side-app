@@ -8,6 +8,7 @@ import { LOST_RECHECK_DIE, navigationDC } from '../rules/navigation';
 import { readSky, SKY_DC } from '../rules/skyclock';
 import { BUTCHER_DC, BUTCHER_MINUTES, isEdible, MEAT_LB, STRANGE_TYPES, yieldsHide, type Creature } from '../rules/hunting';
 import { FEED_GP_PER_DAY, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset } from '../rules/money';
+import { STABLE_WAKE_DIE, STABILIZE_DC } from '../rules/upkeep';
 import { abilityMod, ATTUNE_AWAY_MINUTES, IDENTIFY_MINUTES, MAX_ATTUNED, RITUAL_EXTRA_MINUTES, WATCH_HOURS } from '../rules/upkeep';
 import { fireThreat, rollWeather, temperatureAt, CLIMATES, weatherDamageAffinities, type Affinity } from '../rules/weather';
 import {
@@ -456,6 +457,12 @@ function expireConditions(s: State): void {
     if (c.poisonedUntil != null && now >= c.poisonedUntil) {
       c.poisonedUntil = null;
       log(s, `${c.name} recovers from the Waterborne illness and is no longer Poisoned.`, 'good');
+    }
+    if (c.stable && c.wakesAt != null && now >= c.wakesAt && c.diedAt == null) {
+      c.stable = false;
+      c.wakesAt = null;
+      c.hp = Math.max(1, c.hp);
+      log(s, `${c.name} stirs and regains consciousness with 1 HP.`, 'good');
     }
   }
 }
@@ -1278,11 +1285,88 @@ export const changeHp = act((d, _ctx, charId: string, amount: number) => {
     const absorbed = Math.min(c.tempHp, dmg);
     c.tempHp -= absorbed;
     dmg -= absorbed;
+    const wasUp = c.hp > 0;
+    const leftover = dmg - c.hp;
     c.hp = Math.max(0, c.hp - dmg);
     log(d, `${c.name} takes ${-amount} damage${absorbed ? ` (${absorbed} absorbed by Temporary HP)` : ''}. HP ${c.hp}/${c.maxHp}.`, c.hp === 0 ? 'bad' : 'warn');
+    if (wasUp && c.hp === 0) {
+      if (leftover >= c.maxHp) {
+        killOutright(d, c, `massive damage (${leftover} beyond 0 HP, at least their HP maximum)`);
+      } else {
+        Object.assign(c, { dying: true, stable: false, deathSuccesses: 0, deathFailures: 0, wakesAt: null });
+        log(d, `${c.name} falls Unconscious and is dying. Roll death saves.`, 'bad');
+      }
+    } else if (!wasUp && dmg > 0 && c.diedAt == null) {
+      // Damage at 0 HP: a death save failure (the stable stop being stable).
+      addDeathFailures(d, c, 1, 'taking damage at 0 HP');
+    }
   } else {
+    const wasDown = c.hp === 0;
     c.hp = Math.min(c.maxHp, c.hp + amount);
     log(d, `${c.name} heals ${amount}. HP ${c.hp}/${c.maxHp}.`, 'good');
+    if (wasDown && c.hp > 0) wakeUp(d, c, 'healing');
+  }
+});
+
+function wakeUp(s: State, c: Character, why: string): void {
+  const was = c.dying || c.stable;
+  Object.assign(c, { dying: false, stable: false, deathSuccesses: 0, deathFailures: 0, wakesAt: null });
+  if (was) log(s, `${c.name} regains consciousness from ${why}.`, 'good');
+}
+
+function killOutright(s: State, c: Character, why: string): void {
+  Object.assign(c, { dying: false, stable: false, wakesAt: null, diedAt: absNow(s), reposeMinutes: 0, hp: 0 });
+  log(s, `${c.name} dies: ${why}.`, 'bad');
+}
+
+function makeStable(s: State, ctx: Ctx, c: Character, how: string): void {
+  const hours = die(STABLE_WAKE_DIE, ctx.rng);
+  Object.assign(c, { dying: false, stable: true, deathSuccesses: 0, deathFailures: 0, wakesAt: absNow(s) + hours * 60 });
+  log(s, `${c.name} is stable (${how}). Still Unconscious, they regain 1 HP in ${hours} hour${hours > 1 ? 's' : ''} (1d4).`, 'good');
+}
+
+function addDeathFailures(s: State, c: Character, n: number, why: string): void {
+  if (c.stable) Object.assign(c, { stable: false, dying: true, wakesAt: null, deathSuccesses: 0, deathFailures: 0 });
+  c.deathFailures = Math.min(3, c.deathFailures + n);
+  log(s, `${c.name} suffers ${n} death save failure${n > 1 ? 's' : ''} from ${why} (${c.deathFailures}/3).`, 'bad');
+  if (c.deathFailures >= 3) killOutright(s, c, 'three death save failures');
+}
+
+/** A death saving throw: 10 or higher succeeds, a 1 counts as two failures, a 20 brings them back with 1 HP. */
+export const deathSave = act((d, ctx, charId: string) => {
+  const c = charById(d, charId);
+  if (!c || !c.dying || c.diedAt != null) return;
+  const r = die(20, ctx.rng);
+  if (r === 20) {
+    c.hp = 1;
+    wakeUp(d, c, 'a natural 20 on a death save');
+    log(d, `${c.name} rolls a 20 on the death save and is back on their feet with 1 HP!`, 'good');
+    return;
+  }
+  if (r === 1) return addDeathFailures(d, c, 2, 'a natural 1 on a death save');
+  if (r >= 10) {
+    c.deathSuccesses += 1;
+    log(d, `${c.name} death save: ${r}, a success (${c.deathSuccesses}/3).`, 'good');
+    if (c.deathSuccesses >= 3) makeStable(d, ctx, c, 'three death save successes');
+  } else addDeathFailures(d, c, 1, `a death save of ${r}`);
+});
+
+/** Stabilize with a Wisdom (Medicine) check, or automatically (Healer's Kit, Spare the Dying). */
+export const stabilize = act((d, ctx, charId: string, helperId: string | null, method: 'medicine' | 'sure', medicineBonus?: number) => {
+  const c = charById(d, charId);
+  if (!c || !c.dying || c.diedAt != null) return;
+  const helper = helperId ? charById(d, helperId) : undefined;
+  if (method === 'medicine') {
+    const mod = (medicineBonus ?? helper?.wisMod ?? 0) - 2 * (helper?.exhaustion ?? 0);
+    const r = d20('normal', ctx.rng);
+    const total = r.value + mod;
+    if (total < STABILIZE_DC) {
+      log(d, `${helper?.name ?? 'Someone'} tries to stabilize ${c.name}: Wisdom (Medicine) ${r.value} ${signed(mod)} = ${total} against DC ${STABILIZE_DC}. It doesn't work.`, 'warn');
+      return;
+    }
+    makeStable(d, ctx, c, `${helper?.name ?? 'someone'} succeeded on a DC ${STABILIZE_DC} Wisdom (Medicine) check with ${total}`);
+  } else {
+    makeStable(d, ctx, c, `${helper ? `${helper.name} used ` : ''}a Healer's Kit or Spare the Dying`);
   }
 });
 
@@ -1573,10 +1657,12 @@ export const markDead = act((d, _ctx, charId: string, dead: boolean) => {
     c.diedAt = absNow(d);
     c.reposeMinutes = 0;
     c.hp = 0;
+    Object.assign(c, { dying: false, stable: false, wakesAt: null });
     log(d, `${c.name} has died.`, 'bad');
   } else {
     c.diedAt = null;
     c.reposeMinutes = 0;
+    Object.assign(c, { dying: false, stable: false, wakesAt: null, deathSuccesses: 0, deathFailures: 0 });
     if (c.exhaustion >= 6) {
       c.exhaustion = 5;
       c.exhaustionCauses = causesOf(c);

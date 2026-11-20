@@ -157,6 +157,14 @@ export interface Character {
   renown: number;
   fear: number;
   stress: number;
+  /** At 0 HP and making death saves. */
+  dying: boolean;
+  /** At 0 HP but stable: no more death saves, and wakes with 1 HP at `wakesAt`. */
+  stable: boolean;
+  deathSuccesses: number;
+  deathFailures: number;
+  /** Absolute minute a stable character regains 1 HP (1d4 hours after stabilizing). */
+  wakesAt: number | null;
   /** Absolute minute of death, or null while alive. */
   diedAt: number | null;
   /** Minutes spent dead under Gentle Repose, which don't count toward resurrection limits. */

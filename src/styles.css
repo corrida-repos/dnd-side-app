@@ -862,3 +862,22 @@ select {
 .form-row > * {
   max-width: 100%;
 }
+
+.dying {
+  border: 1px solid var(--bad);
+  border-radius: 8px;
+  padding: 6px 10px;
+  margin: 6px 0;
+}
+.pip.good-pip {
+  border-color: var(--good);
+}
+.pip.good-pip.full {
+  background: var(--good);
+}
+.pip.bad-pip {
+  border-color: var(--bad);
+}
+.pip.bad-pip.full {
+  background: var(--bad);
+}

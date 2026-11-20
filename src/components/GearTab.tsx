@@ -4,7 +4,7 @@ import * as E from '../state/engine';
 import { uid } from '../state/defaults';
 import { abilityMod, MAX_ATTUNED, RECHARGE_LABEL, RESOURCE_PRESETS, spellSlotsFor, type Recharge } from '../rules/upkeep';
 import { isCaster } from '../rules/spells';
-import { formatDuration } from '../rules/calendar';
+import { formatClock, formatDuration } from '../rules/calendar';
 import { Card, Meter, Num, Pill, Select, Text, Toggle, Rule } from './common';
 import type { Character, MagicItem, Resource } from '../state/types';
 
@@ -42,6 +42,7 @@ function HpBlock({ c }: { c: Character }) {
         {c.tempHp > 0 && <Pill tone="info">+{c.tempHp} temp</Pill>}
         <Meter value={c.hp} max={c.maxHp} tone={c.hp * 2 >= c.maxHp ? 'good' : c.hp > 0 ? 'warn' : 'bad'} />
       </div>
+      <DyingBlock c={c} />
       <div className="btn-row">
         <Num value={amt} onChange={(v) => setAmt(Math.max(0, Math.round(v)))} min={0} width={3} />
         <button className="bad" onClick={() => dispatch((st, cx) => E.changeHp(st, cx, c.id, -amt))}>
@@ -75,6 +76,47 @@ function HpBlock({ c }: { c: Character }) {
       </div>
       <Rule>Spend Hit Point Dice during a Short Rest. A Long Rest restores all HP and all spent Hit Point Dice, but only if you start it with at least 1 HP.</Rule>
     </>
+  );
+}
+
+function DyingBlock({ c }: { c: Character }) {
+  const s = useGame();
+  const helpers = s.characters.filter((x) => x.id !== c.id && x.kind !== 'mount' && x.hp > 0 && x.diedAt == null);
+  const [helper, setHelper] = useState(helpers[0]?.id ?? '');
+  const h = helpers.find((x) => x.id === helper);
+  const [bonus, setBonus] = useState<number | null>(null);
+  const now = E.absNow(s);
+  if (c.diedAt != null) return <p className="bad-text small">Dead. See the World tab for resurrection time limits.</p>;
+  if (c.stable)
+    return (
+      <p className="small warn-text">
+        Unconscious but <b>stable</b>. Regains 1 HP {c.wakesAt != null ? `in ${formatDuration(Math.max(0, c.wakesAt - now))} (at ${formatClock(c.wakesAt % 1440)})` : 'soon'}, or right away if healed. Taking damage makes them dying again.
+      </p>
+    );
+  if (!c.dying) return null;
+  const pips = (n: number, cls: string) => Array.from({ length: 3 }, (_, i) => <span key={i} className={`pip ${cls} ${i < n ? 'full' : ''}`} />);
+  return (
+    <div className="dying">
+      <p className="small bad-text">
+        <b>Unconscious and dying.</b> Successes <span className="pips">{pips(c.deathSuccesses, 'good-pip')}</span> Failures <span className="pips">{pips(c.deathFailures, 'bad-pip')}</span>
+      </p>
+      <div className="btn-row tight">
+        <button className="small" onClick={() => dispatch((st, cx) => E.deathSave(st, cx, c.id))}>
+          Roll death save
+        </button>
+      </div>
+      <div className="btn-row tight">
+        <Select value={helper} onChange={(v) => (setHelper(v), setBonus(null))} options={[{ value: '', label: 'Helper…' }, ...helpers.map((x) => ({ value: x.id, label: x.name }))]} />
+        <Num value={bonus ?? h?.wisMod ?? 0} onChange={(v) => setBonus(Math.round(v))} width={2} label="Medicine bonus" />
+        <button className="small" onClick={() => dispatch((st, cx) => E.stabilize(st, cx, c.id, helper || null, 'medicine', bonus ?? h?.wisMod ?? 0))}>
+          Medicine check (DC 10)
+        </button>
+        <button className="small ghost" onClick={() => dispatch((st, cx) => E.stabilize(st, cx, c.id, helper || null, 'sure'))}>
+          Healer&apos;s Kit / Spare the Dying
+        </button>
+      </div>
+      <Rule>Death saves: 10 or higher is a success and a 1 counts as two failures. A 20 brings them back with 1 HP. Three successes make them stable, and three failures kill them. Damage at 0 HP adds a failure.</Rule>
+    </div>
   );
 }
 
