@@ -10,6 +10,7 @@ import { groupLog, senseText } from './senseView';
 import type { Pace, Shelter, WaterQuality } from '../state/types';
 import { TERRAIN, TERRAIN_FOR_CLIMATE, maxPaceFor, type TerrainType } from '../rules/terrain';
 import { readSky, rangeLabel } from '../rules/skyclock';
+import { WaysAround } from './WaysAround';
 
 export function Overview() {
   return (
@@ -72,6 +73,7 @@ function ClockCard() {
       <LongRestTracker />
       <InterruptPanel />
       <RestPlans />
+      <WaysAround topic={['shortRest', 'longRest']} />
     </Card>
   );
 }
@@ -332,6 +334,7 @@ function EffectsCard() {
           </li>
         ))}
       </ul>
+      <WaysAround topic={['cold', 'heat', 'weather', 'altitude']} />
     </Card>
   );
 }
@@ -456,6 +459,7 @@ function PartyStatusCard() {
         Camp stores: {fmtLb(s.stores.foodLb)} food, {s.stores.waterGal} gal water{s.stores.foodRawLb + s.stores.waterUnsafeGal > 0 ? `, plus ${fmtLb(s.stores.foodRawLb)} raw food and ${s.stores.waterUnsafeGal} gal water still to cook or purify` : ''}. Survival is checked at midnight: drinking less than half your water gives 1 Exhaustion level. Eating less than half your food
         means a DC 10 Con save. After 5 days with no food you gain a level every day.
       </p>
+      <WaysAround topic={['exhaustion', 'dying', 'fear']} />
     </Card>
   );
 }
@@ -575,6 +579,7 @@ function TravelCard() {
           Track (Survival)
         </button>
       </div>
+      <WaysAround topic={['march', 'lost']} />
     </Card>
   );
 }
@@ -666,6 +671,7 @@ function JourneyCard() {
         </button>
       </details>
       <Rule>Each day of a stage the party travels up to 8 hours (vessels sail around the clock), with one navigation check, then camps if you choose. Food and water are used each day, and the weather, hazards and Exhaustion all apply.</Rule>
+      <WaysAround topic={['march', 'lost', 'tracking']} />
     </Card>
   );
 }

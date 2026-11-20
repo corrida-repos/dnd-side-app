@@ -8,6 +8,7 @@ import { armorTime, ARMOR_LABEL } from '../rules/survival';
 import { spellInfo, RITUAL_EXTRA_MINUTES } from '../rules/rituals';
 import { formatDuration } from '../rules/calendar';
 import type { Character, CharacterSpell } from '../state/types';
+import { WaysAround } from './WaysAround';
 
 export function MorningTab() {
   const s = useGame();
@@ -18,6 +19,7 @@ export function MorningTab() {
       <p className="muted">
         Daily tasks reset after every Long Rest. {done}/{total} done.
       </p>
+      <WaysAround topic="rituals" />
       <div className="grid wide">
         {s.characters.filter((c) => c.kind !== 'mount').map((c) => (
           <MorningCard key={c.id} c={c} />

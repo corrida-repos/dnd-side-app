@@ -12,6 +12,7 @@ import { fmtGp } from '../rules/money';
 import { PartyKnowledgeCard, PlayerItemView } from './ItemKnowledge';
 import { ARCANA_DC, CLUE_KIND_LABEL, SCHOOLS_OF_MAGIC, STUDY_LABEL, STUDY_MINUTES, type ClueKind } from '../rules/identify';
 import { RARITY_LABEL, type Rarity } from '../rules/crafting';
+import { WaysAround } from './WaysAround';
 
 const setChar = (id: string, fn: (c: Character) => void) =>
   edit((d) => {
@@ -69,6 +70,7 @@ function MysteryOverview() {
         })}
       </ul>
       <p className="small muted">Open each item on its owner&apos;s card below to study it, cast Detect Magic or Identify, or reveal facts as the DM.</p>
+      <WaysAround topic={['identify', 'attunement']} />
     </Card>
   );
 }
@@ -176,6 +178,7 @@ function AfterTheFight() {
       <button className="primary" onClick={() => dispatch((st, cx) => E.recoverAmmo(st, cx, s.characters.map((c) => c.id)))}>
         Search the area and recover ammunition (1 min)
       </button>
+      <WaysAround topic={'ammo'} />
     </Card>
   );
 }

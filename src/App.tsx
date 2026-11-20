@@ -17,6 +17,7 @@ import { WorldTab } from './components/WorldTab';
 import { StorageTab } from './components/StorageTab';
 import { LogTab } from './components/LogTab';
 import { SettingsTab } from './components/SettingsTab';
+import { WaysTab } from './components/WaysAround';
 
 const TABS = [
   { id: 'overview', label: 'Overview', el: Overview },
@@ -30,6 +31,7 @@ const TABS = [
   { id: 'downtime', label: 'Downtime', el: DowntimeTab },
   { id: 'bastions', label: 'Bastions', el: BastionTab },
   { id: 'world', label: 'World', el: WorldTab },
+  { id: 'ways', label: 'Ways Around', el: WaysTab },
   { id: 'log', label: 'Chronicle', el: LogTab },
   { id: 'settings', label: 'Settings', el: SettingsTab },
 ] as const;

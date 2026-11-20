@@ -6,6 +6,7 @@ import { abilityMod } from '../rules/upkeep';
 import { HAZARDS, type HazardId } from '../rules/hazards';
 import { formatClock, formatDuration } from '../rules/calendar';
 import { Card, Meter, Num, Pill, Select, Text, Toggle, Rule } from './common';
+import { WaysAround } from './WaysAround';
 
 export function EffectsTab() {
   return (
@@ -72,6 +73,7 @@ function ActiveCard() {
         })}
       </ul>
       {concentrating.length > 0 && <p className="small muted">Concentrating: {concentrating.map((c) => c.name).join(', ')}. Starting another Concentration spell ends the first one.</p>}
+      <WaysAround topic={'light'} />
     </Card>
   );
 }
@@ -176,6 +178,7 @@ function ExploreCard() {
       <p className={`small ${lights.length ? '' : 'warn-text'}`}>
         {lights.length ? `Light: ${lights.map((l) => l.name).join(', ')}.` : 'No light source is burning. Without Darkvision the party is in Darkness underground.'}
       </p>
+      <WaysAround topic={'exploration'} />
     </Card>
   );
 }
@@ -214,6 +217,7 @@ function BreathCard() {
         <Num value={mins} onChange={(v) => setMins(Math.max(1, Math.round(v)))} min={1} max={240} suffix="min" width={3} />
         <button onClick={() => dispatch((st, cx) => E.frigidWater(st, cx, c.id, mins))}>In frigid water for {mins} min</button>
       </div>
+      <WaysAround topic={'breath'} />
     </Card>
   );
 }
@@ -257,6 +261,7 @@ function HazardCard() {
           </button>
         </div>
       )}
+      <WaysAround topic={'hazards'} />
     </Card>
   );
 }

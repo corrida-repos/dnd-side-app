@@ -20,6 +20,7 @@ import { Card, Meter, Num, Select, Text, Toggle, Rule } from './common';
 import { MAGIC_ITEM_VALUE, fmtGp } from '../rules/money';
 import { SPELLBOOK_COPY, ACTIVITY_PRESETS } from '../rules/longterm';
 import { AWAY_PROGRESS, BUILD_SPELLS, CREW_COST_SHARE, CREW_SPEED, HELPER_SPEED, MAX_EXTRA_CREWS, BUILDING_PRESETS, BUSINESS_DEBT_PENALTY, BUSINESS_MAX_DAYS, BUSINESS_PRESETS } from '../rules/business';
+import { WaysAround } from './WaysAround';
 
 export function DowntimeTab() {
   const s = useGame();
@@ -373,6 +374,7 @@ function NewProject() {
       >
         Start project
       </button>
+      <WaysAround topic={['crafting', 'spellbook', 'downtime']} />
     </Card>
   );
 }
@@ -487,6 +489,7 @@ function BusinessCard() {
       <Rule>
         2014 DMG: each downtime day the owner spends running the business counts (at most 30). Then roll d100 + days on the Running a Business table: low rolls mean paying 1½×, full or half the maintenance for those days; middling rolls break even; high rolls add a profit of 1d6, 2d8 or 3d10 × 5 GP. An unpaid cost makes the business start to fail: −10 to later rolls for each debt until it&apos;s paid. Building one follows the DMG&apos;s Building a Stronghold rule: pay the cost up front, and work takes the listed days while the owner oversees it; each day away adds 3 days. The 2024 rules have no equivalent, so this can be switched off in Settings.
       </Rule>
+      <WaysAround topic={'building'} />
     </Card>
   );
 }
