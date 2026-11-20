@@ -304,6 +304,8 @@ export interface Character {
   sick: boolean;
   /** What made them Sick: 'raw food', 'unpurified water' or both. */
   sickFrom?: string;
+  /** Absolute minute an Antitoxin's Advantage on saves against poison runs out (PHB: 1 hour). */
+  antitoxinUntil?: number | null;
   /** Magical contagions (2024 DMG): Cackle Fever, Sewer Plague, Sight Rot. */
   contagions: Contagion[];
   /** Languages and tools learned through downtime training. */

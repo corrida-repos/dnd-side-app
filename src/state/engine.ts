@@ -315,7 +315,17 @@ export function rollSave(c: Character, dc: number, mode: RollMode, rng: Rng) {
   return { passed: total >= dc, detail: `Rolled ${r.rolls.join('/')}${modeTxt} ${signed(mod)}${exhTxt} = ${total}. ` };
 }
 
+/** Is an Antitoxin giving this creature Advantage on saves to avoid or end the Poisoned condition? */
+export const antitoxinActive = (s: State, c: Character): boolean => c.antitoxinUntil != null && c.antitoxinUntil > absNow(s);
+
+/** Advantage from Antitoxin on saves against poison, which is what raw food, dirty water and poisons call for. */
+const poisonSaveMode = (s: State, c: Character, mode: RollMode = 'normal'): RollMode => (antitoxinActive(s, c) ? combineModes(mode, 'advantage') : mode);
+
 function requestSave(s: State, ctx: Ctx, c: Character, kind: SaveKind, dc: number, mode: RollMode, reason: string): void {
+  if ((kind === 'raw' || kind === 'tainted') && antitoxinActive(s, c)) {
+    mode = poisonSaveMode(s, c, mode);
+    reason = `${reason}, with Antitoxin`;
+  }
   const spec = { charId: c.id, kind, dc, mode, reason };
   if (s.settings.autoRollSaves) {
     const r = rollSave(c, dc, mode, ctx.rng);
@@ -2145,7 +2155,7 @@ export const exposePoison = act((d, ctx, charId: string, poisonName: string, fro
     c0.poisonTimers = [...(c0.poisonTimers ?? []), { id: uid(), name: p.name, nextAt: (d.dayIndex + 1) * MIN_PER_DAY, successes: 0 }];
     return void log(d, `${c0.name} has ingested Midnight Tears. Nothing happens until midnight, unless something ends the Poisoned condition first. The player doesn't know.`, 'warn');
   }
-  const r = rollSave(c0, p.dc, 'normal', ctx.rng);
+  const r = rollSave(c0, p.dc, poisonSaveMode(d, c0), ctx.rng);
   const total = Number(/= (-?\d+)\./.exec(r.detail)?.[1] ?? 0);
   log(d, `${c0.name} is exposed to ${p.name} (${p.type}): DC ${p.dc} Con save. ${r.detail}${r.passed ? 'Success.' : 'Failure.'}`, r.passed ? 'good' : 'bad');
   const dmg = p.damage ? (rollExpr(p.damage, ctx.rng) ?? 0) : 0;
@@ -2194,7 +2204,7 @@ function tickPoisons(s: State, ctx: Ctx): void {
     for (const t of [...(c.poisonTimers ?? [])]) {
       if (now < t.nextAt || !alive(c)) continue;
       const p = poisonByName(t.name)!;
-      const r = rollSave(c, p.dc!, 'normal', ctx.rng);
+      const r = rollSave(c, p.dc!, poisonSaveMode(s, c), ctx.rng);
       if (t.name === 'Midnight Tears') {
         c.poisonTimers = c.poisonTimers!.filter((x) => x.id !== t.id);
         const dmg = rollExpr('9d6', ctx.rng) ?? 31;
@@ -2220,7 +2230,28 @@ function tickPoisons(s: State, ctx: Ctx): void {
   }
 }
 
-/** Anything that ends the Poisoned condition (Lesser Restoration, Antitoxin taken in advance aside) ends these too. */
+/**
+ * Drink a vial of Antitoxin (PHB, a Bonus Action): Advantage on saves to avoid or end the Poisoned condition for 1 hour.
+ * It cures nothing: someone already Sick or Poisoned stays that way, and only new or repeated saves benefit.
+ */
+export const drinkAntitoxin = act((d, _ctx, charId: string) => {
+  const c = charById(d, charId);
+  if (!c || !alive(c)) return;
+  const vial = c.inventory.find((i) => /antitoxin/i.test(i.name) && i.qty > 0);
+  if (vial) {
+    vial.qty -= 1;
+    c.inventory = c.inventory.filter((i) => i.qty > 0);
+  }
+  c.antitoxinUntil = absNow(d) + 60;
+  const still = [c.sick && 'Sick', (c.poisonTimers ?? []).length > 0 || d.effects.some((e) => e.name.startsWith('Poisoned') && e.targetIds.includes(c.id)) ? 'Poisoned' : ''].filter(Boolean);
+  log(
+    d,
+    `${c.name} drinks a vial of Antitoxin${vial ? '' : ' (not from a tracked inventory)'}: Advantage on saves to avoid or end the Poisoned condition for 1 hour, raw food and unpurified water included.${still.length ? ` It doesn't cure what ${c.name} already has: still ${still.join(' and ')}.` : ''}`,
+    'good',
+  );
+});
+
+/** Magic that ends the Poisoned condition (Lesser Restoration, Lay on Hands and the like) ends these too. Antitoxin doesn't. */
 export const curePoison = act((d, _ctx, charId: string) => {
   const c = charById(d, charId);
   if (!c) return;

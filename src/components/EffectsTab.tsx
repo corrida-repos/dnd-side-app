@@ -411,17 +411,27 @@ function PoisonCard() {
         <Select label="Poison" value={poison} onChange={setPoison} options={POISONS.map((x) => ({ value: x.name, label: `${x.name} (${x.type}, ${x.gp} GP)` }))} />
         <Select label="Dose from" value={holders.some((h) => h.id === from) ? from : ''} onChange={setFrom} options={[{ value: '', label: 'Not tracked' }, ...holders.map((h) => ({ value: h.id, label: `${h.name}'s inventory` }))]} />
       </div>
-      <button className="small" disabled={!whoId} onClick={() => dispatch((st, cx) => E.exposePoison(st, cx, whoId, poison, holders.some((h) => h.id === from) ? from : null))}>
-        Expose
-      </button>
+      <div className="btn-row tight">
+        <button className="small" disabled={!whoId} onClick={() => dispatch((st, cx) => E.exposePoison(st, cx, whoId, poison, holders.some((h) => h.id === from) ? from : null))}>
+          Expose
+        </button>
+        <button className="small" disabled={!whoId} title="PHB: a Bonus Action for Advantage on saves to avoid or end the Poisoned condition for 1 hour. It cures nothing already in effect." onClick={() => dispatch((st, cx) => E.drinkAntitoxin(st, cx, whoId))}>
+          Drink Antitoxin
+        </button>
+        {people.filter((c) => E.antitoxinActive(s, c)).map((c) => (
+          <Pill key={c.id} tone="good">
+            {c.name}: Antitoxin, {formatDuration(Math.max(1, (c.antitoxinUntil ?? 0) - E.absNow(s)))} left
+          </Pill>
+        ))}
+      </div>
       <p className="small muted">{p.effect}</p>
       {poisoned.length > 0 && (
         <ul className="plain small">
           {poisoned.map((c) => (
             <li key={c.id}>
               <b>{c.name}</b>: {[...(c.sick ? [`Sick from ${c.sickFrom || 'raw food or water'} (until a Long Rest)`] : []), ...s.effects.filter((e) => e.name.startsWith('Poisoned') && e.targetIds.includes(c.id)).map((e) => `${e.name}${e.endsAt ? ` (${formatDuration(Math.max(0, e.endsAt - E.absNow(s)))})` : ''}`), ...(c.poisonTimers ?? []).map((t) => (t.name === 'Midnight Tears' ? 'Midnight Tears (strikes at midnight, hidden)' : `Pale Tincture ${t.successes}/7 saves`))].join(', ')}{' '}
-              <button className="ghost tiny" onClick={() => dispatch((st, cx) => E.curePoison(st, cx, c.id))}>
-                Cured (Lesser Restoration or similar)
+              <button className="ghost tiny" title="Lesser Restoration, Protection from Poison, Lay on Hands (5 points), Heal and the like. Antitoxin doesn't end it." onClick={() => dispatch((st, cx) => E.curePoison(st, cx, c.id))}>
+                Cured by magic
               </button>
             </li>
           ))}
