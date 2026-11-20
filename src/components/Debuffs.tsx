@@ -57,6 +57,18 @@ export function Debuffs({ c, now, empty = true }: { c: Character; now: number; e
         Starving: {c.daysWithoutFood} day{c.daysWithoutFood > 1 ? 's' : ''} without food
       </Pill>,
     );
+  if (c.stress > 0)
+    items.push(
+      <Pill key="stress" tone={c.stress >= 5 ? 'bad' : 'warn'} title="Stress points">
+        Stress {c.stress}
+      </Pill>,
+    );
+  if (c.fear > 0)
+    items.push(
+      <Pill key="fear" tone={c.fear >= 5 ? 'bad' : 'warn'} title="Fear points">
+        Fear {c.fear}
+      </Pill>,
+    );
   if (!items.length) return empty ? <Pill tone="muted">No debuffs</Pill> : null;
   return <span className="debuffs">{items}</span>;
 }

@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { useGame, edit, getState, importState, resetState } from '../state/store';
 import { CALENDARS, dateFromIndex, indexFromDate, formatClock } from '../rules/calendar';
 import { parse5eToolsSpells } from '../rules/spells';
+import { parse5eToolsBestiary } from '../rules/hunting';
 import { Card, Num, Select, Toggle, Rule } from './common';
 import { log } from '../state/engine';
 
@@ -11,6 +12,7 @@ export function SettingsTab() {
       <DateCard />
       <RulesCard />
       <SpellLibraryCard />
+      <BestiaryCard />
       <SaveCard />
     </div>
   );
@@ -62,7 +64,7 @@ function DateCard() {
 
 function RulesCard() {
   const s = useGame();
-  const set = (k: Exclude<keyof typeof s.settings, 'rawFoodDC' | 'coldNightF' | 'encounterOn' | 'exploreEncounterOn' | 'moonOffset'>, v: boolean) => edit((d) => void (d.settings[k] = v));
+  const set = (k: Exclude<keyof typeof s.settings, 'rawFoodDC' | 'coldNightF' | 'encounterOn' | 'exploreEncounterOn' | 'moonOffset' | 'stressPerLongRest' | 'fearPerLongRest'>, v: boolean) => edit((d) => void (d.settings[k] = v));
   return (
     <Card title="Rules options">
       <div className="stack tight">
@@ -85,6 +87,10 @@ function RulesCard() {
           further 24 hours, and it resets after a Long Rest.
         </Rule>
         <Toggle checked={s.settings.chargeCosts} onChange={(v) => set('chargeCosts', v)} label="Charge costs to characters' gold (crafting, construction, lifestyle, wages, feed)" />
+        <div className="form-row">
+          <Num label="Stress removed per Long Rest" value={s.settings.stressPerLongRest} onChange={(v) => edit((d) => void (d.settings.stressPerLongRest = Math.max(0, Math.round(v))))} min={0} width={2} />
+          <Num label="Fear removed per Long Rest" value={s.settings.fearPerLongRest} onChange={(v) => edit((d) => void (d.settings.fearPerLongRest = Math.max(0, Math.round(v))))} min={0} width={2} />
+        </div>
         <Toggle checked={s.settings.climateAdjustedPrecip} onChange={(v) => set('climateAdjustedPrecip', v)} label="Adjust the precipitation roll for climate (deserts drier, jungles wetter)" />
         <Rule>When this is off, the plain DMG d20 table is used everywhere.</Rule>
         <Toggle checked={s.settings.doubleWaterInHeat} onChange={(v) => set('doubleWaterInHeat', v)} label="Double water needs on days of 100 °F or hotter (2014 rule)" />
@@ -157,6 +163,56 @@ function SpellLibraryCard() {
           </button>
         )}
       </div>
+      {msg && <p className="small">{msg}</p>}
+    </Card>
+  );
+}
+
+function BestiaryCard() {
+  const s = useGame();
+  const [msg, setMsg] = useState('');
+  const fileRef = useRef<HTMLInputElement>(null);
+  const load = (raw: string) => {
+    try {
+      const found = parse5eToolsBestiary(JSON.parse(raw));
+      if (!found.length) {
+        setMsg('No creatures found. Expected 5etools format: { "monster": [ { "name", "size", "type", "source" } ] }.');
+        return;
+      }
+      edit((d) => {
+        const keyOf = (x: { name: string; source?: string }) => `${x.name}|${x.source ?? ''}`.toLowerCase();
+        const have = new Set(d.bestiary.map(keyOf));
+        const added = found.filter((x) => !have.has(keyOf(x)));
+        d.bestiary = [...d.bestiary, ...added].sort((a, b) => a.name.localeCompare(b.name));
+        log(d, `Imported ${added.length} creatures into the bestiary for hunting.`);
+      });
+      setMsg(`Read ${found.length} creatures.`);
+    } catch (e) {
+      setMsg(`Couldn't read that JSON: ${(e as Error).message}`);
+    }
+  };
+  return (
+    <Card title={`Bestiary for hunting (${s.bestiary.length})`}>
+      <Rule>
+        Load a 5etools bestiary file you have access to (for example <code>bestiary-xmm.json</code>) to hunt any creature from it on the Camp tab. Only the name, size, creature type and source are kept.
+      </Rule>
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".json,application/json"
+        onChange={async (e) => {
+          const f = e.target.files?.[0];
+          if (f) load(await f.text());
+          if (fileRef.current) fileRef.current.value = '';
+        }}
+      />
+      {s.bestiary.length > 0 && (
+        <div className="btn-row">
+          <button className="ghost bad" onClick={() => confirm('Empty the bestiary?') && edit((d) => void (d.bestiary = []))}>
+            Empty bestiary
+          </button>
+        </div>
+      )}
       {msg && <p className="small">{msg}</p>}
     </Card>
   );

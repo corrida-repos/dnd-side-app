@@ -28,6 +28,7 @@ export function DowntimeTab() {
   return (
     <div className="grid">
       <NewProject />
+      <MaterialsCard />
       <Card title="Projects" className="span-2">
         {active.length === 0 && <p className="muted">No active projects. Start one on the left.</p>}
         <ul className="projects">
@@ -41,6 +42,7 @@ export function DowntimeTab() {
                   {p.charIds.map((id) => E.charById(s, id)?.name).filter(Boolean).join(', ') || 'nobody assigned'} · about {calendarDays(p.daysRequired - p.daysDone, p.charIds.length)} more day(s)
                 </span>
                 {p.notes && <span className="muted small">{p.notes}</span>}
+                {p.materialsUsed && p.materialsUsed.length > 0 && <span className="muted small">Materials: {p.materialsUsed.map((u) => `${u.qty} × ${u.name}`).join(', ')}</span>}
               </div>
               <span className="btn-row tight">
                 <button className="ghost small" onClick={() => edit((d) => void (d.projects.find((x) => x.id === p.id)!.daysDone = Math.min(p.daysRequired, p.daysDone + 1)))}>
@@ -86,6 +88,56 @@ export function DowntimeTab() {
   );
 }
 
+function MaterialsCard() {
+  const s = useGame();
+  const [name, setName] = useState('');
+  const [qty, setQty] = useState(1);
+  const [unit, setUnit] = useState('lb');
+  const [value, setValue] = useState(0.1);
+  const set = (id: string, fn: (m: (typeof s.materials)[number]) => void) => edit((d) => fn(d.materials.find((x) => x.id === id)!));
+  const total = s.materials.reduce((a, m) => a + m.qty * m.valueGp, 0);
+  return (
+    <Card title={`Crafting materials (${fmtGp(total)})`}>
+      {s.materials.length === 0 && <p className="muted small">The stash is empty. Add materials, or butcher a big kill for hides.</p>}
+      <ul className="plain">
+        {s.materials.map((m) => (
+          <li key={m.id} className="armor-row">
+            <span>
+              <b>{m.name}</b> <span className="muted small">{fmtGp(m.valueGp)} per {m.unit}</span>
+            </span>
+            <span className="btn-row tight">
+              <Num value={m.qty} onChange={(v) => set(m.id, (x) => void (x.qty = Math.max(0, v)))} min={0} suffix={m.unit} width={4} />
+              <button className="ghost tiny" aria-label={`Remove ${m.name}`} onClick={() => edit((d) => void (d.materials = d.materials.filter((x) => x.id !== m.id)))}>
+                ✕
+              </button>
+            </span>
+          </li>
+        ))}
+      </ul>
+      <div className="form-row">
+        <Text label="Material" value={name} onChange={setName} placeholder="e.g. Iron ingots, Leather, Herbs" />
+        <Num label="Amount" value={qty} onChange={(v) => setQty(Math.max(0, v))} min={0} width={4} />
+        <Text label="Unit" value={unit} onChange={setUnit} />
+        <Num label="Value each" value={value} onChange={(v) => setValue(Math.max(0, v))} min={0} step={0.1} suffix="GP" width={5} />
+      </div>
+      <button
+        disabled={!name.trim()}
+        onClick={() => {
+          edit((d) => {
+            const existing = d.materials.find((m) => m.name.toLowerCase() === name.trim().toLowerCase());
+            if (existing) existing.qty += qty;
+            else d.materials.push({ id: uid(), name: name.trim(), qty, unit: unit.trim() || 'unit', valueGp: value });
+          });
+          setName('');
+        }}
+      >
+        Add to stash
+      </button>
+      <Rule>Materials used for a project come out of the stash, and their value counts toward its cost. The rest is paid in gold.</Rule>
+    </Card>
+  );
+}
+
 function NewProject() {
   const s = useGame();
   const [kind, setKind] = useState<ProjectKind>('nonmagical');
@@ -104,6 +156,7 @@ function NewProject() {
   const [spellName, setSpellName] = useState('');
   const [spellLevel, setSpellLevel] = useState(1);
   const pcs = s.characters.filter((c) => c.kind !== 'mount');
+  const [useMats, setUseMats] = useState<Record<string, number>>({});
 
   let calc: { days: number; gp: number; label: string; note: string };
   switch (kind) {
@@ -252,8 +305,27 @@ function NewProject() {
           ))}
         </div>
       </div>
+      {s.materials.length > 0 && kind !== 'buyMagic' && kind !== 'sellMagic' && (
+        <details>
+          <summary>Use materials from the stash</summary>
+          <ul className="plain small">
+            {s.materials.map((m) => (
+              <li key={m.id} className="armor-row">
+                <span>
+                  {m.name} <span className="muted">({m.qty} {m.unit}, {fmtGp(m.valueGp)} each)</span>
+                </span>
+                <Num value={useMats[m.id] ?? 0} onChange={(v) => setUseMats({ ...useMats, [m.id]: Math.max(0, Math.min(m.qty, v)) })} min={0} max={m.qty} width={3} />
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
       <p className="calc">
-        <b>{calc.days}</b> workday(s) · <b>{calc.gp.toLocaleString()} GP</b> · {cal} calendar day(s) with {Math.max(1, crafters.length)} crafter(s)
+        <b>{calc.days}</b> workday(s) · <b>{calc.gp.toLocaleString()} GP</b>
+        {(() => {
+          const v = Object.entries(useMats).reduce((a, [id, q]) => a + q * (s.materials.find((m) => m.id === id)?.valueGp ?? 0), 0);
+          return v > 0 ? ` (${fmtGp(v)} covered by materials, ${fmtGp(Math.max(0, calc.gp - v))} in gold)` : '';
+        })()} · {cal} calendar day(s) with {Math.max(1, crafters.length)} crafter(s)
       </p>
       <Rule>{calc.note}</Rule>
       <button
@@ -272,7 +344,14 @@ function NewProject() {
             done: false,
             ...(trade ? { rarity, dealGp: calc.gp } : {}),
             ...(kind === 'spellcopy' ? { spell: { name: spellName.trim() || 'Unnamed spell', level: spellLevel } } : {}),
+            materialsUsed: Object.entries(useMats)
+              .filter(([, q]) => q > 0)
+              .map(([materialId, qty]) => {
+                const m = s.materials.find((x) => x.id === materialId)!;
+                return { materialId, name: m.name, qty, valueGp: m.valueGp };
+              }),
           };
+          setUseMats({});
           dispatch((st, cx) => E.startProject(st, cx, p));
           setName('');
           setDeal(null);

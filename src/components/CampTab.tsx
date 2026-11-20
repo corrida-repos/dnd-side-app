@@ -2,8 +2,10 @@ import { useState } from 'react';
 import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
 import { fireThreat } from '../rules/weather';
+import { GAME_ANIMALS, MEAT_LB, BUTCHER_MINUTES, BUTCHER_DC, isEdible, yieldsHide, STRANGE_TYPES } from '../rules/hunting';
+import { formatDuration } from '../rules/calendar';
 import { FORAGE_DC, ABUNDANCE_LABEL, foodNeedLb, fmtLb, fmtWater, proficiencyBonus, ARMOR_LABEL, armorTime, BOIL_MINUTES, PURIFY_SPELL, TAINTED_DC } from '../rules/survival';
-import { Card, Num, Pill, Select, Toggle, Rule } from './common';
+import { Card, Num, Pill, Select, Text, Toggle, Rule } from './common';
 
 export function CampTab() {
   return (
@@ -15,6 +17,7 @@ export function CampTab() {
       <WatchCard />
       <MealsCard />
       <ForageCard />
+      <HuntCard />
       <RulesCard />
     </div>
   );
@@ -345,6 +348,65 @@ function ForageCard() {
           Forage (1 h)
         </button>
       </div>
+    </Card>
+  );
+}
+
+function HuntCard() {
+  const s = useGame();
+  const [source, setSource] = useState<'game' | 'bestiary'>('game');
+  const [query, setQuery] = useState('');
+  const list = (source === 'game' ? GAME_ANIMALS : s.bestiary).filter((c) => !query || c.name.toLowerCase().includes(query.toLowerCase()));
+  const [pick, setPick] = useState('');
+  const [count, setCount] = useState(1);
+  const [who, setWho] = useState('');
+  const cr = list.find((c) => `${c.name}|${c.source ?? ''}` === pick) ?? list[0];
+  return (
+    <Card title="Hunting and butchering">
+      <div className="form-row">
+        <Select
+          label="From"
+          value={source}
+          onChange={(v) => (setSource(v), setPick(''))}
+          options={[
+            { value: 'game', label: `Common game (${GAME_ANIMALS.length})` },
+            { value: 'bestiary', label: `Imported bestiary (${s.bestiary.length})` },
+          ]}
+        />
+        <Text label="Search" value={query} onChange={setQuery} placeholder="e.g. boar" />
+      </div>
+      {source === 'bestiary' && s.bestiary.length === 0 && <p className="small muted">Import a 5etools bestiary JSON in Settings to hunt any creature.</p>}
+      {cr && (
+        <>
+          <div className="form-row">
+            <Select
+              label="Kill"
+              value={`${cr.name}|${cr.source ?? ''}`}
+              onChange={setPick}
+              options={list.slice(0, 300).map((c) => ({ value: `${c.name}|${c.source ?? ''}`, label: `${c.name} (${c.size} ${c.type}${c.source ? `, ${c.source}` : ''})` }))}
+            />
+            <Num label="How many" value={count} onChange={(v) => setCount(Math.max(1, Math.round(v)))} min={1} width={3} />
+            <Select label="Butcher" value={who} onChange={setWho} options={[{ value: '', label: 'No check' }, ...s.characters.filter((c) => c.kind !== 'mount').map((c) => ({ value: c.id, label: c.name }))]} />
+          </div>
+          <p className="calc small">
+            {isEdible(cr) ? (
+              <>
+                About <b>{MEAT_LB[cr.size] * count} lb</b> of raw meat in {formatDuration(BUTCHER_MINUTES[cr.size] * count)}
+                {yieldsHide(cr) ? `, plus ${count} hide${count > 1 ? 's' : ''} for crafting` : ''}.{STRANGE_TYPES.includes(cr.type.toLowerCase()) ? ' Strange meat: ask your DM.' : ''}
+              </>
+            ) : (
+              <span className="bad-text">A {cr.type} has no edible meat.</span>
+            )}
+          </p>
+          <button className="primary" disabled={!isEdible(cr)} onClick={() => dispatch((st, cx) => E.butcher(st, cx, { creature: cr, count, butcherId: who || null }))}>
+            Butcher
+          </button>
+        </>
+      )}
+      <Rule>
+        Table rule: meat by size is Tiny 1 lb, Small 10, Medium 50, Large 200, Huge 1,000, Gargantuan 4,000. It lands in the camp stores as <b>raw food</b>, so cook it before eating. With a butcher, a DC {BUTCHER_DC} Wisdom
+        (Survival) check stops half the meat going to waste. Constructs, elementals, oozes and undead give nothing.
+      </Rule>
     </Card>
   );
 }

@@ -4,6 +4,7 @@ import { d20, die, combineModes, rollExpr, signed, type Rng, type RollMode } fro
 import { dateFromIndex, formatClock, formatDate, formatDuration, sunriseMinutes } from '../rules/calendar';
 import { EXPLORATION_TURN_MINUTES, LIGHT_WARNING_MINUTES, type EffectPreset } from '../rules/effects';
 import { divinationFailChance, SPELLBOOK_REPLACE } from '../rules/longterm';
+import { BUTCHER_DC, BUTCHER_MINUTES, isEdible, MEAT_LB, STRANGE_TYPES, yieldsHide, type Creature } from '../rules/hunting';
 import { FEED_GP_PER_DAY, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset } from '../rules/money';
 import { abilityMod, ATTUNE_AWAY_MINUTES, IDENTIFY_MINUTES, MAX_ATTUNED, RITUAL_EXTRA_MINUTES, WATCH_HOURS } from '../rules/upkeep';
 import { fireThreat, rollWeather, temperatureAt, CLIMATES } from '../rules/weather';
@@ -64,7 +65,7 @@ export function payGold(s: State, payerIds: string[], amount: number, what: stri
   const broke = payers.filter((c) => c.gp < 0).map((c) => c.name);
   log(
     s,
-    `${payers.map((c) => c.name).join(', ')} pay${payers.length > 1 ? ` ${fmtGp(share)} each` : ''} ${fmtGp(amount)} for ${what}.${broke.length ? ` ${broke.join(', ')} ${broke.length > 1 ? 'are' : 'is'} now in debt.` : ''}`,
+    `${payers.map((c) => c.name).join(', ')} pay${payers.length > 1 ? '' : 's'} ${fmtGp(amount)}${payers.length > 1 ? ` (${fmtGp(share)} each)` : ''} for ${what}.${broke.length ? ` ${broke.join(', ')} ${broke.length > 1 ? 'are' : 'is'} now in debt.` : ''}`,
     broke.length ? 'warn' : 'info',
   );
 }
@@ -584,6 +585,16 @@ export const longRest = act((d, ctx, force = false) => {
     }
     for (const t of c.tasks) if (t.daily) t.done = false;
     c.divinationCasts = {};
+    if (d.settings.stressPerLongRest > 0 && c.stress > 0) {
+      const before = c.stress;
+      c.stress = Math.max(0, c.stress - d.settings.stressPerLongRest);
+      log(d, `${c.name}'s Stress eases from ${before} to ${c.stress}.`, 'good');
+    }
+    if (d.settings.fearPerLongRest > 0 && c.fear > 0) {
+      const before = c.fear;
+      c.fear = Math.max(0, c.fear - d.settings.fearPerLongRest);
+      log(d, `${c.name}'s Fear eases from ${before} to ${c.fear}.`, 'good');
+    }
     applyRestFocus(d, c);
     if (c.hp <= 0) {
       log(d, `${c.name} started the rest at 0 HP, so it doesn't restore HP or Hit Point Dice.`, 'warn');
@@ -1369,9 +1380,73 @@ export const frigidWater = act((d, ctx, charId: string, minutes: number) => {
 
 /** Starts a downtime project and pays for its materials up front (buying and selling settle on completion). */
 export const startProject = act((d, _ctx, p: Project) => {
+  // Take the chosen materials out of the stash; their value counts toward the cost.
+  const used: NonNullable<Project['materialsUsed']> = [];
+  for (const u of p.materialsUsed ?? []) {
+    const m = d.materials.find((x) => x.id === u.materialId);
+    if (!m || m.qty <= 0) continue;
+    const qty = Math.min(m.qty, u.qty);
+    m.qty = Math.round((m.qty - qty) * 100) / 100;
+    used.push({ materialId: m.id, name: m.name, qty, valueGp: m.valueGp });
+  }
+  d.materials = d.materials.filter((m) => m.qty > 0);
+  p.materialsUsed = used;
   d.projects.push(p);
-  log(d, `New downtime project: ${p.name} (${p.daysRequired} workdays${p.costGp ? `, ${fmtGp(p.costGp)}` : ''}).`);
-  if (p.kind !== 'buyMagic' && p.kind !== 'sellMagic' && p.costGp > 0) payGold(d, p.charIds, p.costGp, `materials for ${p.name}`);
+  const covered = used.reduce((a, u) => a + u.qty * u.valueGp, 0);
+  log(
+    d,
+    `New downtime project: ${p.name} (${p.daysRequired} workdays${p.costGp ? `, ${fmtGp(p.costGp)}` : ''})${used.length ? `, using ${used.map((u) => `${u.qty} × ${u.name}`).join(', ')} from the stash (worth ${fmtGp(covered)})` : ''}.`,
+  );
+  const owed = Math.max(0, Math.round((p.costGp - covered) * 100) / 100);
+  if (p.kind !== 'buyMagic' && p.kind !== 'sellMagic' && owed > 0) payGold(d, p.charIds, owed, `${used.length ? 'the rest of the ' : ''}materials for ${p.name}`);
+});
+
+export interface ButcherOpts {
+  creature: Creature;
+  count: number;
+  butcherId: string | null;
+}
+
+/** Field-dressing a kill: raw meat by size goes to the camp stores, and big beasts leave hides for the materials stash. */
+export const butcher = act((d, ctx, o: ButcherOpts) => {
+  const { creature: cr, count } = o;
+  if (!isEdible(cr)) {
+    log(d, `There is no edible meat on ${count > 1 ? `${count} × ` : 'a '}${cr.name} (${cr.type}).`, 'warn');
+    return;
+  }
+  const who = o.butcherId ? charById(d, o.butcherId) : undefined;
+  advanceMut(d, ctx, BUTCHER_MINUTES[cr.size] * count, 'camp');
+  let meat = MEAT_LB[cr.size] * count;
+  let checkTxt = '';
+  if (who) {
+    const r = d20('normal', ctx.rng);
+    const total = r.value + who.survival - 2 * who.exhaustion;
+    const ok = total >= BUTCHER_DC;
+    if (!ok) meat = Math.round(meat / 2);
+    checkTxt = ` ${who.name} butchers: Wisdom (Survival) ${r.value} ${signed(who.survival - 2 * who.exhaustion)} = ${total} against DC ${BUTCHER_DC}, ${ok ? 'a clean job' : 'half the meat is wasted'}.`;
+  }
+  d.stores.foodRawLb = Math.round((d.stores.foodRawLb + meat) * 100) / 100;
+  let hide = '';
+  if (yieldsHide(cr)) {
+    const name = `Hide (${cr.name})`;
+    const m = d.materials.find((x) => x.name === name);
+    if (m) m.qty += count;
+    else d.materials.push({ id: uid(), name, qty: count, unit: 'hide', valueGp: cr.size === 'Medium' ? 1 : cr.size === 'Large' ? 5 : 20 });
+    hide = ` ${count} hide${count > 1 ? 's go' : ' goes'} into the materials stash.`;
+  }
+  const strange = STRANGE_TYPES.includes(cr.type.toLowerCase()) ? ` ${cr.type[0].toUpperCase()}${cr.type.slice(1)} meat is strange fare, and the DM may add effects.` : '';
+  log(d, `Butchered ${count} × ${cr.name} (${cr.size} ${cr.type}): ${meat} lb of raw meat added to the camp stores.${checkTxt}${hide}${strange}`, 'good');
+});
+
+export type Track = 'renown' | 'fear' | 'stress';
+const TRACK_LABEL: Record<Track, string> = { renown: 'Renown', fear: 'Fear', stress: 'Stress' };
+
+export const adjustTrack = act((d, _ctx, charId: string, track: Track, delta: number, reason: string) => {
+  const c = charById(d, charId);
+  if (!c || !delta) return;
+  c[track] = track === 'renown' ? c[track] + delta : Math.max(0, c[track] + delta);
+  const tone: Tone = track === 'renown' ? (delta > 0 ? 'good' : 'warn') : delta > 0 ? 'warn' : 'good';
+  log(d, `${c.name}'s ${TRACK_LABEL[track]} ${delta > 0 ? 'rises' : 'falls'} by ${Math.abs(delta)} to ${c[track]}${reason ? ` (${reason})` : ''}.`, tone);
 });
 
 export const addMount = act((d, _ctx, preset: MountPreset, name: string, buyerId: string | null) => {

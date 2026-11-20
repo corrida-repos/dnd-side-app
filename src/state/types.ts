@@ -6,6 +6,7 @@ import type { Recharge } from '../rules/upkeep';
 import type { EffectKind } from '../rules/effects';
 import type { Lifestyle } from '../rules/money';
 import type { Rarity } from '../rules/crafting';
+import type { Creature } from '../rules/hunting';
 
 export type Season = 'winter' | 'spring' | 'summer' | 'autumn';
 export type Size = 'Tiny' | 'Small' | 'Medium' | 'Large' | 'Huge' | 'Gargantuan';
@@ -88,6 +89,22 @@ export interface ActiveEffect {
   notes: string;
 }
 
+export interface Material {
+  id: string;
+  name: string;
+  qty: number;
+  unit: string;
+  /** Value of one unit in GP, counted toward a project's cost when used. */
+  valueGp: number;
+}
+
+export interface MaterialUse {
+  materialId: string;
+  name: string;
+  qty: number;
+  valueGp: number;
+}
+
 export interface Ritual {
   id: string;
   spell: string;
@@ -135,6 +152,10 @@ export interface Character {
   passivePerception: number;
   items: MagicItem[];
   resources: Resource[];
+  /** Personal renown, fear and stress trackers. */
+  renown: number;
+  fear: number;
+  stress: number;
   /** Absolute minute of death, or null while alive. */
   diedAt: number | null;
   /** Minutes spent dead under Gentle Repose, which don't count toward resurrection limits. */
@@ -259,6 +280,8 @@ export interface Project {
   /** For buying or selling magic items: the rarity and the price the deal is struck at. */
   rarity?: Rarity;
   dealGp?: number;
+  /** Materials taken from the stash when the project started. */
+  materialsUsed?: MaterialUse[];
   /** For copying a spell: its name and level, and whose spellbook gets it. */
   spell?: { name: string; level: number };
 }
@@ -332,6 +355,10 @@ export interface Settings {
   chargeCosts: boolean;
   /** Shifts the moon cycle so its phases match your campaign. */
   moonOffset: number;
+  /** Stress points removed by each Long Rest (0 turns it off). */
+  stressPerLongRest: number;
+  /** Fear points removed by each Long Rest (0 turns it off). */
+  fearPerLongRest: number;
 }
 
 export interface Travel {
@@ -370,4 +397,7 @@ export interface State {
   rituals: Ritual[];
   factions: Faction[];
   holidays: Holiday[];
+  materials: Material[];
+  /** Creatures imported from a bestiary file, for hunting. */
+  bestiary: Creature[];
 }

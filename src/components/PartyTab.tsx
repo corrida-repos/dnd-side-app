@@ -1,12 +1,13 @@
 import { useState } from 'react';
-import { useGame, edit } from '../state/store';
+import { useGame, edit, dispatch } from '../state/store';
 import { newCharacter, defaultTasks } from '../state/defaults';
 import { CLASSES, isCaster } from '../rules/spells';
 import { SIZES, exhaustionSummary, foodNeedLb, WATER_GAL_PER_DAY, proficiencyBonus, ARMOR_TIMES, ARMOR_LABEL, causesOf, EXHAUSTION_CAUSE_LABEL } from '../rules/survival';
 import { Card, Num, Select, Text, Toggle, Rule } from './common';
 import { Debuffs } from './Debuffs';
 import type { ArmorKind, Character, ClassName, ExhaustionCause, Resist, Size } from '../state/types';
-import { absNow, log } from '../state/engine';
+import * as E2 from '../state/engine';
+import { absNow, log, type Track } from '../state/engine';
 
 const RESIST = [
   { value: 'none', label: 'None' },
@@ -30,6 +31,37 @@ export function PartyTab() {
         ))}
       </div>
     </div>
+  );
+}
+
+function Trackers({ c }: { c: Character }) {
+  const [reason, setReason] = useState('');
+  const row = (track: Track, label: string, hint: string) => (
+    <span className="field">
+      <span className="field-label" title={hint}>
+        {label}
+      </span>
+      <span className="inline-group">
+        <button aria-label={`Lower ${label}`} onClick={() => dispatch((st, cx) => E2.adjustTrack(st, cx, c.id, track, -1, reason.trim()))}>
+          −
+        </button>
+        <b className="exh">{c[track]}</b>
+        <button aria-label={`Raise ${label}`} onClick={() => dispatch((st, cx) => E2.adjustTrack(st, cx, c.id, track, 1, reason.trim()))}>
+          +
+        </button>
+      </span>
+    </span>
+  );
+  return (
+    <>
+      <h3>Renown, fear and stress</h3>
+      <div className="form-row">
+        {row('renown', 'Renown', 'Personal reputation. Faction renown lives on the World tab.')}
+        {row('fear', 'Fear', 'Lasting dread from horrors faced')}
+        {row('stress', 'Stress', 'Strain that builds up between rests')}
+        <Text label="Why (optional)" value={reason} onChange={setReason} placeholder="e.g. saw the lich" />
+      </div>
+    </>
   );
 }
 
@@ -111,6 +143,8 @@ function CharacterCard({ c }: { c: Character }) {
         <Num label="Survival" value={c.survival} onChange={(v) => set({ survival: v })} width={3} />
       </div>
       <ExhaustionEditor c={c} set={set} />
+
+      <Trackers c={c} />
 
       <h3>Weathering the elements</h3>
       <div className="form-row">

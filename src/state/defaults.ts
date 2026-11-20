@@ -44,6 +44,9 @@ export function newCharacter(partial: Partial<Character> = {}): Character {
     items: [],
     resources: [],
     restFocus: null,
+    renown: 0,
+    fear: 0,
+    stress: 0,
     diedAt: null,
     reposeMinutes: 0,
     divinationCasts: {},
@@ -128,7 +131,7 @@ export function createDefaultState(rng: Rng): State {
     travel: { pace: 'normal', hoursToday: 0, milesToday: 0 },
     lastLongRestEnd: null,
     trackingStart: dayIndex * 1440 + 7 * 60,
-    settings: { autoRollSaves: true, climateAdjustedPrecip: false, fireWarmsCamp: true, doubleWaterInHeat: false, wildNeedsPurifying: true, sleepInArmorPenalty: false, rawFoodRisk: true, rawFoodDC: 10, coldNights: true, coldNightF: 32, sleepDeprivation: true, encounterOn: 0, exploreEncounterOn: 0, chargeCosts: true, moonOffset: 0 },
+    settings: { autoRollSaves: true, climateAdjustedPrecip: false, fireWarmsCamp: true, doubleWaterInHeat: false, wildNeedsPurifying: true, sleepInArmorPenalty: false, rawFoodRisk: true, rawFoodDC: 10, coldNights: true, coldNightF: 32, sleepDeprivation: true, encounterOn: 0, exploreEncounterOn: 0, chargeCosts: true, moonOffset: 0, stressPerLongRest: 1, fearPerLongRest: 1 },
     spellLibrary: [],
     bastions: [],
     watchOrder: [],
@@ -137,5 +140,7 @@ export function createDefaultState(rng: Rng): State {
     rituals: [],
     factions: [],
     holidays: [],
+    materials: [],
+    bestiary: [],
   };
 }

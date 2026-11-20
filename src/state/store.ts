@@ -27,6 +27,8 @@ function migrate(raw: unknown): State | null {
     rituals: parsed.rituals ?? [],
     factions: parsed.factions ?? [],
     holidays: parsed.holidays ?? [],
+    materials: parsed.materials ?? [],
+    bestiary: parsed.bestiary ?? [],
     trackingStart: parsed.trackingStart ?? (parsed.dayIndex ?? base.dayIndex) * 1440 + (parsed.minutes ?? 0),
   } as State;
   // Characters saved by older versions pick up any newly added fields.
