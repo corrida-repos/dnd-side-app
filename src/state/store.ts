@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import type { State } from './types';
-import { createDefaultState, SAVE_VERSION } from './defaults';
+import { createDefaultState, newCharacter, SAVE_VERSION } from './defaults';
 import { ensureWeather, type Ctx } from './engine';
 
 const KEY = 'wayfarers-ledger:v1';
@@ -21,6 +21,8 @@ function migrate(raw: unknown): State | null {
     stores: { ...base.stores, ...parsed.stores },
     place: { ...base.place, ...parsed.place },
   } as State;
+  // Characters saved by older versions pick up any newly added fields.
+  s.characters = s.characters.map((c) => ({ ...newCharacter(), ...c }));
   ensureWeather(s, ctx);
   return s;
 }

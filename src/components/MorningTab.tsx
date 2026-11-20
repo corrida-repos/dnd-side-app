@@ -4,6 +4,7 @@ import * as E from '../state/engine';
 import { uid } from '../state/defaults';
 import { isCaster, levelLabel, PREP_RULE, PREP_RULE_TEXT, preparedCount, preparedLimit } from '../rules/spells';
 import { Card, Num, Pill, Select, Text, Toggle, Rule } from './common';
+import { armorTime, ARMOR_LABEL } from '../rules/survival';
 import type { Character, CharacterSpell } from '../state/types';
 
 export function MorningTab() {
@@ -34,6 +35,18 @@ function MorningCard({ c }: { c: Character }) {
   const [newTask, setNewTask] = useState('');
   return (
     <Card title={`${c.name} · ${c.className} ${c.level}`}>
+      {c.armorKind !== 'none' && (
+        <div className="armor-row">
+          <span>
+            {c.armorName || ARMOR_LABEL[c.armorKind]} {c.armorWorn ? <Pill tone="good">On</Pill> : <Pill tone="warn">Off</Pill>}
+          </span>
+          {!c.armorWorn && (
+            <button className="small" onClick={() => dispatch((st, cx) => E.setArmor(st, cx, c.id, 'don'))}>
+              Put on armor ({armorTime(c, 'don')} min)
+            </button>
+          )}
+        </div>
+      )}
       <ul className="tasks">
         {c.tasks.map((t) => (
           <li key={t.id}>

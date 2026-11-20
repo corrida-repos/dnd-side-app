@@ -12,6 +12,8 @@ export type Abundance = 'abundant' | 'limited' | 'scarce';
 export type Pace = 'fast' | 'normal' | 'slow';
 export type Activity = 'camp' | 'rest' | 'travel' | 'work';
 export type Tone = 'info' | 'warn' | 'bad' | 'good';
+export type ArmorKind = 'none' | 'light' | 'medium' | 'heavy';
+export type WaterQuality = 'clean' | 'questionable';
 
 export interface SpellRef {
   name: string;
@@ -48,8 +50,17 @@ export interface Character {
   coldResist: Resist;
   fireResist: Resist;
   coldWeatherGear: boolean;
-  /** Medium or Heavy armor, or heavy clothing: Disadvantage on extreme heat saves. */
+  /** Heavy clothing (armor is tracked separately): Disadvantage on extreme heat saves. */
   heavyGarb: boolean;
+  armorKind: ArmorKind;
+  armorName: string;
+  armorWorn: boolean;
+  hasShield: boolean;
+  shieldWorn: boolean;
+  /** Waterskin was filled from a source that hasn't been purified. */
+  waterUnsafe: boolean;
+  /** Absolute minute when the Poisoned condition from tainted food or water ends. */
+  poisonedUntil: number | null;
   needsFood: boolean;
   needsWater: boolean;
   rationsLb: number;
@@ -84,6 +95,7 @@ export interface Place {
   shelter: Shelter;
   forage: Abundance;
   waterSource: boolean;
+  waterQuality: WaterQuality;
 }
 
 export interface Fire {
@@ -96,9 +108,12 @@ export interface Fire {
 export interface Stores {
   foodLb: number;
   waterGal: number;
+  /** Foraged or found supplies that still need purifying. */
+  foodUnsafeLb: number;
+  waterUnsafeGal: number;
 }
 
-export type SaveKind = 'cold' | 'heat' | 'march' | 'malnutrition';
+export type SaveKind = 'cold' | 'heat' | 'march' | 'malnutrition' | 'tainted';
 
 export interface PendingSave {
   id: string;
@@ -136,6 +151,10 @@ export interface Settings {
   fireWarmsCamp: boolean;
   /** Optional older rule: double water on days of 100 °F or hotter. */
   doubleWaterInHeat: boolean;
+  /** Table rule: foraged food and water from questionable sources must be purified, or risk being Poisoned. */
+  wildNeedsPurifying: boolean;
+  /** Optional rule (Xanathar's Guide): sleeping in Medium or Heavy armor spoils the Long Rest. */
+  sleepInArmorPenalty: boolean;
 }
 
 export interface Travel {

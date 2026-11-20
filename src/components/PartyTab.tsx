@@ -1,9 +1,9 @@
 import { useGame, edit } from '../state/store';
 import { newCharacter, defaultTasks } from '../state/defaults';
 import { CLASSES, isCaster } from '../rules/spells';
-import { SIZES, exhaustionSummary, foodNeedLb, WATER_GAL_PER_DAY, proficiencyBonus } from '../rules/survival';
+import { SIZES, exhaustionSummary, foodNeedLb, WATER_GAL_PER_DAY, proficiencyBonus, ARMOR_TIMES, ARMOR_LABEL } from '../rules/survival';
 import { Card, ExhaustionBadge, Num, Select, Text, Toggle, Rule } from './common';
-import type { Character, ClassName, Resist, Size } from '../state/types';
+import type { ArmorKind, Character, ClassName, Resist, Size } from '../state/types';
 import { log } from '../state/engine';
 
 const RESIST = [
@@ -89,8 +89,30 @@ function CharacterCard({ c }: { c: Character }) {
       </div>
       <div className="chips">
         <Toggle checked={c.coldWeatherGear} onChange={(v) => set({ coldWeatherGear: v })} label="Cold weather gear" />
-        <Toggle checked={c.heavyGarb} onChange={(v) => set({ heavyGarb: v })} label="Medium/Heavy armor or heavy clothing" title="Disadvantage on extreme heat saves" />
+        <Toggle checked={c.heavyGarb} onChange={(v) => set({ heavyGarb: v })} label="Heavy clothing" title="Disadvantage on extreme heat saves" />
       </div>
+
+      <h3>Armor</h3>
+      <div className="form-row">
+        <Select
+          label="Type"
+          value={c.armorKind}
+          onChange={(v: ArmorKind) => set({ armorKind: v, armorWorn: v === 'none' ? false : c.armorWorn })}
+          options={(Object.keys(ARMOR_LABEL) as ArmorKind[]).map((k) => ({ value: k, label: ARMOR_LABEL[k] }))}
+        />
+        {c.armorKind !== 'none' && <Text label="Name" value={c.armorName} onChange={(v) => set({ armorName: v })} placeholder="e.g. Chain Mail" />}
+      </div>
+      <div className="chips">
+        {c.armorKind !== 'none' && <Toggle checked={c.armorWorn} onChange={(v) => set({ armorWorn: v })} label="Wearing it now" />}
+        <Toggle checked={c.hasShield} onChange={(v) => set({ hasShield: v, shieldWorn: v && c.shieldWorn })} label="Has a shield" />
+        {c.hasShield && <Toggle checked={c.shieldWorn} onChange={(v) => set({ shieldWorn: v })} label="Shield on arm" />}
+      </div>
+      {c.armorKind !== 'none' && (
+        <Rule>
+          Takes {ARMOR_TIMES[c.armorKind].don} min to put on and {ARMOR_TIMES[c.armorKind].doff} min to take off. A shield takes the Utilize action.
+          {c.armorKind !== 'light' && ' Medium or Heavy armor gives Disadvantage on extreme heat saves.'} These ticks don&apos;t move the clock. Use the Camp tab for that.
+        </Rule>
+      )}
 
       <h3>Food and water</h3>
       <div className="form-row">

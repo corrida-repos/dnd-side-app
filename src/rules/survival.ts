@@ -1,4 +1,4 @@
-import type { Character, Size, Abundance, Pace } from '../state/types';
+import type { ArmorKind, Character, Size, Abundance, Pace } from '../state/types';
 
 export const SIZES: Size[] = ['Tiny', 'Small', 'Medium', 'Large', 'Huge', 'Gargantuan'];
 
@@ -43,3 +43,29 @@ export function fmtWater(pints: number): string {
   if (pints < PINTS_PER_GALLON) return `${+pints.toFixed(1)} pt`;
   return `${+gal.toFixed(2)} gal`;
 }
+
+/** Donning and doffing armor, in minutes (PHB). A shield takes the Utilize action to don or doff. */
+export const ARMOR_TIMES: Record<Exclude<ArmorKind, 'none'>, { don: number; doff: number }> = {
+  light: { don: 1, doff: 1 },
+  medium: { don: 5, doff: 1 },
+  heavy: { don: 10, doff: 5 },
+};
+
+export const ARMOR_LABEL: Record<ArmorKind, string> = { none: 'No armor', light: 'Light armor', medium: 'Medium armor', heavy: 'Heavy armor' };
+
+export const wearsBulkyArmor = (c: Character): boolean => c.armorWorn && (c.armorKind === 'medium' || c.armorKind === 'heavy');
+
+/** Medium or Heavy armor, or heavy clothing, gives Disadvantage on extreme heat saves. */
+export const heatDisadvantage = (c: Character): boolean => c.heavyGarb || wearsBulkyArmor(c);
+
+export function armorTime(c: Character, action: 'don' | 'doff'): number {
+  if (c.armorKind === 'none') return 0;
+  return ARMOR_TIMES[c.armorKind][action];
+}
+
+export const PURIFY_SPELL = 'Purify Food and Drink';
+/** Table rule: eating or drinking unpurified wild supplies. */
+export const TAINTED_DC = 10;
+export const TAINTED_POISON_MINUTES = 60;
+/** Table rule: boiling a batch of water over a campfire. */
+export const BOIL_MINUTES = 30;

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
 import { fireThreat } from '../rules/weather';
-import { FORAGE_DC, ABUNDANCE_LABEL, foodNeedLb, fmtLb, fmtWater, proficiencyBonus } from '../rules/survival';
+import { FORAGE_DC, ABUNDANCE_LABEL, foodNeedLb, fmtLb, fmtWater, proficiencyBonus, ARMOR_LABEL, armorTime, BOIL_MINUTES, PURIFY_SPELL, TAINTED_DC } from '../rules/survival';
 import { Card, Num, Pill, Select, Toggle, Rule } from './common';
 
 export function CampTab() {
@@ -10,6 +10,8 @@ export function CampTab() {
     <div className="grid">
       <FireCard />
       <StoresCard />
+      <PurifyCard />
+      <ArmorCard />
       <MealsCard />
       <ForageCard />
       <RulesCard />
@@ -75,15 +77,122 @@ function StoresCard() {
         <Num label="Food" value={s.stores.foodLb} onChange={(v) => edit((d) => void (d.stores.foodLb = v))} min={0} step={0.5} suffix="lb" width={4} />
         <Num label="Water" value={s.stores.waterGal} onChange={(v) => edit((d) => void (d.stores.waterGal = v))} min={0} step={0.5} suffix="gal" width={4} />
       </div>
-      <Rule>Shared supplies: foraged food and water land here. Party meals use the stores first, then each person's own rations or waterskin.</Rule>
+      <div className="form-row">
+        <Num label="Unpurified food" value={s.stores.foodUnsafeLb} onChange={(v) => edit((d) => void (d.stores.foodUnsafeLb = v))} min={0} step={0.5} suffix="lb" width={4} />
+        <Num label="Unpurified water" value={s.stores.waterUnsafeGal} onChange={(v) => edit((d) => void (d.stores.waterUnsafeGal = v))} min={0} step={0.5} suffix="gal" width={4} />
+      </div>
+      <Rule>Shared supplies. Foraged food and water arrive unpurified. Party meals use clean stores first, then each person's rations or waterskin, and unpurified supplies only as a last resort.</Rule>
       <div className="btn-row">
         <button disabled={!s.place.waterSource} onClick={() => dispatch(E.refillWater)} title={s.place.waterSource ? '' : 'No water source at this place'}>
           Refill all waterskins
         </button>
-        <button disabled={!s.place.waterSource} onClick={() => edit((d) => void (d.stores.waterGal += 5))}>
+        <button disabled={!s.place.waterSource} onClick={() => dispatch((st, c) => E.fillBarrel(st, c, 5))}>
           Fill a 5 gal barrel
         </button>
       </div>
+    </Card>
+  );
+}
+
+function PurifyCard() {
+  const s = useGame();
+  const [caster, setCaster] = useState<string>(() => s.characters.find((c) => c.spells.some((x) => x.name.toLowerCase() === PURIFY_SPELL.toLowerCase()))?.id ?? '');
+  const [mode, setMode] = useState<'ritual' | 'slot'>('ritual');
+  const skins = s.characters.filter((c) => c.waterUnsafe);
+  const dirty = s.stores.foodUnsafeLb > 0 || s.stores.waterUnsafeGal > 0 || skins.length > 0;
+  const casterChar = s.characters.find((c) => c.id === caster);
+  const check = casterChar ? E.canCastPurify(casterChar, mode) : { ok: true, reason: '' };
+  return (
+    <Card title={<span>Purifying food and water {dirty ? <Pill tone="warn">Needs purifying</Pill> : <Pill tone="good">All safe</Pill>}</span>}>
+      <ul className="plain small">
+        <li>Unpurified food: {fmtLb(s.stores.foodUnsafeLb)}</li>
+        <li>Unpurified water: {s.stores.waterUnsafeGal} gal</li>
+        <li>Tainted waterskins: {skins.length ? skins.map((c) => c.name).join(', ') : 'none'}</li>
+        <li>
+          Water source here: {s.place.waterSource ? (s.place.waterQuality === 'clean' ? 'clean' : 'questionable') : 'none'}
+        </li>
+      </ul>
+      {!s.settings.wildNeedsPurifying && <Rule>Purifying is switched off in Settings, so wild food and water are treated as safe.</Rule>}
+
+      <h3>Magical: {PURIFY_SPELL}</h3>
+      <div className="form-row">
+        <Select
+          label="Caster"
+          value={caster}
+          onChange={setCaster}
+          options={[{ value: '', label: 'Scroll or other source' }, ...s.characters.map((c) => ({ value: c.id, label: c.name }))]}
+        />
+        <Select
+          label="Cast"
+          value={mode}
+          onChange={setMode}
+          options={[
+            { value: 'ritual', label: 'As a ritual (10 min)' },
+            { value: 'slot', label: 'With a level 1 slot (action)' },
+          ]}
+        />
+      </div>
+      {!check.ok && <p className="small bad-text">{check.reason} Add it to their spells on the Morning tab.</p>}
+      <button className="primary" disabled={!dirty || !check.ok} onClick={() => dispatch((st, c) => E.purifySpell(st, c, caster || null, mode))}>
+        Cast {PURIFY_SPELL}
+      </button>
+      <Rule>Level 1 Transmutation ritual: removes poison and rot from nonmagical food and drink in a 5-foot-radius Sphere. This covers all camp stores and waterskins gathered together.</Rule>
+
+      <h3>Nonmagical</h3>
+      <div className="btn-row">
+        <button disabled={!s.fire.lit || !(s.stores.waterUnsafeGal > 0 || skins.length > 0)} onClick={() => dispatch(E.boilWater)} title={s.fire.lit ? '' : 'Light the fire first'}>
+          Boil water ({BOIL_MINUTES} min)
+        </button>
+      </div>
+      <Rule>
+        Table rules: boiling over a lit campfire makes all water safe, and cooking a hot meal uses up foraged food first and makes it safe. Eating or drinking anything unpurified means a DC {TAINTED_DC} Con save,
+        or you are Poisoned for 1 hour (Disadvantage on attack rolls and ability checks).
+      </Rule>
+    </Card>
+  );
+}
+
+function ArmorCard() {
+  const s = useGame();
+  const armored = s.characters.filter((c) => c.armorKind !== 'none' || c.hasShield);
+  const anyOn = armored.some((c) => c.armorWorn);
+  const anyOff = armored.some((c) => c.armorKind !== 'none' && !c.armorWorn);
+  return (
+    <Card title="Armor">
+      {armored.length === 0 && <p className="muted small">Nobody has armor set up. Add it on the Party tab.</p>}
+      <ul className="plain">
+        {armored.map((c) => (
+          <li key={c.id} className="armor-row">
+            <span>
+              <b>{c.name}</b>{' '}
+              <span className="muted small">
+                {c.armorName || ARMOR_LABEL[c.armorKind]}
+                {c.hasShield ? ' + shield' : ''}
+              </span>{' '}
+              {c.armorKind !== 'none' && (c.armorWorn ? <Pill tone="good">On</Pill> : <Pill tone="warn">Off</Pill>)}
+            </span>
+            {c.armorKind !== 'none' && (
+              <button className="small" onClick={() => dispatch((st, cx) => E.setArmor(st, cx, c.id, c.armorWorn ? 'doff' : 'don'))}>
+                {c.armorWorn ? `Take off (${armorTime(c, 'doff')} min)` : `Put on (${armorTime(c, 'don')} min)`}
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+      <div className="btn-row">
+        <button disabled={!anyOn} onClick={() => dispatch((st, c) => E.partyArmor(st, c, 'doff'))}>
+          Everyone takes armor off
+        </button>
+        <button disabled={!anyOff} onClick={() => dispatch((st, c) => E.partyArmor(st, c, 'don'))}>
+          Everyone suits up
+        </button>
+      </div>
+      <Rule>
+        Light: 1 min on, 1 min off. Medium: 5 on, 1 off. Heavy: 10 on, 5 off. A shield takes the Utilize action. Everyone works at the same time, so the clock moves by the slowest person.
+        {s.settings.sleepInArmorPenalty
+          ? ' Optional rule on: sleeping in Medium or Heavy armor means the Long Rest brings back only a quarter of spent Hit Point Dice and removes no Exhaustion.'
+          : ' The 2024 rules have no penalty for sleeping in armor. You can switch on the optional Xanathar’s rule in Settings.'}
+      </Rule>
     </Card>
   );
 }

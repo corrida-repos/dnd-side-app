@@ -72,6 +72,9 @@ function RulesCard() {
         <Toggle checked={s.settings.climateAdjustedPrecip} onChange={(v) => set('climateAdjustedPrecip', v)} label="Adjust the precipitation roll for climate (deserts drier, jungles wetter)" />
         <Rule>When this is off, the plain DMG d20 table is used everywhere.</Rule>
         <Toggle checked={s.settings.doubleWaterInHeat} onChange={(v) => set('doubleWaterInHeat', v)} label="Double water needs on days of 100 °F or hotter (2014 rule)" />
+        <Toggle checked={s.settings.wildNeedsPurifying} onChange={(v) => set('wildNeedsPurifying', v)} label="Foraged food and questionable water must be purified (table rule)" />
+        <Rule>When this is on, eating or drinking unpurified supplies means a DC 10 Con save or Poisoned for 1 hour. Purify Food and Drink, boiling or cooking makes them safe.</Rule>
+        <Toggle checked={s.settings.sleepInArmorPenalty} onChange={(v) => set('sleepInArmorPenalty', v)} label="Sleeping in Medium or Heavy armor spoils the Long Rest (optional Xanathar's rule)" />
       </div>
     </Card>
   );

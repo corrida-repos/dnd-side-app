@@ -12,6 +12,14 @@ import {
   waterNeedPints,
   fmtLb,
   fmtWater,
+  heatDisadvantage,
+  wearsBulkyArmor,
+  armorTime,
+  ARMOR_LABEL,
+  PURIFY_SPELL,
+  TAINTED_DC,
+  TAINTED_POISON_MINUTES,
+  BOIL_MINUTES,
 } from '../rules/survival';
 import { isCaster, PREP_RULE, preparedCount, preparedLimit } from '../rules/spells';
 import { uid } from './defaults';
@@ -91,7 +99,7 @@ export function coldProtection(c: Character): string | null {
 }
 
 export function hasDrinkableWater(s: State, c: Character, activity: Activity): boolean {
-  return c.waterPints > 0 || s.place.waterSource || (activity !== 'travel' && s.stores.waterGal > 0);
+  return c.waterPints > 0 || s.place.waterSource || (activity !== 'travel' && s.stores.waterGal + s.stores.waterUnsafeGal > 0);
 }
 
 export function heatProtection(c: Character, hasWater: boolean): string | null {
@@ -113,6 +121,11 @@ export function gainExhaustion(s: State, c: Character, n: number, why: string): 
 function applySaveResult(s: State, c: Character, p: Omit<PendingSave, 'id' | 'stamp'>, passed: boolean, detail: string): void {
   log(s, `${c.name}: Constitution save, DC ${p.dc}, against ${p.reason}. ${detail}${passed ? 'Success.' : 'Failure.'}`, passed ? 'good' : 'warn');
   if (!passed) {
+    if (p.kind === 'tainted') {
+      c.poisonedUntil = absNow(s) + TAINTED_POISON_MINUTES;
+      log(s, `${c.name} is Poisoned for an hour by ${p.reason} (Disadvantage on attack rolls and ability checks).`, 'bad');
+      return;
+    }
     if (p.kind === 'malnutrition') c.malnourished = true;
     gainExhaustion(s, c, 1, p.reason);
   }
@@ -176,7 +189,7 @@ function tickHour(s: State, ctx: Ctx, activity: Activity): void {
     if (exp.heat && temp >= 100) {
       if (!heatProtection(c, hasDrinkableWater(s, c, activity))) {
         c.heatHours += 1;
-        requestSave(s, ctx, c, 'heat', 4 + c.heatHours, c.heavyGarb ? 'disadvantage' : 'normal', `extreme heat (${temp}°F), hour ${c.heatHours}`);
+        requestSave(s, ctx, c, 'heat', 4 + c.heatHours, heatDisadvantage(c) ? 'disadvantage' : 'normal', `extreme heat (${temp}°F), hour ${c.heatHours}`);
       } else c.heatHours = 0;
     } else c.heatHours = 0;
   }
@@ -223,6 +236,16 @@ function endOfDay(s: State, ctx: Ctx): void {
   newWeather(s, ctx);
 }
 
+function expireConditions(s: State): void {
+  const now = absNow(s);
+  for (const c of s.characters) {
+    if (c.poisonedUntil != null && now >= c.poisonedUntil) {
+      c.poisonedUntil = null;
+      log(s, `${c.name} is no longer Poisoned.`, 'good');
+    }
+  }
+}
+
 /** Moves the clock forward, firing the hourly and end-of-day checks along the way. */
 export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activity): void {
   let remaining = Math.max(0, Math.round(minutes));
@@ -231,6 +254,7 @@ export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activi
     const step = Math.min(remaining, toNextHour);
     s.minutes += step;
     remaining -= step;
+    expireConditions(s);
     if (s.minutes % 60 === 0) tickHour(s, ctx, activity);
     if (s.minutes >= MIN_PER_DAY) endOfDay(s, ctx);
   }
@@ -282,7 +306,13 @@ export const longRest = act((d, ctx, force = false) => {
   d.travel.milesToday = 0;
   for (const c of d.characters) {
     if (!alive(c)) continue;
-    if (c.exhaustion > 0) {
+    const armorSpoiled = d.settings.sleepInArmorPenalty && wearsBulkyArmor(c);
+    if (armorSpoiled) {
+      log(d, `${c.name} slept in ${c.armorKind} armor: only a quarter of spent Hit Point Dice come back, and no Exhaustion is removed (optional rule).`, 'warn');
+    } else if (c.armorKind !== 'none' && !c.armorWorn) {
+      log(d, `${c.name} wakes with their armor off. Putting it on takes ${armorTime(c, 'don')} min.`);
+    }
+    if (c.exhaustion > 0 && !armorSpoiled) {
       if (c.malnourished || c.dehydrated) {
         log(d, `${c.name} can't shed Exhaustion yet: still ${c.malnourished ? 'malnourished' : 'dehydrated'}.`, 'warn');
       } else {
@@ -353,9 +383,19 @@ function doForage(s: State, ctx: Ctx, c: Character, pace: Pace | null): void {
   if (total >= dc) {
     const food = Math.max(0, die(6, ctx.rng) + c.wisMod);
     const water = Math.max(0, die(6, ctx.rng) + c.wisMod);
-    s.stores.foodLb += food;
-    s.stores.waterGal += water;
-    log(s, `${c.name} forages: Wisdom (Survival) ${r.rolls.join('/')} ${signed(c.survival - 2 * c.exhaustion)} = ${total} against DC ${dc}. Finds ${food} lb of food and ${water} gal of water for the camp stores.`, 'good');
+    const raw = s.settings.wildNeedsPurifying;
+    if (raw) {
+      s.stores.foodUnsafeLb += food;
+      s.stores.waterUnsafeGal += water;
+    } else {
+      s.stores.foodLb += food;
+      s.stores.waterGal += water;
+    }
+    log(
+      s,
+      `${c.name} forages: Wisdom (Survival) ${r.rolls.join('/')} ${signed(c.survival - 2 * c.exhaustion)} = ${total} against DC ${dc}. Finds ${food} lb of food and ${water} gal of water${raw ? ', which need purifying before they are safe' : ' for the camp stores'}.`,
+      'good',
+    );
   } else {
     log(s, `${c.name} forages: Wisdom (Survival) ${r.rolls.join('/')} ${signed(c.survival - 2 * c.exhaustion)} = ${total} against DC ${dc}. Finds nothing.`, 'warn');
   }
@@ -403,67 +443,101 @@ export const gatherWood = act((d, ctx, charId: string) => {
   log(d, `${c.name} gathers firewood for an hour: Survival ${total} against DC ${dc}. Adds ${hours} hour(s) of fuel (table rule).`, total >= dc ? 'good' : 'warn');
 });
 
-function takeFood(s: State, c: Character, lb: number, source: 'rations' | 'stores' | 'auto'): number {
-  let left = lb;
-  const fromStores = (amt: number) => {
-    const t = Math.min(amt, s.stores.foodLb);
-    s.stores.foodLb = round2(s.stores.foodLb - t);
-    return t;
-  };
-  const fromRations = (amt: number) => {
-    const t = Math.min(amt, c.rationsLb);
-    c.rationsLb = round2(c.rationsLb - t);
-    return t;
-  };
-  if (source === 'stores') left -= fromStores(left);
-  else if (source === 'rations') left -= fromRations(left);
-  else {
-    left -= fromStores(left);
-    left -= fromRations(left);
-  }
-  const eaten = round2(lb - left);
-  c.ateLbToday = round2(c.ateLbToday + eaten);
-  return eaten;
-}
-
-function takeWater(s: State, c: Character, pints: number, source: 'personal' | 'stores' | 'auto'): number {
-  let left = pints;
-  const fromPersonal = (amt: number) => {
-    const t = Math.min(amt, c.waterPints);
-    c.waterPints = round2(c.waterPints - t);
-    return t;
-  };
-  const fromStores = (amt: number) => {
-    const t = Math.min(amt, s.stores.waterGal * PINTS_PER_GALLON);
-    s.stores.waterGal = round2(s.stores.waterGal - t / PINTS_PER_GALLON);
-    return t;
-  };
-  if (source === 'personal') left -= fromPersonal(left);
-  else if (source === 'stores') left -= fromStores(left);
-  else {
-    if (s.place.waterSource) left = 0; // drinking straight from the stream
-    left -= fromStores(left);
-    left -= fromPersonal(left);
-  }
-  const drunk = round2(pints - left);
-  c.drankPintsToday = round2(c.drankPintsToday + drunk);
-  return drunk;
-}
-
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-export const eat = act((d, _ctx, charId: string, lb: number, source: 'rations' | 'stores') => {
+/** 'cook' uses up foraged food first, because cooking it makes it safe. */
+type FoodSource = 'rations' | 'stores' | 'auto' | 'cook';
+type WaterSource = 'personal' | 'stores' | 'auto';
+
+/** How much was eaten, and how much of it came from unpurified supplies. */
+interface Taken {
+  amount: number;
+  unsafe: number;
+}
+
+function takeFood(s: State, c: Character, lb: number, source: FoodSource): Taken {
+  let left = lb;
+  let unsafe = 0;
+  const pull = (have: number, set: (v: number) => void) => {
+    const t = Math.min(left, have);
+    set(round2(have - t));
+    left = round2(left - t);
+    return t;
+  };
+  const safeStores = () => pull(s.stores.foodLb, (v) => (s.stores.foodLb = v));
+  const rations = () => pull(c.rationsLb, (v) => (c.rationsLb = v));
+  const unsafeStores = () => (unsafe += pull(s.stores.foodUnsafeLb, (v) => (s.stores.foodUnsafeLb = v)));
+  if (source === 'stores') (safeStores(), unsafeStores());
+  else if (source === 'cook') (unsafeStores(), safeStores(), rations());
+  else if (source === 'rations') rations();
+  else (safeStores(), rations(), unsafeStores());
+  const amount = round2(lb - left);
+  c.ateLbToday = round2(c.ateLbToday + amount);
+  return { amount, unsafe: round2(unsafe) };
+}
+
+/** Water straight from the place's source is tainted when it's questionable and purifying is required. */
+const sourceIsUnsafe = (s: State) => s.place.waterQuality === 'questionable' && s.settings.wildNeedsPurifying;
+
+function takeWater(s: State, c: Character, pints: number, source: WaterSource): Taken {
+  let left = pints;
+  let unsafe = 0;
+  const pull = (havePints: number, set: (pintsLeft: number) => void) => {
+    const t = Math.min(left, havePints);
+    set(havePints - t);
+    left = round2(left - t);
+    return t;
+  };
+  const safeStores = () => pull(s.stores.waterGal * PINTS_PER_GALLON, (p) => (s.stores.waterGal = round2(p / PINTS_PER_GALLON)));
+  const unsafeStores = () => (unsafe += pull(s.stores.waterUnsafeGal * PINTS_PER_GALLON, (p) => (s.stores.waterUnsafeGal = round2(p / PINTS_PER_GALLON))));
+  const personal = () => {
+    const t = pull(c.waterPints, (p) => (c.waterPints = round2(p)));
+    if (c.waterUnsafe) unsafe += t;
+  };
+  if (source === 'personal') personal();
+  else if (source === 'stores') (safeStores(), unsafeStores());
+  else {
+    if (s.place.waterSource && !sourceIsUnsafe(s)) left = 0; // drinking straight from a clean stream
+    safeStores();
+    if (!c.waterUnsafe) personal();
+    if (left > 0 && s.place.waterSource) {
+      unsafe += left; // risk the questionable stream before tainted stores or skins
+      left = 0;
+    }
+    unsafeStores();
+    personal();
+  }
+  const amount = round2(pints - left);
+  c.drankPintsToday = round2(c.drankPintsToday + amount);
+  return { amount, unsafe: round2(unsafe) };
+}
+
+/** Eating or drinking unpurified wild supplies: DC 10 Con save or Poisoned for an hour (table rule). */
+function riskTainted(s: State, ctx: Ctx, c: Character, unsafe: number, what: 'food' | 'water'): void {
+  if (unsafe <= 0 || !s.settings.wildNeedsPurifying) return;
+  requestSave(s, ctx, c, 'tainted', TAINTED_DC, 'normal', `unpurified ${what}`);
+}
+
+export const eat = act((d, ctx, charId: string, lb: number, source: 'rations' | 'stores') => {
   const c = charById(d, charId);
   if (!c) return;
   const got = takeFood(d, c, lb, source);
-  log(d, got > 0 ? `${c.name} eats ${fmtLb(got)} from ${source === 'rations' ? 'their rations' : 'the camp stores'}.` : `${c.name} has nothing to eat from ${source}.`, got > 0 ? 'info' : 'warn');
+  log(
+    d,
+    got.amount > 0
+      ? `${c.name} eats ${fmtLb(got.amount)} from ${source === 'rations' ? 'their rations' : 'the camp stores'}${got.unsafe ? ` (${fmtLb(got.unsafe)} unpurified)` : ''}.`
+      : `${c.name} has nothing to eat from ${source}.`,
+    got.amount > 0 ? 'info' : 'warn',
+  );
+  riskTainted(d, ctx, c, got.unsafe, 'food');
 });
 
-export const drink = act((d, _ctx, charId: string, pints: number, source: 'personal' | 'stores') => {
+export const drink = act((d, ctx, charId: string, pints: number, source: 'personal' | 'stores') => {
   const c = charById(d, charId);
   if (!c) return;
   const got = takeWater(d, c, pints, source);
-  log(d, got > 0 ? `${c.name} drinks ${fmtWater(got)}.` : `${c.name} has nothing to drink.`, got > 0 ? 'info' : 'warn');
+  log(d, got.amount > 0 ? `${c.name} drinks ${fmtWater(got.amount)}${got.unsafe ? ' of unpurified water' : ''}.` : `${c.name} has nothing to drink.`, got.amount > 0 ? 'info' : 'warn');
+  riskTainted(d, ctx, c, got.unsafe, 'water');
 });
 
 export type Portion = 'meal' | 'day' | 'topup';
@@ -475,30 +549,36 @@ function portionFood(c: Character, portion: Portion): number {
   return Math.max(0, need - c.ateLbToday);
 }
 
-export const partyEat = act((d, _ctx, portion: Portion) => {
+export const partyEat = act((d, ctx, portion: Portion) => {
   const notes: string[] = [];
+  const risky: [Character, number][] = [];
   for (const c of d.characters) {
     if (!alive(c) || !c.needsFood) continue;
     const want = portionFood(c, portion);
     if (want <= 0) continue;
     const got = takeFood(d, c, want, 'auto');
-    notes.push(`${c.name} ${fmtLb(got)}${got < want ? ' (short)' : ''}`);
+    notes.push(`${c.name} ${fmtLb(got.amount)}${got.amount < want ? ' (short)' : ''}${got.unsafe ? ' (unpurified)' : ''}`);
+    if (got.unsafe) risky.push([c, got.unsafe]);
   }
   log(d, notes.length ? `The party eats (camp stores first, then rations): ${notes.join(', ')}.` : 'Nobody needs to eat right now.', notes.some((n) => n.includes('short')) ? 'warn' : 'info');
+  for (const [c, u] of risky) riskTainted(d, ctx, c, u, 'food');
 });
 
-export const partyDrink = act((d, _ctx, portion: Portion) => {
+export const partyDrink = act((d, ctx, portion: Portion) => {
   const hot = d.weather.high >= 100;
   const notes: string[] = [];
+  const risky: [Character, number][] = [];
   for (const c of d.characters) {
     if (!alive(c) || !c.needsWater) continue;
     const need = waterNeedPints(c, hot, d.settings.doubleWaterInHeat);
     const want = portion === 'meal' ? need / 2 : portion === 'day' ? need : Math.max(0, need - c.drankPintsToday);
     if (want <= 0) continue;
     const got = takeWater(d, c, want, 'auto');
-    notes.push(`${c.name} ${fmtWater(got)}${got < want ? ' (short)' : ''}`);
+    notes.push(`${c.name} ${fmtWater(got.amount)}${got.amount < want ? ' (short)' : ''}${got.unsafe ? ' (unpurified)' : ''}`);
+    if (got.unsafe) risky.push([c, got.unsafe]);
   }
   log(d, notes.length ? `The party drinks${d.place.waterSource ? ' from the nearby water source' : ''}: ${notes.join(', ')}.` : 'Nobody needs to drink right now.', notes.some((n) => n.includes('short')) ? 'warn' : 'info');
+  for (const [c, u] of risky) riskTainted(d, ctx, c, u, 'water');
 });
 
 export const refillWater = act((d) => {
@@ -506,8 +586,22 @@ export const refillWater = act((d) => {
     log(d, 'There is no water source here.', 'warn');
     return;
   }
-  for (const c of d.characters) c.waterPints = c.waterCapacityPints;
-  log(d, 'Everyone refills their waterskins at the water source.', 'good');
+  const unsafe = sourceIsUnsafe(d);
+  for (const c of d.characters) {
+    if (c.waterPints < c.waterCapacityPints) {
+      // Topping up a clean skin with questionable water taints the whole skin.
+      if (unsafe) c.waterUnsafe = true;
+      c.waterPints = c.waterCapacityPints;
+    }
+  }
+  log(d, unsafe ? 'Everyone refills their waterskins. The water is questionable, so purify it before drinking.' : 'Everyone refills their waterskins with clean water.', unsafe ? 'warn' : 'good');
+});
+
+export const fillBarrel = act((d, _ctx, gallons: number) => {
+  if (!d.place.waterSource) return;
+  if (sourceIsUnsafe(d)) d.stores.waterUnsafeGal = round2(d.stores.waterUnsafeGal + gallons);
+  else d.stores.waterGal = round2(d.stores.waterGal + gallons);
+  log(d, `Filled ${gallons} gal of ${sourceIsUnsafe(d) ? 'unpurified' : 'clean'} water into the camp stores.`);
 });
 
 export const cookMeal = act((d, ctx, cookId: string | null) => {
@@ -518,10 +612,12 @@ export const cookMeal = act((d, ctx, cookId: string | null) => {
   const cook = cookId ? charById(d, cookId) : undefined;
   advanceMut(d, ctx, 60, 'camp');
   const eaters: string[] = [];
+  let cookedUnsafe = 0;
   for (const c of d.characters) {
     if (!alive(c) || !c.needsFood) continue;
-    const got = takeFood(d, c, foodNeedLb(c) / 2, 'auto');
-    if (got > 0) eaters.push(c.name);
+    const got = takeFood(d, c, foodNeedLb(c) / 2, 'cook');
+    cookedUnsafe += got.unsafe;
+    if (got.amount > 0) eaters.push(c.name);
   }
   let flavor = '';
   if (cook) {
@@ -530,7 +626,93 @@ export const cookMeal = act((d, ctx, cookId: string | null) => {
     const ok = r.value + bonus >= 10;
     flavor = ` ${cook.name} cooks: Wisdom with Cook's Utensils ${r.value} ${signed(bonus)} = ${r.value + bonus} against DC 10, ${ok ? 'a delicious meal' : 'edible, at least'}.`;
   }
-  log(d, eaters.length ? `A hot meal at the campfire for ${eaters.join(', ')} (half a day's food each).${flavor}` : `Nothing to cook: the stores and rations are empty.${flavor}`, eaters.length ? 'good' : 'warn');
+  const purified = cookedUnsafe > 0 ? ` Cooking it thoroughly makes the ${fmtLb(round2(cookedUnsafe))} of foraged food safe (table rule).` : '';
+  log(d, eaters.length ? `A hot meal at the campfire for ${eaters.join(', ')} (half a day's food each).${purified}${flavor}` : `Nothing to cook: the stores and rations are empty.${flavor}`, eaters.length ? 'good' : 'warn');
+});
+
+// ---------------------------------------------------------------- purification
+
+export function canCastPurify(c: Character, mode: 'ritual' | 'slot'): { ok: boolean; reason: string } {
+  const sp = c.spells.find((x) => x.name.toLowerCase() === PURIFY_SPELL.toLowerCase());
+  if (!sp) return { ok: false, reason: `${c.name} doesn't know ${PURIFY_SPELL}.` };
+  const prepared = sp.prepared || sp.alwaysPrepared;
+  if (mode === 'slot') return prepared ? { ok: true, reason: '' } : { ok: false, reason: `${c.name} doesn't have it prepared.` };
+  // Wizards can cast rituals straight from their spellbook; others need the spell prepared.
+  if (prepared || c.className === 'Wizard') return { ok: true, reason: '' };
+  return { ok: false, reason: `${c.name} needs it prepared to cast it as a ritual.` };
+}
+
+function purifyAll(s: State): string {
+  const food = s.stores.foodUnsafeLb;
+  const water = s.stores.waterUnsafeGal;
+  const skins = s.characters.filter((c) => c.waterUnsafe).length;
+  s.stores.foodLb = round2(s.stores.foodLb + food);
+  s.stores.waterGal = round2(s.stores.waterGal + water);
+  s.stores.foodUnsafeLb = 0;
+  s.stores.waterUnsafeGal = 0;
+  for (const c of s.characters) c.waterUnsafe = false;
+  const parts = [food && fmtLb(food) + ' of food', water && `${water} gal of stored water`, skins && `${skins} waterskin${skins > 1 ? 's' : ''}`].filter(Boolean);
+  return parts.length ? parts.join(', ') : 'nothing that needed it';
+}
+
+/** Purify Food and Drink: removes poison and rot from nonmagical food and drink in a 5-foot-radius Sphere. */
+export const purifySpell = act((d, ctx, casterId: string | null, mode: 'ritual' | 'slot') => {
+  const c = casterId ? charById(d, casterId) : undefined;
+  if (c) {
+    const check = canCastPurify(c, mode);
+    if (!check.ok) {
+      log(d, check.reason, 'warn');
+      return;
+    }
+  }
+  if (mode === 'ritual') advanceMut(d, ctx, 10, 'camp');
+  const who = c ? `${c.name} casts` : 'Using a scroll or other source, the party casts';
+  log(d, `${who} ${PURIFY_SPELL}${mode === 'ritual' ? ' as a ritual (10 minutes, no spell slot)' : ' with a level 1 spell slot (an action)'}. Purified: ${purifyAll(d)}.`, 'good');
+});
+
+export const boilWater = act((d, ctx) => {
+  if (!d.fire.lit) {
+    log(d, 'You need a lit fire and a pot to boil water.', 'warn');
+    return;
+  }
+  const water = d.stores.waterUnsafeGal;
+  const skins = d.characters.filter((c) => c.waterUnsafe).length;
+  if (!water && !skins) {
+    log(d, 'There is no unpurified water to boil.');
+    return;
+  }
+  advanceMut(d, ctx, BOIL_MINUTES, 'camp');
+  d.stores.waterGal = round2(d.stores.waterGal + water);
+  d.stores.waterUnsafeGal = 0;
+  for (const c of d.characters) c.waterUnsafe = false;
+  log(d, `The party boils water over the campfire (${BOIL_MINUTES} minutes, table rule): ${water ? `${water} gal of stores` : ''}${water && skins ? ' and ' : ''}${skins ? `${skins} waterskin(s)` : ''} now safe to drink.`, 'good');
+});
+
+// ---------------------------------------------------------------- armor
+
+export const setArmor = act((d, ctx, charId: string, action: 'don' | 'doff') => {
+  const c = charById(d, charId);
+  if (!c || c.armorKind === 'none') return;
+  if ((action === 'don') === c.armorWorn) return;
+  const mins = armorTime(c, action);
+  advanceMut(d, ctx, mins, 'camp');
+  c.armorWorn = action === 'don';
+  if (c.hasShield) c.shieldWorn = c.armorWorn;
+  const name = c.armorName || ARMOR_LABEL[c.armorKind].toLowerCase();
+  log(d, `${c.name} ${action === 'don' ? 'puts on' : 'takes off'} their ${name}${c.hasShield ? ' and shield' : ''} (${mins} min).`);
+});
+
+/** Everyone dons or doffs at the same time, so the clock moves by the slowest person. */
+export const partyArmor = act((d, ctx, action: 'don' | 'doff') => {
+  const who = d.characters.filter((c) => alive(c) && c.armorKind !== 'none' && c.armorWorn !== (action === 'don'));
+  if (!who.length) return;
+  const mins = Math.max(...who.map((c) => armorTime(c, action)));
+  advanceMut(d, ctx, mins, 'camp');
+  for (const c of who) {
+    c.armorWorn = action === 'don';
+    if (c.hasShield) c.shieldWorn = c.armorWorn;
+  }
+  log(d, `${action === 'don' ? 'The party suits up' : 'The party takes off their armor'} (${mins} min): ${who.map((c) => c.name).join(', ')}.`);
 });
 
 export const eatTreat = act((d, _ctx, charId: string) => {

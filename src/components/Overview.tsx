@@ -5,7 +5,7 @@ import { CLIMATES, environmentEffects, temperatureAt, weatherSummary, type Clima
 import { formatClock, formatDate } from '../rules/calendar';
 import { ABUNDANCE_LABEL, PACES, foodNeedLb, waterNeedPints, fmtLb, fmtWater } from '../rules/survival';
 import { Card, ExhaustionBadge, Meter, Num, Pill, Select, Text, Toggle } from './common';
-import type { Abundance, Pace, Shelter } from '../state/types';
+import type { Abundance, Pace, Shelter, WaterQuality } from '../state/types';
 
 export function Overview() {
   return (
@@ -230,6 +230,8 @@ function PartyStatusCard() {
                     <ExhaustionBadge level={c.exhaustion} />
                     {c.malnourished && <Pill tone="bad">Malnourished</Pill>}
                     {c.dehydrated && <Pill tone="bad">Dehydrated</Pill>}
+                    {c.poisonedUntil != null && <Pill tone="bad">Poisoned</Pill>}
+                    {c.armorKind !== 'none' && !c.armorWorn && <Pill tone="warn">Armor off</Pill>}
                   </td>
                   <td>
                     {c.needsFood ? (
@@ -253,7 +255,7 @@ function PartyStatusCard() {
                   <td className="small">
                     {fmtLb(c.rationsLb)} rations
                     <br />
-                    {fmtWater(c.waterPints)} water
+                    {fmtWater(c.waterPints)} water{c.waterUnsafe && <span className="bad-text"> (unpurified)</span>}
                   </td>
                   <td>
                     <Pill tone={tone}>{tempStatus}</Pill>
@@ -271,7 +273,7 @@ function PartyStatusCard() {
         <button onClick={() => dispatch((st, c) => E.partyDrink(st, c, 'topup'))}>Top up today's water</button>
       </div>
       <p className="muted small">
-        Camp stores: {fmtLb(s.stores.foodLb)} food, {s.stores.waterGal} gal water. Survival is checked at midnight: drinking less than half your water gives 1 Exhaustion level. Eating less than half your food
+        Camp stores: {fmtLb(s.stores.foodLb)} food, {s.stores.waterGal} gal water{s.stores.foodUnsafeLb + s.stores.waterUnsafeGal > 0 ? `, plus ${fmtLb(s.stores.foodUnsafeLb)} food and ${s.stores.waterUnsafeGal} gal water still to purify` : ''}. Survival is checked at midnight: drinking less than half your water gives 1 Exhaustion level. Eating less than half your food
         means a DC 10 Con save. After 5 days with no food you gain a level every day.
       </p>
     </Card>
@@ -375,7 +377,18 @@ function PlaceCard() {
           onChange={(v: Abundance) => set({ forage: v })}
           options={(['abundant', 'limited', 'scarce'] as Abundance[]).map((k) => ({ value: k, label: ABUNDANCE_LABEL[k] }))}
         />
-        <Toggle checked={s.place.waterSource} onChange={(v) => set({ waterSource: v })} label="Drinkable water nearby" />
+        <Toggle checked={s.place.waterSource} onChange={(v) => set({ waterSource: v })} label="Water source nearby" />
+        {s.place.waterSource && (
+          <Select
+            label="Water quality"
+            value={s.place.waterQuality}
+            onChange={(v: WaterQuality) => set({ waterQuality: v })}
+            options={[
+              { value: 'clean', label: 'Clean (well, spring, town)' },
+              { value: 'questionable', label: 'Questionable (needs purifying)' },
+            ]}
+          />
+        )}
       </div>
     </Card>
   );

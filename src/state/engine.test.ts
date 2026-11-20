@@ -221,12 +221,13 @@ describe('travel and foraging', () => {
   it('adds foraged food and water to the stores', () => {
     const s = fresh((d) => {
       calm(d, 60, 40);
-      d.stores = { foodLb: 0, waterGal: 0 };
+      d.stores = { foodLb: 0, waterGal: 0, foodUnsafeLb: 0, waterUnsafeGal: 0 };
       d.characters[0].wisMod = 1;
     });
     const n = E.forage(s, HIGH, s.characters[0].id);
-    expect(n.stores.foodLb).toBe(7);
-    expect(n.stores.waterGal).toBe(7);
+    expect(n.stores).toMatchObject({ foodLb: 0, waterGal: 0, foodUnsafeLb: 7, waterUnsafeGal: 7 });
+    s.settings.wildNeedsPurifying = false;
+    expect(E.forage(s, HIGH, s.characters[0].id).stores).toMatchObject({ foodLb: 7, waterGal: 7 });
   });
 });
 
@@ -266,5 +267,117 @@ describe('downtime', () => {
     expect(a.projects[0].daysDone).toBe(2);
     const b = E.workOnProjects(a, ctx(), ['p']);
     expect(b.projects[0]).toMatchObject({ daysDone: 3, done: true });
+  });
+});
+
+describe('purifying food and water', () => {
+  const wild = (d: State) => {
+    calm(d, 60, 40);
+    d.place.waterSource = true;
+    d.place.waterQuality = 'questionable';
+    d.stores = { foodLb: 0, waterGal: 0, foodUnsafeLb: 3, waterUnsafeGal: 2 };
+  };
+
+  it('fills waterskins with tainted water from a questionable source', () => {
+    const s = fresh((d) => {
+      wild(d);
+      d.characters[0].waterPints = 1;
+    });
+    const n = E.refillWater(s, ctx());
+    expect(n.characters[0]).toMatchObject({ waterPints: 4, waterUnsafe: true });
+    s.place.waterQuality = 'clean';
+    expect(E.refillWater(s, ctx()).characters[0].waterUnsafe).toBe(false);
+  });
+
+  it('makes you save or be Poisoned for an hour after eating unpurified food', () => {
+    const s = fresh(wild);
+    const n = E.eat(s, LOW, s.characters[0].id, 0.5, 'stores');
+    expect(n.characters[0].poisonedUntil).toBe(E.absNow(n) + 60);
+    expect(E.eat(s, HIGH, s.characters[0].id, 0.5, 'stores').characters[0].poisonedUntil).toBeNull();
+    const later = E.advance(n, ctx(), 60);
+    expect(later.characters[0].poisonedUntil).toBeNull();
+  });
+
+  it('prefers safe water and only risks the questionable stream when it has to', () => {
+    const s = fresh((d) => {
+      wild(d);
+      d.characters[0].waterPints = 8;
+    });
+    const n = E.partyDrink(s, LOW, 'day');
+    expect(n.characters[0].waterPints).toBe(0);
+    expect(n.characters[0].poisonedUntil).toBeNull();
+  });
+
+  it('purifies everything with the spell, as a ritual or with a slot', () => {
+    const s = fresh((d) => {
+      wild(d);
+      d.characters[0] = newCharacter({ name: 'Cleric', className: 'Cleric', waterUnsafe: true, spells: [{ name: 'Purify Food and Drink', level: 1, prepared: false, alwaysPrepared: false }] });
+    });
+    const id = s.characters[0].id;
+    expect(E.canCastPurify(s.characters[0], 'ritual').ok).toBe(false);
+    expect(E.purifySpell(s, ctx(), id, 'ritual').stores.foodUnsafeLb).toBe(3);
+    s.characters[0].spells[0].prepared = true;
+    const n = E.purifySpell(s, ctx(), id, 'ritual');
+    expect(n.stores).toEqual({ foodLb: 3, waterGal: 2, foodUnsafeLb: 0, waterUnsafeGal: 0 });
+    expect(n.characters[0].waterUnsafe).toBe(false);
+    expect(n.minutes).toBe(s.minutes + 10);
+    expect(E.purifySpell(s, ctx(), id, 'slot').minutes).toBe(s.minutes);
+    const wiz = newCharacter({ className: 'Wizard', spells: [{ name: 'Purify Food and Drink', level: 1, prepared: false, alwaysPrepared: false }] });
+    expect(E.canCastPurify(wiz, 'ritual').ok).toBe(true);
+    expect(E.canCastPurify(wiz, 'slot').ok).toBe(false);
+  });
+
+  it('boils water over a lit fire, and cooking makes foraged food safe', () => {
+    const s = fresh(wild);
+    expect(E.boilWater(s, ctx()).stores.waterUnsafeGal).toBe(2);
+    s.fire = { lit: true, fuelHours: 5, sheltered: false };
+    const boiled = E.boilWater(s, ctx());
+    expect(boiled.stores).toMatchObject({ waterGal: 2, waterUnsafeGal: 0 });
+    const cooked = E.cookMeal(s, LOW, null);
+    expect(cooked.stores.foodUnsafeLb).toBe(2.5);
+    expect(cooked.characters[0].poisonedUntil).toBeNull();
+  });
+});
+
+describe('armor', () => {
+  it('takes the right time to don and doff, and the party waits for the slowest', () => {
+    const s = fresh((d) => {
+      calm(d, 60, 40);
+      d.characters = [
+        newCharacter({ name: 'Tank', armorKind: 'heavy', armorWorn: true, hasShield: true, shieldWorn: true }),
+        newCharacter({ name: 'Scout', armorKind: 'light', armorWorn: true }),
+      ];
+    });
+    const off = E.partyArmor(s, ctx(), 'doff');
+    expect(off.minutes).toBe(s.minutes + 5);
+    expect(off.characters.map((c) => [c.armorWorn, c.shieldWorn])).toEqual([
+      [false, false],
+      [false, false],
+    ]);
+    const on = E.setArmor(off, ctx(), off.characters[0].id, 'don');
+    expect(on.minutes).toBe(off.minutes + 10);
+    expect(on.characters[0].armorWorn).toBe(true);
+  });
+
+  it('gives Disadvantage on heat saves in Medium or Heavy armor', () => {
+    const s = fresh((d) => {
+      d.minutes = 12 * 60;
+      calm(d, 115, 112);
+      d.place.waterSource = false;
+      d.stores.waterGal = 0;
+      d.characters[0] = newCharacter({ name: 'Tank', waterPints: 0, conSave: 10, armorKind: 'medium', armorWorn: true });
+      d.settings.autoRollSaves = false;
+    });
+    expect(E.advance(s, ctx(), 60).pending[0].mode).toBe('disadvantage');
+  });
+
+  it('optionally spoils the Long Rest for anyone who sleeps in Medium or Heavy armor', () => {
+    const s = fresh((d) => {
+      calm(d, 60, 40);
+      d.characters = [newCharacter({ name: 'Tank', exhaustion: 2, armorKind: 'heavy', armorWorn: true })];
+    });
+    expect(E.longRest(s, ctx(), false).characters[0].exhaustion).toBe(1);
+    s.settings.sleepInArmorPenalty = true;
+    expect(E.longRest(s, ctx(), false).characters[0].exhaustion).toBe(2);
   });
 });
