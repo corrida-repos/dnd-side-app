@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
 import { fireThreat } from '../rules/weather';
+import { COOK_RAW_MINUTES, DEFAULT_FIRE_COLD_LIMIT_F, FIRE_LIGHT_DC, FIRE_METHODS, fireColdLimit, fireLighting, type FireMethod } from '../rules/campfire';
 import { GAME_ANIMALS, MEAT_LB, BUTCHER_MINUTES, BUTCHER_DC, isEdible, yieldsHide, STRANGE_TYPES } from '../rules/hunting';
-import { formatClock, formatDuration } from '../rules/calendar';
+import { formatClock, formatDuration, lightAt } from '../rules/calendar';
 import { autoAssign, maxWatchMinutes, WATCH_COUNTS, watchCapacity, watchMinutes } from '../rules/watch';
 import { TERRAIN } from '../rules/terrain';
 import { foodNeedLb, fmtLb, fmtWater, proficiencyBonus, ARMOR_LABEL, armorTime, BOIL_MINUTES, PURIFY_SPELL, TAINTED_DC } from '../rules/survival';
@@ -36,9 +37,30 @@ function useCharOptions() {
 function FireCard() {
   const s = useGame();
   const opts = useCharOptions();
+  const pcs = s.characters.filter((c) => c.kind === 'pc');
   const [gatherer, setGatherer] = useState(opts[0]?.value ?? '');
-  const threat = fireThreat(s.weather, E.tempNow(s));
+  const casters = E.fireSpellCasters(s);
+  const tinderbox = E.partyHasTinderbox(s);
+  const [lighter, setLighter] = useState('');
+  const [method, setMethod] = useState<FireMethod | ''>('');
+  const temp = E.tempNow(s);
   const indoors = s.place.shelter === 'building' || s.place.shelter === 'cave';
+  const threat = fireThreat(s.weather, temp);
+  const how = fireLighting(s.weather, temp, s.fire.sheltered, indoors);
+  const m: FireMethod = method || (casters.length ? 'spell' : tinderbox === false ? 'friction' : 'tinderbox');
+  const best = [...pcs].sort((a, b) => b.survival - 2 * b.exhaustion - (a.survival - 2 * a.exhaustion))[0];
+  const lighterId = m === 'spell' ? (casters.find((x) => x.c.id === lighter)?.c.id ?? casters[0]?.c.id ?? '') : (pcs.find((c) => c.id === lighter)?.id ?? best?.id ?? '');
+  const dc = how.dc + FIRE_METHODS[m].dcMod;
+  const limit = fireColdLimit(s.settings.fireColdLimitF ?? DEFAULT_FIRE_COLD_LIMIT_F, s.fire.sheltered);
+  const warms = E.campfireWarms(s, temp);
+  const night = lightAt(s.minutes % 1440, E.seasonOf(s)).phase === 'Night';
+  const rawFood = s.stores.foodRawLb;
+  const dirty = s.stores.waterUnsafeGal + s.characters.filter((c) => c.waterUnsafe).length;
+  const methodOpts = [
+    ...(casters.length ? [{ value: 'spell' as const, label: `A spell (${casters.map((x) => `${x.c.name}: ${x.spell}`).join(', ')})` }] : []),
+    { value: 'tinderbox' as const, label: `Tinderbox (1 min a try)${tinderbox === false ? ' — nobody carries one' : ''}` },
+    { value: 'friction' as const, label: 'No tinderbox (10 min a try, DC +5)' },
+  ];
   return (
     <Card title={<span>Campfire {s.fire.lit ? <Pill tone="good">Burning</Pill> : <Pill tone="muted">Out</Pill>}</span>} className="span-2 fire-card">
       <div className={`fire-visual ${s.fire.lit ? 'lit' : ''}`} aria-hidden>
@@ -51,29 +73,106 @@ function FireCard() {
         <Num label="Fuel" value={s.fire.fuelHours} onChange={(v) => edit((d) => void (d.fire.fuelHours = Math.max(0, Math.round(v))))} min={0} suffix="hours" width={3} />
         <Toggle checked={s.fire.sheltered} onChange={(v) => edit((d) => void (d.fire.sheltered = v))} label="Sheltered fire pit (windbreak and roof)" />
       </div>
-      {threat && !s.fire.sheltered && !indoors && (
-        <Rule>
-          <b>{threat === 'strong wind' ? 'Strong wind' : 'Heavy rain'}</b> puts out open flames. Shelter the fire pit, or move to a cave or building, to keep a fire going.
-        </Rule>
-      )}
-      {s.settings.fireWarmsCamp && <Rule>Table rule (on): while the fire burns, people resting in camp aren't exposed to extreme cold.</Rule>}
+
+      <h3>What the fire gives the camp</h3>
+      <ul className="plain small fire-gives">
+        <li>
+          🌡{' '}
+          {!s.settings.fireWarmsCamp ? (
+            <span className="muted">Warmth: off in Settings (the campfire doesn&apos;t count against extreme cold).</span>
+          ) : s.fire.lit ? (
+            warms && temp > (s.settings.coldNights ? s.settings.coldNightF : 0) ? (
+              <span>
+                Warmth: no cold to fend off at {temp}°F. If it turns cold, it protects the camp down to {limit}°F{s.fire.sheltered ? ' in this sheltered pit' : ''}.
+              </span>
+            ) : warms ? (
+              <span className="good-text">
+                Warmth: keeps the camp safe from extreme cold and cold nights at {temp}°F (down to {limit}°F{s.fire.sheltered ? ' in this sheltered pit' : ''}).
+              </span>
+            ) : (
+              <span className="bad-text">
+                Warmth: too cold for the fire to help at {temp}°F; it protects only down to {limit}°F{s.fire.sheltered ? '' : ' (a sheltered pit adds 10°F)'}. Extreme cold saves still apply.
+              </span>
+            )
+          ) : (
+            <span>Warmth: once lit, keeps the camp safe from extreme cold and cold nights down to {limit}°F{s.fire.sheltered ? ' (sheltered pit)' : ' (10°F lower in a sheltered pit)'}. Travelers on the move don&apos;t benefit.</span>
+          )}
+        </li>
+        <li>
+          🔦{' '}
+          {s.fire.lit ? (
+            <span className={night ? 'good-text' : ''}>
+              Light: night watchers see the camp clearly for the next {s.fire.fuelHours} h of fuel (until {formatClock((s.minutes + s.fire.fuelHours * 60) % 1440)}). A watch counts as lit only if the fuel lasts all of it.
+            </span>
+          ) : (
+            <span>Light: unlit, watchers have Dim Light or Darkness: −5 to passive Perception, or hearing only without Darkvision.</span>
+          )}
+          {night && s.fire.lit && <span className="warn-text"> At night it can also be seen from far off: +1 on the encounter check.</span>}
+        </li>
+        <li>
+          🍲 Cooking: makes raw food safe to eat and boils water safe to drink. Raw food in the stores: {fmtLb(rawFood)}; unpurified water: {s.stores.waterUnsafeGal} gal
+          {s.characters.some((c) => c.waterUnsafe) ? ` and ${s.characters.filter((c) => c.waterUnsafe).length} waterskin(s)` : ''}.
+        </li>
+      </ul>
       <div className="btn-row">
-        {s.fire.lit ? (
+        <button disabled={!s.fire.lit || rawFood <= 0} onClick={() => dispatch(E.cookRawFood)} title={s.fire.lit ? '' : 'Light the fire first'}>
+          Cook raw food ({COOK_RAW_MINUTES} min)
+        </button>
+        <button disabled={!s.fire.lit || dirty <= 0} onClick={() => dispatch(E.boilWater)} title={s.fire.lit ? '' : 'Light the fire first'}>
+          Boil water ({BOIL_MINUTES} min)
+        </button>
+        <span className="muted small">A hot meal for everyone is on the Meals card.</span>
+      </div>
+
+      {s.fire.lit ? (
+        <div className="btn-row">
           <button onClick={() => dispatch(E.douseFire)}>Put out the fire</button>
-        ) : (
-          <button className="primary" onClick={() => dispatch(E.lightFire)}>
-            Light fire (Tinderbox, 1 min)
-          </button>
-        )}
+        </div>
+      ) : (
+        <>
+          <h3>Light it</h3>
+          {!how.possible ? (
+            <Rule>
+              <b>{threat === 'strong wind' ? 'Strong wind' : 'Heavy rain'}</b> puts out open flames. Shelter the fire pit, or move to a cave or building, to keep a fire going.
+            </Rule>
+          ) : (
+            <>
+              <div className="form-row">
+                <Select label="Method" value={m} onChange={(v) => setMethod(v as FireMethod)} options={methodOpts} />
+                {m === 'spell' ? (
+                  <Select label="Caster" value={lighterId} onChange={setLighter} options={casters.map((x) => ({ value: x.c.id, label: `${x.c.name} (${x.spell})` }))} />
+                ) : (
+                  <Select label="Who" value={lighterId} onChange={setLighter} options={pcs.map((c) => ({ value: c.id, label: `${c.name} (Survival ${c.survival - 2 * c.exhaustion >= 0 ? '+' : ''}${c.survival - 2 * c.exhaustion})` }))} />
+                )}
+              </div>
+              <div className="btn-row">
+                <button className="primary" disabled={s.fire.fuelHours <= 0} title={s.fire.fuelHours <= 0 ? 'Gather firewood first' : ''} onClick={() => dispatch((st, c) => E.lightFire(st, c, lighterId || undefined, m))}>
+                  {m === 'spell' ? 'Light it with the spell' : s.settings.fireLightingCheck ? `Try to light it (DC ${dc}, ${FIRE_METHODS[m].minutes} min)` : `Light it (${FIRE_METHODS[m].minutes} min)`}
+                </button>
+                {s.fire.fuelHours <= 0 && <span className="warn-text small">No fuel: gather firewood below.</span>}
+              </div>
+              <Rule>
+                {m === 'spell'
+                  ? FIRE_METHODS.spell.note
+                  : s.settings.fireLightingCheck
+                    ? `Table rule: a Wisdom (Survival) check, DC ${FIRE_LIGHT_DC}${how.why.length ? `, raised because ${how.why.join(' and ')}` : ' with dry fuel'}. ${FIRE_METHODS[m].note} A failed try costs the time; try again.`
+                    : `${FIRE_METHODS[m].note} The lighting check is off in Settings, so it always catches.`}
+              </Rule>
+            </>
+          )}
+        </>
+      )}
+
+      <h3>Fuel</h3>
+      <div className="btn-row">
         <button onClick={() => edit((d) => void (d.fire.fuelHours += 1))}>+1 h fuel</button>
         <button onClick={() => edit((d) => void (d.fire.fuelHours += 4))}>+4 h fuel</button>
-      </div>
-      <div className="btn-row">
         <Select value={gatherer} onChange={setGatherer} options={opts} />
         <button disabled={!gatherer} onClick={() => dispatch((st, c) => E.gatherWood(st, c, gatherer))}>
           Gather firewood (1 h, Survival DC {TERRAIN[s.place.terrain].forageDC})
         </button>
       </div>
+      {threat && s.fire.lit && !s.fire.sheltered && !indoors && <Rule>The {threat} will put this fire out at the end of the hour unless the pit is sheltered.</Rule>}
       <WaysAround topic={'fire'} />
     </Card>
   );

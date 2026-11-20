@@ -319,7 +319,7 @@ function EffectsCard() {
     place: s.place,
     fire: s.fire,
     minutes: s.minutes,
-    coldNightF: s.settings.coldNights && !(s.fire.lit && s.settings.fireWarmsCamp) ? s.settings.coldNightF : null,
+    coldNightF: s.settings.coldNights && !E.campfireWarms(s) ? s.settings.coldNightF : null,
     uncovered,
   });
   return (
