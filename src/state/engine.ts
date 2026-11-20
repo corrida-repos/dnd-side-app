@@ -1,7 +1,8 @@
-import type { Activity, Bastion, Character, ExhaustionCause, Facility, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
+import type { Activity, Bastion, Character, ExhaustionCause, Facility, MagicItem, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
 import { BASIC_BUILD, BASTION_TURN_DAYS, ENLARGE, rollBastionEvent, SIZE_LABEL, SPECIAL_FACILITIES, type FacilitySize } from '../rules/bastion';
-import { d20, die, combineModes, signed, type Rng, type RollMode } from '../rules/dice';
-import { dateFromIndex, formatClock, formatDate, formatDuration } from '../rules/calendar';
+import { d20, die, combineModes, rollExpr, signed, type Rng, type RollMode } from '../rules/dice';
+import { dateFromIndex, formatClock, formatDate, formatDuration, sunriseMinutes } from '../rules/calendar';
+import { abilityMod, ATTUNE_AWAY_MINUTES, IDENTIFY_MINUTES, MAX_ATTUNED, RITUAL_EXTRA_MINUTES, WATCH_HOURS } from '../rules/upkeep';
 import { fireThreat, rollWeather, temperatureAt, CLIMATES } from '../rules/weather';
 import {
   exhaustionSummary,
@@ -273,6 +274,108 @@ function endOfDay(s: State, ctx: Ctx): void {
   newWeather(s, ctx);
 }
 
+// ---------------------------------------------------------------- items and resources
+
+/** Regains an item's charges from its expression ("1d6+1", "all", "2"). */
+function regainCharges(s: State, ctx: Ctx, owner: Character, it: MagicItem, when: string): void {
+  if (it.maxCharges == null || it.charges == null || it.charges >= it.maxCharges) return;
+  const before = it.charges;
+  const amt = it.regain.trim().toLowerCase() === 'all' ? it.maxCharges : rollExpr(it.regain, ctx.rng);
+  if (amt == null) return;
+  it.charges = Math.min(it.maxCharges, it.charges + Math.max(0, amt));
+  log(s, `${owner.name}'s ${it.name} regains ${it.charges - before} charge(s) ${when} (${it.charges}/${it.maxCharges}).`, 'good');
+}
+
+function atDawn(s: State, ctx: Ctx): void {
+  const refilled: string[] = [];
+  for (const c of s.characters) {
+    for (const it of c.items) if (it.regainAt === 'dawn') regainCharges(s, ctx, c, it, 'at dawn');
+    for (const r of c.resources) {
+      if (r.recharge === 'dawn' && r.current < r.max) {
+        r.current = r.max;
+        refilled.push(`${c.name}: ${r.name}`);
+      }
+    }
+  }
+  if (refilled.length) log(s, `Dawn breaks. Recovered: ${refilled.join(', ')}.`, 'good');
+}
+
+function checkItemsLeftBehind(s: State): void {
+  const now = absNow(s);
+  for (const c of s.characters) {
+    for (const it of c.items) {
+      if (it.attuned && it.awaySince != null && now - it.awaySince >= ATTUNE_AWAY_MINUTES) {
+        it.attuned = false;
+        log(s, `${c.name}'s attunement to ${it.name} ends: it has been more than 100 feet away for 24 hours.`, 'warn');
+      }
+    }
+  }
+}
+
+/** Refills resources and item charges after a rest. */
+function restoreAfterRest(s: State, ctx: Ctx, c: Character, kind: 'short' | 'long'): string[] {
+  const got: string[] = [];
+  for (const r of c.resources) {
+    const before = r.current;
+    if (kind === 'long' && r.recharge !== 'manual' && r.recharge !== 'dawn') r.current = r.max;
+    else if (kind === 'short' && r.recharge === 'short') r.current = r.max;
+    else if (kind === 'short' && r.recharge === 'shortOne') r.current = Math.min(r.max, r.current + 1);
+    if (r.current > before) got.push(`${r.name} ${r.current}/${r.max}`);
+  }
+  for (const it of c.items) {
+    if ((kind === 'long' && (it.regainAt === 'longRest' || it.regainAt === 'shortRest')) || (kind === 'short' && it.regainAt === 'shortRest')) {
+      regainCharges(s, ctx, c, it, `after the ${kind === 'long' ? 'Long' : 'Short'} Rest`);
+    }
+  }
+  return got;
+}
+
+/** Attuning, identifying or ending attunement takes a rest spent focused on the item. */
+function applyRestFocus(s: State, c: Character): void {
+  const f = c.restFocus;
+  c.restFocus = null;
+  if (!f) return;
+  const it = c.items.find((x) => x.id === f.itemId);
+  if (!it) return;
+  if (f.action === 'identify') {
+    it.identified = true;
+    log(s, `${c.name} spends the rest focused on the ${it.name} and learns its properties${it.requiresAttunement ? ', including that it needs attunement' : ''}.`, 'good');
+  } else if (f.action === 'unattune') {
+    it.attuned = false;
+    log(s, `${c.name} ends their attunement to the ${it.name}.`);
+  } else {
+    const count = c.items.filter((x) => x.attuned).length;
+    if (count >= MAX_ATTUNED) log(s, `${c.name} can't attune to the ${it.name}: already attuned to ${MAX_ATTUNED} items.`, 'warn');
+    else if (it.awaySince != null) log(s, `${c.name} can't attune to the ${it.name}: it has to be in hand.`, 'warn');
+    else {
+      it.attuned = true;
+      it.identified = true;
+      log(s, `${c.name} attunes to the ${it.name} (${count + 1}/${MAX_ATTUNED}).`, 'good');
+    }
+  }
+}
+
+/** Night watch: who stands each 2-hour watch, with an optional random encounter check per watch. */
+function standWatches(s: State, ctx: Ctx): void {
+  const watchers = s.watchOrder.map((id) => charById(s, id)).filter((c): c is Character => !!c && alive(c));
+  if (!watchers.length) return;
+  const blocks = Math.floor(8 / WATCH_HOURS);
+  const lines: string[] = [];
+  for (let i = 0; i < blocks; i++) {
+    const w = watchers[i % watchers.length];
+    let note = `${w.name} (passive Perception ${w.passivePerception})`;
+    if (s.settings.encounterOn > 0) {
+      const r = die(20, ctx.rng);
+      if (r >= s.settings.encounterOn) {
+        note += `: encounter! (d20 = ${r})`;
+        log(s, `Random encounter during watch ${i + 1}, while ${w.name} is on watch (passive Perception ${w.passivePerception}). d20 = ${r}. If it interrupts the rest, decide whether the Long Rest still counts.`, 'warn');
+      }
+    }
+    lines.push(`watch ${i + 1}: ${note}`);
+  }
+  log(s, `Night watches: ${lines.join('; ')}.`);
+}
+
 /** Each time the party passes another full 24 hours awake, everyone saves against sleep deprivation. */
 function checkSleepDeprivation(s: State, ctx: Ctx, before: number): void {
   const start = s.lastLongRestEnd ?? s.trackingStart;
@@ -313,6 +416,9 @@ export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activi
       if (before < ready && absNow(s) >= ready) log(s, 'A Long Rest is possible again: 24 hours have passed since the last one began.', 'good');
     }
     if (s.settings.sleepDeprivation && activity !== 'rest') checkSleepDeprivation(s, ctx, before);
+    const dawn = s.dayIndex * MIN_PER_DAY + sunriseMinutes(seasonOf(s));
+    if (before < dawn && absNow(s) >= dawn) atDawn(s, ctx);
+    checkItemsLeftBehind(s);
     if (s.minutes % 60 === 0) tickHour(s, ctx, activity);
     if (s.minutes >= MIN_PER_DAY) endOfDay(s, ctx);
   }
@@ -373,6 +479,12 @@ export const shortRest = act((d, ctx) => {
   log(d, 'The party takes a Short Rest (1 hour). Everyone can spend Hit Point Dice.', 'info');
   advanceMut(d, ctx, 60, 'rest');
   for (const c of d.characters) {
+    if (!alive(c)) continue;
+    applyRestFocus(d, c);
+    const got = restoreAfterRest(d, ctx, c, 'short');
+    if (got.length) log(d, `${c.name} recovers: ${got.join(', ')}.`, 'good');
+  }
+  for (const c of d.characters) {
     if (c.chef && alive(c)) {
       const pb = proficiencyBonus(c.level);
       log(d, `${c.name}'s Chef cooking: up to ${4 + pb} creatures who spend Hit Point Dice this rest regain an extra 1d8 HP.`, 'good');
@@ -387,6 +499,7 @@ export const longRest = act((d, ctx, force = false) => {
     return;
   }
   log(d, 'The party settles in for a Long Rest (8 hours: at least 6 asleep, no more than 2 of light activity).');
+  standWatches(d, ctx);
   advanceMut(d, ctx, 8 * 60, 'rest');
   d.lastLongRestEnd = absNow(d);
   d.travel.hoursToday = 0;
@@ -413,6 +526,17 @@ export const longRest = act((d, ctx, force = false) => {
       log(d, `${c.name} sleeps off the Food poisoning and is no longer Poisoned.`, 'good');
     }
     for (const t of c.tasks) if (t.daily) t.done = false;
+    applyRestFocus(d, c);
+    if (c.hp <= 0) {
+      log(d, `${c.name} started the rest at 0 HP, so it doesn't restore HP or Hit Point Dice.`, 'warn');
+    } else {
+      c.hp = c.maxHp;
+      c.tempHp = 0;
+      const regained = armorSpoiled ? Math.max(1, Math.floor(c.level / 4)) : c.hitDiceSpent;
+      c.hitDiceSpent = Math.max(0, c.hitDiceSpent - regained);
+    }
+    const got = restoreAfterRest(d, ctx, c, 'long');
+    if (got.length) log(d, `${c.name} recovers: ${got.join(', ')}.`, 'good');
     if (isCaster(c.className)) {
       const rule = PREP_RULE[c.className];
       c.prepOpen = rule === 'longRestAll';
@@ -1000,4 +1124,69 @@ export const resolveBastionTurn = act((d, ctx, bastionId: string) => {
   } else {
     b.lastEvent = `Turn ${b.turns}: orders carried out`;
   }
+});
+
+// ---------------------------------------------------------------- HP, Hit Point Dice, items
+
+export const spendHitDie = act((d, ctx, charId: string) => {
+  const c = charById(d, charId);
+  if (!c || !alive(c)) return;
+  if (c.hitDiceSpent >= c.level) {
+    log(d, `${c.name} has no Hit Point Dice left.`, 'warn');
+    return;
+  }
+  const roll = die(c.hitDie, ctx.rng);
+  const mod = abilityMod(c.conScore);
+  const healed = Math.max(1, roll + mod);
+  const before = c.hp;
+  c.hp = Math.min(c.maxHp, c.hp + healed);
+  c.hitDiceSpent += 1;
+  log(d, `${c.name} spends a Hit Point Die: d${c.hitDie} = ${roll} ${signed(mod)} = ${healed}. HP ${before} → ${c.hp}/${c.maxHp} (${c.level - c.hitDiceSpent} dice left).`, 'good');
+});
+
+export const changeHp = act((d, _ctx, charId: string, amount: number) => {
+  const c = charById(d, charId);
+  if (!c) return;
+  if (amount < 0) {
+    let dmg = -amount;
+    const absorbed = Math.min(c.tempHp, dmg);
+    c.tempHp -= absorbed;
+    dmg -= absorbed;
+    c.hp = Math.max(0, c.hp - dmg);
+    log(d, `${c.name} takes ${-amount} damage${absorbed ? ` (${absorbed} absorbed by Temporary HP)` : ''}. HP ${c.hp}/${c.maxHp}.`, c.hp === 0 ? 'bad' : 'warn');
+  } else {
+    c.hp = Math.min(c.maxHp, c.hp + amount);
+    log(d, `${c.name} heals ${amount}. HP ${c.hp}/${c.maxHp}.`, 'good');
+  }
+});
+
+export const setRestFocus = act((d, _ctx, charId: string, focus: Character['restFocus']) => {
+  const c = charById(d, charId);
+  if (c) c.restFocus = focus;
+});
+
+/** The Identify spell: 1 minute, or 11 as a ritual. */
+export const identifyBySpell = act((d, ctx, ownerId: string, itemId: string, casterId: string | null, ritual: boolean) => {
+  const owner = charById(d, ownerId);
+  const it = owner?.items.find((x) => x.id === itemId);
+  if (!owner || !it) return;
+  const caster = casterId ? charById(d, casterId) : undefined;
+  if (caster) {
+    const sp = caster.spells.find((x) => x.name.toLowerCase() === 'identify');
+    const ok = sp && (sp.prepared || sp.alwaysPrepared || (ritual && caster.className === 'Wizard'));
+    if (!ok) {
+      log(d, `${caster.name} needs Identify prepared${ritual ? ' (or a Wizard spellbook for the ritual)' : ''}.`, 'warn');
+      return;
+    }
+  }
+  advanceMut(d, ctx, IDENTIFY_MINUTES + (ritual ? RITUAL_EXTRA_MINUTES : 0), 'camp');
+  it.identified = true;
+  log(d, `${caster ? caster.name : 'A scroll'} casts Identify${ritual ? ' as a ritual' : ''} on the ${it.name}: its properties, charges and any attunement are revealed.`, 'good');
+});
+
+export const leaveItem = act((d, _ctx, ownerId: string, itemId: string, away: boolean) => {
+  const it = charById(d, ownerId)?.items.find((x) => x.id === itemId);
+  if (!it) return;
+  it.awaySince = away ? absNow(d) : null;
+  if (away && it.attuned) log(d, `The ${it.name} is left more than 100 feet behind. Attunement ends in 24 hours unless it's recovered.`, 'warn');
 });

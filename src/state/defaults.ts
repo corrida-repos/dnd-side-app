@@ -2,6 +2,7 @@ import type { Character, State, Task } from './types';
 import { CALENDARS, indexFromDate } from '../rules/calendar';
 import { rollWeather } from '../rules/weather';
 import { isCaster } from '../rules/spells';
+import { HIT_DIE } from '../rules/upkeep';
 import type { Rng } from '../rules/dice';
 
 export const SAVE_VERSION = 1;
@@ -19,6 +20,9 @@ export function defaultTasks(isSpellcaster: boolean): Task[] {
 
 export function newCharacter(partial: Partial<Character> = {}): Character {
   const className = partial.className ?? 'Fighter';
+  const level = partial.level ?? 1;
+  const hitDie = HIT_DIE[className];
+  const maxHp = partial.maxHp ?? hitDie + 2 + (level - 1) * (hitDie / 2 + 2);
   return {
     id: uid(),
     name: 'New adventurer',
@@ -26,6 +30,16 @@ export function newCharacter(partial: Partial<Character> = {}): Character {
     level: 1,
     size: 'Medium',
     conSave: 0,
+    conScore: 14,
+    hp: maxHp,
+    maxHp,
+    tempHp: 0,
+    hitDie,
+    hitDiceSpent: 0,
+    passivePerception: 10,
+    items: [],
+    resources: [],
+    restFocus: null,
     wisMod: 0,
     survival: 0,
     exhaustion: 0,
@@ -106,8 +120,9 @@ export function createDefaultState(rng: Rng): State {
     travel: { pace: 'normal', hoursToday: 0, milesToday: 0 },
     lastLongRestEnd: null,
     trackingStart: dayIndex * 1440 + 7 * 60,
-    settings: { autoRollSaves: true, climateAdjustedPrecip: false, fireWarmsCamp: true, doubleWaterInHeat: false, wildNeedsPurifying: true, sleepInArmorPenalty: false, rawFoodRisk: true, rawFoodDC: 10, coldNights: true, coldNightF: 32, sleepDeprivation: true },
+    settings: { autoRollSaves: true, climateAdjustedPrecip: false, fireWarmsCamp: true, doubleWaterInHeat: false, wildNeedsPurifying: true, sleepInArmorPenalty: false, rawFoodRisk: true, rawFoodDC: 10, coldNights: true, coldNightF: 32, sleepDeprivation: true, encounterOn: 0 },
     spellLibrary: [],
     bastions: [],
+    watchOrder: [],
   };
 }

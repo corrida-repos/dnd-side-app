@@ -9,12 +9,14 @@ import { CampTab } from './components/CampTab';
 import { MorningTab } from './components/MorningTab';
 import { DowntimeTab } from './components/DowntimeTab';
 import { BastionTab } from './components/BastionTab';
+import { GearTab } from './components/GearTab';
 import { LogTab } from './components/LogTab';
 import { SettingsTab } from './components/SettingsTab';
 
 const TABS = [
   { id: 'overview', label: 'Overview', el: Overview },
   { id: 'party', label: 'Party', el: PartyTab },
+  { id: 'gear', label: 'Gear & Resources', el: GearTab },
   { id: 'camp', label: 'Camp & Survival', el: CampTab },
   { id: 'morning', label: 'Morning & Spells', el: MorningTab },
   { id: 'downtime', label: 'Downtime', el: DowntimeTab },

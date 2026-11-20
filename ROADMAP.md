@@ -30,38 +30,38 @@ Everything in D&D 5.5e (2024 *Player's Handbook* and *Dungeon Master's Guide*) t
 
 ---
 
-## Phase 1: Rest-driven upkeep 🔜
+## Phase 1: Rest-driven upkeep ✅
 
 These all happen during Short and Long Rests or at dawn, so they fit straight into the existing rest engine. They're the most useful at the table.
 
-### Attunement 🔜
+### Attunement ✅
 - Attuning to a magic item takes a **Short Rest** spent focused on that item while touching it.
 - A creature can be attuned to at most **3 items**.
 - Attunement ends if the creature stops meeting the prerequisites, if the item is **more than 100 feet away for 24 hours**, if the creature dies, or if someone spends another Short Rest focused on the item to end it on purpose.
 - **To build:** an attuned-items list per character with a 3-item cap, an "attune during this Short Rest" choice, and a 24-hour timer when an item is left behind.
 
-### Identifying magic items 🔜
+### Identifying magic items ✅
 - Use the *Identify* spell (1 minute, or 11 minutes as a ritual), or spend a **Short Rest** focused on the item while touching it.
 - *Detect Magic* (ritual, concentration up to 10 minutes) shows that something is magical.
 - **To build:** an inventory of unidentified items with "identify by Short Rest" and "identify by spell" buttons, which hand off to the attunement list.
 
-### Class and feat resources 🔜
+### Class and feat resources ✅
 - Most limited features come back on a **Short Rest**, a **Long Rest** or **at dawn**. Examples:
   - **Short Rest:** Warlock Pact Magic slots, Monk Focus Points, Fighter Action Surge and Second Wind uses, a Channel Divinity use, Bardic Inspiration (from level 5).
   - **Long Rest:** spell slots, Rage, Lay on Hands, Sorcery Points, Lucky feat points, Heroic Inspiration for humans.
   - **Once per day:** Wizard Arcane Recovery after a Short Rest.
 - **To build:** per character, resources with a max, current uses and a recharge type (Short Rest, Long Rest, dawn, or a custom number of uses back). Rests refill them automatically.
 
-### Hit Points and Hit Point Dice 🔜
+### Hit Points and Hit Point Dice ✅
 - **Short Rest:** spend Hit Point Dice to heal.
 - **Long Rest:** all HP and all spent Hit Point Dice come back. A character must have at least 1 HP to start one.
 - **To build:** HP and Hit Point Dice per character, a "spend Hit Point Dice" roller on Short Rests, and the Chef bonus die.
 
-### Magic item charges and dawn recharges 🔜
+### Magic item charges and dawn recharges ✅
 - Many items regain charges **at dawn** (wands, staves), and some uses are "once per day" or "until the next dawn".
 - **To build:** a list of items with charges and their regain roll (for example 1d6 + 1 at dawn), applied when the clock passes sunrise.
 
-### Keeping watch 📋
+### Keeping watch ✅
 - A Long Rest allows up to 2 hours of light activity, such as standing watch.
 - **To build:** a watch rota during Long Rests (who watches which 2-hour block, with their passive Perception), and an optional random encounter check per watch.
 

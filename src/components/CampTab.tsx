@@ -12,6 +12,7 @@ export function CampTab() {
       <StoresCard />
       <PurifyCard />
       <ArmorCard />
+      <WatchCard />
       <MealsCard />
       <ForageCard />
       <RulesCard />
@@ -195,6 +196,66 @@ function ArmorCard() {
           ? ' Optional rule on: sleeping in Medium or Heavy armor means the Long Rest brings back only a quarter of spent Hit Point Dice and removes no Exhaustion.'
           : ' The 2024 rules have no penalty for sleeping in armor. You can switch on the optional Xanathar’s rule in Settings.'}
       </Rule>
+    </Card>
+  );
+}
+
+function WatchCard() {
+  const s = useGame();
+  const order = s.watchOrder.filter((id) => s.characters.some((c) => c.id === id));
+  const move = (id: string, dir: -1 | 1) =>
+    edit((d) => {
+      const i = d.watchOrder.indexOf(id);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= d.watchOrder.length) return;
+      [d.watchOrder[i], d.watchOrder[j]] = [d.watchOrder[j], d.watchOrder[i]];
+    });
+  return (
+    <Card title="Night watch">
+      <p className="small muted">Pick who keeps watch. During a Long Rest they take 2-hour watches in this order.</p>
+      <ul className="plain">
+        {s.characters.map((c) => {
+          const on = order.includes(c.id);
+          return (
+            <li key={c.id} className="armor-row">
+              <Toggle
+                checked={on}
+                onChange={(v) => edit((d) => void (d.watchOrder = v ? [...d.watchOrder.filter((x) => x !== c.id), c.id] : d.watchOrder.filter((x) => x !== c.id)))}
+                label={
+                  <span>
+                    {on && <b>{order.indexOf(c.id) + 1}. </b>}
+                    {c.name} <span className="muted small">passive Perception {c.passivePerception}</span>
+                  </span>
+                }
+              />
+              <span className="btn-row tight">
+                <Num value={c.passivePerception} onChange={(v) => edit((d) => void (d.characters.find((x) => x.id === c.id)!.passivePerception = Math.round(v)))} width={2} />
+                {on && (
+                  <>
+                    <button className="ghost tiny" aria-label="Earlier" onClick={() => move(c.id, -1)}>
+                      ▲
+                    </button>
+                    <button className="ghost tiny" aria-label="Later" onClick={() => move(c.id, 1)}>
+                      ▼
+                    </button>
+                  </>
+                )}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="form-row">
+        <Num
+          label="Encounter on d20 of (0 = off)"
+          value={s.settings.encounterOn}
+          onChange={(v) => edit((d) => void (d.settings.encounterOn = Math.max(0, Math.min(20, Math.round(v)))))}
+          min={0}
+          max={20}
+          width={2}
+        />
+      </div>
+      <Rule>A Long Rest allows up to 2 hours of light activity, so a 2-hour watch doesn&apos;t spoil it. Encounter checks are rolled once per watch, and the DM decides what turns up.</Rule>
     </Card>
   );
 }

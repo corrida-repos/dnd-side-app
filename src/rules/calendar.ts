@@ -129,6 +129,9 @@ const SUN: Record<Season, [number, number]> = {
   autumn: [6.5, 18],
 };
 
+/** Sunrise as minutes after midnight. */
+export const sunriseMinutes = (season: Season): number => Math.round(SUN[season][0] * 60);
+
 export type LightPhase = 'Night' | 'Dawn' | 'Day' | 'Dusk';
 
 export function lightAt(minutes: number, season: Season): { phase: LightPhase; light: string; sunrise: number; sunset: number } {

@@ -44,7 +44,7 @@ export function Num({
         step={step}
         min={min}
         max={max}
-        style={{ width: `${width + 2}ch` }}
+        style={{ width: `${width + 3.5}ch` }}
         onChange={(e) => {
           setTxt(e.target.value);
           const n = parseFloat(e.target.value);

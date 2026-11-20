@@ -2,6 +2,7 @@ import type { ClimateId, Weather } from '../rules/weather';
 import type { Calendar } from '../rules/calendar';
 import type { ProjectKind } from '../rules/crafting';
 import type { FacilitySize, Order } from '../rules/bastion';
+import type { Recharge } from '../rules/upkeep';
 
 export type Season = 'winter' | 'spring' | 'summer' | 'autumn';
 export type Size = 'Tiny' | 'Small' | 'Medium' | 'Large' | 'Huge' | 'Gargantuan';
@@ -40,6 +41,35 @@ export interface Task {
   daily: boolean;
 }
 
+export interface MagicItem {
+  id: string;
+  name: string;
+  requiresAttunement: boolean;
+  attuned: boolean;
+  identified: boolean;
+  charges: number | null;
+  maxCharges: number | null;
+  /** Dice expression for charges regained, e.g. "1d6+1", or "all". */
+  regain: string;
+  regainAt: 'dawn' | 'longRest' | 'shortRest' | 'never';
+  /** Absolute minute the item was left more than 100 ft away, or null while it's with its owner. */
+  awaySince: number | null;
+  notes: string;
+}
+
+export interface Resource {
+  id: string;
+  name: string;
+  max: number;
+  current: number;
+  recharge: Recharge;
+}
+
+export interface RestFocus {
+  itemId: string;
+  action: 'attune' | 'identify' | 'unattune';
+}
+
 export interface Character {
   id: string;
   name: string;
@@ -47,6 +77,17 @@ export interface Character {
   level: number;
   size: Size;
   conSave: number;
+  conScore: number;
+  hp: number;
+  maxHp: number;
+  tempHp: number;
+  hitDie: number;
+  hitDiceSpent: number;
+  passivePerception: number;
+  items: MagicItem[];
+  resources: Resource[];
+  /** What the character focuses on during the next rest: attuning, identifying or ending attunement. */
+  restFocus: RestFocus | null;
   wisMod: number;
   survival: number;
   exhaustion: number;
@@ -211,6 +252,8 @@ export interface Settings {
   coldNightF: number;
   /** Optional rule (Xanathar's Guide): each 24 hours without a Long Rest, DC 10 Con save (+5 per further day) or 1 Exhaustion. */
   sleepDeprivation: boolean;
+  /** Random encounter check per watch: an encounter on a d20 roll of this or higher. 0 turns it off. */
+  encounterOn: number;
 }
 
 export interface Travel {
@@ -242,4 +285,6 @@ export interface State {
   settings: Settings;
   spellLibrary: SpellRef[];
   bastions: Bastion[];
+  /** Order of characters taking 2-hour watches during a Long Rest. */
+  watchOrder: string[];
 }

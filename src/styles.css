@@ -793,3 +793,26 @@ td {
 .warn-text {
   color: var(--warn);
 }
+
+.hp-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.pips {
+  display: inline-flex;
+  gap: 3px;
+  vertical-align: middle;
+  flex-wrap: wrap;
+  max-width: 220px;
+}
+.pip {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1.5px solid var(--accent);
+}
+.pip.full {
+  background: var(--accent);
+}

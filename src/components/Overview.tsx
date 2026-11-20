@@ -57,8 +57,23 @@ function ClockCard() {
         </button>
       </div>
       <LongRestTracker />
+      <RestPlans />
     </Card>
   );
+}
+
+function RestPlans() {
+  const s = useGame();
+  const plans = s.characters
+    .filter((c) => c.restFocus)
+    .map((c) => {
+      const it = c.items.find((i) => i.id === c.restFocus!.itemId);
+      const verb = c.restFocus!.action === 'attune' ? 'attunes to' : c.restFocus!.action === 'identify' ? 'identifies' : 'ends attunement to';
+      return it ? `${c.name} ${verb} the ${it.name}` : null;
+    })
+    .filter(Boolean);
+  if (!plans.length) return null;
+  return <p className="small good-text">During the next rest: {plans.join('; ')}.</p>;
 }
 
 function LongRestTracker() {

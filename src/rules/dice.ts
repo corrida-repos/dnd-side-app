@@ -26,3 +26,13 @@ export function combineModes(...modes: RollMode[]): RollMode {
 }
 
 export const signed = (n: number): string => (n >= 0 ? `+${n}` : `${n}`);
+
+/** Rolls a simple expression like "1d6+1", "2d4", "d20-1" or a flat "3". Returns null if it can't be read. */
+export function rollExpr(expr: string, rng: Rng): number | null {
+  const m = expr.replace(/\s+/g, '').toLowerCase().match(/^(?:(\d*)d(\d+))?([+-]\d+)?$|^(\d+)$/);
+  if (!m || !expr.trim()) return null;
+  if (m[4]) return Number(m[4]);
+  const count = m[2] ? Number(m[1] || 1) : 0;
+  const total = (count ? rollDice(count, Number(m[2]), rng) : 0) + (m[3] ? Number(m[3]) : 0);
+  return total;
+}
