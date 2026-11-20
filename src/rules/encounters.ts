@@ -90,6 +90,21 @@ export function checkModifiers(c: CheckConditions): CheckMod[] {
 
 // ---------------------------------------------------------------- creatures
 
+/**
+ * 5etools bestiary files checked for random encounters: how many creatures each adds that have
+ * environment tags, aren't named individuals, and aren't already in the 2024 Monster Manual.
+ */
+export const RECOMMENDED_BESTIARIES: { file: string; name: string; kind: 'core' | 'campaign' | 'skip'; why: string }[] = [
+  { file: 'bestiary-xmm.json', name: 'Monster Manual (2025)', kind: 'core', why: 'the rest of the 2024 Monster Manual, about 200 creatures beyond the built-in SRD ones. Load this first.' },
+  { file: 'bestiary-mpmm.json', name: 'Monsters of the Multiverse', kind: 'core', why: '227 creatures with environments: drow, duergar, gnolls, giants, hags, fiends and more. Fills almost every gap at levels 11–20.' },
+  { file: 'bestiary-fraif.json', name: 'Forgotten Realms: Adventures in Faerûn', kind: 'core', why: '32 creatures for 2024 rules: deep and spirit dragons, Lolth’s drow, araneas, rusted constructs, Zhentarim.' },
+  { file: 'bestiary-rhw.json', name: 'Ravenloft: The Horrors Within', kind: 'campaign', why: '47 horror creatures (star spawn, mi-go, strigoi, death’s heads). Load it for gothic or cosmic horror games; leave its book switched off otherwise.' },
+  { file: 'bestiary-au.json', name: 'Arcana Unleashed', kind: 'campaign', why: '18 creatures, mostly specialist archmages and living spells for magic-heavy cities.' },
+  { file: 'bestiary-wow.json', name: 'World of Warcraft', kind: 'skip', why: 'a crossover setting (murlocs, felguards, dragonflights). Only for that setting.' },
+  { file: 'bestiary-mm.json, -vgm.json, -mtf.json', name: '2014 books', kind: 'skip', why: 'almost everything is reprinted in the 2024 Monster Manual or Monsters of the Multiverse; reprints are skipped automatically.' },
+  { file: 'adventure files (cos, toa, skt…)', name: 'Adventures', kind: 'skip', why: 'their creatures have no environment tags, so they can be hunted but never appear in tables; many are named NPCs.' },
+];
+
 export interface EncounterCreature {
   name: string;
   cr: string;
@@ -99,7 +114,7 @@ export interface EncounterCreature {
   /** 5etools environments: terrains, plus 'any' and 'underwater'. */
   env: string[];
   source?: string;
-  /** L legendary, s swims, f flies. */
+  /** L legendary, N named individual, s swims, f flies. */
   flags?: string;
 }
 
@@ -151,9 +166,11 @@ const TERRAIN_ENV: Record<TerrainType, string[]> = {
 /** People who travel the wilds. Other "found anywhere" humanoids (spies, nobles, gladiators, archmages) stay in towns. */
 const WILD_FOLK = ['Bandit', 'Bandit Captain', 'Berserker', 'Cultist', 'Cultist Fanatic', 'Druid', 'Knight', 'Priest', 'Priest Acolyte', 'Scout', 'Tough', 'Tough Boss', 'Warrior Infantry', 'Warrior Veteran'];
 /** Tame animals and harmless folk: they turn up as peaceful meetings, not as threats. */
-const NOT_A_THREAT = ['Camel', 'Cat', 'Commoner', 'Draft Horse', 'Mastiff', 'Mule', 'Noble', 'Pony', 'Riding Horse', 'Warhorse'];
+const NOT_A_THREAT = ['Camel', 'Cat', 'Commoner', 'Cow', 'Dolphin', 'Draft Horse', 'Mastiff', 'Mule', 'Noble', 'Ox', 'Pony', 'Riding Horse', 'Warhorse'];
+/** Constructs and bound spirits that guard ruins and vaults rather than roam the land. */
+const isGuardian = (c: EncounterCreature): boolean => /^(Clockwork|Animated|Eidolon|Shield Guardian)|Golem$/.test(c.name);
 const isLegendary = (c: EncounterCreature): boolean => !!c.flags?.includes('L');
-const canCrossWater = (c: EncounterCreature): boolean => c.env.includes('underwater') || !!c.flags?.match(/[sf]/);
+const canCrossWater = (c: EncounterCreature): boolean => /[sf]/.test(c.flags ?? '');
 
 /**
  * How strongly a creature belongs in a terrain: 3 native, 1 a traveller or a rare legendary
@@ -164,8 +181,9 @@ export function habitat(c: EncounterCreature, t: TerrainType): number {
   const native = c.env.some((e) => TERRAIN_ENV[t].includes(e));
   // At sea, only swimmers and fliers can reach the ship (plus pirates, below).
   if (native && t === 'waterborne' && !canCrossWater(c)) return 0;
-  // Legendary creatures rule a lair; meeting one on the road is rare.
-  if (native) return isLegendary(c) ? 1 : 3;
+  if (native && isGuardian(c)) return t === 'underdark' || t === 'urban' ? 1 : 0;
+  // Legendary creatures rule a lair, and fiends and celestials are visitors from other planes: meeting one is rare.
+  if (native) return isLegendary(c) || c.type === 'fiend' || c.type === 'celestial' ? 1 : 3;
   if (c.env.includes('any')) {
     if (/^Pirate/.test(c.name)) return t === 'waterborne' || t === 'coastal' ? 3 : t === 'urban' ? 1 : 0;
     if (c.type === 'humanoid') return t === 'urban' ? 3 : t !== 'waterborne' && WILD_FOLK.includes(c.name) ? 1 : 0;
@@ -242,6 +260,43 @@ export const FOLLOWERS: Record<string, string> = {
   'Bandit Captain': 'Bandit',
   'Bugbear Stalker': 'Bugbear Warrior',
   Ghast: 'Ghoul',
+  // From other books, used when they are imported.
+  Archpriest: 'Priest',
+  'Bandit Crime Lord': 'Bandit',
+  'Pirate Admiral': 'Pirate',
+  'Berserker Commander': 'Berserker',
+  'Bullywug Bog Sage': 'Bullywug Warrior',
+  'Drow Elite Warrior of Lolth': 'Drow of Lolth',
+  'Drow House Captain': 'Drow of Lolth',
+  'Drow Matron Mother': 'Drow Elite Warrior of Lolth',
+  'Drow Priestess of Lolth': 'Drow of Lolth',
+  'Duergar Despot': 'Duergar Stone Guard',
+  'Duergar Warlord': 'Duergar Stone Guard',
+  'Firenewt Warlock of Imix': 'Firenewt Warrior',
+  Flind: 'Gnoll Warrior',
+  'Githyanki Knight': 'Githyanki Warrior',
+  "Githyanki Kith'rak": 'Githyanki Warrior',
+  'Githyanki Supreme Commander': 'Githyanki Knight',
+  'Githzerai Zerth': 'Githzerai Monk',
+  'Gnoll Fang of Yeenoghu': 'Gnoll Warrior',
+  'Gnoll Pack Lord': 'Gnoll Warrior',
+  'Goblin Hexer': 'Goblin Warrior',
+  'Grung Elite Warrior': 'Grung',
+  'Hobgoblin Warlord': 'Hobgoblin Warrior',
+  'Kobold Dragonshield': 'Kobold Warrior',
+  'Kobold Scale Sorcerer': 'Kobold Warrior',
+  'Kuo-toa Archpriest': 'Kuo-toa',
+  'Kuo-toa Monitor': 'Kuo-toa',
+  'Kuo-toa Whip': 'Kuo-toa',
+  'Sahuagin Baron': 'Sahuagin Warrior',
+  'Sahuagin Priest': 'Sahuagin Warrior',
+  'Scout Captain': 'Scout',
+  'Vegepygmy Chief': 'Vegepygmy',
+  'War Priest': 'Priest Acolyte',
+  Warlord: 'Warrior Veteran',
+  'Warrior Commander': 'Warrior Infantry',
+  'Yuan-ti Abomination': 'Yuan-ti Broodguard',
+  'Zhentilar Paladin of Bane': 'Zhentilar Soldier',
   'Cultist Fanatic': 'Cultist',
   'Goblin Boss': 'Goblin Warrior',
   'Guard Captain': 'Guard',
@@ -257,20 +312,30 @@ const SOLITARY = [
   'Aboleth', 'Archmage', 'Behir', 'Bulette', 'Chimera', 'Cloaker', 'Couatl', 'Djinni', 'Dragon Turtle', 'Efreeti', 'Gelatinous Cube', 'Guardian Naga', 'Hydra', 'Invisible Stalker',
   'Kraken', 'Lamia', 'Medusa', 'Mummy Lord', 'Oni', 'Otyugh', 'Purple Worm', 'Rakshasa', 'Remorhaz', 'Roc', 'Shield Guardian', 'Solar', 'Sphinx of Lore', 'Sphinx of Valor',
   'Spirit Naga', 'Sphinx of Wonder', 'Tarrasque', 'Unicorn', 'Vampire', 'Werebear', 'Lich', 'Clay Golem', 'Stone Golem', 'Iron Golem', 'Flesh Golem', 'Assassin',
+  // From other books, used when they are imported.
+  'Alhoon', 'Angry Sorrowsworn', 'Banderhobb', 'Beast of Malar', 'Bodak', 'Boneclaw', 'Cadaver Collector', 'Catoblepas', 'Corpse Flower', 'Death Knight', 'Devourer', 'Dullahan',
+  'Eidolon', 'Elder Brain', 'Elder Oblex', 'Flail Snail', 'Froghemoth', 'Gray Render', 'Gug', 'Ki-rin', 'Lonely Sorrowsworn', 'Loup Garou', 'Nabassu', 'Nagpa', 'Phoenix',
+  'Retriever', 'Rusted Wyrm', 'Shoggoth', 'Skull Lord', 'Spore of Moander', 'Steel Predator', 'Werewyvern',
 ];
+/** Named spellcasters and champions: met alone or as a pair, never as a crowd. */
+const CASTER = /(Wizard|Warlock|Sorcerer|Druid|Archdruid|Archpriest|Bard|Champion|Blackguard|Gish|Necromancer|Illusionist|Conjurer|Evoker|Enchanter|Diviner|Abjurer|Transmuter|Archmage|Inquisitor)\b/;
 /** Creatures met alone or as a mated pair. */
 const PAIRS = ['Basilisk', 'Black Pudding', 'Doppelganger', 'Ettin', 'Giant Ape', 'Gorgon', 'Manticore', 'Mage', 'Spy', 'Gladiator', 'Treant', 'Tyrannosaurus Rex', 'Weretiger', 'Wyvern', 'Young Remorhaz'];
 
 /** Other small bands: a druid circle, a coven, snakes that don't hunt in packs. */
 const BAND_CAP: Record<string, number> = {
-  Druid: 3, "Will-o'-Wisp": 3, Ghost: 2, Incubus: 1, Succubus: 1, Specter: 4, Shadow: 6, 'Priest Acolyte': 6, Scout: 4,
+  Druid: 3, "Will-o'-Wisp": 3, Ghost: 2, Incubus: 1, Succubus: 1, Specter: 4, Shadow: 6, 'Priest Acolyte': 6, Scout: 4, Poltergeist: 3,
   'Black Bear': 3, 'Brown Bear': 3, 'Polar Bear': 3, Tiger: 1, Panther: 1, 'Saber-Toothed Tiger': 2, Lion: 6,
   'Venomous Snake': 3, 'Giant Venomous Snake': 3, 'Constrictor Snake': 2, 'Giant Constrictor Snake': 2,
 };
 
 /** Table rule: the most of one creature that roam together, so dragons and giants don't come in packs. */
 export function maxGroup(c: EncounterCreature): number {
+  if (FOLLOWERS[c.name]) return 1;
   if (BAND_CAP[c.name]) return BAND_CAP[c.name];
+  if (c.type === 'humanoid' && /^Apprentice/.test(c.name)) return 4;
+  if (c.type === 'humanoid' && CASTER.test(c.name)) return /Druid/.test(c.name) && !/Archdruid/.test(c.name) ? 3 : 2;
+  if (/\bElite\b/.test(c.name)) return 4;
   if (SOLITARY.includes(c.name) || isLegendary(c) || FOLLOWERS[c.name]) return 1;
   if (PAIRS.includes(c.name)) return 2;
   if (c.type === 'dragon') return /Wyrmling/.test(c.name) ? 2 : 1;
@@ -312,23 +377,26 @@ export function buildTable(pool: EncounterCreature[], terrain: TerrainType, dang
       const h = habitat(c, terrain);
       const xp = xpFor(c.cr);
       // CR 0 creatures are harmless critters, not encounters.
-      if (!h || !xp || c.cr === '0' || NEVER_WANDERS.includes(c.name)) return null;
+      // Named individuals (Strahd, a demon lord) belong to adventures, not to random tables.
+      if (!h || !xp || c.cr === '0' || NEVER_WANDERS.includes(c.name) || c.flags?.includes('N')) return null;
       if (xp > target) return null;
       // Step the group down until its average roll stays within the budget.
       let n = Math.min(maxGroup(c), Math.floor(target / xp));
-      while (n > 1 && avgOf(countExpr(n, maxGroup(c))) * xp > target * 1.1) n--;
+      while (n > 1 && avgOf(countExpr(n, maxGroup(c))) * xp > target) n--;
       // A leader brings followers to fill out the band.
       const fc = FOLLOWERS[c.name] ? byName.get(FOLLOWERS[c.name]) : undefined;
       const fxp = fc ? xpFor(fc.cr) : 0;
-      let fn = fc && fxp ? Math.min(12, Math.floor((target - xp) / fxp)) : 0;
-      while (fn > 1 && xp + avgOf(countExpr(fn)) * fxp > target * 1.1) fn--;
-      const groupXp = avgOf(countExpr(n, maxGroup(c))) * xp + (fn > 0 ? avgOf(countExpr(fn)) * fxp : 0);
+      // Followers who are officers themselves (priests under an archpriest, knights under a commander) come in fours at most.
+      const fcap = fc ? (FOLLOWERS[fc.name] ? 4 : maxGroup(fc)) : 0;
+      let fn = fc && fxp ? Math.min(fcap, Math.floor((target - xp) / fxp)) : 0;
+      while (fn > 1 && xp + avgOf(countExpr(fn, fcap)) * fxp > target) fn--;
+      const groupXp = avgOf(countExpr(n, maxGroup(c))) * xp + (fn > 0 ? avgOf(countExpr(fn, fcap)) * fxp : 0);
       const ratio = groupXp / target;
       const score = h / (1 + Math.abs(Math.log2(ratio)) + (n > 6 ? 0.5 : 0));
       // Groups well under the budget (filler at high levels) turn up less often.
       const trivial = groupXp < budget(party, 'low') * 0.5;
       const w = trivial ? h * 0.1 : h * Math.max(0.25, Math.min(1, ratio / 0.5));
-      return { c, xp, n, h: w, score, ratio, trivial, followers: fc && fn > 0 ? { creature: fc, n: fn } : undefined };
+      return { c, xp, n, h: w, score, ratio, trivial, followers: fc && fn > 0 ? { creature: fc, n: fn, cap: fcap } : undefined };
     })
     .filter((x): x is NonNullable<typeof x> => !!x);
   // The group should be a real threat at this danger level (about half the budget or more). When too few
@@ -374,7 +442,7 @@ export function buildTable(pool: EncounterCreature[], terrain: TerrainType, dang
   const totalWeight = picked.reduce((a, s) => a + s.h, 0) || 1;
   for (const s of picked) {
     const count = countExpr(s.n, maxGroup(s.c));
-    const followers = s.followers ? { creature: s.followers.creature, count: countExpr(s.followers.n) } : undefined;
+    const followers = s.followers ? { creature: s.followers.creature, count: countExpr(s.followers.n, s.followers.cap) } : undefined;
     const xp = Math.round(avgOf(count) * s.xp + (followers ? avgOf(followers.count) * xpFor(followers.creature.cr) : 0));
     const text = `${count} ${count === '1' ? s.c.name : plural(s.c.name)}${followers ? ` with ${followers.count} ${followers.count === '1' ? followers.creature.name : plural(followers.creature.name)}` : ''}`;
     entries.push({

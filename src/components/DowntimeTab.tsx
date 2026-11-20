@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Project } from '../state/types';
 import { SpeedUp } from './SpeedUp';
+import { ACTIVITY_CHECKS, activityOf, CAROUSING_COST, CRIME_TARGETS } from '../rules/downtimeOutcomes';
 import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
 import { uid } from '../state/defaults';
@@ -77,6 +78,9 @@ export function DowntimeTab() {
           </div>
         )}
         <Rule>Each 8-hour workday adds one day of progress for every assigned crafter who is alive, because crafters who share the work divide the time between them.</Rule>
+        {done.filter((p) => p.awaitingOutcome).map((p) => (
+          <ActivityResolver key={p.id} p={p} />
+        ))}
         {done.length > 0 && (
           <details>
             <summary>Completed ({done.length})</summary>
@@ -84,6 +88,7 @@ export function DowntimeTab() {
               {done.map((p) => (
                 <li key={p.id}>
                   {p.name} <span className="muted small">({p.costGp} GP)</span>
+                  {p.outcome && <span className="small"> · {p.outcome}</span>}
                 </li>
               ))}
             </ul>
@@ -155,6 +160,8 @@ function NewProject() {
   const [rarity, setRarity] = useState<Rarity>('uncommon');
   const [consumable, setConsumable] = useState(false);
   const [days, setDays] = useState(5);
+  const [learn, setLearn] = useState('');
+  const [intMod, setIntMod] = useState(0);
   const [cost, setCost] = useState(0);
   const [crafters, setCrafters] = useState<string[]>([]);
   const [deal, setDeal] = useState<number | null>(null);
@@ -308,6 +315,23 @@ function NewProject() {
               }}
               options={[{ value: '', label: 'Custom…' }, ...ACTIVITY_PRESETS.map((a) => ({ value: a.name, label: a.name }))]}
             />
+            {name.startsWith('Training') && (
+              <>
+                <Text label="Language or tool" value={learn} onChange={setLearn} placeholder="e.g. Elvish, Thieves' Tools" />
+                <Num
+                  label="Int modifier"
+                  value={intMod}
+                  onChange={(v) => {
+                    const m = Math.round(v);
+                    const weeks = Math.max(1, 10 - m);
+                    setIntMod(m);
+                    setDays(weeks * 5);
+                    setCost(weeks * 25);
+                  }}
+                  width={3}
+                />
+              </>
+            )}
             <Num label="Workdays" value={days} onChange={(v) => setDays(Math.max(1, Math.round(v)))} min={1} width={4} />
             <Num label="Cost" value={cost} onChange={setCost} min={0} suffix="GP" width={6} />
           </>
@@ -360,6 +384,7 @@ function NewProject() {
             done: false,
             ...(trade ? { rarity, dealGp: calc.gp } : {}),
             ...(kind === 'spellcopy' ? { spell: { name: spellName.trim() || 'Unnamed spell', level: spellLevel } } : {}),
+            ...(kind === 'activity' && name.startsWith('Training') && learn.trim() ? { learn: learn.trim(), name: `Training: ${learn.trim()}` } : {}),
             product: productFor(),
             materialsUsed: Object.entries(useMats)
               .filter(([, q]) => q > 0)
@@ -525,5 +550,34 @@ function CraftSpeedUp({ p }: { p: Project }) {
         2024 PHB: helpers divide the crafting time. Normally one assistant can help; the DM may allow more. {p.kind === 'nonmagical' && 'Fabricate finishes a nonmagical object from its raw materials in 10 minutes (Large or smaller, Medium for metal or stone); weapons, armor and other skilled work need the caster to be proficient with the artisan\'s tools.'}
       </Rule>
     </details>
+  );
+}
+
+function ActivityResolver({ p }: { p: Project }) {
+  const s = useGame();
+  const id = activityOf(p.name)!;
+  const checks = ACTIVITY_CHECKS[id];
+  const [bonuses, setBonuses] = useState<number[]>(checks.map(() => 0));
+  const [gp, setGp] = useState(id === 'Gambling' ? 50 : id === 'Research' ? 50 : 0);
+  const [dc, setDc] = useState(10);
+  const [circle, setCircle] = useState<'lower' | 'middle' | 'upper'>('lower');
+  const who = E.charById(s, p.charIds[0]);
+  return (
+    <div className="decision">
+      <b>{p.name}</b> is done{who ? ` for ${who.name}` : ''}. Roll its checks:
+      <div className="form-row">
+        {checks.map((c, i) => (
+          <Num key={c} label={c} value={bonuses[i] ?? 0} onChange={(v) => setBonuses(bonuses.map((b, k) => (k === i ? v : b)))} width={3} />
+        ))}
+        {id === 'Gambling' && <Num label="Stake" value={gp} onChange={(v) => setGp(Math.max(10, Math.min(1000, v)))} min={10} max={1000} suffix="GP" width={5} />}
+        {id === 'Research' && <Num label="Spent" value={gp} onChange={(v) => setGp(Math.max(50, v))} min={50} suffix="GP" width={5} />}
+        {id === 'Crime' && <Select label="Target" value={String(dc)} onChange={(v) => setDc(Number(v))} options={CRIME_TARGETS.map((t) => ({ value: String(t.dc), label: t.label }))} />}
+        {id === 'Carousing' && <Select label="Circle" value={circle} onChange={setCircle} options={(['lower', 'middle', 'upper'] as const).map((c) => ({ value: c, label: `${c[0].toUpperCase()}${c.slice(1)} class (${CAROUSING_COST[c]} GP)` }))} />}
+      </div>
+      <button className="small primary" onClick={() => dispatch((st, cx) => E.resolveActivityProject(st, cx, p.id, { bonuses, gp, dc, circle }))}>
+        Roll the outcome
+      </button>
+      <Rule>Optional rule from Xanathar&apos;s Guide (2014): the 2024 books have no outcome tables for these. Contacts, favors and lore go into the character&apos;s notes. Each week has a 10% chance of a complication.</Rule>
+    </div>
   );
 }

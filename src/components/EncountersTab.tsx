@@ -6,6 +6,7 @@ import { TERRAIN, type TerrainType } from '../rules/terrain';
 import { formatDuration } from '../rules/calendar';
 import { Card, Pill, Rule, Select, Toggle } from './common';
 import { senseText } from './senseView';
+import { BookAdvice } from './SettingsTab';
 import { WaysAround } from './WaysAround';
 
 type Act = CheckConditions['activity'];
@@ -57,8 +58,33 @@ function DangerCard() {
       <p className="small muted">
         Imported bestiaries (Settings) with Challenge Ratings and environments are added to the tables automatically, and replace SRD creatures of the same name.
       </p>
+      <SourceToggles />
+      <BookAdvice />
       <WaysAround topic={'encounters'} />
     </Card>
+  );
+}
+
+/** Switch whole imported books in or out of the tables, e.g. a horror book between arcs. */
+function SourceToggles() {
+  const s = useGame();
+  const counts = new Map<string, number>();
+  for (const c of s.bestiary) if (c.cr && c.env?.length && !c.flags?.includes('N')) counts.set(c.source ?? '?', (counts.get(c.source ?? '?') ?? 0) + 1);
+  if (!counts.size) return null;
+  return (
+    <div className="form-row">
+      <span className="small">Books in the tables:</span>
+      {[...counts.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([src, n]) => (
+          <Toggle
+            key={src}
+            checked={!s.encounterSourcesOff.includes(src)}
+            onChange={(v) => edit((d) => void (d.encounterSourcesOff = v ? d.encounterSourcesOff.filter((x) => x !== src) : [...d.encounterSourcesOff, src]))}
+            label={`${src} (${n})`}
+          />
+        ))}
+    </div>
   );
 }
 

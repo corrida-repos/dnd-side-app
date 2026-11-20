@@ -302,6 +302,14 @@ export interface Character {
   sick: boolean;
   /** Magical contagions (2024 DMG): Cackle Fever, Sewer Plague, Sight Rot. */
   contagions: Contagion[];
+  /** Languages and tools learned through downtime training. */
+  trainedProficiencies?: string[];
+  /** −4 to D20 Tests after Raise Dead or Resurrection, easing by 1 each Long Rest. */
+  revivalPenalty?: number;
+  /** Remove Curse was cast: attunement to cursed items can be ended. */
+  curseBroken?: boolean;
+  /** Poisons that act later: Midnight Tears at midnight, Pale Tincture every 24 hours. */
+  poisonTimers?: { id: string; name: string; nextAt: number; successes: number }[];
   /** Advantage on saves against contagions until this minute (after recuperating). */
   recuperatedUntil?: number;
   needsFood: boolean;
@@ -413,6 +421,11 @@ export interface Project {
   product?: { name: string; qty: number; magic?: boolean; valueGp?: number };
   /** For copying a spell: its name and level, and whose spellbook gets it. */
   spell?: { name: string; level: number };
+  /** Training: the language or tool learned. */
+  learn?: string;
+  /** A finished activity waiting for its checks, and what came of it. */
+  awaitingOutcome?: boolean;
+  outcome?: string;
   /** Skilled hirelings with the right tools assisting the work, paid 2 GP each per workday. */
   hiredArtisans?: number;
 }
@@ -662,6 +675,10 @@ export interface Settings {
   noTimepiece: boolean;
   /** Table rule: heavy precipitation and darkness each add +5 to the navigation DC. */
   poorVisibilityNav: boolean;
+  /** Optional Xanathar's rules resolve downtime activities with checks and tables. */
+  downtimeOutcomes: boolean;
+  /** Costly Material components must be in the caster's inventory and are used up (2024 PHB). */
+  trackComponents: boolean;
   /** Optional 2014 DMG rule: running a business as a downtime activity. */
   runningBusiness: boolean;
   /** Roll random encounter checks automatically by the location's danger while travelling, camping, resting and exploring. */
@@ -752,6 +769,8 @@ export interface State {
   exploreTurns: number;
   /** Creatures left out of the random encounter tables. */
   encounterExclude: string[];
+  /** Imported books (5etools source codes) left out of the random encounter tables. */
+  encounterSourcesOff: string[];
   /** When the current Long Rest began (absolute minute), so encounters know who is on watch. */
   restStart: number | null;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { apportion, budget, buildTable, FOLLOWERS, checkChance, checkModifiers, countExpr, difficultyOf, encountersPerDay, habitat, maxGroup, maxOf, plural, rollOnTable, SRD_POOL, xpFor, DANGERS, type CheckConditions } from './encounters';
+import { apportion, budget, buildTable, FOLLOWERS, RECOMMENDED_BESTIARIES, checkChance, checkModifiers, countExpr, difficultyOf, encountersPerDay, habitat, maxGroup, maxOf, plural, rollOnTable, SRD_POOL, xpFor, DANGERS, type CheckConditions } from './encounters';
 import { parse5eToolsBestiary } from './hunting';
 
 const base: CheckConditions = { activity: 'travel', night: false, lightAtNight: false, pace: 'normal', goodRoad: false, foulWeather: false, sheltered: false, underground: false, bigGroup: false };
@@ -154,5 +154,50 @@ describe('plausibility', () => {
   it('keeps groups within the danger level budget outside deadly areas', () => {
     for (const d of ['low', 'moderate', 'high'] as const)
       for (const level of [1, 5, 11]) for (const r of buildTable(SRD_POOL, 'forest', d, { level, size: 4 }).rows) expect(r.difficulty).not.toBe('beyond');
+  });
+});
+
+describe('creatures from other books', () => {
+  const mk = (name: string, cr: string, env: string[], extra: Partial<(typeof SRD_POOL)[number]> = {}) => ({ name, cr, size: 'Medium' as const, type: 'humanoid', align: 'E' as const, env, ...extra });
+
+  it('skips reprinted entries and flags named individuals', () => {
+    const got = parse5eToolsBestiary({
+      monster: [
+        { name: 'Owlbear', source: 'MM', size: ['L'], type: 'monstrosity', cr: '3', environment: ['forest'], reprintedAs: ['Owlbear|XMM'] },
+        { name: 'Strahd', source: 'CoS', size: ['M'], type: 'undead', cr: '15', environment: ['urban'], isNamedCreature: true },
+      ],
+    });
+    expect(got.map((c) => c.name)).toEqual(['Strahd']);
+    expect(got[0].flags).toContain('N');
+    const t = buildTable([{ ...mk('Strahd', '15', ['urban']), flags: 'N' }], 'urban', 'deadly', { level: 15, size: 4 });
+    expect(t.rows.every((r) => r.kind === 'peaceful')).toBe(true);
+  });
+
+  it('gives imported leaders their followers, and keeps casters few', () => {
+    const pool = [mk('Drow House Captain', '9', ['underdark']), mk('Drow of Lolth', '1/4', ['underdark']), mk('Archpriest', '12', ['urban']), mk('Priest', '2', ['urban']), mk('Tortle Druid', '2', ['coastal'])];
+    const ud = buildTable(pool, 'underdark', 'high', { level: 8, size: 4 });
+    expect(ud.rows.find((r) => r.creature?.name === 'Drow House Captain')?.text).toMatch(/^1 Drow House Captain with .* Drow of Lolth$/);
+    const town = buildTable(pool, 'urban', 'high', { level: 15, size: 4 });
+    const arch = town.rows.find((r) => r.creature?.name === 'Archpriest')!;
+    expect(arch.count).toBe('1');
+    expect(maxOf(arch.followers!.count)).toBeLessThanOrEqual(4);
+    expect(maxGroup(mk('Tortle Druid', '2', ['coastal']))).toBe(3);
+  });
+
+  it('needs a swim or fly speed to reach a ship', () => {
+    const pool = [mk('Archdruid', '12', ['forest', 'underwater']), mk('Merfolk Wavebender', '5', ['underwater'], { flags: 's' })];
+    const t = buildTable(pool, 'waterborne', 'moderate', { level: 10, size: 4 });
+    const names = t.rows.map((r) => r.creature?.name).filter(Boolean);
+    expect(names).toContain('Merfolk Wavebender');
+    expect(names).not.toContain('Archdruid');
+  });
+
+  it('makes fiends rare visitors and keeps clockwork guardians in ruins', () => {
+    expect(habitat(mk('Canoloth', '8', ['coastal'], { type: 'fiend' }), 'coastal')).toBe(1);
+    expect(habitat(mk('Clockwork Oaken Bolter', '5', ['forest'], { type: 'construct' }), 'forest')).toBe(0);
+  });
+
+  it('lists the books worth loading', () => {
+    expect(RECOMMENDED_BESTIARIES.filter((b) => b.kind === 'core').map((b) => b.file)).toEqual(['bestiary-xmm.json', 'bestiary-mpmm.json', 'bestiary-fraif.json']);
   });
 });

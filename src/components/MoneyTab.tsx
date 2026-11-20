@@ -8,6 +8,9 @@ import { Card, Num, Pill, Select, Text, Toggle, Rule } from './common';
 import { HIRELING_ROLES, MESSENGER_GP_PER_MILE, type HirelingRole } from '../rules/hirelings';
 import { coinCount, DENOMS, purseValue, type Denom } from '../rules/coins';
 import type { Hireling } from '../state/types';
+import { TARGET_SPELLS } from '../rules/components';
+import { ITEM_PRICES } from '../rules/itemPrices';
+import { inStock, priceOf, RENOWN_DISCOUNT, saleRate, STOCK_LIMIT } from '../rules/shop';
 import { COMMON_SPELL_REQUESTS, PASSAGE, SPELL_SERVICES, spellServiceAvailable, type Settlement } from '../rules/services';
 import { WaysAround } from './WaysAround';
 
@@ -17,6 +20,7 @@ export function MoneyTab() {
       <PurseCard />
       <HirelingsCard />
       <MountsCard />
+      <ShopCard />
       <ServicesCard />
     </div>
   );
@@ -286,6 +290,7 @@ function ServicesCard() {
   const [here, setHere] = useState<Settlement>('town');
   const [spell, setSpell] = useState(COMMON_SPELL_REQUESTS[0].name);
   const [custom, setCustom] = useState(1);
+  const [target, setTarget] = useState('');
   const payers = payer === 'party' ? pcs.map((c) => c.id) : [payer];
   const f = PASSAGE.find((x) => x.id === fare)!;
   const fareGp = ((f.gpPerMile ?? 0) * amount + (f.gpPerDay ?? 0) * amount + (f.gpFlat ?? 0)) * people;
@@ -317,11 +322,103 @@ function ServicesCard() {
         {req?.componentGp ? ` + ${fmtGp(req.componentGp)} components` : ''}. {available ? 'A caster can be found here.' : `Only found in a ${tier.where === 'city' ? 'city' : 'town or city'}.`}
         {req && <span className="muted"> {req.note}</span>}
       </p>
-      <button className="small" disabled={!available} onClick={() => dispatch((st, cx) => E.payForService(st, cx, payers, spellGp, `having ${req ? req.name : `a level ${custom} spell`} cast`))}>
+      {req && TARGET_SPELLS[req.name] && (
+        <Select label="Cast on" value={target} onChange={setTarget} options={[{ value: '', label: 'Choose…' }, ...s.characters.map((c) => ({ value: c.id, label: `${c.name}${c.diedAt != null ? ' (dead)' : ''}` }))]} />
+      )}
+      <button
+        className="small"
+        disabled={!available || (!!req && !!TARGET_SPELLS[req.name] && !target)}
+        onClick={() =>
+          dispatch((st, cx) => {
+            let next = E.payForService(st, cx, payers, spellGp, `having ${req ? req.name : `a level ${custom} spell`} cast`);
+            if (req && TARGET_SPELLS[req.name] && target) next = E.spellOnTarget(next, cx, req.name, target);
+            if (req?.name === 'Purify Food and Drink') next = E.purifySpell(next, cx, null, 'slot');
+            return next;
+          })
+        }
+      >
         Pay {fmtGp(spellGp)}
+        {req && TARGET_SPELLS[req.name] ? ' and cast' : ''}
       </button>
       <Rule>2024 PHB services. Higher-level casters are harder to find: level 3+ only in towns and cities, level 6+ only in cities. Spells with costly components add their cost. Daily food and lodging are already part of lifestyle expenses.</Rule>
       <WaysAround topic={'services'} />
+    </Card>
+  );
+}
+
+function ShopCard() {
+  const s = useGame();
+  const pcs = s.characters.filter((c) => c.kind !== 'mount' && E.alive(c));
+  const [who, setWho] = useState('');
+  const [here, setHere] = useState<Settlement>('town');
+  const [group, setGroup] = useState('Gear');
+  const [item, setItem] = useState('');
+  const [qty, setQty] = useState(1);
+  const [faction, setFaction] = useState('');
+  const [sellId, setSellId] = useState('');
+  const [sellQty, setSellQty] = useState(1);
+  const [loot, setLoot] = useState(100);
+  const [lootWhat, setLootWhat] = useState('');
+  const [lootIds, setLootIds] = useState<string[]>([]);
+  const whoId = pcs.find((c) => c.id === who)?.id ?? pcs[0]?.id ?? '';
+  const buyer = pcs.find((c) => c.id === whoId);
+  const groups = [...new Set(ITEM_PRICES.map((p) => p.group))];
+  const list = ITEM_PRICES.filter((p) => p.group === group);
+  const pick = list.find((p) => p.name === item) ?? list[0];
+  const friends = s.factions.filter((f) => f.renown >= 3);
+  const discount = friends.some((f) => f.id === faction) && pick && pick.group !== 'Vehicles' && pick.group !== 'Mounts' ? RENOWN_DISCOUNT : 0;
+  const stocked = pick ? inStock(pick.gp, here) : false;
+  const sellable = buyer?.inventory ?? [];
+  const sell = sellable.find((i) => i.id === sellId) ?? sellable[0];
+  const sellUnit = sell ? (sell.valueGp ?? priceOf(sell.name)) : undefined;
+  const payees = lootIds.length ? lootIds : pcs.map((c) => c.id);
+  return (
+    <Card title="Shop and loot">
+      <div className="form-row">
+        <Select label="Who" value={whoId} onChange={setWho} options={pcs.map((c) => ({ value: c.id, label: `${c.name} (${fmtGp(c.gp)})` }))} />
+        <Select label="Settlement" value={here} onChange={setHere} options={[{ value: 'village', label: 'Village' }, { value: 'town', label: 'Town' }, { value: 'city', label: 'City' }]} />
+        {friends.length > 0 && <Select label="Faction contact" value={faction} onChange={setFaction} options={[{ value: '', label: 'None' }, ...friends.map((f) => ({ value: f.id, label: `${f.name} (renown ${f.renown})` }))]} />}
+      </div>
+      <h3>Buy</h3>
+      <div className="form-row">
+        <Select label="Category" value={group} onChange={(v) => (setGroup(v), setItem(''))} options={groups} />
+        <Select label="Item" value={pick?.name ?? ''} onChange={setItem} options={list.map((p) => ({ value: p.name, label: `${p.name} (${fmtGp(p.gp)})` }))} />
+        <Num label="Qty" value={qty} onChange={(v) => setQty(Math.max(1, Math.round(v)))} min={1} width={3} />
+      </div>
+      <button className="small" disabled={!pick || !stocked || !buyer} onClick={() => dispatch((st, cx) => E.buyItem(st, cx, whoId, pick!.name, qty, pick!.gp, discount))}>
+        Buy for {fmtGp(Math.round((pick?.gp ?? 0) * qty * (1 - discount) * 100) / 100)}
+      </button>
+      {!stocked && <span className="small warn-text"> Not sold in a {here} (table rule: up to {STOCK_LIMIT[here] === Infinity ? 'any price' : `${STOCK_LIMIT[here]} GP`}).</span>}
+      <h3>Sell</h3>
+      {sellable.length === 0 ? (
+        <p className="small muted">Nothing in {buyer?.name ?? 'their'} inventory.</p>
+      ) : (
+        <>
+          <div className="form-row">
+            <Select label="Item" value={sell?.id ?? ''} onChange={setSellId} options={sellable.map((i) => ({ value: i.id, label: `${i.name} ×${i.qty}` }))} />
+            <Num label="Qty" value={sellQty} onChange={(v) => setSellQty(Math.max(1, Math.round(v)))} min={1} width={3} />
+          </div>
+          <button className="small" disabled={sellUnit == null} onClick={() => dispatch((st, cx) => E.sellItem(st, cx, whoId, sell!.id, sellQty))}>
+            {sellUnit == null ? 'Value unknown' : `Sell for ${fmtGp(Math.round(sellUnit * Math.min(sellQty, sell!.qty) * saleRate(sell!.name) * 100) / 100)}`}
+          </button>
+        </>
+      )}
+      <h3>Split loot</h3>
+      <div className="form-row">
+        <Num label="Coin" value={loot} onChange={(v) => setLoot(Math.max(0, v))} min={0} suffix="GP" width={6} />
+        <Text label="From" value={lootWhat} onChange={setLootWhat} placeholder="e.g. the ogre's hoard" />
+      </div>
+      <div className="btn-row tight">
+        {pcs.map((c) => (
+          <Toggle key={c.id} checked={payees.includes(c.id)} onChange={(v) => setLootIds(v ? [...payees.filter((x) => x !== c.id), c.id] : payees.filter((x) => x !== c.id))} label={c.name} />
+        ))}
+      </div>
+      <button className="small" disabled={!loot || !payees.length} onClick={() => dispatch((st, cx) => E.splitLoot(st, cx, loot, payees, lootWhat))}>
+        Split {fmtGp(loot)} {payees.length} ways
+      </button>
+      <Rule>
+        2024 PHB prices. Selling: equipment in good condition fetches half its price; gems, jewelry, art objects and trade goods keep their full value. Magic items are sold as downtime deals (Downtime tab). Table rules: what each settlement stocks, and a {Math.round(RENOWN_DISCOUNT * 100)}% discount through a faction where you have Renown 3+.
+      </Rule>
     </Card>
   );
 }

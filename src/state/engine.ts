@@ -13,7 +13,10 @@ import { CONTAGIONS, RECUPERATE_DAYS, RECUPERATE_DC, SIGHT_ROT_CURE_HOURS, type 
 import { neglectLimit } from '../rules/bastion';
 import { magicItemCrafting, nonmagicalCrafting, SCROLL_CRAFTING, type Rarity } from '../rules/crafting';
 import { ALL_IS_WELL, BARRACK_ROOM, BASTION_CHARMS, CREATURE_ROOM, EVENT_PREFERENCE, FACILITY_OPTIONS, GARDEN_PRODUCTS, GUILDS, MENAGERIE_CREATURES, MENAGERIE_ROOM, SHIPS, TRAINERS, TREASURE_TABLE, facilityHirelings, stableMarkup, storehouseLimit, storehouseMarkup, type GardenType } from '../rules/bastionOrders';
-import { POISONS, poisonByName, poisonItemName } from '../rules/poisons';
+import { priceOf, saleRate } from '../rules/shop';
+import { activityOf, resolveActivity, type ActivityOpts } from '../rules/downtimeOutcomes';
+import { componentFor, REVIVAL_LIMIT, TARGET_SPELLS, type CostlyComponent } from '../rules/components';
+import { POISONS, poisonByName, poisonItemName, type PoisonInfo } from '../rules/poisons';
 import { POISON_HARVEST_DC, POTION_MISCIBILITY } from '../rules/potions';
 import { AWAY_PROGRESS, BUILD_SPELLS, BUSINESS_DEBT_PENALTY, BUSINESS_MAX_DAYS, CREW_COST_SHARE, MAX_EXTRA_CREWS, buildPace, rollBusiness } from '../rules/business';
 import { HAZARDS, type GiftType, type HazardId } from '../rules/hazards';
@@ -485,8 +488,14 @@ function applyRestFocus(s: State, c: Character): void {
     revealAll(s, it, 'identify');
     log(s, `${c.name} spends the rest focused on the ${it.name} and learns its properties${it.requiresAttunement ? ', including that it needs attunement' : ''}.`, 'good');
   } else if (f.action === 'unattune') {
-    it.attuned = false;
-    status(s, c, 'attunementEnds', `${c.name} ends their attunement to the ${it.name}.`);
+    const cursed = (it.clues ?? []).some((x) => x.kind === 'curse');
+    if (cursed && !c.curseBroken) {
+      log(s, `${c.name} focuses on the ${it.name} all rest but can't let go of it: a curse binds the attunement. Remove Curse (or similar) must be cast first.`, 'warn');
+    } else {
+      it.attuned = false;
+      if (cursed) c.curseBroken = false;
+      status(s, c, 'attunementEnds', `${c.name} ends their attunement to the ${it.name}.`);
+    }
   } else {
     const count = c.items.filter((x) => x.attuned).length;
     if (count >= MAX_ATTUNED) log(s, `${c.name} can't attune to the ${it.name}: already attuned to ${MAX_ATTUNED} items.`, 'warn');
@@ -627,6 +636,7 @@ export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activi
     tickEffects(s, before);
     deliverDispatches(s);
     tickContagions(s);
+    tickPoisons(s, ctx);
     if (s.minutes % 60 === 0) tickHour(s, ctx, activity);
     if (s.minutes >= MIN_PER_DAY) endOfDay(s, ctx);
     if (s.settings.encounters && activity !== 'work' && !opts.exploring) overlandEncounterClock(s, ctx, step, activity);
@@ -767,6 +777,10 @@ function completeLongRest(d: State, ctx: Ctx, watched: Record<string, number>): 
       c.tempHp = 0;
       const regained = armorSpoiled ? Math.max(1, Math.floor(c.level / 4)) : c.hitDiceSpent;
       c.hitDiceSpent = Math.max(0, c.hitDiceSpent - regained);
+    }
+    if (c.revivalPenalty) {
+      c.revivalPenalty -= 1;
+      log(d, c.revivalPenalty ? `${c.name}'s return from death weighs less: −${c.revivalPenalty} to D20 Tests.` : `${c.name} has fully recovered from returning to life.`, 'good');
     }
     cackleSaveAfterRest(d, ctx, c);
     const got = restoreAfterRest(d, ctx, c, 'long');
@@ -1547,7 +1561,28 @@ function progressFinish(s: State, p: Project): void {
   {
     p.done = true;
     log(s, `Downtime project complete: ${p.name}.`, 'good');
-    if (p.kind === 'activity' && p.notes) log(s, `${p.name} is done. Make the check: ${p.notes}. The DM decides the outcome.`);
+    const act = p.kind === 'activity' ? activityOf(p.name) : null;
+    if (act && s.settings.downtimeOutcomes) {
+      if (act === 'Training') {
+        const learn = (p.learn || p.name.split(':')[1] || '').trim();
+        for (const id of p.charIds) {
+          const c = charById(s, id);
+          if (!c || !learn) continue;
+          c.trainedProficiencies = [...new Set([...(c.trainedProficiencies ?? []), learn])];
+          log(s, `${c.name} has learned ${learn} and is now proficient.`, 'good');
+        }
+        if (!learn) log(s, `${p.name} is done. Name the language or tool on the character sheet.`);
+      } else if (act === 'Relaxation') {
+        for (const id of p.charIds) {
+          const c = charById(s, id);
+          if (c) c.recuperatedUntil = absNow(s) + 7 * MIN_PER_DAY;
+        }
+        log(s, `${p.name}: a quiet week. Advantage on saves against lingering diseases and poisons for the next 7 days, and one effect that blocks healing can end.`, 'good');
+      } else {
+        p.awaitingOutcome = true;
+        log(s, `${p.name} is done. Roll its checks on the Downtime tab.`);
+      }
+    } else if (p.kind === 'activity' && p.notes) log(s, `${p.name} is done. Make the check: ${p.notes}. The DM decides the outcome.`);
     deliverProduct(s, p);
     if (p.kind === 'buyMagic' && p.dealGp) payGold(s, p.charIds, p.dealGp, p.name);
     if (p.kind === 'sellMagic' && p.dealGp) receiveGold(s, p.charIds, p.dealGp, p.name);
@@ -1622,6 +1657,294 @@ export const harvestPoison = act((d, ctx, charId: string, bonus: number, creatur
   } else {
     log(d, `${me.name} spends ${mins} min on ${name} but can't extract any poison (${total} vs DC ${POISON_HARVEST_DC}).`, 'warn');
   }
+});
+
+// ---------------------------------------------------------------- downtime activity outcomes
+
+/** Rolls a finished activity's checks (optional Xanathar's rules) and applies the gold, contacts, favors, jail time and complications. */
+export const resolveActivityProject = act((d, ctx, projectId: string, o: ActivityOpts) => {
+  const p = d.projects.find((x) => x.id === projectId);
+  const id = p ? activityOf(p.name) : null;
+  const c = p ? charById(d, p.charIds[0]) : undefined;
+  if (!p || !id || !c) return;
+  const r = resolveActivity(id, o, ctx.rng);
+  p.awaitingOutcome = false;
+  p.outcome = r.text;
+  log(d, `${c.name}'s ${p.name}: ${r.text}.`, r.gp < 0 || r.jailDays ? 'bad' : r.gp > 0 || r.notes.length ? 'good' : 'info');
+  if (r.gp > 0) gainWealth(c, r.gp);
+  if (r.gp < 0) spendWealth(c, -r.gp);
+  if (r.debt) spendWealth(c, r.debt);
+  if (r.notes.length) c.notes = [c.notes, ...r.notes.map((n) => `${n} (${stamp(d)})`)].filter(Boolean).join('\n');
+  if (r.jailDays) d.effects.push({ id: uid(), name: 'In jail', kind: 'other', targetIds: [c.id], casterId: null, concentration: false, shelter: false, startedAt: absNow(d), endsAt: absNow(d) + r.jailDays * MIN_PER_DAY, notes: 'Serving time for a crime.' });
+  if (r.complication) log(d, `Complication: ${r.complication}.`, 'warn');
+});
+
+// ---------------------------------------------------------------- shop and loot
+
+/** Buys equipment at its PHB price (less any discount) and adds it to the buyer's inventory. */
+export const buyItem = act((d, _ctx, charId: string, name: string, qty: number, unitGp: number, discount: number) => {
+  const c = charById(d, charId);
+  if (!c || qty < 1) return;
+  const cost = Math.round(unitGp * qty * (1 - discount) * 100) / 100;
+  if (c.gp < cost) return void log(d, `${c.name} can't afford ${qty} × ${name} (${fmtGp(cost)}; has ${fmtGp(c.gp)}).`, 'warn');
+  spendWealth(c, cost);
+  const same = c.inventory.find((i) => i.name.toLowerCase() === name.toLowerCase() && !i.containerId);
+  if (same) same.qty += qty;
+  else {
+    const est = estimateWeight(name);
+    c.inventory.push({ id: uid(), name, qty, weight: est.weight, source: est.source, valueGp: unitGp, container: detectContainer(name), ammo: isAmmo(name) ? { spent: 0 } : null });
+  }
+  log(d, `${c.name} buys ${qty} × ${name} for ${fmtGp(cost)}${discount ? ` (${Math.round(discount * 100)}% off)` : ''}.`, 'good');
+});
+
+/** Sells from the inventory: half price for equipment, full value for gems, art and trade goods (2024 PHB). */
+export const sellItem = act((d, _ctx, charId: string, itemId: string, qty: number) => {
+  const c = charById(d, charId);
+  const it = c?.inventory.find((i) => i.id === itemId);
+  if (!c || !it) return;
+  const n = Math.max(1, Math.min(it.qty, Math.round(qty)));
+  const unit = it.valueGp ?? priceOf(it.name);
+  if (unit == null) return void log(d, `Nobody will name a price for the ${it.name} until its value is known. Set a value on the item first.`, 'warn');
+  const rate = saleRate(it.name);
+  const gp = Math.round(unit * n * rate * 100) / 100;
+  it.qty -= n;
+  c.inventory = c.inventory.filter((i) => i.qty > 0);
+  gainWealth(c, gp);
+  log(d, `${c.name} sells ${n} × ${it.name} for ${fmtGp(gp)} (${rate === 1 ? 'full value' : 'half price'}).`, 'good');
+});
+
+/** Splits coin among the party evenly; leftover copper goes to the first named. */
+export const splitLoot = act((d, _ctx, gp: number, charIds: string[], what: string) => {
+  const people = charIds.map((id) => charById(d, id)).filter((c): c is Character => !!c);
+  if (!people.length || gp <= 0) return;
+  const cp = Math.round(gp * 100);
+  const each = Math.floor(cp / people.length);
+  const rest = cp - each * people.length;
+  people.forEach((c, i) => gainWealth(c, (each + (i === 0 ? rest : 0)) / 100));
+  log(d, `${what || 'Treasure'} worth ${fmtGp(gp)} is split ${people.length} ways: ${fmtGp(each / 100)} each${rest ? ` (${people[0].name} keeps the odd ${rest} CP)` : ''}.`, 'good');
+});
+
+// ---------------------------------------------------------------- costly components and spell effects
+
+/** Value of matching component items a character carries. */
+export function componentValue(c: Character, comp: CostlyComponent): number {
+  return c.inventory.filter((i) => i.name.toLowerCase().includes(comp.match)).reduce((a, i) => a + (i.valueGp ?? 0) * i.qty, 0);
+}
+
+/** Checks and spends a spell's costly component. Returns false (and logs why) if it's missing. */
+function useComponent(s: State, c: Character, spell: string): boolean {
+  const comp = componentFor(spell);
+  if (!comp || !s.settings.trackComponents) return true;
+  const talisman = c.inventory.find((i) => /^reliquary talisman$/i.test(i.name));
+  if (componentValue(c, comp) < comp.gp) {
+    if (talisman && comp.gp <= 1000) {
+      talisman.name = 'Reliquary talisman (spent)';
+      log(s, `${c.name} uses the Reliquary talisman in place of ${comp.what}. It must go back to the Reliquary to recharge.`, 'good');
+      return true;
+    }
+    log(s, `${c.name} needs ${comp.what} to cast ${spell} and doesn't carry it. Add it to the inventory with its value (e.g. "Diamond (300 GP)").`, 'warn');
+    return false;
+  }
+  if (!comp.consumed) return true;
+  let left = comp.gp;
+  for (const it of c.inventory.filter((i) => i.name.toLowerCase().includes(comp.match)).sort((a, b) => (a.valueGp ?? 0) - (b.valueGp ?? 0))) {
+    while (left > 0 && it.qty > 0) {
+      const v = it.valueGp ?? 0;
+      if (v <= left || it.qty === 1) {
+        left -= v;
+        it.qty -= 1;
+      } else {
+        // Dust and powders: take only what's needed from one piece.
+        it.valueGp = v - left;
+        left = 0;
+      }
+    }
+    if (left <= 0) break;
+  }
+  c.inventory = c.inventory.filter((i) => i.qty > 0);
+  log(s, `${spell} consumes ${comp.what}.`);
+  return true;
+}
+
+/** Applies a spell's lasting effect to a character (restoration, curses, healing, revival). */
+function applySpellTo(s: State, ctx: Ctx, spell: string, targetId: string): void {
+  const t = charById(s, targetId);
+  if (!t) return;
+  const endPoison = () => {
+    t.poisonedUntil = null;
+    t.poisonTimers = [];
+    s.effects = s.effects.filter((e) => !(e.name.startsWith('Poisoned') && e.targetIds.includes(t.id)));
+  };
+  const endSightRot = () => {
+    const x = (t.contagions ?? []).find((k) => k.kind === 'sightRot');
+    if (x) endContagion(s, t, x.id, spell);
+  };
+  switch (spell) {
+    case 'Lesser Restoration': {
+      const poisoned = t.poisonedUntil != null || (t.poisonTimers ?? []).length > 0 || s.effects.some((e) => e.name.startsWith('Poisoned') && e.targetIds.includes(t.id));
+      if (poisoned) {
+        endPoison();
+        return void log(s, `${spell} ends the Poisoned condition on ${t.name}.`, 'good');
+      }
+      if ((t.contagions ?? []).some((k) => k.kind === 'sightRot')) return endSightRot();
+      return void log(s, `${spell} finds nothing to cure on ${t.name}.`);
+    }
+    case 'Greater Restoration': {
+      if (t.exhaustion > 0) {
+        const causes = causesOf(t);
+        causes.pop();
+        t.exhaustionCauses = causes;
+        t.exhaustion = causes.length;
+        return void status(s, t, 'exhaustionEases', `${spell} lifts 1 Exhaustion level from ${t.name}. Now level ${t.exhaustion}.`, 'good');
+      }
+      const curse = s.effects.find((e) => e.kind === 'curse' && e.targetIds.includes(t.id));
+      if (curse) {
+        s.effects = s.effects.filter((e) => e.id !== curse.id);
+        return void log(s, `${spell} ends ${curse.name} on ${t.name}.`, 'good');
+      }
+      return void log(s, `${spell} finds nothing to restore on ${t.name}.`);
+    }
+    case 'Remove Curse': {
+      const curses = s.effects.filter((e) => e.kind === 'curse' && e.targetIds.includes(t.id));
+      s.effects = s.effects.filter((e) => !curses.includes(e));
+      t.curseBroken = true;
+      return void log(s, `${spell}: ${curses.length ? `${curses.map((e) => e.name).join(', ')} end${curses.length > 1 ? '' : 's'}` : 'no curse effects'} on ${t.name}. Attunement to a cursed item can now be ended.`, 'good');
+    }
+    case 'Heal':
+      endPoison();
+      endSightRot();
+      if (t.diedAt == null) Object.assign(s, changeHp(s, ctx, t.id, 70));
+      return void log(s, `${spell} restores up to 70 HP to ${t.name} and ends Blinded, Deafened and Poisoned.`, 'good');
+  }
+  const limit = REVIVAL_LIMIT[spell];
+  if (limit == null) return;
+  const dead = deadFor(s, t);
+  if (dead == null) return void log(s, `${t.name} isn't dead.`, 'warn');
+  if (dead > limit) return void log(s, `${spell} fails: ${t.name} has been dead ${formatDuration(dead)}, longer than ${formatDuration(limit)}.`, 'bad');
+  Object.assign(t, { diedAt: null, reposeMinutes: 0, dying: false, stable: false, deathSuccesses: 0, deathFailures: 0, wakesAt: null });
+  if (t.exhaustion >= 6) {
+    t.exhaustion = 0;
+    t.exhaustionCauses = [];
+  }
+  const full = spell === 'Reincarnate' || spell === 'Resurrection' || spell === 'True Resurrection';
+  t.hp = full ? t.maxHp : 1;
+  if (spell === 'Raise Dead' || spell === 'Resurrection') t.revivalPenalty = 4;
+  status(s, t, 'revived', `${spell} returns ${t.name} to life with ${full ? 'all' : '1'} HP${t.revivalPenalty ? '. −4 to D20 Tests, easing by 1 with each Long Rest' : ''}${spell === 'Reincarnate' ? '. They wake in a new body (roll the species)' : ''}.`, 'good');
+}
+
+/** A spell cast on a target from outside the party (a temple, a hired caster) or by the party. */
+export const spellOnTarget = act((d, ctx, spell: string, targetId: string) => applySpellTo(d, ctx, spell, targetId));
+
+// ---------------------------------------------------------------- poisons
+
+function dealDamage(d: State, ctx: Ctx, charId: string, amount: number): void {
+  if (amount > 0) Object.assign(d, changeHp(d, ctx, charId, -amount));
+}
+
+function poisonEffect(s: State, c: Character, p: PoisonInfo, minutes: number, extra?: string): void {
+  s.effects.push({ id: uid(), name: `Poisoned (${p.name})${extra ? `, ${extra}` : ''}`, kind: 'other', targetIds: [c.id], casterId: null, concentration: false, shelter: false, startedAt: absNow(s), endsAt: absNow(s) + minutes, notes: p.effect });
+}
+
+/** A creature is exposed to a dose of poison: roll its save and apply what happens (2024 DMG). */
+export const exposePoison = act((d, ctx, charId: string, poisonName: string, fromCharId: string | null) => {
+  const p = poisonByName(poisonName);
+  const c0 = charById(d, charId);
+  if (!p || !c0 || !alive(c0)) return;
+  if (fromCharId) {
+    const holder = charById(d, fromCharId);
+    const dose = holder?.inventory.find((i) => poisonByName(i.name)?.name === p.name && i.qty > 0);
+    if (!holder || !dose) return void log(d, `No dose of ${p.name} to use.`, 'warn');
+    dose.qty -= 1;
+    holder.inventory = holder.inventory.filter((i) => i.qty > 0);
+  }
+  if (p.dc == null) return void log(d, `${p.name}: ${p.effect}`, 'info');
+  if (p.name === 'Midnight Tears') {
+    c0.poisonTimers = [...(c0.poisonTimers ?? []), { id: uid(), name: p.name, nextAt: (d.dayIndex + 1) * MIN_PER_DAY, successes: 0 }];
+    return void log(d, `${c0.name} has ingested Midnight Tears. Nothing happens until midnight, unless something ends the Poisoned condition first. The player doesn't know.`, 'warn');
+  }
+  const r = rollSave(c0, p.dc, 'normal', ctx.rng);
+  const total = Number(/= (-?\d+)\./.exec(r.detail)?.[1] ?? 0);
+  log(d, `${c0.name} is exposed to ${p.name} (${p.type}): DC ${p.dc} Con save. ${r.detail}${r.passed ? 'Success.' : 'Failure.'}`, r.passed ? 'good' : 'bad');
+  const dmg = p.damage ? (rollExpr(p.damage, ctx.rng) ?? 0) : 0;
+  if (p.name === 'Burnt Othur Fumes') {
+    if (r.passed) return;
+    let total2 = dmg;
+    let ok = 0;
+    let rounds = 0;
+    const c = charById(d, charId)!;
+    while (ok < 3 && rounds < 20) {
+      rounds += 1;
+      const again = rollSave(c, p.dc, 'normal', ctx.rng);
+      if (again.passed) ok += 1;
+      else total2 += die(6, ctx.rng);
+    }
+    log(d, `The fumes linger for ${rounds} rounds until ${c.name} makes three saves.`, 'warn');
+    return dealDamage(d, ctx, charId, total2);
+  }
+  if (p.name === 'Carrion Crawler Mucus') {
+    if (r.passed) return;
+    let rounds = 1;
+    const c = charById(d, charId)!;
+    while (rounds < 10 && !rollSave(c, p.dc, 'normal', ctx.rng).passed) rounds += 1;
+    poisonEffect(d, c, p, rounds >= 10 ? 1 : Math.max(1, Math.ceil(rounds / 10)), 'Paralyzed');
+    return void log(d, `${c.name} is Poisoned and Paralyzed for ${rounds >= 10 ? 'the full minute' : `${rounds} round(s)`}.`, 'bad');
+  }
+  if (p.damage) dealDamage(d, ctx, charId, r.passed ? (p.halfOnSave ? Math.floor(dmg / 2) : 0) : dmg);
+  const c = charById(d, charId)!;
+  if (r.passed) return;
+  if (p.name === 'Pale Tincture') {
+    c.poisonTimers = [...(c.poisonTimers ?? []), { id: uid(), name: p.name, nextAt: absNow(d) + MIN_PER_DAY, successes: 0 }];
+    poisonEffect(d, c, p, 8 * MIN_PER_DAY);
+    return;
+  }
+  const minutes = p.poisonedHoursDice ? (rollExpr(p.poisonedHoursDice, ctx.rng) ?? 4) * 60 : (p.poisonedMinutes ?? 0);
+  if (!minutes) return;
+  const extra = p.alsoCondition && (!p.extraOnFailBy5 || total <= p.dc - 5) ? p.alsoCondition : undefined;
+  poisonEffect(d, c, p, minutes, extra);
+  log(d, `${c.name} is Poisoned${extra ? ` and ${extra}` : ''} for ${formatDuration(minutes)}.`, 'bad');
+});
+
+/** Midnight Tears and Pale Tincture keep acting on their own schedule. */
+function tickPoisons(s: State, ctx: Ctx): void {
+  const now = absNow(s);
+  for (const c of s.characters) {
+    for (const t of [...(c.poisonTimers ?? [])]) {
+      if (now < t.nextAt || !alive(c)) continue;
+      const p = poisonByName(t.name)!;
+      const r = rollSave(c, p.dc!, 'normal', ctx.rng);
+      if (t.name === 'Midnight Tears') {
+        c.poisonTimers = c.poisonTimers!.filter((x) => x.id !== t.id);
+        const dmg = rollExpr('9d6', ctx.rng) ?? 31;
+        log(s, `Midnight strikes, and the Midnight Tears in ${c.name} take hold: DC 17 Con save. ${r.detail}${r.passed ? 'Half damage.' : 'Failure.'}`, 'bad');
+        Object.assign(s, changeHp(s, ctx, c.id, -(r.passed ? Math.floor(dmg / 2) : dmg)));
+        continue;
+      }
+      // Pale Tincture: a save every 24 hours; seven successes end it.
+      t.nextAt = now + MIN_PER_DAY;
+      if (r.passed) t.successes += 1;
+      log(s, `${c.name} fights the Pale Tincture: DC 16 Con save. ${r.detail}${r.passed ? `Success (${t.successes}/7).` : 'Failure: 1d6 Poison damage that can’t be healed while Poisoned.'}`, r.passed ? 'good' : 'bad');
+      if (!r.passed) Object.assign(s, changeHp(s, ctx, c.id, -die(6, ctx.rng)));
+      const me = charById(s, c.id)!;
+      if (t.successes >= 7) {
+        me.poisonTimers = (me.poisonTimers ?? []).filter((x) => x.id !== t.id);
+        s.effects = s.effects.filter((e) => !(e.name.startsWith('Poisoned (Pale Tincture)') && e.targetIds.includes(c.id)));
+        log(s, `${c.name} is free of the Pale Tincture.`, 'good');
+      } else {
+        const eff = s.effects.find((e) => e.name.startsWith('Poisoned (Pale Tincture)') && e.targetIds.includes(c.id));
+        if (eff) eff.endsAt = now + 8 * MIN_PER_DAY;
+      }
+    }
+  }
+}
+
+/** Anything that ends the Poisoned condition (Lesser Restoration, Antitoxin taken in advance aside) ends these too. */
+export const curePoison = act((d, _ctx, charId: string) => {
+  const c = charById(d, charId);
+  if (!c) return;
+  c.poisonTimers = [];
+  c.poisonedUntil = null;
+  d.effects = d.effects.filter((e) => !(e.name.startsWith('Poisoned') && e.targetIds.includes(c.id)));
+  log(d, `${c.name} is no longer Poisoned; any lingering poison is neutralized.`, 'good');
 });
 
 // ---------------------------------------------------------------- contagions
@@ -3374,10 +3697,11 @@ export function canCastAsRitual(c: Character, sp: CharacterSpell): { ok: boolean
 }
 
 /** Casts a known spell: as a ritual (+10 minutes, no slot) or normally (uses a tracked slot of its level or higher). */
-export const castSpell = act((d, ctx, charId: string, spellName: string, mode: 'ritual' | 'slot') => {
+export const castSpell = act((d, ctx, charId: string, spellName: string, mode: 'ritual' | 'slot', targetId: string | null = null) => {
   const c = charById(d, charId);
   const own = c?.spells.find((x) => x.name === spellName);
   if (!c || !own || !alive(c)) return;
+  if (!useComponent(d, c, own.name)) return;
   const sp = { ...own, ...spellInfo(own, d.spellLibrary) } as CharacterSpell;
   const base = sp.castMinutes ?? 0;
   if (mode === 'ritual') {
@@ -3409,6 +3733,7 @@ export const castSpell = act((d, ctx, charId: string, spellName: string, mode: '
   if (minutes > 0) advanceMut(d, ctx, minutes, 'camp');
   const timeTxt = mode === 'ritual' ? `as a ritual (${sp.castTime ?? 'its casting time'} + 10 minutes = ${formatDuration(Math.max(1, Math.round(minutes)))}, no spell slot)` : `(${sp.castTime ?? 'its casting time'}${sp.level > 0 ? ', using a spell slot' : ''})`;
   log(d, `${c.name} casts ${sp.name} ${timeTxt}.`, 'good');
+  if (targetId && TARGET_SPELLS[sp.name]) applySpellTo(d, ctx, sp.name, targetId);
   if (sp.durationMinutes || sp.permanent) {
     const preset = { name: sp.name, kind: 'spell' as const, minutes: sp.permanent ? null : sp.durationMinutes ?? null, concentration: !!sp.concentration, shelter: /tiny hut|rope trick|magnificent mansion/i.test(sp.name) };
     if (preset.concentration) {
@@ -3933,8 +4258,9 @@ export const grantGift = act((d, _ctx, charId: string, type: GiftType, name: str
 export function encounterPool(s: State): EncounterCreature[] {
   const byName = new Map<string, EncounterCreature>();
   if (s.settings.srdEncounters) for (const c of SRD_POOL) byName.set(c.name.toLowerCase(), c);
+  const off = new Set(s.encounterSourcesOff);
   for (const c of s.bestiary) {
-    if (!c.cr || !c.env?.length) continue;
+    if (!c.cr || !c.env?.length || off.has(c.source ?? '?')) continue;
     byName.set(c.name.toLowerCase(), { name: c.name, cr: c.cr, size: c.size, type: c.type.toLowerCase(), align: c.align ?? 'N', env: c.env, source: c.source, flags: c.flags });
   }
   const out = new Set(s.encounterExclude.map((n) => n.toLowerCase()));

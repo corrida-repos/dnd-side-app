@@ -2,7 +2,8 @@ import { useRef, useState } from 'react';
 import { useGame, edit, getState, importState, resetState } from '../state/store';
 import { CALENDARS, dateFromIndex, indexFromDate, formatClock } from '../rules/calendar';
 import { parse5eToolsSpells } from '../rules/spells';
-import { parse5eToolsBestiary } from '../rules/hunting';
+import { countReprinted, parse5eToolsBestiary, type Creature } from '../rules/hunting';
+import { RECOMMENDED_BESTIARIES } from '../rules/encounters';
 import { parse5eToolsItems, parse5eToolsRecipes, parse5eToolsRewards, parse5eToolsSpellClasses } from '../rules/hazards';
 import { Card, Num, Select, Toggle, Rule } from './common';
 import { log } from '../state/engine';
@@ -83,6 +84,8 @@ function RulesCard() {
           If the temperature drops to this point during a Long Rest, anyone sleeping in the open without a Bedroll, Blanket, cold weather gear, a lit campfire (when that rule is on) or a building or cave makes a DC 10 Con save when they
           wake, or gains 1 Exhaustion level. At 0 °F or below, the normal hourly extreme cold saves apply instead.
         </Rule>
+        <Toggle checked={s.settings.trackComponents} onChange={(v) => set('trackComponents', v)} label="Costly spell components must be carried and are used up (2024 PHB)" />
+        <Toggle checked={s.settings.downtimeOutcomes} onChange={(v) => set('downtimeOutcomes', v)} label="Downtime activities roll their outcomes (optional Xanathar's rules)" />
         <Toggle checked={s.settings.runningBusiness} onChange={(v) => set('runningBusiness', v)} label="Running a business as a downtime activity (optional 2014 DMG rule)" />
         <Toggle checked={s.settings.sleepDeprivation} onChange={(v) => set('sleepDeprivation', v)} label="Staying awake too long causes Exhaustion (optional Xanathar's rule)" />
         <Rule>
@@ -198,52 +201,82 @@ function BestiaryCard() {
   const s = useGame();
   const [msg, setMsg] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
-  const load = (raw: string) => {
-    try {
-      const found = parse5eToolsBestiary(JSON.parse(raw));
-      if (!found.length) {
-        setMsg('No creatures found. Expected 5etools format: { "monster": [ { "name", "size", "type", "source" } ] }.');
-        return;
+  const load = (files: { name: string; raw: string }[]) => {
+    const found: Creature[] = [];
+    const notes: string[] = [];
+    for (const f of files) {
+      try {
+        const json = JSON.parse(f.raw);
+        const got = parse5eToolsBestiary(json);
+        const reprinted = countReprinted(json);
+        found.push(...got);
+        const forTables = got.filter((x) => x.cr && x.env?.length && !x.flags?.includes('N')).length;
+        notes.push(`${f.name}: ${got.length} creatures, ${forTables} usable in encounter tables${reprinted ? `, ${reprinted} skipped as reprinted in a newer book` : ''}${forTables === 0 && got.length ? ' (no environment tags: adventure books usually have none)' : ''}`);
+      } catch (e) {
+        notes.push(`${f.name}: couldn't read it (${(e as Error).message})`);
       }
+    }
+    if (found.length) {
       edit((d) => {
         const keyOf = (x: { name: string; source?: string }) => `${x.name}|${x.source ?? ''}`.toLowerCase();
         // Re-importing refreshes entries saved before Challenge Ratings and environments were kept.
         const fresh = new Map(found.map((x) => [keyOf(x), x]));
         const have = new Set(d.bestiary.map(keyOf));
-        const added = found.filter((x) => !have.has(keyOf(x)));
+        const added = [...fresh.values()].filter((x) => !have.has(keyOf(x)));
         d.bestiary = [...d.bestiary.map((x) => fresh.get(keyOf(x)) ?? x), ...added].sort((a, b) => a.name.localeCompare(b.name));
-        const forTables = found.filter((x) => x.cr && x.env?.length).length;
-        log(d, `Imported ${added.length} new creatures into the bestiary for hunting${forTables ? `; ${forTables} have a Challenge Rating and environment for the random encounter tables` : ''}.`);
+        log(d, `Imported ${added.length} new creatures into the bestiary from ${files.length} file${files.length === 1 ? '' : 's'}.`);
       });
-      setMsg(`Read ${found.length} creatures.`);
-    } catch (e) {
-      setMsg(`Couldn't read that JSON: ${(e as Error).message}`);
     }
+    setMsg(notes.length ? notes.join(' · ') : 'No creatures found. Expected 5etools format: { "monster": [ { "name", "size", "type", "source" } ] }.');
   };
+  const sources = [...new Set(s.bestiary.map((c) => c.source ?? '?'))].sort();
   return (
     <Card title={`Bestiary for hunting and encounters (${s.bestiary.length})`}>
       <Rule>
-        Load a 5etools bestiary file you have access to (for example <code>bestiary-xmm.json</code>) to hunt any creature from it on the Camp tab and add it to the random encounter tables on the Encounters tab. Only the name, size, creature type, source, Challenge Rating, environments and alignment are kept.
+        Load 5etools bestiary files you have access to (several at once is fine) to hunt any creature from them on the Camp tab and add them to the random encounter tables on the Encounters tab. Only the name, size, creature
+        type, source, Challenge Rating, environments, alignment and a few flags (legendary, named, swims, flies) are kept. Entries replaced by a newer printing, and named individuals, stay out of the encounter tables.
       </Rule>
+      <BookAdvice />
       <input
         ref={fileRef}
         type="file"
+        multiple
         accept=".json,application/json"
         onChange={async (e) => {
-          const f = e.target.files?.[0];
-          if (f) load(await f.text());
+          const list = [...(e.target.files ?? [])];
+          if (list.length) load(await Promise.all(list.map(async (f) => ({ name: f.name, raw: await f.text() }))));
           if (fileRef.current) fileRef.current.value = '';
         }}
       />
       {s.bestiary.length > 0 && (
-        <div className="btn-row">
-          <button className="ghost bad" onClick={() => confirm('Empty the bestiary?') && edit((d) => void (d.bestiary = []))}>
-            Empty bestiary
-          </button>
-        </div>
+        <>
+          <p className="small muted">Loaded from: {sources.join(', ')}.</p>
+          <div className="btn-row">
+            <button className="ghost bad" onClick={() => confirm('Empty the bestiary?') && edit((d) => void (d.bestiary = []))}>
+              Empty bestiary
+            </button>
+          </div>
+        </>
       )}
       {msg && <p className="small">{msg}</p>}
     </Card>
+  );
+}
+
+/** Which 5etools bestiary files are worth loading for random encounters. */
+export function BookAdvice() {
+  return (
+    <details className="small">
+      <summary>Which bestiary files help the encounter tables?</summary>
+      <ul className="plain">
+        {RECOMMENDED_BESTIARIES.map((b) => (
+          <li key={b.file}>
+            <strong>{b.kind === 'core' ? '★ ' : b.kind === 'skip' ? '✕ ' : '◇ '}</strong>
+            <code>{b.file}</code> {b.name}: {b.why}
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
 
