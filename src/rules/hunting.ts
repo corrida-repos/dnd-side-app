@@ -12,6 +12,8 @@ export interface Creature {
   env?: string[];
   /** E evil, G good, N neutral, U unaligned: sets a starting attitude. */
   align?: 'E' | 'G' | 'N' | 'U';
+  /** L legendary, s swims, f flies. */
+  flags?: string;
 }
 
 /** Built-in game animals, so hunting works without importing anything. */
@@ -87,7 +89,9 @@ export function parse5eToolsBestiary(json: unknown): Creature[] {
     const env = Array.isArray(r.environment) ? r.environment.filter((e): e is string => typeof e === 'string') : undefined;
     const al = Array.isArray(r.alignment) ? r.alignment.filter((a): a is string => typeof a === 'string') : [];
     const align = al.includes('E') ? 'E' : al.includes('G') ? 'G' : al.includes('U') ? 'U' : al.length ? 'N' : undefined;
-    out.push({ name: r.name, size, type: type.toLowerCase(), source, ...(cr ? { cr } : {}), ...(env?.length ? { env } : {}), ...(align ? { align } : {}) });
+    const speed = r.speed && typeof r.speed === 'object' ? (r.speed as Record<string, unknown>) : {};
+    const flags = `${r.legendary ? 'L' : ''}${speed.swim ? 's' : ''}${speed.fly ? 'f' : ''}`;
+    out.push({ name: r.name, size, type: type.toLowerCase(), source, ...(cr ? { cr } : {}), ...(env?.length ? { env } : {}), ...(align ? { align } : {}), ...(flags ? { flags } : {}) });
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
