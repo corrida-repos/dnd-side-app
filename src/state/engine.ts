@@ -13,6 +13,7 @@ import { FEED_LB_PER_DAY, MOUNT_CAPACITY, carryingCapacity, COINS_PER_LB, estima
 import { BUTCHER_DC, BUTCHER_MINUTES, isEdible, MEAT_LB, STRANGE_TYPES, yieldsHide, type Creature } from '../rules/hunting';
 import { addCoins, COIN_GP, coinCount, coinsFor, emptyPurse, exchange, fmtPurse, purseValue, spend, type Denom, type Purse } from '../rules/coins';
 import { detectContainer } from '../rules/containers';
+import type { DdbImport } from '../rules/ddb';
 import { FEED_GP_PER_DAY, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset } from '../rules/money';
 import { STABLE_WAKE_DIE, STABILIZE_DC } from '../rules/upkeep';
 import { RITUAL_EXTRA_MINUTES as RITUAL_TAG_MINUTES, spellInfo } from '../rules/rituals';
@@ -2353,7 +2354,6 @@ export function containerLoad(items: InventoryItem[], containerId: string): numb
 
 export const holderValue = (items: InventoryItem[], purse: Purse): number => Math.round((purseValue(purse) + items.reduce((a, i) => a + (i.valueGp ?? 0) * i.qty, 0)) * 100) / 100;
 
-void fmtPurse;
 
 // ---------------------------------------------------------------- ammunition and crafted goods
 
@@ -2406,3 +2406,87 @@ function deliverProduct(s: State, p: Project): void {
   }
   log(s, `${c.name} now has ${qty > 1 ? `${qty} × ` : ''}${name}${magic ? ' (with their magic items)' : ' (in their inventory)'}.`, 'good');
 }
+
+// ---------------------------------------------------------------- D&D Beyond import
+
+export interface DdbParts {
+  stats: boolean;
+  inventory: boolean;
+  spells: boolean;
+  resources: boolean;
+  conditions: boolean;
+}
+
+/** Imports or re-syncs a character from D&D Beyond, keeping everything the tracker owns (food, water, knowledge, history). */
+export const importDdb = act((d, _ctx, imp: DdbImport, parts: DdbParts) => {
+  let c = d.characters.find((x) => x.ddbId === imp.ddbId && imp.ddbId) ?? d.characters.find((x) => x.name.toLowerCase() === imp.name.toLowerCase() && x.kind !== 'mount');
+  const isNew = !c;
+  if (!c) {
+    c = newCharacter({ name: imp.name, className: imp.className, level: imp.level, tasks: [] });
+    d.characters.push(c);
+  }
+  c.ddbId = imp.ddbId || undefined;
+  c.ddbSyncedAt = stamp(d);
+  c.name = imp.name;
+  if (parts.stats) {
+    Object.assign(c, {
+      className: imp.className,
+      level: imp.level,
+      size: imp.size,
+      strScore: imp.strScore,
+      conScore: imp.conScore,
+      conSave: imp.conSave,
+      wisMod: imp.wisMod,
+      survival: imp.survival,
+      passivePerception: imp.passivePerception,
+      darkvision: imp.darkvision,
+      coldResist: imp.coldResist,
+      fireResist: imp.fireResist,
+      maxHp: imp.maxHp,
+      hp: imp.hp,
+      tempHp: imp.tempHp,
+      hitDie: imp.hitDie,
+      hitDiceSpent: imp.hitDiceSpent,
+    });
+  }
+  if (parts.inventory) {
+    // Replace what came from D&D Beyond last time; keep anything added by hand in the tracker.
+    const keepSpent = new Map(c.inventory.filter((i) => i.ammo).map((i) => [i.id, i.ammo!.spent]));
+    c.inventory = [...c.inventory.filter((i) => !i.id.startsWith('ddb-')), ...imp.inventory.map((i) => (i.ammo ? { ...i, ammo: { spent: keepSpent.get(i.id) ?? 0 } } : i))];
+    c.purse = imp.purse;
+    c.gp = purseValue(imp.purse);
+    for (const m of imp.items) {
+      const old = c.items.find((x) => x.id === m.id || (x.name.toLowerCase() === m.name.toLowerCase() && !x.id.startsWith('ddbm-')));
+      if (old) Object.assign(old, { ...m, id: old.id, clues: old.clues, findings: old.findings, partyName: old.partyName, identified: old.identified || m.identified });
+      else c.items.push(m);
+    }
+  }
+  if (parts.spells) {
+    const known = new Map(c.spells.map((sp) => [sp.name.toLowerCase(), sp]));
+    c.spells = imp.spells.map((sp) => ({ ...known.get(sp.name.toLowerCase()), ...sp }));
+  }
+  if (parts.resources) {
+    c.resources = [...c.resources.filter((r) => !r.id.startsWith('ddb-')), ...imp.resources];
+  }
+  if (parts.conditions) {
+    if (imp.exhaustion !== c.exhaustion) {
+      c.exhaustion = imp.exhaustion;
+      c.exhaustionCauses = causesOf(c);
+    }
+    if (c.hp === 0 && imp.deathSaves.stable) Object.assign(c, { dying: false, stable: true });
+    else if (c.hp === 0) Object.assign(c, { dying: true, deathSuccesses: imp.deathSaves.successes, deathFailures: imp.deathSaves.failures });
+  }
+  if (isNew && isCaster(c.className)) c.tasks = [{ id: uid(), label: 'Prepare spells', done: false, daily: true }, ...c.tasks];
+  log(
+    d,
+    `${isNew ? 'Imported' : 'Synced'} ${c.name} from D&D Beyond: ${[
+      parts.stats && `${imp.className} ${imp.level}, ${imp.hp}/${imp.maxHp} HP`,
+      parts.inventory && `${imp.inventory.length} inventory lines, ${imp.items.length} magic items, ${fmtPurse(imp.purse)}`,
+      parts.spells && `${imp.spells.length} spells`,
+      parts.resources && `${imp.resources.length} limited uses and slots`,
+    ]
+      .filter(Boolean)
+      .join('; ')}.${imp.warnings.length ? ` Note: ${imp.warnings.join(' ')}` : ''}`,
+    'good',
+  );
+});

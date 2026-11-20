@@ -231,6 +231,10 @@ export interface Character {
   /** Fixed carrying capacity (mounts); null means Strength × size. */
   carryCapacity: number | null;
   resources: Resource[];
+  /** D&D Beyond character id, when imported, so a later import updates this character. */
+  ddbId?: number;
+  /** When it was last synced from D&D Beyond. */
+  ddbSyncedAt?: string;
   /** Personal renown, fear and stress trackers. */
   renown: number;
   fear: number;

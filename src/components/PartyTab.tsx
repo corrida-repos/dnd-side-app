@@ -5,6 +5,7 @@ import { CLASSES, isCaster } from '../rules/spells';
 import { SIZES, exhaustionSummary, foodNeedLb, WATER_GAL_PER_DAY, proficiencyBonus, ARMOR_TIMES, ARMOR_LABEL, causesOf, EXHAUSTION_CAUSE_LABEL } from '../rules/survival';
 import { Card, Num, Select, Text, Toggle, Rule } from './common';
 import { Debuffs } from './Debuffs';
+import { DdbImportCard } from './DdbImport';
 import { senseText } from './senseView';
 import type { ArmorKind, Character, ClassName, ExhaustionCause, Resist, Size } from '../state/types';
 import * as E2 from '../state/engine';
@@ -27,6 +28,7 @@ export function PartyTab() {
         <span className="muted small">Enter save bonuses as they appear on the sheet. The tracker takes off Exhaustion penalties for you.</span>
       </div>
       <div className="grid">
+        <DdbImportCard />
         {s.characters.map((c) => (
           <CharacterCard key={c.id} c={c} />
         ))}
