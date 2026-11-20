@@ -30,6 +30,10 @@ Every push to `main` runs the tests, builds the app and publishes it to GitHub P
 
 The app ships with **no** spell text. In **Settings → Spell library**, load a spell JSON file in 5etools format that you have access to (for example `spells-xphb.json`). Only the name, level, school, source and ritual/concentration flags are kept, and you can then search the list on the Morning tab. You can also add spells by hand.
 
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for everything time-based in the rules and what is tracked so far.
+
 ## Development
 
 ```bash
