@@ -67,7 +67,7 @@ function DateCard() {
 
 function RulesCard() {
   const s = useGame();
-  const set = (k: Exclude<keyof typeof s.settings, 'rawFoodDC' | 'coldNightF' | 'fireColdLimitF' | 'encounterOn' | 'exploreEncounterOn' | 'moonOffset' | 'stressPerLongRest' | 'fearPerLongRest' | 'lifestylePeriod' | 'moneychangerFee' | 'encounterBooks'>, v: boolean) => edit((d) => void (d.settings[k] = v));
+  const set = (k: Exclude<keyof typeof s.settings, 'rawFoodDC' | 'coldNightF' | 'fireColdLimitF' | 'encounterOn' | 'exploreEncounterOn' | 'moonOffset' | 'stressPerLongRest' | 'fearPerLongRest' | 'lifestylePeriod' | 'moneychangerFee' | 'encounterBooks' | 'facilityBooks'>, v: boolean) => edit((d) => void (d.settings[k] = v));
   return (
     <Card title="Rules options">
       <div className="stack tight">
@@ -101,6 +101,8 @@ function RulesCard() {
         <Toggle checked={s.settings.trackComponents} onChange={(v) => set('trackComponents', v)} label="Costly spell components must be carried and are used up (2024 PHB)" />
         <Toggle checked={s.settings.downtimeOutcomes} onChange={(v) => set('downtimeOutcomes', v)} label="Downtime activities roll their outcomes (optional Xanathar's rules)" />
         <Toggle checked={s.settings.lifestyleRisks} onChange={(v) => set('lifestyleRisks', v)} label="Lifestyle risks in town: theft, disease and attention once a week (table rule)" />
+        <Toggle checked={(s.settings.facilityBooks ?? []).includes('FRHoF')} onChange={(v) => edit((d) => void (d.settings.facilityBooks = [...(d.settings.facilityBooks ?? []).filter((x) => x !== 'FRHoF'), ...(v ? (['FRHoF'] as const) : [])]))} label="Bastion facilities from Forgotten Realms: Heroes of Faerûn" />
+        <Toggle checked={(s.settings.facilityBooks ?? []).includes('EFA')} onChange={(v) => edit((d) => void (d.settings.facilityBooks = [...(d.settings.facilityBooks ?? []).filter((x) => x !== 'EFA'), ...(v ? (['EFA'] as const) : [])]))} label="Bastion facilities from Eberron: Forge of the Artificer" />
         <Toggle checked={s.settings.runningBusiness} onChange={(v) => set('runningBusiness', v)} label="Running a business as a downtime activity (optional 2014 DMG rule)" />
         <Toggle checked={s.settings.sleepDeprivation} onChange={(v) => set('sleepDeprivation', v)} label="Staying awake too long causes Exhaustion (optional Xanathar's rule)" />
         <Rule>

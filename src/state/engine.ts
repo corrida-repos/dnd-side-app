@@ -12,7 +12,7 @@ import { COMMS, commCost, commDelay, type CommMethod } from '../rules/comms';
 import { CONTAGIONS, RECUPERATE_DAYS, RECUPERATE_DC, SIGHT_ROT_CURE_HOURS, type ContagionKind } from '../rules/contagion';
 import { neglectLimit } from '../rules/bastion';
 import { magicItemCrafting, nonmagicalCrafting, SCROLL_CRAFTING, type Rarity } from '../rules/crafting';
-import { ALL_IS_WELL, BARRACK_ROOM, BASTION_CHARMS, CREATURE_ROOM, EVENT_PREFERENCE, FACILITY_OPTIONS, GARDEN_PRODUCTS, GUILDS, MENAGERIE_CREATURES, MENAGERIE_ROOM, SHIPS, TRAINERS, TREASURE_TABLE, facilityHirelings, stableMarkup, storehouseLimit, storehouseMarkup, type GardenType } from '../rules/bastionOrders';
+import { ALL_IS_WELL, BARRACK_ROOM, BASTION_CHARMS, CONSTRUCTS, CREATURE_ROOM, GROVE_ROOM, GROVE_UNITS, MUSEUM_ORIGINS, NECROPOLIS_ROOM, EVENT_PREFERENCE, FACILITY_OPTIONS, GARDEN_PRODUCTS, GUILDS, MENAGERIE_CREATURES, MENAGERIE_ROOM, SHIPS, TRAINERS, TREASURE_TABLE, facilityHirelings, stableMarkup, storehouseLimit, storehouseMarkup, type GardenType } from '../rules/bastionOrders';
 import { priceOf, saleRate } from '../rules/shop';
 import { groundDifficulty, meltInches, mudAfter, snowfallInches } from '../rules/ground';
 import { activityOf, resolveActivity, type ActivityOpts } from '../rules/downtimeOutcomes';
@@ -1030,7 +1030,7 @@ export function currentNavigationDC(s: State) {
 function navigate(s: State, ctx: Ctx, nav: Character, pace: Pace): boolean | null {
   const { dc, reasons } = currentNavigationDC(s);
   if (dc == null) return null;
-  const mode = combineModes(pace === 'slow' ? 'advantage' : 'normal', pace === 'fast' ? 'disadvantage' : 'normal');
+  const mode = combineModes(combineModes(pace === 'slow' ? 'advantage' : 'normal', pace === 'fast' ? 'disadvantage' : 'normal'), s.travel.reconAdvantage ? 'advantage' : 'normal');
   const r = d20(mode, ctx.rng);
   const mod = nav.survival - 2 * nav.exhaustion;
   const ok = r.value + mod >= dc;
@@ -1050,7 +1050,7 @@ function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
     o = { ...o, difficult: true };
   }
   const slow = slowTravelers(d);
-  const allowed = slow.length ? 'slow' : o.flying ? o.pace : clampPace(o.pace, d.place.terrain, d.place.goodRoad);
+  const allowed = slow.length ? 'slow' : o.flying ? o.pace : clampPace(o.pace, d.place.terrain, d.place.goodRoad || !!d.travel.paceBoost);
   if (slow.length && o.pace !== 'slow') {
     log(d, `${slow.join(', ')} ${slow.length > 1 ? 'are' : 'is'} down to half Speed or less (load or Exhaustion), so the party must travel at a Slow pace.`, 'warn');
     o = { ...o, pace: 'slow' };
@@ -1159,7 +1159,7 @@ export const runStage = act((d, ctx, stageId: string, o: Omit<TravelOpts, 'hours
   for (let day = 0; day < 60 && stage()!.milesDone < stage()!.miles; day++) {
     const st = stage()!;
     const vessel = o.vesselId ? d.stashes.find((x) => x.id === o.vesselId && x.speedMph) : undefined;
-    const pace = clampPace(o.pace, st.terrain, st.goodRoad);
+    const pace = clampPace(o.pace, st.terrain, st.goodRoad || !!d.travel.paceBoost);
     const pending = (st.obstacles ?? []).filter((x) => !x.resolved);
     if (pending.length && day === 0) log(d, `This stage has ${pending.length} unresolved obstacle(s): ${pending.map((x) => x.name).join(', ')}. Resolve them on the Journey card.`, 'warn');
     const mph = vessel ? Math.max(0.1, vesselSpeed(d, vessel, o).mph) : PACES[pace].mph * (st.difficult || groundDifficulty(d.place.ground, st.goodRoad) ? 0.5 : 1);
@@ -1177,6 +1177,10 @@ export const runStage = act((d, ctx, stageId: string, o: Omit<TravelOpts, 'hours
   if (done.milesDone >= done.miles) {
     done.done = true;
     log(d, `Stage complete: ${done.name}.`, 'good');
+    if (d.travel.reconAdvantage && d.journey.every((x) => x.done)) {
+      d.travel.reconAdvantage = false;
+      log(d, 'The journey is over; the Zhentarim reconnaissance no longer helps.');
+    }
   }
 });
 
@@ -1185,7 +1189,7 @@ export const runStage = act((d, ctx, stageId: string, o: Omit<TravelOpts, 'hours
 function doForage(s: State, ctx: Ctx, c: Character, pace: Pace | null, days = 1): void {
   if (!alive(c)) return;
   const dc = TERRAIN[s.place.terrain].forageDC;
-  const mode = combineModes(pace === 'slow' ? 'advantage' : 'normal', pace === 'fast' ? 'disadvantage' : 'normal');
+  const mode = combineModes(combineModes(pace === 'slow' ? 'advantage' : 'normal', pace === 'fast' ? 'disadvantage' : 'normal'), s.travel.reconAdvantage ? 'advantage' : 'normal');
   const r = d20(mode, ctx.rng);
   const total = r.value + c.survival - 2 * c.exhaustion;
   if (total >= dc) {
@@ -2733,7 +2737,7 @@ function stashAdd(s: State, b: Bastion, name: string, qty: number, valueGp?: num
 }
 
 export function bastionDefenders(b: Bastion): number {
-  return (b.defenders ?? 0) + (b.menagerie ?? []).filter((m) => m.defends).length + (b.guests ?? []).filter((g) => g.kind === 'mercenary').length;
+  return (b.defenders ?? 0) + (b.undead ?? 0) + (b.menagerie ?? []).filter((m) => m.defends).length + (b.guests ?? []).filter((g) => g.kind === 'mercenary').length;
 }
 
 export function barrackRoom(b: Bastion): number {
@@ -2746,6 +2750,12 @@ function loseDefenders(s: State, b: Bastion, n: number, why: string): number {
   const fromBarrack = Math.min(left, b.defenders ?? 0);
   b.defenders = (b.defenders ?? 0) - fromBarrack;
   left -= fromBarrack;
+  const fromUndead = Math.min(left, b.undead ?? 0);
+  if (fromUndead) {
+    b.undead = (b.undead ?? 0) - fromUndead;
+    b.undeadReturning = [...(b.undeadReturning ?? []), ...Array.from({ length: fromUndead }, () => s.dayIndex + 14)];
+    left -= fromUndead;
+  }
   while (left > 0 && (b.guests ?? []).some((g) => g.kind === 'mercenary')) {
     const i = b.guests!.findIndex((g) => g.kind === 'mercenary');
     b.guests!.splice(i, 1);
@@ -2792,7 +2802,8 @@ function startWork(s: State, ctx: Ctx, b: Bastion, f: Facility): FacilityWork | 
     case 'Arcane Study/magic':
     case 'Sacristy/relic':
     case 'Smithy/magic':
-    case 'Workshop/magic': {
+    case 'Workshop/magic':
+    case "Artificer's Forge/magic": {
       const { rarity, consumable } = rarityKey(plan.rarity);
       const c = magicItemCrafting(rarity, consumable);
       days = Math.ceil(c.days / hire);
@@ -2818,14 +2829,14 @@ function startWork(s: State, ctx: Ctx, b: Bastion, f: Facility): FacilityWork | 
       break;
     }
     case 'Barrack/recruit':
-      if (bastionDefenders(b) - (b.menagerie ?? []).filter((m) => m.defends).length >= barrackRoom(b)) {
+      if ((b.defenders ?? 0) >= barrackRoom(b)) {
         log(s, `${b.name}: the Barracks are full (${barrackRoom(b)}), so the Recruit order can't be given.`, 'warn');
         return null;
       }
       break;
     case 'Menagerie/creature': {
       const c = MENAGERIE_CREATURES.find((x) => (plan.choice ?? '').startsWith(x.name)) ?? MENAGERIE_CREATURES[0];
-      const used = (b.menagerie ?? []).reduce((a, m) => a + CREATURE_ROOM[m.size], 0);
+      const used = (b.menagerie ?? []).filter((m) => (m.origin ?? 'menagerie') === 'menagerie').reduce((a, m) => a + (CREATURE_ROOM[m.size as keyof typeof CREATURE_ROOM] ?? 1), 0);
       if (used + CREATURE_ROOM[c.size] > MENAGERIE_ROOM) {
         log(s, `${b.name}: the Menagerie has no room for a ${c.size} creature.`, 'warn');
         return null;
@@ -2879,8 +2890,42 @@ function startWork(s: State, ctx: Ctx, b: Bastion, f: Facility): FacilityWork | 
       break;
     }
     case 'Theater/production':
+    case "Lords' Alliance Noble Residence/noble":
       days = 14;
       break;
+    case 'Order of the Gauntlet Tournament Field/tournament':
+      days = 14;
+      pay(2000, 'tournament prizes');
+      break;
+    case 'Construct Forge/construct': {
+      const c = CONSTRUCTS.find((x) => (plan.choice ?? '').startsWith(x.name)) ?? CONSTRUCTS[0];
+      days = c.days;
+      pay(c.gp, `building a ${c.name}`);
+      break;
+    }
+    case 'Red Wizard Necropolis/undead':
+      if ((b.undead ?? 0) + (b.undeadReturning ?? []).length >= NECROPOLIS_ROOM) {
+        log(s, `${b.name}: the Necropolis is full (${NECROPOLIS_ROOM}).`, 'warn');
+        return null;
+      }
+      break;
+    case 'Kundarak Vault/buy': {
+      const cap = lvl >= 13 ? 5000 : 2000;
+      const gp = Math.min(cap, plan.gp ?? 0);
+      pay(gp, 'goods for the Kundarak Vault');
+      plan.gp = gp;
+      break;
+    }
+    case 'Kundarak Vault/sell': {
+      const st = bastionStash(s, b);
+      const stock = st.items.filter((i) => /^trade goods/i.test(i.name)).reduce((a, i) => a + (i.valueGp ?? 0) * i.qty, 0);
+      if (stock <= 0) {
+        log(s, `${b.name}: the vault holds no goods to sell.`, 'warn');
+        return null;
+      }
+      plan.gp = Math.min(stock, plan.gp ?? stock);
+      break;
+    }
     case 'War Room/soldiers':
       if (b.army) {
         log(s, `${b.name}: an army is already in the field; disband it before mustering another.`, 'warn');
@@ -2935,6 +2980,7 @@ function finishWork(s: State, ctx: Ctx, b: Bastion, f: Facility, w: FacilityWork
     case 'Sacristy/relic':
     case 'Smithy/magic':
     case 'Workshop/magic':
+    case "Artificer's Forge/magic":
       stashAdd(s, b, p.text || `${p.rarity ?? 'Common'} magic item`, 1);
       return done(`${p.text || 'the magic item'} is finished.`);
     case 'Laboratory/alchemy':
@@ -3036,9 +3082,94 @@ function finishWork(s: State, ctx: Ctx, b: Bastion, f: Facility, w: FacilityWork
     case 'Trophy Room/lore':
       return done(`research on "${p.text || 'the topic'}" is complete: up to three accurate facts you didn't know. Ask the DM for them.`);
     case 'Archive/lore':
+    case 'Cult of the Dragon Archive/lore':
+    case 'Museum/lore':
       return done(`the archivist has found what Legend Lore would reveal about "${p.text || 'the topic'}". Ask the DM.`);
     case 'Pub/spies':
       return done(`the spies report on events within 10 miles${p.text ? ` and on ${p.text}'s whereabouts over the last 7 days (if within 50 miles and not hidden by magic)` : ''}. Ask the DM.`);
+    case 'Inquisitive Agency/investigate':
+      return done(`the agency's file on ${p.text || 'the person'} is ready: where they stay, what they spend, whom they meet and where they showed papers, for the last 7 days and the next 7 within 10 miles. Ask the DM.`);
+    case "Lords' Alliance Noble Residence/noble": {
+      const r = die(6, ctx.rng);
+      if (r % 2) return done(`no noble accepts the invitation (die ${r}).`, 'info');
+      return done(`a noble${p.text ? ` from ${p.text}` : ''} visits (die ${r}) and gossips: the location of any familiar creature within 50 miles of their city, and where it was for the past 7 days. Ask the DM.`);
+    }
+    case 'Zhentarim Travel Station/recon':
+      s.travel.reconAdvantage = true;
+      return done(`reconnaissance${p.text ? ` for ${p.text}` : ''} is in: Advantage on Wisdom (Survival) checks to forage and navigate for the next journey.`);
+    case 'Amethyst Dragon Den/psionic':
+      if (owner) s.effects.push({ id: uid(), name: 'Psionic Defenses (Resistance to Psychic damage)', kind: 'gift', targetIds: [owner.id], casterId: null, concentration: false, shelter: false, startedAt: absNow(s), endsAt: absNow(s) + 7 * MIN_PER_DAY, notes: 'From training in the Amethyst Dragon Den.' });
+      return done(`${owner?.name ?? 'The owner'} completes psionic training: Resistance to Psychic damage for 7 days.`);
+    case 'Harper Hideout/harper': {
+      const r = die(6, ctx.rng);
+      if (r % 2) return done(`no Harper needs the hideout this week (die ${r}).`, 'info');
+      const names: string[] = [];
+      for (const pp of p.people ?? []) {
+        const c = charById(s, pp.charId);
+        if (!c) continue;
+        names.push(c.name);
+        s.effects.push({ id: uid(), name: 'Harper training: proficiency in Deception, Investigation or Performance', kind: 'gift', targetIds: [c.id], casterId: null, concentration: false, shelter: false, startedAt: absNow(s), endsAt: absNow(s) + 7 * MIN_PER_DAY, notes: 'Choose one skill.' });
+      }
+      return done(`a Harper stays the week (die ${r})${names.length ? `; ${names.join(', ')} gain a skill proficiency for 7 days` : ''}.`);
+    }
+    case 'Red Wizard Necropolis/undead': {
+      const n = Math.max(0, Math.min(4, NECROPOLIS_ROOM - (b.undead ?? 0) - (b.undeadReturning ?? []).length));
+      b.undead = (b.undead ?? 0) + n;
+      return done(`${n} Undead Bastion Defender${n === 1 ? '' : 's'} rise in the crypts (${bastionDefenders(b)} defenders in all).`);
+    }
+    case 'Emerald Enclave Grove/nature': {
+      const r = die(6, ctx.rng);
+      const pick = p.choice ?? 'Satyr (Medium)';
+      const size = (/\((\w+)\)/.exec(pick)?.[1] ?? 'Medium') as 'Tiny' | 'Small' | 'Medium' | 'Large' | 'Huge';
+      const used = (b.menagerie ?? []).filter((m) => m.origin === 'grove').reduce((a, m) => a + (GROVE_UNITS[m.size] ?? 1), 0);
+      if (r % 2) return done(`the ${pick.split(' (')[0]} declines the invitation (die ${r}).`, 'info');
+      if (used + (GROVE_UNITS[size] ?? 1) > GROVE_ROOM) return done(`the grove has no room for a ${size} creature.`, 'warn');
+      b.menagerie = [...(b.menagerie ?? []), { name: pick.split(' (')[0], size, defends: true, origin: 'grove' }];
+      return done(`a ${pick.split(' (')[0]} moves into the grove (die ${r}) and counts as a Bastion Defender.`);
+    }
+    case 'Construct Forge/construct': {
+      const c = CONSTRUCTS.find((x) => (p.choice ?? '').startsWith(x.name)) ?? CONSTRUCTS[0];
+      b.menagerie = [...(b.menagerie ?? []), { name: c.name, size: 'Medium', defends: true, origin: 'construct' }];
+      return done(`a ${c.name} is complete and joins the Bastion Defenders.`);
+    }
+    case 'Order of the Gauntlet Tournament Field/tournament': {
+      let f2 = s.factions.find((x) => /gauntlet/i.test(x.name));
+      if (!f2) {
+        f2 = { id: uid(), name: 'Order of the Gauntlet', renown: 0, notes: '' };
+        s.factions.push(f2);
+      }
+      f2.renown += 1;
+      return done(`the tournament draws contestants from the region. Renown with the Order of the Gauntlet rises to ${f2.renown}.`);
+    }
+    case 'Dragonmark Outpost/favor':
+      return done('the house agent calls in a favor your house Renown allows, without counting against your favors. You can do this again once your house Renown rises.');
+    case 'Manifest Zone/charm':
+      if (owner) grantCharm(s, owner, `Manifest Charm of ${p.choice ?? 'the linked plane'}`, 1, null, 'Lasts until used. See Eberron: Forge of the Artificer for its effect.');
+      return done(`the rites end: ${owner?.name ?? 'the owner'} gains a Manifest Charm of ${p.choice ?? 'the linked plane'}.`);
+    case "Navigator's Helm/travel":
+    case 'Lyrandar Helm/travel':
+    case 'Orien Helm/travel': {
+      const mph = f.name === 'Orien Helm' ? 30 : Math.max(0.5, p.gp ?? 2);
+      return done(`the mobile Bastion travels up to ${Math.round(mph * 8 * 7)} miles this turn (${mph} mph, 8 hours a day) toward ${p.text || 'its destination'}, stopping early on arrival.`);
+    }
+    case 'Kundarak Vault/buy':
+      stashAdd(s, b, 'Trade goods', 1, p.gp ?? 0);
+      return done(`${p.gp ?? 0} GP of goods are stored in the vault, reachable from any Kundarak bank.`);
+    case 'Kundarak Vault/sell': {
+      const st = bastionStash(s, b);
+      let left = p.gp ?? 0;
+      for (const it of st.items.filter((i) => /^trade goods/i.test(i.name))) {
+        const v = (it.valueGp ?? 0) * it.qty;
+        const take = Math.min(v, left);
+        left -= take;
+        it.valueGp = it.qty ? (v - take) / it.qty : 0;
+      }
+      st.items = st.items.filter((i) => !/^trade goods/i.test(i.name) || (i.valueGp ?? 0) > 0);
+      const sold = (p.gp ?? 0) - left;
+      const gp = Math.round(sold * (1 + stableMarkup(lvl)));
+      receiveGold(s, [b.ownerId], gp, `goods sold from ${b.name}'s Kundarak Vault`);
+      return done(`${sold} GP of goods sell for ${gp} GP.`);
+    }
     case 'Trophy Room/trinket': {
       const r = die(6, ctx.rng);
       if (r % 2 === 0) {
@@ -3176,7 +3307,8 @@ function bastionEvent(s: State, ctx: Ctx, b: Bastion, excludeOpportunity = false
         return say(`A hostile force attacks and is beaten off. Your monstrous guest defends the Bastion, so no defenders are lost, and then it departs.`, 'warn');
       }
       const sides = b.armoryStocked ? 8 : 6;
-      const rolls = Array.from({ length: 6 }, () => die(sides, ctx.rng));
+      const knight = b.facilities.some((x) => x.name === 'Order of the Gauntlet Tournament Field' && x.built);
+      const rolls = Array.from({ length: knight ? 5 : 6 }, () => die(sides, ctx.rng));
       const ones = rolls.filter((r) => r === 1).length;
       const had = bastionDefenders(b);
       if (b.armoryStocked) b.armoryStocked = false;
@@ -3185,7 +3317,7 @@ function bastionEvent(s: State, ctx: Ctx, b: Bastion, excludeOpportunity = false
         if (f) f.shutTurns = 1;
         return say(`A hostile force attacks and is beaten off, but with no defenders the ${f?.name ?? 'Bastion'} is damaged and shut down for the next turn (repaired free after).`, 'bad');
       }
-      say(`A hostile force attacks and is defeated. 6d${sides}: ${rolls.join(', ')}${sides === 8 ? ' (stocked Armory, now used up)' : ''}.`, ones ? 'bad' : 'warn');
+      say(`A hostile force attacks and is defeated. ${rolls.length}d${sides}: ${rolls.join(', ')}${sides === 8 ? ' (stocked Armory, now used up)' : ''}${knight ? ' (one die fewer thanks to the resident knight)' : ''}.`, ones ? 'bad' : 'warn');
       loseDefenders(s, b, ones, 'the attack');
       return;
     }
@@ -3307,6 +3439,15 @@ export const dismissGuest = act((d, _ctx, bastionId: string, guestId: string) =>
 function bastionDaily(s: State): void {
   for (const b of s.bastions) {
     if (b.abandoned) continue;
+    const necro = b.facilities.find((f) => f.name === 'Red Wizard Necropolis' && f.built);
+    if ((b.undeadReturning ?? []).length && necro && !(necro.shutTurns ?? 0)) {
+      const back = b.undeadReturning!.filter((d) => d <= s.dayIndex).length;
+      if (back) {
+        b.undeadReturning = b.undeadReturning!.filter((d) => d > s.dayIndex);
+        b.undead = Math.min(NECROPOLIS_ROOM, (b.undead ?? 0) + back);
+        log(s, `${b.name}: ${back} destroyed Undead defender${back > 1 ? 's' : ''} rise again in the Necropolis.`);
+      }
+    }
     if (b.army) {
       const owner = charById(s, b.ownerId);
       const cost = b.army.guards + b.army.horses;
@@ -3329,6 +3470,7 @@ function bastionDaily(s: State): void {
 
 /** A Long Rest at the Bastion: Charms from facilities, Demiplane and Sanctum Temporary HP. */
 function bastionLongRest(s: State): void {
+  s.travel.paceBoost = false;
   for (const b of s.bastions) {
     if (b.abandoned) continue;
     const owner = charById(s, b.ownerId);
@@ -3341,6 +3483,21 @@ function bastionLongRest(s: State): void {
         if (s.effects.some((e) => e.name === name && e.targetIds.includes(owner.id))) continue;
         grantCharm(s, owner, name, 1, absNow(s) + 7 * MIN_PER_DAY, charm.split(': ')[1] + '. Lasts 7 days or until used.');
         log(s, `${owner.name} wakes in ${b.name} with a ${name} (${charm.split(': ')[1]}; 7 days or until used).`, 'good');
+      }
+      if (b.facilities.some((x) => x.name === "Lords' Alliance Noble Residence" && x.built) && !owner.resources.some((r) => r.name === 'Heroic Inspiration' && r.current > 0)) {
+        owner.resources = owner.resources.filter((r) => r.name !== 'Heroic Inspiration');
+        owner.resources.push({ id: uid(), name: 'Heroic Inspiration', max: 1, current: 1, recharge: 'manual' });
+        log(s, `${owner.name} wakes refreshed in the Noble Residence with Heroic Inspiration.`, 'good');
+      }
+      const museum = b.facilities.find((x) => x.name === 'Museum' && x.built && x.studied);
+      if (museum) {
+        museum.studied = false;
+        grantCharm(s, owner, `Charm of ${museum.guild ?? MUSEUM_ORIGINS[0]}`, 1, absNow(s) + 7 * MIN_PER_DAY, 'From the Museum’s treasure. Lasts 7 days or until used; see Eberron: Forge of the Artificer for its effect.');
+        log(s, `${owner.name} gains the Charm of ${museum.guild ?? MUSEUM_ORIGINS[0]} from the Museum's treasure.`, 'good');
+      }
+      if (b.facilities.some((x) => x.name === 'Zhentarim Travel Station' && x.built)) {
+        s.travel.paceBoost = true;
+        log(s, `Rested at the Zhentarim Travel Station, the party's maximum travel pace is one step faster until their next Long Rest elsewhere.`, 'good');
       }
       if ((b.demiplaneUntilDay ?? -1) >= s.dayIndex && b.facilities.some((x) => x.name === 'Demiplane' && x.built)) {
         owner.tempHp = Math.max(owner.tempHp, 5 * lvl);

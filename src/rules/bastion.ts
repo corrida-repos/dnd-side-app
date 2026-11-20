@@ -34,7 +34,11 @@ export interface SpecialFacility {
   sizes?: FacilitySize[];
   /** The order this facility usually takes. Any facility can be told to Maintain. */
   order: Order;
+  /** Book it comes from: the 2024 DMG unless set (FRHoF: Forgotten Realms: Heroes of Faerûn; EFA: Eberron: Forge of the Artificer). */
+  book?: 'FRHoF' | 'EFA';
 }
+
+export const FACILITY_BOOK_LABEL = { FRHoF: 'Forgotten Realms: Heroes of Faerûn', EFA: 'Eberron: Forge of the Artificer' } as const;
 
 export const SPECIAL_FACILITIES: SpecialFacility[] = [
   { name: 'Arcane Study', level: 5, order: 'Craft' },
@@ -66,6 +70,26 @@ export const SPECIAL_FACILITIES: SpecialFacility[] = [
   { name: 'Guildhall', sizes: ['vast'], level: 17, order: 'Recruit' },
   { name: 'Sanctum', level: 17, order: 'Empower' },
   { name: 'War Room', sizes: ['vast'], level: 17, order: 'Recruit' },
+  // Forgotten Realms: Heroes of Faerûn (2025)
+  { name: 'Amethyst Dragon Den', sizes: ['vast'], level: 5, order: 'Empower', book: 'FRHoF' },
+  { name: 'Harper Hideout', level: 5, order: 'Empower', book: 'FRHoF' },
+  { name: 'Red Wizard Necropolis', level: 5, order: 'Recruit', book: 'FRHoF' },
+  { name: 'Zhentarim Travel Station', sizes: ['vast'], level: 5, order: 'Research', book: 'FRHoF' },
+  { name: 'Emerald Enclave Grove', sizes: ['vast'], level: 9, order: 'Recruit', book: 'FRHoF' },
+  { name: "Lords' Alliance Noble Residence", sizes: ['vast'], level: 9, order: 'Recruit', book: 'FRHoF' },
+  { name: 'Order of the Gauntlet Tournament Field', sizes: ['vast'], level: 9, order: 'Empower', book: 'FRHoF' },
+  { name: 'Cult of the Dragon Archive', level: 13, order: 'Research', book: 'FRHoF' },
+  // Eberron: Forge of the Artificer (2025)
+  { name: 'Dragonmark Outpost', level: 5, order: 'Empower', book: 'EFA' },
+  { name: 'Kundarak Vault', sizes: ['cramped'], level: 9, order: 'Trade', book: 'EFA' },
+  { name: "Navigator's Helm", sizes: ['cramped'], level: 9, order: 'Empower', book: 'EFA' },
+  { name: 'Orien Helm', sizes: ['cramped'], level: 9, order: 'Empower', book: 'EFA' },
+  { name: "Artificer's Forge", level: 13, order: 'Craft', book: 'EFA' },
+  { name: 'Inquisitive Agency', level: 13, order: 'Research', book: 'EFA' },
+  { name: 'Lyrandar Helm', sizes: ['cramped'], level: 13, order: 'Empower', book: 'EFA' },
+  { name: 'Manifest Zone', sizes: ['vast'], level: 13, order: 'Empower', book: 'EFA' },
+  { name: 'Museum', sizes: ['roomy', 'vast'], level: 13, order: 'Research', book: 'EFA' },
+  { name: 'Construct Forge', sizes: ['vast'], level: 17, order: 'Recruit', book: 'EFA' },
 ];
 
 /** A special facility's default size (DMG): Roomy unless listed otherwise. */
