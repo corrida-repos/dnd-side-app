@@ -30,6 +30,8 @@ export const ORDERS: Order[] = ['Craft', 'Empower', 'Harvest', 'Maintain', 'Recr
 export interface SpecialFacility {
   name: string;
   level: number;
+  /** Sizes it can be built at (DMG); the first is the default. */
+  sizes?: FacilitySize[];
   /** The order this facility usually takes. Any facility can be told to Maintain. */
   order: Order;
 }
@@ -37,34 +39,37 @@ export interface SpecialFacility {
 export const SPECIAL_FACILITIES: SpecialFacility[] = [
   { name: 'Arcane Study', level: 5, order: 'Craft' },
   { name: 'Armory', level: 5, order: 'Trade' },
-  { name: 'Barrack', level: 5, order: 'Recruit' },
-  { name: 'Garden', level: 5, order: 'Harvest' },
+  { name: 'Barrack', sizes: ['roomy', 'vast'], level: 5, order: 'Recruit' },
+  { name: 'Garden', sizes: ['roomy', 'vast'], level: 5, order: 'Harvest' },
   { name: 'Library', level: 5, order: 'Research' },
   { name: 'Sanctuary', level: 5, order: 'Craft' },
   { name: 'Smithy', level: 5, order: 'Craft' },
   { name: 'Storehouse', level: 5, order: 'Trade' },
-  { name: 'Workshop', level: 5, order: 'Craft' },
-  { name: 'Gaming Hall', level: 9, order: 'Trade' },
+  { name: 'Workshop', sizes: ['roomy', 'vast'], level: 5, order: 'Craft' },
+  { name: 'Gaming Hall', sizes: ['vast'], level: 9, order: 'Trade' },
   { name: 'Greenhouse', level: 9, order: 'Harvest' },
   { name: 'Laboratory', level: 9, order: 'Craft' },
   { name: 'Sacristy', level: 9, order: 'Craft' },
   { name: 'Scriptorium', level: 9, order: 'Craft' },
-  { name: 'Stable', level: 9, order: 'Trade' },
+  { name: 'Stable', sizes: ['roomy', 'vast'], level: 9, order: 'Trade' },
   { name: 'Teleportation Circle', level: 9, order: 'Recruit' },
-  { name: 'Theater', level: 9, order: 'Empower' },
-  { name: 'Training Area', level: 9, order: 'Empower' },
+  { name: 'Theater', sizes: ['vast'], level: 9, order: 'Empower' },
+  { name: 'Training Area', sizes: ['vast'], level: 9, order: 'Empower' },
   { name: 'Trophy Room', level: 9, order: 'Research' },
-  { name: 'Archive', level: 13, order: 'Research' },
-  { name: 'Meditation Chamber', level: 13, order: 'Empower' },
-  { name: 'Menagerie', level: 13, order: 'Recruit' },
+  { name: 'Archive', sizes: ['roomy', 'vast'], level: 13, order: 'Research' },
+  { name: 'Meditation Chamber', sizes: ['cramped'], level: 13, order: 'Empower' },
+  { name: 'Menagerie', sizes: ['vast'], level: 13, order: 'Recruit' },
   { name: 'Observatory', level: 13, order: 'Empower' },
-  { name: 'Pub', level: 13, order: 'Research' },
-  { name: 'Reliquary', level: 13, order: 'Harvest' },
-  { name: 'Demiplane', level: 17, order: 'Empower' },
-  { name: 'Guildhall', level: 17, order: 'Recruit' },
+  { name: 'Pub', sizes: ['roomy', 'vast'], level: 13, order: 'Research' },
+  { name: 'Reliquary', sizes: ['cramped'], level: 13, order: 'Harvest' },
+  { name: 'Demiplane', sizes: ['vast'], level: 17, order: 'Empower' },
+  { name: 'Guildhall', sizes: ['vast'], level: 17, order: 'Recruit' },
   { name: 'Sanctum', level: 17, order: 'Empower' },
-  { name: 'War Room', level: 17, order: 'Recruit' },
+  { name: 'War Room', sizes: ['vast'], level: 17, order: 'Recruit' },
 ];
+
+/** A special facility's default size (DMG): Roomy unless listed otherwise. */
+export const defaultSize = (name: string): FacilitySize => SPECIAL_FACILITIES.find((f) => f.name === name)?.sizes?.[0] ?? 'roomy';
 
 /** How many special facilities a Bastion owner may have at a given character level. */
 export function specialSlots(level: number): number {

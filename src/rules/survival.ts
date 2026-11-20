@@ -32,7 +32,7 @@ export const ABUNDANCE_LABEL: Record<Abundance, string> = {
 };
 
 export const PACES: Record<Pace, { mph: number; perDay: number; note: string }> = {
-  fast: { mph: 4, perDay: 30, note: 'Disadvantage on Wisdom (Perception or Survival) checks' },
+  fast: { mph: 4, perDay: 30, note: 'Disadvantage on Wisdom (Perception or Survival) and Dexterity (Stealth) checks' },
   normal: { mph: 3, perDay: 24, note: 'Disadvantage on Dexterity (Stealth) checks' },
   slow: { mph: 2, perDay: 18, note: 'Advantage on Wisdom (Perception or Survival) checks' },
 };
@@ -56,7 +56,8 @@ export const ARMOR_LABEL: Record<ArmorKind, string> = { none: 'No armor', light:
 export const wearsBulkyArmor = (c: Character): boolean => c.armorWorn && (c.armorKind === 'medium' || c.armorKind === 'heavy');
 
 /** Medium or Heavy armor, or heavy clothing, gives Disadvantage on extreme heat saves. */
-export const heatDisadvantage = (c: Character): boolean => c.heavyGarb || wearsBulkyArmor(c);
+/** Medium or Heavy armor gives Disadvantage on extreme heat saves (2024); heavy clothing only under the 2014 rule. */
+export const heatDisadvantage = (c: Character, heavyClothingRule = false): boolean => (heavyClothingRule && c.heavyGarb) || wearsBulkyArmor(c);
 
 export function armorTime(c: Character, action: 'don' | 'doff'): number {
   if (c.armorKind === 'none') return 0;
@@ -79,6 +80,7 @@ export const EXHAUSTION_CAUSE_LABEL: Record<ExhaustionCause, string> = {
   coldNight: 'Cold night',
   sleep: 'Sleep deprivation',
   frigid: 'Frigid water',
+  suffocation: 'Suffocation',
   other: 'Other',
 };
 

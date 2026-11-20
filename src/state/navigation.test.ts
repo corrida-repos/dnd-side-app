@@ -15,7 +15,8 @@ function fresh(patch: (s: State) => void = () => {}): State {
   s.settings.sleepDeprivation = false;
   s.characters = [newCharacter({ name: 'Scout', survival: 3, needsFood: false, needsWater: false })];
   s.minutes = 8 * 60;
-  s.place.navigation = 'hard';
+  s.place.terrain = 'forest';
+  s.place.onRoute = false;
   s.log = [];
   patch(s);
   return s;
@@ -23,10 +24,10 @@ function fresh(patch: (s: State) => void = () => {}): State {
 
 describe('getting lost', () => {
   it('sets the DC by terrain, plus heavy weather and darkness', () => {
-    expect(navigationDC('road', { heavyPrecip: true, dark: true, poorVisibilityRule: true }).dc).toBeNull();
-    expect(navigationDC('easy', { heavyPrecip: false, dark: false, poorVisibilityRule: true }).dc).toBe(5);
-    expect(navigationDC('hard', { heavyPrecip: true, dark: true, poorVisibilityRule: true }).dc).toBe(25);
-    expect(navigationDC('hard', { heavyPrecip: true, dark: true, poorVisibilityRule: false }).dc).toBe(15);
+    expect(navigationDC(null, { heavyPrecip: true, dark: true, poorVisibilityRule: true }).dc).toBeNull();
+    expect(navigationDC(5, { heavyPrecip: false, dark: false, poorVisibilityRule: true }).dc).toBe(5);
+    expect(navigationDC(15, { heavyPrecip: true, dark: true, poorVisibilityRule: true }).dc).toBe(25);
+    expect(navigationDC(15, { heavyPrecip: true, dark: true, poorVisibilityRule: false }).dc).toBe(15);
   });
 
   it('gets lost on a failed check, wanders off course, and finds the way on a later check', () => {
@@ -42,7 +43,7 @@ describe('getting lost', () => {
   });
 
   it('needs no check on a road, and slow pace helps', () => {
-    const road = fresh((d) => (d.place.navigation = 'road'));
+    const road = fresh((d) => (d.place.onRoute = true));
     expect(E.travel(road, LOW, { hours: 2, pace: 'normal', difficult: false, foragerIds: [], navigatorId: road.characters[0].id }).travel.lost).toBe(false);
     const s = fresh();
     const slow = E.travel(s, ctx(0.5), { hours: 1, pace: 'slow', difficult: false, foragerIds: [], navigatorId: s.characters[0].id });
@@ -73,7 +74,7 @@ describe('telling the time by nature', () => {
   });
 
   it('lets a character judge the hour with a Survival check', () => {
-    const s = fresh((d) => (d.place.navigation = 'road'));
+    const s = fresh((d) => (d.place.onRoute = true));
     const good = E.readTheSky(s, HIGH, s.characters[0].id);
     expect(good.log[0].text).toContain('about 08:00 (right to within the hour)');
     const bad = E.readTheSky(s, LOW, s.characters[0].id);

@@ -63,7 +63,7 @@ describe('hirelings at work', () => {
   it('lets a hired guide navigate and a groom tend the mounts', () => {
     const s = fresh((d) => {
       d.minutes = 8 * 60;
-      d.place.navigation = 'hard';
+      (d.place.terrain = 'forest'), (d.place.onRoute = false);
       d.hirelings = [
         { id: 'g', name: 'Tam', role: 'guide', bonus: 20, passivePerception: 12, skilled: true, wageGp: 2, payer: 'party', active: true },
         { id: 'o', name: 'Wil', role: 'groom', bonus: 4, passivePerception: 10, skilled: true, wageGp: 2, payer: 'party', active: true },

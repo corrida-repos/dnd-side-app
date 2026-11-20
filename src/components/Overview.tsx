@@ -3,12 +3,12 @@ import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
 import { CLIMATES, environmentEffects, temperatureAt, weatherSummary, type ClimateId, type Weather } from '../rules/weather';
 import { formatClock, formatDate, formatDuration } from '../rules/calendar';
-import { ABUNDANCE_LABEL, PACES, foodNeedLb, waterNeedPints, fmtLb, fmtWater } from '../rules/survival';
+import { PACES, foodNeedLb, waterNeedPints, fmtLb, fmtWater } from '../rules/survival';
 import { Card, Meter, Num, Pill, Rule, Select, Text, Toggle } from './common';
 import { Debuffs } from './Debuffs';
 import { groupLog, senseText } from './senseView';
-import type { Abundance, Pace, Shelter, WaterQuality } from '../state/types';
-import { NAV_LABEL, NAV_FOR_CLIMATE, type NavTerrain } from '../rules/navigation';
+import type { Pace, Shelter, WaterQuality } from '../state/types';
+import { TERRAIN, TERRAIN_FOR_CLIMATE, maxPaceFor, type TerrainType } from '../rules/terrain';
 import { readSky, rangeLabel } from '../rules/skyclock';
 
 export function Overview() {
@@ -392,7 +392,7 @@ function PartyStatusCard() {
               let tempStatus = 'Comfortable';
               let tone: 'good' | 'warn' | 'bad' | 'muted' = 'muted';
               if (t <= 0) {
-                const prot = E.coldProtection(c);
+                const prot = E.coldProtection(c, 'camp', s.settings.coldGear2014);
                 tempStatus = !exp.cold ? exp.reason : prot ? prot : 'Exposed to the cold';
                 tone = !exp.cold || prot ? 'good' : 'bad';
               } else if (t >= 100) {
@@ -527,7 +527,7 @@ function TravelCard() {
         </p>
       )}
       <div className="field">
-        <span className="field-label">Forage along the way (Wisdom (Survival), DC {({ abundant: 10, limited: 15, scarce: 20 } as const)[s.place.forage]})</span>
+        <span className="field-label">Forage along the way (Wisdom (Survival), DC {TERRAIN[s.place.terrain].forageDC}; finds food and water for each day of the trip)</span>
         <div className="chips">
           {s.characters.map((c) => (
             <Toggle
@@ -565,8 +565,17 @@ function PlaceCard() {
     >
       <div className="form-row">
         <Text label="Location" value={s.place.name} onChange={(v) => set({ name: v })} wide />
-        <Text label="Terrain" value={s.place.terrain} onChange={(v) => set({ terrain: v })} />
+        <Select
+          label="Terrain"
+          value={s.place.terrain}
+          onChange={(v: TerrainType) => set({ terrain: v })}
+          options={(Object.keys(TERRAIN) as TerrainType[]).map((k) => ({ value: k, label: TERRAIN[k].label }))}
+        />
       </div>
+      <p className="small muted">
+        {TERRAIN[s.place.terrain].label}: fastest pace {maxPaceFor(s.place.terrain, s.place.goodRoad)}, foraging DC {TERRAIN[s.place.terrain].forageDC}, navigation DC {TERRAIN[s.place.terrain].navigationDC}, search DC{' '}
+        {TERRAIN[s.place.terrain].searchDC}, encounters at {TERRAIN[s.place.terrain].encounterDistance}.
+      </p>
       <div className="form-row">
         <Select
           label="Climate"
@@ -588,21 +597,11 @@ function PlaceCard() {
         />
       </div>
       <div className="form-row">
-        <Select
-          label="Foraging"
-          value={s.place.forage}
-          onChange={(v: Abundance) => set({ forage: v })}
-          options={(['abundant', 'limited', 'scarce'] as Abundance[]).map((k) => ({ value: k, label: ABUNDANCE_LABEL[k] }))}
-        />
-        <Select
-          label="Finding the way"
-          value={s.place.navigation}
-          onChange={(v: NavTerrain) => set({ navigation: v })}
-          options={(Object.keys(NAV_LABEL) as NavTerrain[]).map((k) => ({ value: k, label: NAV_LABEL[k] }))}
-        />
-        {s.place.navigation === 'road' && NAV_FOR_CLIMATE[s.place.climate] !== 'road' && (
-          <button className="ghost small" onClick={() => set({ navigation: NAV_FOR_CLIMATE[s.place.climate] })}>
-            Off the road here: {NAV_LABEL[NAV_FOR_CLIMATE[s.place.climate]]}
+        <Toggle checked={s.place.onRoute} onChange={(v) => set({ onRoute: v })} label="Following a road, river or landmark (no navigation check)" />
+        <Toggle checked={s.place.goodRoad} onChange={(v) => set({ goodRoad: v })} label="Good road (fastest pace one step faster)" />
+        {s.place.terrain !== TERRAIN_FOR_CLIMATE[s.place.climate] && (
+          <button className="ghost small" onClick={() => set({ terrain: TERRAIN_FOR_CLIMATE[s.place.climate] })}>
+            Typical for {CLIMATES[s.place.climate].label}: {TERRAIN[TERRAIN_FOR_CLIMATE[s.place.climate]].label}
           </button>
         )}
         <Toggle checked={s.place.settlement} onChange={(v) => set({ settlement: v })} label="Town or city (lifestyle covers meals)" />

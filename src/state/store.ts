@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react';
 import type { State } from './types';
 import { createDefaultState, newCharacter, SAVE_VERSION } from './defaults';
 import { ensureWeather, type Ctx } from './engine';
+import { TERRAIN_FOR_CLIMATE } from '../rules/terrain';
 
 const KEY = 'wayfarers-ledger:v1';
 export const ctx: Ctx = { rng: Math.random };
@@ -19,8 +20,14 @@ function migrate(raw: unknown): State | null {
     travel: { ...base.travel, ...parsed.travel },
     fire: { ...base.fire, ...parsed.fire },
     stores: { ...base.stores, ...parsed.stores, foodRawLb: parsed.stores?.foodRawLb ?? (parsed.stores as { foodUnsafeLb?: number } | undefined)?.foodUnsafeLb ?? 0 },
-    place: { ...base.place, ...parsed.place },
-    bastions: parsed.bastions ?? [],
+    place: (() => {
+      // Older saves stored foraging abundance and a navigation setting; the terrain table replaces both.
+      const old = (parsed.place ?? {}) as Partial<State['place']> & { forage?: string; navigation?: string; terrain?: string };
+      const known = ['arctic', 'coastal', 'desert', 'forest', 'grassland', 'hill', 'mountain', 'swamp', 'underdark', 'urban', 'waterborne'];
+      const terrain = known.includes(old.terrain ?? '') ? (old.terrain as State['place']['terrain']) : TERRAIN_FOR_CLIMATE[(old.climate ?? base.place.climate) as keyof typeof TERRAIN_FOR_CLIMATE];
+      return { ...base.place, ...old, terrain, onRoute: old.onRoute ?? (old.navigation ? old.navigation === 'road' : base.place.onRoute), goodRoad: old.goodRoad ?? false, terrainNote: known.includes(old.terrain ?? '') ? old.terrainNote : old.terrain };
+    })(),
+    bastions: (parsed.bastions ?? []).map((b) => ({ ...b, maintain: b.maintain ?? b.facilities.filter((f) => f.kind === 'special').every((f) => f.order === 'Maintain') })),
     watchOrder: parsed.watchOrder ?? [],
     watchPlan:
       parsed.watchPlan ??

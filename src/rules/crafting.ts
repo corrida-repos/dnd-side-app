@@ -33,9 +33,9 @@ export const SCROLL_CRAFTING: { level: number; days: number; gp: number }[] = [
 
 export const POTION_OF_HEALING = { days: 1, gp: 25, tool: "Herbalist's Kit" };
 
-/** Crafting a nonmagical item (PHB): raw materials cost half the price; one 8-hour day per 10 GP of price. */
+/** Crafting a nonmagical item (PHB): raw materials cost half the price, rounded down; one 8-hour day per 10 GP of price. */
 export function nonmagicalCrafting(priceGp: number): { days: number; gp: number } {
-  return { days: Math.max(1, Math.ceil(priceGp / 10)), gp: Math.round((priceGp / 2) * 100) / 100 };
+  return { days: Math.max(1, Math.ceil(priceGp / 10)), gp: priceGp >= 2 ? Math.floor(priceGp / 2) : Math.round((priceGp / 2) * 100) / 100 };
 }
 
 export function magicItemCrafting(rarity: Rarity, consumable: boolean): { days: number; gp: number } {
@@ -44,7 +44,7 @@ export function magicItemCrafting(rarity: Rarity, consumable: boolean): { days: 
 }
 
 /** Calendar days needed when several crafters with the required proficiency share the work. */
-export const calendarDays = (workDays: number, crafters: number): number => Math.ceil(workDays / Math.max(1, crafters));
+export const calendarDays = (workDays: number, crafters: number, extraHelpers = true): number => Math.ceil(workDays / Math.max(1, extraHelpers ? crafters : Math.min(2, crafters)));
 
 export type ProjectKind = 'nonmagical' | 'scroll' | 'potion' | 'magic' | 'activity' | 'buyMagic' | 'sellMagic' | 'spellcopy';
 

@@ -73,7 +73,7 @@ describe('calendar', () => {
 describe('crafting', () => {
   it('crafts nonmagical items at 10 GP per day for half price', () => {
     expect(nonmagicalCrafting(50)).toEqual({ days: 5, gp: 25 });
-    expect(nonmagicalCrafting(15)).toEqual({ days: 2, gp: 7.5 });
+    expect(nonmagicalCrafting(15)).toEqual({ days: 2, gp: 7 }); // half the price, rounded down
   });
   it('halves consumable magic items and splits time between crafters', () => {
     expect(magicItemCrafting('rare', false)).toEqual({ days: 50, gp: 2000 });
@@ -122,9 +122,10 @@ describe('gear and bastion tables', () => {
   it('crafts common gear at 10 GP per workday', () => {
     const t = (n: string) => nonmagicalCrafting(GEAR_CATALOG.find((g) => g.name === n)!.gp);
     expect(t('Plate Armor')).toEqual({ days: 150, gp: 750 });
-    expect(t('Chain Mail')).toEqual({ days: 8, gp: 37.5 });
-    expect(t('Longsword')).toEqual({ days: 2, gp: 7.5 });
+    expect(t('Chain Mail')).toEqual({ days: 8, gp: 37 });
+    expect(t('Longsword')).toEqual({ days: 2, gp: 7 });
     expect(calendarDays(t('Plate Armor').days, 3)).toBe(50);
+    expect(calendarDays(t('Plate Armor').days, 3, false)).toBe(75); // normally only one helper
   });
   it('grants special facility slots by level and covers the whole d100', () => {
     expect([4, 5, 8, 9, 13, 17, 20].map(specialSlots)).toEqual([0, 2, 2, 4, 5, 6, 6]);

@@ -39,7 +39,7 @@ export function DowntimeTab() {
                 <Meter value={p.daysDone} max={p.daysRequired} tone="good" />
                 <span className="small">
                   {p.daysDone}/{p.daysRequired} workdays · {p.costGp.toLocaleString()} GP ·{' '}
-                  {p.charIds.map((id) => E.charById(s, id)?.name).filter(Boolean).join(', ') || 'nobody assigned'} · about {calendarDays(p.daysRequired - p.daysDone, p.charIds.length)} more day(s)
+                  {p.charIds.map((id) => E.charById(s, id)?.name).filter(Boolean).join(', ') || 'nobody assigned'} · about {calendarDays(p.daysRequired - p.daysDone, p.charIds.length, s.settings.extraCraftHelpers)} more day(s)
                 </span>
                 {p.notes && <span className="muted small">{p.notes}</span>}
                 {p.materialsUsed && p.materialsUsed.length > 0 && <span className="muted small">Materials: {p.materialsUsed.map((u) => `${u.qty} × ${u.name}`).join(', ')}</span>}
@@ -224,7 +224,7 @@ function NewProject() {
         })(),
       };
   }
-  const cal = calendarDays(calc.days, crafters.length);
+  const cal = calendarDays(calc.days, crafters.length, s.settings.extraCraftHelpers);
 
   return (
     <Card title="New downtime project">

@@ -123,6 +123,11 @@ function BastionCard({ b }: { b: Bastion }) {
           <FacilityRow key={f.id} b={b} f={f} />
         ))}
       </ul>
+      <Toggle
+        checked={b.maintain}
+        onChange={(v) => edit((d) => void (d.bastions.find((x) => x.id === b.id)!.maintain = v))}
+        label="Maintain order for the whole Bastion (no other orders; roll a Bastion event)"
+      />
       <div className="btn-row">
         <button className="primary" disabled={due < 1} onClick={() => dispatch((st, cx) => E.resolveBastionTurn(st, cx, b.id))}>
           Resolve Bastion turn
@@ -164,6 +169,7 @@ function BastionCard({ b }: { b: Bastion }) {
 }
 
 function FacilityRow({ b, f }: { b: Bastion; f: Facility }) {
+  const maintain = b.maintain;
   const step = ENLARGE[f.size];
   const set = (patch: Partial<Facility>) =>
     edit((d) => {
@@ -194,9 +200,9 @@ function FacilityRow({ b, f }: { b: Bastion; f: Facility }) {
           </button>
         </span>
       </div>
-      {f.kind === 'special' && f.built && (
+      {f.kind === 'special' && f.built && !maintain && (
         <div className="form-row">
-          <Select label="Order" value={f.order} onChange={(v: Order) => set({ order: v })} options={ORDERS} />
+          <Select label="Order" value={f.order === 'Maintain' ? (SPECIAL_FACILITIES.find((x) => x.name === f.name)?.order ?? 'Craft') : f.order} onChange={(v: Order) => set({ order: v })} options={ORDERS.filter((o) => o !== 'Maintain')} />
           <Text label="Details" value={f.orderNote} onChange={(v) => set({ orderNote: v })} placeholder={ORDER_HINT[f.order]} />
         </div>
       )}
@@ -213,6 +219,9 @@ function AddFacility({ b, ownerLevel, slotsLeft }: { b: Bastion; ownerLevel: num
   const allowed = SPECIAL_FACILITIES.filter((f) => f.level <= ownerLevel && !b.facilities.some((x) => x.name === f.name));
   const specialChoice = allowed.find((f) => f.name === special)?.name ?? allowed[0]?.name ?? '';
   const cost = BASIC_BUILD[size];
+  const specialSizes = SPECIAL_FACILITIES.find((f) => f.name === specialChoice)?.sizes ?? ['roomy'];
+  const [specialSizePick, setSpecialSize] = useState<FacilitySize | ''>('');
+  const specialSize: FacilitySize = specialSizePick && specialSizes.includes(specialSizePick) ? specialSizePick : specialSizes[0];
   return (
     <details className="add-facility">
       <summary>Add a facility</summary>
@@ -232,7 +241,10 @@ function AddFacility({ b, ownerLevel, slotsLeft }: { b: Bastion; ownerLevel: num
             <Select label="Size" value={size} onChange={setSize} options={(['cramped', 'roomy', 'vast'] as FacilitySize[]).map((x) => ({ value: x, label: `${SIZE_LABEL[x]}: ${BASIC_BUILD[x].gp.toLocaleString()} GP, ${BASIC_BUILD[x].days} d` }))} />
           </>
         ) : (
-          <Select label="Facility" value={specialChoice} onChange={setSpecial} options={allowed.map((f) => ({ value: f.name, label: `${f.name} (level ${f.level}, ${f.order})` }))} />
+          <>
+            <Select label="Facility" value={specialChoice} onChange={setSpecial} options={allowed.map((f) => ({ value: f.name, label: `${f.name} (level ${f.level}, ${f.order})` }))} />
+            {specialSizes.length > 1 && <Select label="Size" value={specialSize} onChange={(v) => setSpecialSize(v as FacilitySize)} options={specialSizes.map((x) => ({ value: x, label: SIZE_LABEL[x] }))} />}
+          </>
         )}
       </div>
       {kind === 'basic' && <Toggle checked={already} onChange={setAlready} label="Already built (starting facility, no cost or time)" />}
@@ -249,13 +261,13 @@ function AddFacility({ b, ownerLevel, slotsLeft }: { b: Bastion; ownerLevel: num
         disabled={kind === 'special' && (!specialChoice || slotsLeft <= 0)}
         onClick={() =>
           dispatch((st, cx) =>
-            E.addFacility(st, cx, b.id, kind === 'basic' ? { kind, name: basic, size, alreadyBuilt: already } : { kind, name: specialChoice, size: 'roomy', alreadyBuilt: true }),
+            E.addFacility(st, cx, b.id, kind === 'basic' ? { kind, name: basic, size, alreadyBuilt: already } : { kind, name: specialChoice, size: specialSize, alreadyBuilt: true }),
           )
         }
       >
         Add
       </button>
-      {kind === 'special' && <Rule>Special facilities are added at their usual size. If the DMG gives this one a different size, change it with Enlarge or start it from the right size.</Rule>}
+      {kind === 'special' && <Rule>Special facilities use their DMG size: Cramped for the Meditation Chamber and Reliquary, Vast for the largest ones, and a choice of Roomy or Vast where the DMG allows it.</Rule>}
     </details>
   );
 }

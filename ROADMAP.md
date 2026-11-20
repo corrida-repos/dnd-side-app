@@ -158,12 +158,12 @@ These all happen during Short and Long Rests or at dawn, so they fit straight in
 
 ---
 
-## Phase 5: Fixes from the 5etools review 🔜
+## Phase 5: Fixes from the 5etools review ✅
 
 Checked against the 2024 *Player's Handbook* and *Dungeon Master's Guide* data that 5etools publishes. Each item below is a place where the tracker doesn't match the book yet.
 
 ### Travel and foraging
-- 🔜 **Terrain types from the DMG Travel Terrain table.** Replace the separate "foraging abundance" and "finding the way" settings with one terrain choice. Each terrain sets the maximum pace, encounter distance, foraging DC, navigation DC and search DC:
+- ✅ **Terrain types from the DMG Travel Terrain table.** Replace the separate "foraging abundance" and "finding the way" settings with one terrain choice. Each terrain sets the maximum pace, encounter distance, foraging DC, navigation DC and search DC:
 
   | Terrain | Max pace | Foraging DC | Navigation DC | Search DC |
   | --- | --- | --- | --- | --- |
@@ -179,15 +179,15 @@ Checked against the 2024 *Player's Handbook* and *Dungeon Master's Guide* data t
   | Urban | Normal | 20 | 15 | 15 |
   | Waterborne | Special | 15 | 10 | 15 |
 
-- 🔜 **A good road raises the maximum pace by one step** (Slow to Normal, Normal to Fast).
-- 🔜 **Fast pace also gives Disadvantage on Dexterity (Stealth)** checks, not only Perception and Survival.
-- 🔜 **Foraging** is one Wisdom (Survival) check per journey stage, or per day if the stage is shorter. A success finds 1d6 + Wisdom modifier pounds of food **per day of the stage**, then the same roll again in gallons of water.
+- ✅ **A good road raises the maximum pace by one step** (Slow to Normal, Normal to Fast).
+- ✅ **Fast pace also gives Disadvantage on Dexterity (Stealth)** checks, not only Perception and Survival.
+- ✅ **Foraging** is one Wisdom (Survival) check per journey stage, or per day if the stage is shorter. A success finds 1d6 + Wisdom modifier pounds of food **per day of the stage**, then the same roll again in gallons of water.
 
 ### Hazards
-- 🔜 **Extreme cold:** in 2024, only Cold Resistance or Immunity means an automatic success. Make cold weather gear an optional 2014 rule, off by default. The Bedroll still means an automatic success while sleeping in it.
-- 🔜 **Extreme heat:** in 2024, Disadvantage comes from Medium or Heavy armor only. Make heavy clothing an optional 2014 rule.
-- 🔜 **Frigid water:** creatures naturally adapted to icy water also succeed automatically. Add this per character.
-- 🔜 **Suffocation:** track the Exhaustion levels gained from suffocating, and remove all of them once the creature can breathe again.
+- ✅ **Extreme cold:** in 2024, only Cold Resistance or Immunity means an automatic success. Make cold weather gear an optional 2014 rule, off by default. The Bedroll still means an automatic success while sleeping in it.
+- ✅ **Extreme heat:** in 2024, Disadvantage comes from Medium or Heavy armor only. Make heavy clothing an optional 2014 rule.
+- ✅ **Frigid water:** creatures naturally adapted to icy water also succeed automatically. Add this per character.
+- ✅ **Suffocation:** track the Exhaustion levels gained from suffocating, and remove all of them once the creature can breathe again.
 
 ### Rests
 - ✅ **A Short Rest needs at least 1 HP to start**, just like a Long Rest. Characters at 0 HP get no Short Rest benefits.
@@ -197,20 +197,20 @@ Checked against the 2024 *Player's Handbook* and *Dungeon Master's Guide* data t
   - The party can resume a Long Rest, which then takes 1 more hour per interruption.
 
 ### Crafting and money
-- 🔜 **Raw materials cost half the price, rounded down**: 37 GP for Chain Mail, not 37.5.
-- 🔜 **Normally only one other character can help with crafting.** The DM can allow more. Limit crafters to two, with an override.
-- 🔜 **Lifestyle is paid at the start of each week or month** (DM's choice). Offer that alongside the current daily charge.
-- 🔜 **Animal feed weighs 10 lb per day** (5 CP). Encumbrance exists now, so count feed carried by mounts at 10 lb per day.
+- ✅ **Raw materials cost half the price, rounded down**: 37 GP for Chain Mail, not 37.5.
+- ✅ **Normally only one other character can help with crafting.** The DM can allow more. Limit crafters to two, with an override.
+- ✅ **Lifestyle is paid at the start of each week or month** (DM's choice). Offer that alongside the current daily charge.
+- ✅ **Animal feed weighs 10 lb per day** (5 CP). Encumbrance exists now, so count feed carried by mounts at 10 lb per day.
 - ✅ **Rations weigh 2 lb per day** in 2024. Carried food now counts at 2 lb per day of Rations.
 
 ### Bastions
-- 🔜 **A new Bastion starts with two free basic facilities** (one Cramped, one Roomy) and two special facilities.
-- 🔜 **Special facility sizes from the DMG:**
+- ✅ **A new Bastion starts with two free basic facilities** (one Cramped, one Roomy) and two special facilities.
+- ✅ **Special facility sizes from the DMG:**
   - Cramped: Meditation Chamber, Reliquary.
   - Vast: Gaming Hall, Theater, Training Area, Menagerie, Demiplane, Guildhall, War Room.
   - Roomy or Vast, your choice: Archive, Barrack, Garden, Pub, Stable, Workshop.
   - Everything else: Roomy.
-- 🔜 **Maintain is an order for the whole Bastion.** It blocks all other orders, and the event roll happens right after it's given. Characters who are away for 7 days are assumed to give Maintain.
+- ✅ **Maintain is an order for the whole Bastion.** It blocks all other orders, and the event roll happens right after it's given. Characters who are away for 7 days are assumed to give Maintain.
 
 ---
 

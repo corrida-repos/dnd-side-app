@@ -7,7 +7,7 @@ import type { EffectKind } from '../rules/effects';
 import type { Lifestyle } from '../rules/money';
 import type { Rarity } from '../rules/crafting';
 import type { Creature } from '../rules/hunting';
-import type { NavTerrain } from '../rules/navigation';
+import type { TerrainType } from '../rules/terrain';
 import type { HirelingRole } from '../rules/hirelings';
 import type { ClueKind, StudyMethod } from '../rules/identify';
 import type { WeightSource } from '../rules/encumbrance';
@@ -23,7 +23,7 @@ export type Pace = 'fast' | 'normal' | 'slow';
 export type Activity = 'camp' | 'rest' | 'travel' | 'work';
 export type Tone = 'info' | 'warn' | 'bad' | 'good';
 /** What caused each Exhaustion level. */
-export type ExhaustionCause = 'malnutrition' | 'dehydration' | 'cold' | 'heat' | 'march' | 'coldNight' | 'sleep' | 'frigid' | 'other';
+export type ExhaustionCause = 'malnutrition' | 'dehydration' | 'cold' | 'heat' | 'march' | 'coldNight' | 'sleep' | 'frigid' | 'suffocation' | 'other';
 export type ArmorKind = 'none' | 'light' | 'medium' | 'heavy';
 export type WaterQuality = 'clean' | 'questionable';
 
@@ -235,6 +235,8 @@ export interface Character {
   coldResist: Resist;
   fireResist: Resist;
   coldWeatherGear: boolean;
+  /** Naturally adapted to icy water: automatic success against frigid water. */
+  coldWaterAdapted: boolean;
   /** PHB: while in a Bedroll you automatically succeed on saves against extreme cold. */
   bedroll: boolean;
   /** PHB: while wrapped in a Blanket you have Advantage on saves against extreme cold. */
@@ -283,16 +285,20 @@ export interface Character {
 export interface Place {
   name: string;
   climate: ClimateId;
-  terrain: string;
   altitudeFt: number;
   shelter: Shelter;
-  forage: Abundance;
+  /** DMG terrain type: sets maximum pace, foraging, navigation and search DCs. */
+  terrain: TerrainType;
+  /** Following a road, river, coast or landmark: no navigation check. */
+  onRoute: boolean;
+  /** A good road raises the maximum pace by one step. */
+  goodRoad: boolean;
+  /** Older free-text description of the terrain. */
+  terrainNote?: string;
   waterSource: boolean;
   waterQuality: WaterQuality;
   /** In a town or city: lifestyle expenses are charged and cover meals. */
   settlement: boolean;
-  /** How hard it is to find the way here. */
-  navigation: NavTerrain;
 }
 
 export interface Fire {
@@ -387,6 +393,8 @@ export interface Bastion {
   turns: number;
   lastEvent: string;
   goldSpent: number;
+  /** The Maintain order covers the whole Bastion and blocks other orders. */
+  maintain: boolean;
   notes: string;
 }
 
@@ -450,6 +458,14 @@ export interface Settings {
   weatherDamage: boolean;
   /** Optional older rule: Encumbered over 5 × Strength, Heavily Encumbered over 10 × Strength. */
   variantEncumbrance: boolean;
+  /** 2014 rule: cold weather gear means an automatic success against extreme cold. */
+  coldGear2014: boolean;
+  /** 2014 rule: heavy clothing gives Disadvantage on extreme heat saves. */
+  heavyClothing2014: boolean;
+  /** Allow more than one helper on a crafting project (the DM can). */
+  extraCraftHelpers: boolean;
+  /** How often lifestyle is paid: every day, at the start of each week, or at the start of each month. */
+  lifestylePeriod: 'day' | 'week' | 'month';
   /** Count coins toward carried weight (50 coins per pound, treating gold as coins). */
   coinWeight: boolean;
   /** Nobody has a timepiece: show the time as nature's cues instead of a clock. */

@@ -64,7 +64,7 @@ function DateCard() {
 
 function RulesCard() {
   const s = useGame();
-  const set = (k: Exclude<keyof typeof s.settings, 'rawFoodDC' | 'coldNightF' | 'encounterOn' | 'exploreEncounterOn' | 'moonOffset' | 'stressPerLongRest' | 'fearPerLongRest'>, v: boolean) => edit((d) => void (d.settings[k] = v));
+  const set = (k: Exclude<keyof typeof s.settings, 'rawFoodDC' | 'coldNightF' | 'encounterOn' | 'exploreEncounterOn' | 'moonOffset' | 'stressPerLongRest' | 'fearPerLongRest' | 'lifestylePeriod'>, v: boolean) => edit((d) => void (d.settings[k] = v));
   return (
     <Card title="Rules options">
       <div className="stack tight">
@@ -102,6 +102,19 @@ function RulesCard() {
         <Toggle checked={s.settings.poorVisibilityNav} onChange={(v) => set('poorVisibilityNav', v)} label="Heavy rain or snow, and darkness, each make navigating harder (+5 DC, table rule)" />
         <Toggle checked={s.settings.variantEncumbrance} onChange={(v) => set('variantEncumbrance', v)} label="Encumbered over 5 × Strength, Heavily Encumbered over 10 × Strength (optional older rule)" />
         <Toggle checked={s.settings.coinWeight} onChange={(v) => set('coinWeight', v)} label="Coins count toward carried weight (50 per pound)" />
+        <Toggle checked={s.settings.coldGear2014} onChange={(v) => set('coldGear2014', v)} label="Cold weather gear protects against extreme cold (2014 rule; 2024 only counts Cold Resistance or Immunity)" />
+        <Toggle checked={s.settings.heavyClothing2014} onChange={(v) => set('heavyClothing2014', v)} label="Heavy clothing gives Disadvantage on extreme heat saves (2014 rule; 2024 only counts Medium or Heavy armor)" />
+        <Toggle checked={s.settings.extraCraftHelpers} onChange={(v) => set('extraCraftHelpers', v)} label="Allow more than one helper on a crafting project (normally only one other character can help)" />
+        <Select
+          label="Lifestyle is paid"
+          value={s.settings.lifestylePeriod}
+          onChange={(v) => edit((d) => void (d.settings.lifestylePeriod = v))}
+          options={[
+            { value: 'day', label: 'Every day' },
+            { value: 'week', label: 'At the start of each week' },
+            { value: 'month', label: 'At the start of each month' },
+          ]}
+        />
         <Toggle checked={s.settings.climateAdjustedPrecip} onChange={(v) => set('climateAdjustedPrecip', v)} label="Adjust the precipitation roll for climate (deserts drier, jungles wetter)" />
         <Rule>When this is off, the plain DMG d20 table is used everywhere.</Rule>
         <Toggle checked={s.settings.doubleWaterInHeat} onChange={(v) => set('doubleWaterInHeat', v)} label="Double water needs on days of 100 °F or hotter (2014 rule)" />

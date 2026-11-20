@@ -5,7 +5,8 @@ import { fireThreat } from '../rules/weather';
 import { GAME_ANIMALS, MEAT_LB, BUTCHER_MINUTES, BUTCHER_DC, isEdible, yieldsHide, STRANGE_TYPES } from '../rules/hunting';
 import { formatClock, formatDuration } from '../rules/calendar';
 import { autoAssign, maxWatchMinutes, WATCH_COUNTS, watchCapacity, watchMinutes } from '../rules/watch';
-import { FORAGE_DC, ABUNDANCE_LABEL, foodNeedLb, fmtLb, fmtWater, proficiencyBonus, ARMOR_LABEL, armorTime, BOIL_MINUTES, PURIFY_SPELL, TAINTED_DC } from '../rules/survival';
+import { TERRAIN } from '../rules/terrain';
+import { foodNeedLb, fmtLb, fmtWater, proficiencyBonus, ARMOR_LABEL, armorTime, BOIL_MINUTES, PURIFY_SPELL, TAINTED_DC } from '../rules/survival';
 import { Card, Num, Pill, Select, Text, Toggle, Rule } from './common';
 
 export function CampTab() {
@@ -67,7 +68,7 @@ function FireCard() {
       <div className="btn-row">
         <Select value={gatherer} onChange={setGatherer} options={opts} />
         <button disabled={!gatherer} onClick={() => dispatch((st, c) => E.gatherWood(st, c, gatherer))}>
-          Gather firewood (1 h, Survival DC {FORAGE_DC[s.place.forage]})
+          Gather firewood (1 h, Survival DC {TERRAIN[s.place.terrain].forageDC})
         </button>
       </div>
     </Card>
@@ -435,7 +436,7 @@ function ForageCard() {
   return (
     <Card title="Foraging">
       <p>
-        {ABUNDANCE_LABEL[s.place.forage]}: <b>DC {FORAGE_DC[s.place.forage]}</b> Wisdom (Survival).
+        {TERRAIN[s.place.terrain].label} terrain: <b>DC {TERRAIN[s.place.terrain].forageDC}</b> Wisdom (Survival).
       </p>
       <Rule>On a success you find 1d6 + Wisdom modifier pounds of food and the same roll again in gallons of water. Spend an hour in camp, or forage while you travel (Slow pace gives Advantage, Fast gives Disadvantage).</Rule>
       <div className="btn-row">

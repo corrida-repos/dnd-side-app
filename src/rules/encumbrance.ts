@@ -155,3 +155,6 @@ export const LOAD_LABEL: Record<LoadLevel, string> = {
   heavy: 'Heavily Encumbered (Speed −20 ft, Disadvantage on Str/Dex/Con checks, attacks and saves)',
   over: 'Over capacity (can only drag it, Speed 5 ft)',
 };
+
+/** A day of animal feed weighs 10 lb (PHB). */
+export const FEED_LB_PER_DAY = 10;

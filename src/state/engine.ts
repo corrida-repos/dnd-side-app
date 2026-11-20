@@ -1,14 +1,15 @@
 import type { ActiveEffect, Activity, CharacterSpell, LogEntry, Ritual, Bastion, Character, ExhaustionCause, Facility, MagicItem, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
-import { BASIC_BUILD, BASTION_TURN_DAYS, ENLARGE, rollBastionEvent, SIZE_LABEL, SPECIAL_FACILITIES, type FacilitySize } from '../rules/bastion';
+import { BASIC_BUILD, BASTION_TURN_DAYS, defaultSize, ENLARGE, rollBastionEvent, SIZE_LABEL, SPECIAL_FACILITIES, type FacilitySize } from '../rules/bastion';
 import { d20, die, combineModes, rollExpr, signed, type Rng, type RollMode } from '../rules/dice';
 import { dateFromIndex, formatClock, formatDate, formatDuration, lightAt, sunriseMinutes } from '../rules/calendar';
 import { EXPLORATION_TURN_MINUTES, LIGHT_WARNING_MINUTES, type EffectPreset } from '../rules/effects';
 import { divinationFailChance, SPELLBOOK_REPLACE } from '../rules/longterm';
 import { LOST_RECHECK_DIE, navigationDC } from '../rules/navigation';
+import { TERRAIN, clampPace } from '../rules/terrain';
 import { readSky, SKY_DC } from '../rules/skyclock';
 import { MESSENGER_GP_PER_MILE } from '../rules/hirelings';
 import { ARCANA_DC, STUDY_MINUTES, type StudyMethod } from '../rules/identify';
-import { MOUNT_CAPACITY, carryingCapacity, COINS_PER_LB, estimateWeight, loadLevel, parseInventory, RATION_WEIGHT, type LoadLevel } from '../rules/encumbrance';
+import { FEED_LB_PER_DAY, MOUNT_CAPACITY, carryingCapacity, COINS_PER_LB, estimateWeight, loadLevel, parseInventory, RATION_WEIGHT, type LoadLevel } from '../rules/encumbrance';
 import { BUTCHER_DC, BUTCHER_MINUTES, isEdible, MEAT_LB, STRANGE_TYPES, yieldsHide, type Creature } from '../rules/hunting';
 import { FEED_GP_PER_DAY, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset } from '../rules/money';
 import { STABLE_WAKE_DIE, STABILIZE_DC } from '../rules/upkeep';
@@ -19,7 +20,6 @@ import { fireThreat, rollWeather, temperatureAt, CLIMATES, weatherDamageAffiniti
 import {
   exhaustionSummary,
   foodNeedLb,
-  FORAGE_DC,
   PACES,
   PINTS_PER_GALLON,
   proficiencyBonus,
@@ -88,6 +88,7 @@ const CAUSE_SENSE: Record<ExhaustionCause, SenseKey> = {
   coldNight: 'coldNight',
   sleep: 'sleep',
   frigid: 'frigid',
+  suffocation: 'frigid',
   other: 'sleep',
 };
 
@@ -169,16 +170,16 @@ export function exposure(s: State, activity: Activity): Exposure {
 }
 
 /** Anything that means an automatic success against extreme cold. A Bedroll only counts while resting in it. */
-export function coldProtection(c: Character, activity: Activity = 'camp'): string | null {
+export function coldProtection(c: Character, activity: Activity = 'camp', gearCounts = false): string | null {
   if (c.coldResist === 'immunity') return 'Cold Immunity';
   if (c.coldResist === 'resistance') return 'Cold Resistance';
-  if (c.coldWeatherGear) return 'Cold weather gear';
+  if (c.coldWeatherGear && gearCounts) return 'Cold weather gear (2014 rule)';
   if (c.bedroll && activity === 'rest') return 'Bedroll';
   return null;
 }
 
 /** Warm cover for a cold night: automatic protection, or a Blanket. */
-export const hasWarmCover = (c: Character): boolean => !!coldProtection(c, 'rest') || c.blanket;
+export const hasWarmCover = (c: Character): boolean => !!coldProtection(c, 'rest', true) || c.blanket;
 
 export function hasDrinkableWater(s: State, c: Character, activity: Activity): boolean {
   return c.waterPints > 0 || s.place.waterSource || (activity !== 'travel' && s.stores.waterGal + s.stores.waterUnsafeGal > 0);
@@ -194,6 +195,7 @@ export function heatProtection(c: Character, hasWater: boolean): string | null {
 // ---------------------------------------------------------------- saves & exhaustion
 
 const CAUSE_OF_SAVE: Partial<Record<SaveKind, ExhaustionCause>> = { cold: 'cold', heat: 'heat', march: 'march', malnutrition: 'malnutrition', chill: 'coldNight', sleep: 'sleep', frigid: 'frigid' };
+const SUFFOCATION_NOTE = 'gone once they can breathe again';
 
 export function gainExhaustion(s: State, c: Character, n: number, why: string, cause: ExhaustionCause = 'other'): void {
   if (!alive(c)) return;
@@ -292,7 +294,7 @@ function tickHour(s: State, ctx: Ctx, activity: Activity): void {
   const exp = exposure(s, activity);
   for (const c of s.characters) {
     if (!alive(c)) continue;
-    if (exp.cold && temp <= 0 && !coldProtection(c, activity)) {
+    if (exp.cold && temp <= 0 && !coldProtection(c, activity, s.settings.coldGear2014)) {
       const wrapped = c.blanket && activity === 'rest';
       requestSave(s, ctx, c, 'cold', 10, wrapped ? 'advantage' : 'normal', `extreme cold (${temp}°F)${wrapped ? ', wrapped in a Blanket' : ''}`);
     } else if (activity === 'rest' && exp.cold && s.settings.coldNights && temp <= s.settings.coldNightF && !hasWarmCover(c)) {
@@ -301,7 +303,7 @@ function tickHour(s: State, ctx: Ctx, activity: Activity): void {
     if (exp.heat && temp >= 100) {
       if (!heatProtection(c, hasDrinkableWater(s, c, activity))) {
         c.heatHours += 1;
-        requestSave(s, ctx, c, 'heat', 4 + c.heatHours, heatDisadvantage(c) ? 'disadvantage' : 'normal', `extreme heat (${temp}°F), hour ${c.heatHours}`);
+        requestSave(s, ctx, c, 'heat', 4 + c.heatHours, heatDisadvantage(c, s.settings.heavyClothing2014) ? 'disadvantage' : 'normal', `extreme heat (${temp}°F), hour ${c.heatHours}`);
       } else c.heatHours = 0;
     } else c.heatHours = 0;
   }
@@ -317,7 +319,13 @@ function dailyCosts(s: State): void {
         fed.push(c.name);
       }
       const cost = LIFESTYLE_GP[c.lifestyle];
-      if (cost > 0) payGold(s, [c.id], cost, `a day of ${LIFESTYLE_LABEL[c.lifestyle]} living`);
+      const next = dateFromIndex(s.calendar, s.startYear, s.dayIndex + 1);
+      const period = s.settings.lifestylePeriod;
+      if (cost > 0) {
+        if (period === 'day') payGold(s, [c.id], cost, `a day of ${LIFESTYLE_LABEL[c.lifestyle]} living`);
+        else if (period === 'week' && (s.dayIndex + 1) % 7 === 0) payGold(s, [c.id], cost * 7, `a week of ${LIFESTYLE_LABEL[c.lifestyle]} living`);
+        else if (period === 'month' && next.day === 1) payGold(s, [c.id], cost * next.month.days, `a month of ${LIFESTYLE_LABEL[c.lifestyle]} living`);
+      }
     }
     if (fed.length) log(s, `Town living covers meals and lodging for ${fed.join(', ')}.`);
   }
@@ -855,7 +863,7 @@ export interface TravelOpts {
 /** The navigation DC right now, or null when following a road, river or coast. */
 export function currentNavigationDC(s: State) {
   const dark = lightAt(s.minutes % MIN_PER_DAY, seasonOf(s)).phase === 'Night' || !!CLIMATES[s.weather.climate].noWeather;
-  return navigationDC(s.place.navigation, { heavyPrecip: s.weather.precip === 'heavy', dark, poorVisibilityRule: s.settings.poorVisibilityNav });
+  return navigationDC(s.place.onRoute ? null : TERRAIN[s.place.terrain].navigationDC, { heavyPrecip: s.weather.precip === 'heavy', dark, poorVisibilityRule: s.settings.poorVisibilityNav });
 }
 
 /** The navigator's Wisdom (Survival) check. Slow pace gives Advantage, Fast pace Disadvantage. */
@@ -871,6 +879,11 @@ function navigate(s: State, ctx: Ctx, nav: Character, pace: Pace): boolean | nul
 }
 
 export const travel = act((d, ctx, o: TravelOpts) => {
+  const allowed = clampPace(o.pace, d.place.terrain, d.place.goodRoad);
+  if (allowed !== o.pace) {
+    log(d, `${TERRAIN[d.place.terrain].label} terrain${d.place.goodRoad ? ', even with a good road,' : ''} only allows a ${allowed} pace.`, 'warn');
+    o = { ...o, pace: allowed };
+  }
   d.travel.pace = o.pace;
   if (d.fire.lit) {
     d.fire.lit = false;
@@ -916,23 +929,25 @@ export const travel = act((d, ctx, o: TravelOpts) => {
   if (d.travel.lost) d.travel.milesOffCourse += offCourse;
   if (offCourse > 0 && d.travel.lost) log(d, `${+offCourse.toFixed(1)} of those miles went the wrong way. The party is still lost.`, 'warn');
   log(d, `Covered ${+miles.toFixed(1)} miles. That makes ${+d.travel.milesToday.toFixed(1)} miles and ${d.travel.hoursToday} travel hour(s) since the last Long Rest.`);
+  const stageDays = Math.max(1, Math.round(o.hours / 8));
   for (const id of o.foragerIds) {
     const c = charById(d, id);
-    if (c) doForage(d, ctx, c, o.pace);
+    if (c) doForage(d, ctx, c, o.pace, stageDays);
   }
 });
 
 // ---------------------------------------------------------------- foraging, fire, food
 
-function doForage(s: State, ctx: Ctx, c: Character, pace: Pace | null): void {
+function doForage(s: State, ctx: Ctx, c: Character, pace: Pace | null, days = 1): void {
   if (!alive(c)) return;
-  const dc = FORAGE_DC[s.place.forage];
+  const dc = TERRAIN[s.place.terrain].forageDC;
   const mode = combineModes(pace === 'slow' ? 'advantage' : 'normal', pace === 'fast' ? 'disadvantage' : 'normal');
   const r = d20(mode, ctx.rng);
   const total = r.value + c.survival - 2 * c.exhaustion;
   if (total >= dc) {
-    const food = Math.max(0, die(6, ctx.rng) + c.wisMod);
-    const water = Math.max(0, die(6, ctx.rng) + c.wisMod);
+    // Food and water found per day of the journey stage.
+    const food = Math.max(0, die(6, ctx.rng) + c.wisMod) * days;
+    const water = Math.max(0, die(6, ctx.rng) + c.wisMod) * days;
     const rawFood = s.settings.rawFoodRisk;
     const dirtyWater = s.settings.wildNeedsPurifying;
     if (rawFood) s.stores.foodRawLb += food;
@@ -984,7 +999,7 @@ export const gatherWood = act((d, ctx, charId: string) => {
   const c = charById(d, charId);
   if (!c) return;
   advanceMut(d, ctx, 60, 'camp');
-  const dc = FORAGE_DC[d.place.forage];
+  const dc = TERRAIN[d.place.terrain].forageDC;
   const r = d20('normal', ctx.rng);
   const total = r.value + c.survival - 2 * c.exhaustion;
   const hours = total >= dc ? die(6, ctx.rng) + 2 : 1;
@@ -1329,7 +1344,8 @@ function progress(s: State, p: Project): void {
     const c = charById(s, id);
     return c && alive(c);
   }).length;
-  const amount = Math.max(1, crafters);
+  // Normally only one other character can help (the DM can allow more).
+  const amount = Math.max(1, s.settings.extraCraftHelpers ? crafters : Math.min(2, crafters));
   p.daysDone = Math.min(p.daysRequired, p.daysDone + amount);
   if (p.daysDone >= p.daysRequired) {
     p.done = true;
@@ -1395,7 +1411,9 @@ function progressBastions(s: State): void {
 export const foundBastion = act((d, _ctx, ownerId: string, name: string) => {
   const owner = charById(d, ownerId);
   if (!owner) return;
-  d.bastions.push({ id: uid(), name: name || `${owner.name}'s Bastion`, ownerId, facilities: [], lastTurnDay: d.dayIndex, turns: 0, lastEvent: '', goldSpent: 0, notes: '' });
+  const free = (fname: string, size: FacilitySize): Facility => ({ id: uid(), name: fname, kind: 'basic', size, order: 'Maintain', orderNote: '', building: null, built: true });
+  // A new Bastion comes with two free basic facilities: one Cramped, one Roomy (swap them for others if you like).
+  d.bastions.push({ id: uid(), name: name || `${owner.name}'s Bastion`, ownerId, facilities: [free('Bedroom', 'cramped'), free('Dining Room', 'roomy')], lastTurnDay: d.dayIndex, turns: 0, lastEvent: '', goldSpent: 0, notes: '', maintain: false });
   log(d, `${owner.name} founds a Bastion: ${name || `${owner.name}'s Bastion`}.`, 'good');
 });
 
@@ -1415,7 +1433,7 @@ export const addFacility = act((d, _ctx, bastionId: string, nf: NewFacility) => 
     id: uid(),
     name: nf.name,
     kind: nf.kind,
-    size: nf.size,
+    size: nf.kind === 'special' && !nf.size ? defaultSize(nf.name) : nf.size,
     order: special && nf.kind === 'special' ? special.order : 'Maintain',
     orderNote: '',
     building: null,
@@ -1454,9 +1472,9 @@ export const resolveBastionTurn = act((d, ctx, bastionId: string) => {
   b.lastTurnDay += BASTION_TURN_DAYS;
   b.turns += 1;
   const working = b.facilities.filter((f) => f.kind === 'special' && f.built);
-  const orders = working.map((f) => `${f.name}: ${f.order}${f.orderNote ? ` (${f.orderNote})` : ''}`);
+  const orders = b.maintain ? ['Maintain (the whole Bastion)'] : working.map((f) => `${f.name}: ${f.order}${f.orderNote ? ` (${f.orderNote})` : ''}`);
   log(d, `${b.name}, Bastion turn ${b.turns}. Orders: ${orders.join('; ') || 'none'}.`);
-  if (working.every((f) => f.order === 'Maintain')) {
+  if (b.maintain || !working.length) {
     const e = rollBastionEvent(ctx.rng);
     b.lastEvent = `Turn ${b.turns}: ${e.event} (d100 = ${e.roll})`;
     log(d, `${b.name}: every facility was maintained, so roll a Bastion event. d100 = ${e.roll}: ${e.event}. See the DMG for what happens.`, e.event === 'Attack' || e.event === 'Criminal Hireling' || e.event === 'Lost Hirelings' ? 'warn' : 'info');
@@ -1706,8 +1724,8 @@ export const frigidWater = act((d, ctx, charId: string, minutes: number) => {
   const c = charById(d, charId);
   if (!c) return;
   const safe = c.conScore;
-  const resistant = c.coldResist !== 'none';
-  log(d, `${c.name} spends ${minutes} minute(s) in frigid water (${resistant ? 'unaffected thanks to their Cold ' + (c.coldResist === 'immunity' ? 'Immunity' : 'Resistance') : `safe for ${safe} minutes, their Constitution score`}).`);
+  const resistant = c.coldResist !== 'none' || c.coldWaterAdapted;
+  log(d, `${c.name} spends ${minutes} minute(s) in frigid water (${resistant ? (c.coldWaterAdapted ? 'unaffected: they are adapted to icy water' : 'unaffected thanks to their Cold ' + (c.coldResist === 'immunity' ? 'Immunity' : 'Resistance')) : `safe for ${safe} minutes, their Constitution score`}).`);
   for (let m = 1; m <= minutes; m++) {
     advanceMut(d, ctx, 1, 'camp');
     if (m > safe && alive(c) && !resistant) requestSave(d, ctx, c, 'frigid', 10, 'normal', `frigid water (minute ${m})`);
@@ -2171,7 +2189,8 @@ export interface Load {
 /** Everything a character carries, in pounds, with the estimate broken down. */
 export function carriedLoad(s: State, c: Character): Load {
   const gear = c.inventory.reduce((a, i) => a + i.weight * i.qty, 0);
-  const food = c.rationsLb * RATION_WEIGHT;
+  // Rations weigh 2 lb per day; a day of animal feed weighs 10 lb.
+  const food = c.kind === 'mount' ? (c.rationsLb / Math.max(0.25, foodNeedLb(c))) * FEED_LB_PER_DAY : c.rationsLb * RATION_WEIGHT;
   const skins = c.waterCapacityPints > 0 ? Math.ceil(c.waterCapacityPints / 4) : 0;
   const water = c.waterPints + skins; // a pint of water weighs about a pound; each empty skin about a pound
   const coins = s.settings.coinWeight && c.kind !== 'mount' ? Math.max(0, c.gp) / COINS_PER_LB : 0;
@@ -2193,4 +2212,26 @@ export const addInventory = act((d, _ctx, charId: string, text: string) => {
     else c.inventory.push({ id: uid(), ...p });
   }
   if (parsed.length) log(d, `${c.name}'s inventory: added ${parsed.length} line(s), ${parsed.filter((p) => p.source === 'guess').length} with guessed weights.`);
+});
+
+// ---------------------------------------------------------------- suffocation
+
+/** Out of breath: 1 Exhaustion level at the end of each turn without air. */
+export const suffocate = act((d, _ctx, charId: string, turns: number) => {
+  const c = charById(d, charId);
+  if (!c || turns <= 0) return;
+  gainExhaustion(d, c, Math.min(turns, 6), `suffocating for ${turns} turn${turns > 1 ? 's' : ''}, ${SUFFOCATION_NOTE}`, 'suffocation');
+});
+
+/** Breathing again removes every Exhaustion level gained from suffocating. */
+export const breatheAgain = act((d, _ctx, charId: string) => {
+  const c = charById(d, charId);
+  if (!c) return;
+  const causes = causesOf(c);
+  const kept = causes.filter((x) => x !== 'suffocation');
+  const removed = causes.length - kept.length;
+  if (!removed) return;
+  c.exhaustionCauses = kept;
+  c.exhaustion = kept.length;
+  status(d, c, 'exhaustionEases', `${c.name} can breathe again, and the ${removed} Exhaustion level${removed > 1 ? 's' : ''} from suffocating go away.`, 'good');
 });

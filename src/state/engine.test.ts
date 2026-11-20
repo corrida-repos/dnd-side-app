@@ -88,9 +88,13 @@ describe('extreme temperatures', () => {
       calm(d, -10, -20);
       d.characters.push(newCharacter({ name: 'Furry', coldWeatherGear: true }));
     });
+    // 2024: cold weather gear doesn't protect against extreme cold...
     const n = E.advance(s, LOW, 120);
     expect(n.characters[0].exhaustion).toBe(2);
-    expect(n.characters[1].exhaustion).toBe(0);
+    expect(n.characters[1].exhaustion).toBe(2);
+    // ...unless the optional 2014 rule is on.
+    s.settings.coldGear2014 = true;
+    expect(E.advance(s, LOW, 120).characters[1].exhaustion).toBe(0);
   });
 
   it('lets a campfire or building protect from cold (table rule)', () => {
@@ -417,29 +421,36 @@ describe('bastions', () => {
     return E.foundBastion(s, ctx(), s.characters[0].id, 'Keep');
   };
 
+  const fac = (st: State, name: string) => st.bastions[0].facilities.find((f) => f.name === name)!;
+
   it('builds basic facilities day by day and enlarges them', () => {
     let s = withBastion();
     const id = s.bastions[0].id;
     s = E.addFacility(s, ctx(), id, { kind: 'basic', name: 'Kitchen', size: 'cramped', alreadyBuilt: false });
     expect(s.bastions[0].goldSpent).toBe(500);
-    expect(s.bastions[0].facilities[0]).toMatchObject({ built: false, building: { daysLeft: 20 } });
+    expect(fac(s, 'Kitchen')).toMatchObject({ built: false, building: { daysLeft: 20 } });
     s = E.advance(s, ctx(), 19 * 1440);
-    expect(s.bastions[0].facilities[0].building?.daysLeft).toBe(1);
+    expect(fac(s, 'Kitchen').building?.daysLeft).toBe(1);
     s = E.advance(s, ctx(), 1440);
-    expect(s.bastions[0].facilities[0]).toMatchObject({ built: true, building: null, size: 'cramped' });
-    s = E.enlargeFacility(s, ctx(), id, s.bastions[0].facilities[0].id);
+    expect(fac(s, 'Kitchen')).toMatchObject({ built: true, building: null, size: 'cramped' });
+    s = E.enlargeFacility(s, ctx(), id, fac(s, 'Kitchen').id);
     expect(s.bastions[0].goldSpent).toBe(1000);
     s = E.advance(s, ctx(), 25 * 1440);
-    expect(s.bastions[0].facilities[0].size).toBe('roomy');
+    expect(fac(s, 'Kitchen').size).toBe('roomy');
   });
 
   it('adds special facilities free and starting basics without cost', () => {
     let s = withBastion();
     const id = s.bastions[0].id;
+    expect(s.bastions[0].facilities.map((f) => [f.name, f.size])).toEqual([
+      ['Bedroom', 'cramped'],
+      ['Dining Room', 'roomy'],
+    ]); // two free starting facilities
     s = E.addFacility(s, ctx(), id, { kind: 'special', name: 'Smithy', size: 'roomy', alreadyBuilt: true });
-    s = E.addFacility(s, ctx(), id, { kind: 'basic', name: 'Bedroom', size: 'roomy', alreadyBuilt: true });
+    s = E.addFacility(s, ctx(), id, { kind: 'special', name: 'Theater', size: 'vast', alreadyBuilt: true });
     expect(s.bastions[0].goldSpent).toBe(0);
-    expect(s.bastions[0].facilities[0]).toMatchObject({ order: 'Craft', built: true });
+    expect(fac(s, 'Smithy')).toMatchObject({ order: 'Craft', built: true });
+    expect(fac(s, 'Theater').size).toBe('vast');
   });
 
   it('comes due every 7 days and rolls an event only when everything is maintained', () => {
@@ -453,7 +464,7 @@ describe('bastions', () => {
     const worked = E.resolveBastionTurn(s, ctx(), id);
     expect(worked.bastions[0]).toMatchObject({ turns: 1, lastEvent: 'Turn 1: orders carried out' });
     expect(E.turnsDue(worked, worked.bastions[0])).toBe(0);
-    s.bastions[0].facilities[0].order = 'Maintain';
+    s.bastions[0].maintain = true; // Maintain covers the whole Bastion
     expect(E.resolveBastionTurn(s, ctx(0), id).bastions[0].lastEvent).toBe('Turn 1: All Is Well (d100 = 1)');
     expect(E.resolveBastionTurn(s, ctx(0.999), id).bastions[0].lastEvent).toBe('Turn 1: Treasure (d100 = 100)');
   });

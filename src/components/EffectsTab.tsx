@@ -182,6 +182,7 @@ function BreathCard() {
   const s = useGame();
   const [who, setWho] = useState(s.characters[0]?.id ?? '');
   const [mins, setMins] = useState(5);
+  const [turns, setTurns] = useState(1);
   const c = s.characters.find((x) => x.id === who) ?? s.characters[0];
   if (!c) return null;
   const breath = holdBreathSeconds(abilityMod(c.conScore));
@@ -191,11 +192,21 @@ function BreathCard() {
       <p>
         <b>{c.name}</b> can hold their breath for <b>{breath >= 60 ? formatDuration(breath / 60) : `${breath} seconds`}</b> (1 + Con modifier minutes, at least 30 seconds).
       </p>
-      <Rule>When they run out of breath, they gain 1 Exhaustion level at the end of each of their turns. Once they can breathe again, those levels go away. Check the PHB for the exact suffocation rules.</Rule>
+      <div className="btn-row tight">
+        <Num value={turns} onChange={(v) => setTurns(Math.max(1, Math.round(v)))} min={1} suffix="turns" width={2} />
+        <button className="small bad" onClick={() => dispatch((st, cx) => E.suffocate(st, cx, c.id, turns))}>
+          Out of breath for {turns} turn{turns > 1 ? 's' : ''}
+        </button>
+        <button className="small good" onClick={() => dispatch((st, cx) => E.breatheAgain(st, cx, c.id))}>
+          Can breathe again
+        </button>
+      </div>
+      <Rule>When they run out of breath or are choking, they gain 1 Exhaustion level at the end of each of their turns. Once they can breathe again, every level from suffocating goes away.</Rule>
       <h3>Frigid water</h3>
       <p className="small">
         Safe for <b>{c.conScore} minutes</b> (their Constitution score). After that, a DC 10 Con save each minute, or 1 Exhaustion level from Frigid water.
         {c.coldResist !== 'none' && ' Their Cold Resistance or Immunity keeps them safe.'}
+        {c.coldWaterAdapted && ' They are adapted to icy water and stay safe.'}
       </p>
       <div className="btn-row">
         <Num value={mins} onChange={(v) => setMins(Math.max(1, Math.round(v)))} min={1} max={240} suffix="min" width={3} />
