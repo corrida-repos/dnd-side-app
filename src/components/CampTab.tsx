@@ -216,7 +216,16 @@ function PurifyCard() {
     <Card title={<span>Raw food and dirty water {dirty ? <Pill tone="warn">Needs purifying</Pill> : <Pill tone="good">All safe</Pill>}</span>}>
       <ul className="plain small">
         <li>Raw food: {fmtLb(s.stores.foodRawLb)}</li>
-        {s.characters.some((c) => c.sick) && <li className="bad-text">Food poisoning: {s.characters.filter((c) => c.sick).map((c) => c.name).join(', ')}</li>}
+        {s.characters
+          .filter((c) => c.sick)
+          .map((c) => (
+            <li key={c.id} className="bad-text">
+              {c.name} is Sick from {c.sickFrom || 'raw food or unpurified water'}: Poisoned until a Long Rest.{' '}
+              <button className="ghost tiny" onClick={() => dispatch((st, cx) => E.curePoison(st, cx, c.id))}>
+                Cured (Lesser Restoration or similar)
+              </button>
+            </li>
+          ))}
         <li>Unpurified water: {s.stores.waterUnsafeGal} gal</li>
         <li>Tainted waterskins: {skins.length ? skins.map((c) => c.name).join(', ') : 'none'}</li>
         <li>
@@ -258,7 +267,7 @@ function PurifyCard() {
       </div>
       <Rule>
         Table rules: boiling over a lit campfire makes all water safe, and cooking a hot meal uses up raw food first and makes it safe. Eating <b>raw food</b> means a DC {s.settings.rawFoodDC} Con save, or you
-        are <b>Sick</b>: Poisoned (Disadvantage on attack rolls and ability checks) until you finish a Long Rest. Drinking <b>unpurified water</b> means a DC {TAINTED_DC} Con save, or you are Poisoned for 1 hour.
+        are <b>Sick</b>: Poisoned (Disadvantage on attack rolls and ability checks) until you finish a Long Rest. Drinking <b>unpurified water</b> means a DC {TAINTED_DC} Con save, or you are <b>Sick</b> the same way. Lesser Restoration, Lay on Hands (5 points) or any other cure for Poisoned ends it sooner.
       </Rule>
       <WaysAround topic={'tainted'} />
     </Card>

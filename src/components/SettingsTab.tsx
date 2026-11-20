@@ -145,8 +145,8 @@ function RulesCard() {
           </div>
         )}
         <Rule>Eating raw food means a Con save, or the character is Sick: Poisoned until they finish a Long Rest. Cooking it or casting Purify Food and Drink makes it safe.</Rule>
-        <Toggle checked={s.settings.wildNeedsPurifying} onChange={(v) => set('wildNeedsPurifying', v)} label="Questionable and foraged water must be purified (table rule)" />
-        <Rule>Drinking unpurified water means a DC 10 Con save, or the character is Poisoned for 1 hour. Purify Food and Drink or boiling makes it safe.</Rule>
+        <Toggle checked={s.settings.wildNeedsPurifying} onChange={(v) => set('wildNeedsPurifying', v)} label="Unpurified water can make you sick (table rule)" />
+        <Rule>Drinking unpurified water means a DC 10 Con save, or the character is Sick: Poisoned until they finish a Long Rest. Purify Food and Drink or boiling makes it safe.</Rule>
         <Toggle checked={s.settings.sleepInArmorPenalty} onChange={(v) => set('sleepInArmorPenalty', v)} label="Sleeping in Medium or Heavy armor spoils the Long Rest (optional Xanathar's rule)" />
       </div>
     </Card>

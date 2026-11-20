@@ -403,7 +403,7 @@ function PoisonCard() {
   const whoId = people.find((c) => c.id === who)?.id ?? people[0]?.id ?? '';
   const p = POISONS.find((x) => x.name === poison)!;
   const holders = s.characters.filter((c) => c.inventory.some((i) => poisonByName(i.name)?.name === poison && i.qty > 0));
-  const poisoned = people.filter((c) => (c.poisonTimers ?? []).length > 0 || s.effects.some((e) => e.name.startsWith('Poisoned') && e.targetIds.includes(c.id)));
+  const poisoned = people.filter((c) => c.sick || (c.poisonTimers ?? []).length > 0 || s.effects.some((e) => e.name.startsWith('Poisoned') && e.targetIds.includes(c.id)));
   return (
     <Card title="Poisons">
       <div className="form-row">
@@ -419,7 +419,7 @@ function PoisonCard() {
         <ul className="plain small">
           {poisoned.map((c) => (
             <li key={c.id}>
-              <b>{c.name}</b>: {[...s.effects.filter((e) => e.name.startsWith('Poisoned') && e.targetIds.includes(c.id)).map((e) => `${e.name}${e.endsAt ? ` (${formatDuration(Math.max(0, e.endsAt - E.absNow(s)))})` : ''}`), ...(c.poisonTimers ?? []).map((t) => (t.name === 'Midnight Tears' ? 'Midnight Tears (strikes at midnight, hidden)' : `Pale Tincture ${t.successes}/7 saves`))].join(', ')}{' '}
+              <b>{c.name}</b>: {[...(c.sick ? [`Sick from ${c.sickFrom || 'raw food or water'} (until a Long Rest)`] : []), ...s.effects.filter((e) => e.name.startsWith('Poisoned') && e.targetIds.includes(c.id)).map((e) => `${e.name}${e.endsAt ? ` (${formatDuration(Math.max(0, e.endsAt - E.absNow(s)))})` : ''}`), ...(c.poisonTimers ?? []).map((t) => (t.name === 'Midnight Tears' ? 'Midnight Tears (strikes at midnight, hidden)' : `Pale Tincture ${t.successes}/7 saves`))].join(', ')}{' '}
               <button className="ghost tiny" onClick={() => dispatch((st, cx) => E.curePoison(st, cx, c.id))}>
                 Cured (Lesser Restoration or similar)
               </button>
