@@ -3,6 +3,7 @@ import { CALENDARS, indexFromDate } from '../rules/calendar';
 import { rollWeather } from '../rules/weather';
 import { isCaster } from '../rules/spells';
 import { HIT_DIE } from '../rules/upkeep';
+import { autoAssign, watchCapacity } from '../rules/watch';
 import type { Rng } from '../rules/dice';
 
 export const SAVE_VERSION = 1;
@@ -41,6 +42,8 @@ export function newCharacter(partial: Partial<Character> = {}): Character {
     hitDie,
     hitDiceSpent: 0,
     passivePerception: 10,
+    darkvision: 0,
+    trance: false,
     items: [],
     resources: [],
     restFocus: null,
@@ -115,7 +118,7 @@ export function createDefaultState(rng: Rng): State {
     navigation: 'road' as const,
   };
   const weather = rollWeather({ dayIndex, season: 'spring', climate: place.climate, altitudeFt: place.altitudeFt, climateAdjustedPrecip: false }, rng);
-  return {
+  const state: State = {
     version: SAVE_VERSION,
     calendar,
     startYear,
@@ -129,7 +132,7 @@ export function createDefaultState(rng: Rng): State {
     characters: [
       newCharacter({ name: 'Brother Aldous', className: 'Cleric', level: 3, conSave: 2, wisMod: 3, survival: 3, armorKind: 'heavy', armorName: 'Chain Mail', armorWorn: true, hasShield: true, shieldWorn: true, cooksUtensils: true, tasks: defaultTasks(true) }),
       newCharacter({ name: 'Pip Tallowmere', className: 'Wizard', level: 3, size: 'Small', conSave: 1, wisMod: 1, survival: 1, bedroll: false, blanket: true, tasks: defaultTasks(true) }),
-      newCharacter({ name: 'Rook', className: 'Ranger', level: 3, conSave: 2, wisMod: 2, survival: 4, armorKind: 'light', armorName: 'Studded Leather', armorWorn: true, tasks: defaultTasks(true) }),
+      newCharacter({ name: 'Rook', className: 'Ranger', level: 3, conSave: 2, wisMod: 2, survival: 4, passivePerception: 14, darkvision: 60, armorKind: 'light', armorName: 'Studded Leather', armorWorn: true, tasks: defaultTasks(true) }),
     ],
     pending: [],
     projects: [],
@@ -141,6 +144,7 @@ export function createDefaultState(rng: Rng): State {
     spellLibrary: [],
     bastions: [],
     watchOrder: [],
+    watchPlan: { count: 4, slots: [[], [], [], []] },
     effects: [],
     hirelings: [],
     rituals: [],
@@ -149,4 +153,7 @@ export function createDefaultState(rng: Rng): State {
     materials: [],
     bestiary: [],
   };
+  const ids = state.characters.map((c) => c.id);
+  state.watchPlan = { count: 4, slots: autoAssign(ids, 4, 1, Object.fromEntries(state.characters.map((c) => [c.id, watchCapacity(4, c.trance)]))) };
+  return state;
 }

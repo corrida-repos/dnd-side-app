@@ -151,6 +151,10 @@ export interface Character {
   hitDie: number;
   hitDiceSpent: number;
   passivePerception: number;
+  /** Darkvision range in feet (0 = none). */
+  darkvision: number;
+  /** Trances instead of sleeping: a Long Rest needs only 4 hours of rest, so they can watch for 4. */
+  trance: boolean;
   items: MagicItem[];
   resources: Resource[];
   /** Personal renown, fear and stress trackers. */
@@ -413,8 +417,10 @@ export interface State {
   settings: Settings;
   spellLibrary: SpellRef[];
   bastions: Bastion[];
-  /** Order of characters taking 2-hour watches during a Long Rest. */
+  /** Older rotation list, kept so earlier saves still load. */
   watchOrder: string[];
+  /** Night watch plan: how many watches the Long Rest is split into, and who stands each one. */
+  watchPlan: { count: number; slots: string[][] };
   effects: ActiveEffect[];
   hirelings: Hireling[];
   rituals: Ritual[];

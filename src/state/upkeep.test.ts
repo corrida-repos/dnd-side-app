@@ -125,11 +125,11 @@ describe('night watch', () => {
   it('rotates watchers and rolls encounter checks', () => {
     const s = fresh((d) => {
       d.characters.push(newCharacter({ name: 'B', needsFood: false, needsWater: false }));
-      d.watchOrder = d.characters.map((c) => c.id);
+      d.watchPlan = { count: 4, slots: [[d.characters[0].id], [d.characters[1].id], [d.characters[0].id], [d.characters[1].id]] };
       d.settings.encounterOn = 20;
     });
     const quiet = E.longRest(s, LOW, false);
-    expect(quiet.log.find((l) => l.text.startsWith('Night watches'))?.text).toContain('watch 4: B');
+    expect(quiet.log.find((l) => l.text.startsWith('Night watches'))?.text).toMatch(/13:00–15:00: B/);
     expect(quiet.log.some((l) => l.text.startsWith('Random encounter'))).toBe(false);
     const busy = E.longRest(s, HIGH, false);
     expect(busy.log.filter((l) => l.text.startsWith('Random encounter'))).toHaveLength(4);

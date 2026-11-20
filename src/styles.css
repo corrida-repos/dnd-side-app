@@ -881,3 +881,13 @@ select {
 .pip.bad-pip.full {
   background: var(--bad);
 }
+
+.watch-table td,
+.watch-table th {
+  text-align: center;
+}
+.watch-table td:first-child,
+.watch-table th:first-child {
+  text-align: left;
+  white-space: nowrap;
+}

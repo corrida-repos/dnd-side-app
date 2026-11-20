@@ -3,7 +3,8 @@ import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
 import { fireThreat } from '../rules/weather';
 import { GAME_ANIMALS, MEAT_LB, BUTCHER_MINUTES, BUTCHER_DC, isEdible, yieldsHide, STRANGE_TYPES } from '../rules/hunting';
-import { formatDuration } from '../rules/calendar';
+import { formatClock, formatDuration } from '../rules/calendar';
+import { autoAssign, maxWatchMinutes, WATCH_COUNTS, watchCapacity, watchMinutes } from '../rules/watch';
 import { FORAGE_DC, ABUNDANCE_LABEL, foodNeedLb, fmtLb, fmtWater, proficiencyBonus, ARMOR_LABEL, armorTime, BOIL_MINUTES, PURIFY_SPELL, TAINTED_DC } from '../rules/survival';
 import { Card, Num, Pill, Select, Text, Toggle, Rule } from './common';
 
@@ -205,49 +206,131 @@ function ArmorCard() {
 
 function WatchCard() {
   const s = useGame();
-  const order = s.watchOrder.filter((id) => s.characters.some((c) => c.id === id));
-  const move = (id: string, dir: -1 | 1) =>
+  const pcs = s.characters.filter((c) => c.kind !== 'mount' && c.diedAt == null);
+  const plan = E.planWatches(s);
+  const load = E.watchLoad(s);
+  const [perWatch, setPerWatch] = useState(1);
+  const [pool, setPool] = useState<string[]>(() => pcs.map((c) => c.id));
+  const setCount = (count: number) =>
     edit((d) => {
-      const i = d.watchOrder.indexOf(id);
-      const j = i + dir;
-      if (i < 0 || j < 0 || j >= d.watchOrder.length) return;
-      [d.watchOrder[i], d.watchOrder[j]] = [d.watchOrder[j], d.watchOrder[i]];
+      const ids = pool.filter((id) => d.characters.some((c) => c.id === id));
+      const cap = Object.fromEntries(d.characters.map((c) => [c.id, watchCapacity(count, c.trance)]));
+      d.watchPlan = { count, slots: autoAssign(ids, count, perWatch, cap) };
     });
+  const toggle = (slot: number, id: string) =>
+    edit((d) => {
+      const slots = Array.from({ length: d.watchPlan.count }, (_, i) => [...(d.watchPlan.slots[i] ?? [])]);
+      slots[slot] = slots[slot].includes(id) ? slots[slot].filter((x) => x !== id) : [...slots[slot], id];
+      d.watchPlan = { ...d.watchPlan, slots };
+    });
+  const overloaded = pcs.filter((c) => (load[c.id] ?? 0) > maxWatchMinutes(c.trance));
+  const len = watchMinutes(s.watchPlan.count);
   return (
-    <Card title="Night watch">
-      <p className="small muted">Pick who keeps watch. During a Long Rest they take 2-hour watches in this order.</p>
-      <ul className="plain">
-        {s.characters.filter((c) => c.kind !== 'mount').map((c) => {
-          const on = order.includes(c.id);
-          return (
-            <li key={c.id} className="armor-row">
-              <Toggle
-                checked={on}
-                onChange={(v) => edit((d) => void (d.watchOrder = v ? [...d.watchOrder.filter((x) => x !== c.id), c.id] : d.watchOrder.filter((x) => x !== c.id)))}
-                label={
-                  <span>
-                    {on && <b>{order.indexOf(c.id) + 1}. </b>}
-                    {c.name} <span className="muted small">passive Perception {c.passivePerception}</span>
-                  </span>
-                }
-              />
-              <span className="btn-row tight">
-                <Num value={c.passivePerception} onChange={(v) => edit((d) => void (d.characters.find((x) => x.id === c.id)!.passivePerception = Math.round(v)))} width={2} />
-                {on && (
-                  <>
-                    <button className="ghost tiny" aria-label="Earlier" onClick={() => move(c.id, -1)}>
-                      ▲
-                    </button>
-                    <button className="ghost tiny" aria-label="Later" onClick={() => move(c.id, 1)}>
-                      ▼
-                    </button>
-                  </>
-                )}
-              </span>
-            </li>
-          );
-        })}
-      </ul>
+    <Card title="Night watch" className="span-2">
+      <div className="form-row">
+        <Select
+          label="Split the night into"
+          value={String(s.watchPlan.count)}
+          onChange={(v) => setCount(Number(v))}
+          options={WATCH_COUNTS.map((n) => ({ value: String(n), label: `${n} watches of ${formatDuration(watchMinutes(n))}` }))}
+        />
+        <Select
+          label="People per watch"
+          value={String(perWatch)}
+          onChange={(v) => setPerWatch(Number(v))}
+          options={[
+            { value: '1', label: 'One at a time' },
+            { value: '2', label: 'Pairs' },
+          ]}
+        />
+        <button onClick={() => setCount(s.watchPlan.count)}>Share out evenly</button>
+        <button className="ghost" onClick={() => edit((d) => void (d.watchPlan = { ...d.watchPlan, slots: d.watchPlan.slots.map(() => []) }))}>
+          Clear
+        </button>
+      </div>
+      <div className="chips">
+        <span className="small muted">Share among:</span>
+        {pcs.map((c) => (
+          <Toggle key={c.id} checked={pool.includes(c.id)} onChange={(v) => setPool(v ? [...pool, c.id] : pool.filter((x) => x !== c.id))} label={c.name} />
+        ))}
+      </div>
+      <p className="small muted">Times assume the Long Rest starts now, at {formatClock(s.minutes % 1440)}.</p>
+      <div className="table-wrap">
+        <table className="watch-table">
+          <thead>
+            <tr>
+              <th>Watch</th>
+              {pcs.map((c) => (
+                <th key={c.id}>{c.name}</th>
+              ))}
+              <th>Best passive Perception</th>
+            </tr>
+          </thead>
+          <tbody>
+            {plan.map((p, i) => {
+              const best = p.watchers.length ? Math.max(...p.watchers.map((w) => w.passive)) : null;
+              return (
+                <tr key={i}>
+                  <td>
+                    <b>{i + 1}</b> <span className="small">
+                      {formatClock(p.from % 1440)}–{formatClock(p.to % 1440)}
+                    </span>
+                  </td>
+                  {pcs.map((c) => {
+                    const w = p.watchers.find((x) => x.c.id === c.id);
+                    return (
+                      <td key={c.id}>
+                        <label className="toggle">
+                          <input type="checkbox" checked={(s.watchPlan.slots[i] ?? []).includes(c.id)} onChange={() => toggle(i, c.id)} aria-label={`${c.name} on watch ${i + 1}`} />
+                          {w && (
+                            <span className={`small ${w.sight.blind ? 'bad-text' : w.sight.penalty ? 'warn-text' : ''}`} title={w.sight.note}>
+                              {w.passive}
+                              {w.sight.blind ? ' 👂' : w.sight.penalty ? ' (dim)' : ''}
+                            </span>
+                          )}
+                        </label>
+                      </td>
+                    );
+                  })}
+                  <td>{best == null ? <Pill tone="bad">Unwatched</Pill> : <b>{best}</b>}</td>
+                </tr>
+              );
+            })}
+            <tr>
+              <td className="small muted">On watch</td>
+              {pcs.map((c) => {
+                const mins = load[c.id] ?? 0;
+                const over = mins > maxWatchMinutes(c.trance);
+                return (
+                  <td key={c.id} className={`small ${over ? 'bad-text' : ''}`}>
+                    {mins ? formatDuration(mins) : '—'}
+                    {over && ' ⚠'}
+                  </td>
+                );
+              })}
+              <td />
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      {overloaded.length > 0 && (
+        <p className="small bad-text">
+          {overloaded.map((c) => c.name).join(', ')} would watch longer than a Long Rest allows ({formatDuration(maxWatchMinutes(false))}, or {formatDuration(maxWatchMinutes(true))} for those who Trance) and
+          would get no Long Rest benefits. Add more watchers or use shorter watches.
+        </p>
+      )}
+      <div className="form-row">
+        {pcs.map((c) => (
+          <span key={c.id} className="field">
+            <span className="field-label">{c.name}</span>
+            <span className="inline-group">
+              <Num value={c.passivePerception} onChange={(v) => edit((d) => void (d.characters.find((x) => x.id === c.id)!.passivePerception = Math.round(v)))} width={2} label="Passive" />
+              <Num value={c.darkvision} onChange={(v) => edit((d) => void (d.characters.find((x) => x.id === c.id)!.darkvision = Math.max(0, Math.round(v))))} step={30} width={3} label="Darkvision ft" />
+              <Toggle checked={c.trance} onChange={(v) => edit((d) => void (d.characters.find((x) => x.id === c.id)!.trance = v))} label="Trance" />
+            </span>
+          </span>
+        ))}
+      </div>
       <div className="form-row">
         <Num
           label="Encounter on d20 of (0 = off)"
@@ -258,7 +341,10 @@ function WatchCard() {
           width={2}
         />
       </div>
-      <Rule>A Long Rest allows up to 2 hours of light activity, so a 2-hour watch doesn&apos;t spoil it. Encounter checks are rolled once per watch, and the DM decides what turns up.</Rule>
+      <Rule>
+        Each watch is {formatDuration(len)}. A Long Rest allows up to 2 hours of light activity such as standing watch (4 hours for characters who Trance). In Dim Light passive Perception takes −5. In Darkness,
+        anyone without Darkvision relies on hearing alone (👂), unless the campfire or a light source lasts the whole watch.
+      </Rule>
     </Card>
   );
 }

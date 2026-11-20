@@ -22,6 +22,12 @@ function migrate(raw: unknown): State | null {
     place: { ...base.place, ...parsed.place },
     bastions: parsed.bastions ?? [],
     watchOrder: parsed.watchOrder ?? [],
+    watchPlan:
+      parsed.watchPlan ??
+      (() => {
+        const order = parsed.watchOrder ?? [];
+        return { count: 4, slots: [0, 1, 2, 3].map((i) => (order.length ? [order[i % order.length]] : [])) };
+      })(),
     effects: parsed.effects ?? [],
     hirelings: parsed.hirelings ?? [],
     rituals: parsed.rituals ?? [],

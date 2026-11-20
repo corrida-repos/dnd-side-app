@@ -9,7 +9,8 @@ import { readSky, SKY_DC } from '../rules/skyclock';
 import { BUTCHER_DC, BUTCHER_MINUTES, isEdible, MEAT_LB, STRANGE_TYPES, yieldsHide, type Creature } from '../rules/hunting';
 import { FEED_GP_PER_DAY, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset } from '../rules/money';
 import { STABLE_WAKE_DIE, STABILIZE_DC } from '../rules/upkeep';
-import { abilityMod, ATTUNE_AWAY_MINUTES, IDENTIFY_MINUTES, MAX_ATTUNED, RITUAL_EXTRA_MINUTES, WATCH_HOURS } from '../rules/upkeep';
+import { maxWatchMinutes, slotTimes, watchMinutes, watchSight, type Sight } from '../rules/watch';
+import { abilityMod, ATTUNE_AWAY_MINUTES, IDENTIFY_MINUTES, MAX_ATTUNED, RITUAL_EXTRA_MINUTES } from '../rules/upkeep';
 import { fireThreat, rollWeather, temperatureAt, CLIMATES, weatherDamageAffinities, type Affinity } from '../rules/weather';
 import {
   exhaustionSummary,
@@ -415,25 +416,74 @@ function applyRestFocus(s: State, c: Character): void {
   }
 }
 
-/** Night watch: who stands each 2-hour watch, with an optional random encounter check per watch. */
-function standWatches(s: State, ctx: Ctx): void {
-  const watchers = s.watchOrder.map((id) => charById(s, id)).filter((c): c is Character => !!c && alive(c));
-  if (!watchers.length) return;
-  const blocks = Math.floor(8 / WATCH_HOURS);
+/** Is the camp lit for the whole of a watch ending `endsIn` minutes from now? */
+function campLitFor(s: State, endsIn: number): boolean {
+  if (s.place.shelter === 'building') return true;
+  if (s.fire.lit && s.fire.fuelHours * 60 >= endsIn) return true;
+  const now = absNow(s);
+  return s.effects.some((e) => e.kind === 'light' && (e.endsAt == null || e.endsAt >= now + endsIn));
+}
+
+export interface WatchSlotInfo {
+  from: number;
+  to: number;
+  watchers: { c: Character; sight: Sight; passive: number }[];
+}
+
+/** The watch plan as it would play out if the Long Rest started now. */
+export function planWatches(s: State): WatchSlotInfo[] {
+  const start = s.minutes % MIN_PER_DAY;
+  const underground = !!CLIMATES[s.weather.climate].noWeather;
+  const season = seasonOf(s);
+  return slotTimes(start, s.watchPlan.count).map((t, i) => {
+    const mid = ((t.from + t.to) / 2) % MIN_PER_DAY;
+    const phase = lightAt(mid, season).phase;
+    const lit = campLitFor(s, t.to - start);
+    const ids = s.watchPlan.slots[i] ?? [];
+    const watchers = ids
+      .map((id) => charById(s, id))
+      .filter((c): c is Character => !!c && alive(c))
+      .map((c) => {
+        const sight = watchSight(phase, lit, c.darkvision, underground);
+        return { c, sight, passive: c.passivePerception + (sight.blind ? 0 : sight.penalty) };
+      });
+    return { from: t.from, to: t.to, watchers };
+  });
+}
+
+/** Minutes each character spends on watch under the current plan. */
+export function watchLoad(s: State): Record<string, number> {
+  const len = watchMinutes(s.watchPlan.count);
+  const load: Record<string, number> = {};
+  for (const slot of s.watchPlan.slots.slice(0, s.watchPlan.count)) for (const id of slot) load[id] = (load[id] ?? 0) + len;
+  return load;
+}
+
+/** Night watch: who stands each watch, what they can see, and an optional random encounter check per watch. */
+function standWatches(s: State, ctx: Ctx): Record<string, number> {
+  const plan = planWatches(s);
+  if (!plan.some((p) => p.watchers.length)) return {};
   const lines: string[] = [];
-  for (let i = 0; i < blocks; i++) {
-    const w = watchers[i % watchers.length];
-    let note = `${w.name} (passive Perception ${w.passivePerception})`;
+  plan.forEach((p, i) => {
+    const when = `${formatClock(p.from % MIN_PER_DAY)}–${formatClock(p.to % MIN_PER_DAY)}`;
+    if (!p.watchers.length) {
+      lines.push(`${when}: nobody`);
+      return;
+    }
+    const best = Math.max(...p.watchers.map((w) => w.passive));
+    const who = p.watchers.map((w) => `${w.c.name} (passive Perception ${w.passive}${w.sight.blind ? ', hearing only' : w.sight.penalty ? ', dim' : ''})`).join(' and ');
+    let note = `${when}: ${who}`;
     if (s.settings.encounterOn > 0) {
       const r = die(20, ctx.rng);
       if (r >= s.settings.encounterOn) {
-        note += `: encounter! (d20 = ${r})`;
-        log(s, `Random encounter during watch ${i + 1}, while ${w.name} is on watch (passive Perception ${w.passivePerception}). d20 = ${r}. If it interrupts the rest, decide whether the Long Rest still counts.`, 'warn');
+        note += ': encounter!';
+        log(s, `Random encounter during watch ${i + 1} (${when}), with ${p.watchers.map((w) => w.c.name).join(' and ')} on watch, best passive Perception ${best}. d20 = ${r}. If it interrupts the rest, decide whether the Long Rest still counts.`, 'warn');
       }
-    }
-    lines.push(`watch ${i + 1}: ${note}`);
-  }
+    } else if (!p.watchers.length) note += ' (unwatched)';
+    lines.push(note);
+  });
   log(s, `Night watches: ${lines.join('; ')}.`);
+  return watchLoad(s);
 }
 
 /** Each time the party passes another full 24 hours awake, everyone saves against sleep deprivation. */
@@ -566,13 +616,18 @@ export const longRest = act((d, ctx, force = false) => {
     return;
   }
   log(d, 'The party settles in for a Long Rest (8 hours: at least 6 asleep, no more than 2 of light activity).');
-  standWatches(d, ctx);
+  const watched = standWatches(d, ctx);
   advanceMut(d, ctx, 8 * 60, 'rest');
   d.lastLongRestEnd = absNow(d);
   d.travel.hoursToday = 0;
   d.travel.milesToday = 0;
   for (const c of d.characters) {
     if (!alive(c)) continue;
+    const onWatch = watched[c.id] ?? 0;
+    if (onWatch > maxWatchMinutes(c.trance)) {
+      log(d, `${c.name} spent ${formatDuration(onWatch)} on watch, more than the ${formatDuration(maxWatchMinutes(c.trance))} a Long Rest allows, so they get no Long Rest benefits.`, 'warn');
+      continue;
+    }
     const armorSpoiled = d.settings.sleepInArmorPenalty && wearsBulkyArmor(c);
     if (armorSpoiled) {
       log(d, `${c.name} slept in ${c.armorKind} armor: only a quarter of spent Hit Point Dice come back, and no Exhaustion is removed (optional rule).`, 'warn');
