@@ -13,6 +13,8 @@ import { CONTAGIONS, RECUPERATE_DAYS, RECUPERATE_DC, SIGHT_ROT_CURE_HOURS, type 
 import { neglectLimit } from '../rules/bastion';
 import { magicItemCrafting, nonmagicalCrafting, SCROLL_CRAFTING, type Rarity } from '../rules/crafting';
 import { ALL_IS_WELL, BARRACK_ROOM, BASTION_CHARMS, CREATURE_ROOM, EVENT_PREFERENCE, FACILITY_OPTIONS, GARDEN_PRODUCTS, GUILDS, MENAGERIE_CREATURES, MENAGERIE_ROOM, SHIPS, TRAINERS, TREASURE_TABLE, facilityHirelings, stableMarkup, storehouseLimit, storehouseMarkup, type GardenType } from '../rules/bastionOrders';
+import { priceOf, saleRate } from '../rules/shop';
+import { activityOf, resolveActivity, type ActivityOpts } from '../rules/downtimeOutcomes';
 import { componentFor, REVIVAL_LIMIT, TARGET_SPELLS, type CostlyComponent } from '../rules/components';
 import { POISONS, poisonByName, poisonItemName, type PoisonInfo } from '../rules/poisons';
 import { POISON_HARVEST_DC, POTION_MISCIBILITY } from '../rules/potions';
@@ -1559,7 +1561,28 @@ function progressFinish(s: State, p: Project): void {
   {
     p.done = true;
     log(s, `Downtime project complete: ${p.name}.`, 'good');
-    if (p.kind === 'activity' && p.notes) log(s, `${p.name} is done. Make the check: ${p.notes}. The DM decides the outcome.`);
+    const act = p.kind === 'activity' ? activityOf(p.name) : null;
+    if (act && s.settings.downtimeOutcomes) {
+      if (act === 'Training') {
+        const learn = (p.learn || p.name.split(':')[1] || '').trim();
+        for (const id of p.charIds) {
+          const c = charById(s, id);
+          if (!c || !learn) continue;
+          c.trainedProficiencies = [...new Set([...(c.trainedProficiencies ?? []), learn])];
+          log(s, `${c.name} has learned ${learn} and is now proficient.`, 'good');
+        }
+        if (!learn) log(s, `${p.name} is done. Name the language or tool on the character sheet.`);
+      } else if (act === 'Relaxation') {
+        for (const id of p.charIds) {
+          const c = charById(s, id);
+          if (c) c.recuperatedUntil = absNow(s) + 7 * MIN_PER_DAY;
+        }
+        log(s, `${p.name}: a quiet week. Advantage on saves against lingering diseases and poisons for the next 7 days, and one effect that blocks healing can end.`, 'good');
+      } else {
+        p.awaitingOutcome = true;
+        log(s, `${p.name} is done. Roll its checks on the Downtime tab.`);
+      }
+    } else if (p.kind === 'activity' && p.notes) log(s, `${p.name} is done. Make the check: ${p.notes}. The DM decides the outcome.`);
     deliverProduct(s, p);
     if (p.kind === 'buyMagic' && p.dealGp) payGold(s, p.charIds, p.dealGp, p.name);
     if (p.kind === 'sellMagic' && p.dealGp) receiveGold(s, p.charIds, p.dealGp, p.name);
@@ -1634,6 +1657,71 @@ export const harvestPoison = act((d, ctx, charId: string, bonus: number, creatur
   } else {
     log(d, `${me.name} spends ${mins} min on ${name} but can't extract any poison (${total} vs DC ${POISON_HARVEST_DC}).`, 'warn');
   }
+});
+
+// ---------------------------------------------------------------- downtime activity outcomes
+
+/** Rolls a finished activity's checks (optional Xanathar's rules) and applies the gold, contacts, favors, jail time and complications. */
+export const resolveActivityProject = act((d, ctx, projectId: string, o: ActivityOpts) => {
+  const p = d.projects.find((x) => x.id === projectId);
+  const id = p ? activityOf(p.name) : null;
+  const c = p ? charById(d, p.charIds[0]) : undefined;
+  if (!p || !id || !c) return;
+  const r = resolveActivity(id, o, ctx.rng);
+  p.awaitingOutcome = false;
+  p.outcome = r.text;
+  log(d, `${c.name}'s ${p.name}: ${r.text}.`, r.gp < 0 || r.jailDays ? 'bad' : r.gp > 0 || r.notes.length ? 'good' : 'info');
+  if (r.gp > 0) gainWealth(c, r.gp);
+  if (r.gp < 0) spendWealth(c, -r.gp);
+  if (r.debt) spendWealth(c, r.debt);
+  if (r.notes.length) c.notes = [c.notes, ...r.notes.map((n) => `${n} (${stamp(d)})`)].filter(Boolean).join('\n');
+  if (r.jailDays) d.effects.push({ id: uid(), name: 'In jail', kind: 'other', targetIds: [c.id], casterId: null, concentration: false, shelter: false, startedAt: absNow(d), endsAt: absNow(d) + r.jailDays * MIN_PER_DAY, notes: 'Serving time for a crime.' });
+  if (r.complication) log(d, `Complication: ${r.complication}.`, 'warn');
+});
+
+// ---------------------------------------------------------------- shop and loot
+
+/** Buys equipment at its PHB price (less any discount) and adds it to the buyer's inventory. */
+export const buyItem = act((d, _ctx, charId: string, name: string, qty: number, unitGp: number, discount: number) => {
+  const c = charById(d, charId);
+  if (!c || qty < 1) return;
+  const cost = Math.round(unitGp * qty * (1 - discount) * 100) / 100;
+  if (c.gp < cost) return void log(d, `${c.name} can't afford ${qty} × ${name} (${fmtGp(cost)}; has ${fmtGp(c.gp)}).`, 'warn');
+  spendWealth(c, cost);
+  const same = c.inventory.find((i) => i.name.toLowerCase() === name.toLowerCase() && !i.containerId);
+  if (same) same.qty += qty;
+  else {
+    const est = estimateWeight(name);
+    c.inventory.push({ id: uid(), name, qty, weight: est.weight, source: est.source, valueGp: unitGp, container: detectContainer(name), ammo: isAmmo(name) ? { spent: 0 } : null });
+  }
+  log(d, `${c.name} buys ${qty} × ${name} for ${fmtGp(cost)}${discount ? ` (${Math.round(discount * 100)}% off)` : ''}.`, 'good');
+});
+
+/** Sells from the inventory: half price for equipment, full value for gems, art and trade goods (2024 PHB). */
+export const sellItem = act((d, _ctx, charId: string, itemId: string, qty: number) => {
+  const c = charById(d, charId);
+  const it = c?.inventory.find((i) => i.id === itemId);
+  if (!c || !it) return;
+  const n = Math.max(1, Math.min(it.qty, Math.round(qty)));
+  const unit = it.valueGp ?? priceOf(it.name);
+  if (unit == null) return void log(d, `Nobody will name a price for the ${it.name} until its value is known. Set a value on the item first.`, 'warn');
+  const rate = saleRate(it.name);
+  const gp = Math.round(unit * n * rate * 100) / 100;
+  it.qty -= n;
+  c.inventory = c.inventory.filter((i) => i.qty > 0);
+  gainWealth(c, gp);
+  log(d, `${c.name} sells ${n} × ${it.name} for ${fmtGp(gp)} (${rate === 1 ? 'full value' : 'half price'}).`, 'good');
+});
+
+/** Splits coin among the party evenly; leftover copper goes to the first named. */
+export const splitLoot = act((d, _ctx, gp: number, charIds: string[], what: string) => {
+  const people = charIds.map((id) => charById(d, id)).filter((c): c is Character => !!c);
+  if (!people.length || gp <= 0) return;
+  const cp = Math.round(gp * 100);
+  const each = Math.floor(cp / people.length);
+  const rest = cp - each * people.length;
+  people.forEach((c, i) => gainWealth(c, (each + (i === 0 ? rest : 0)) / 100));
+  log(d, `${what || 'Treasure'} worth ${fmtGp(gp)} is split ${people.length} ways: ${fmtGp(each / 100)} each${rest ? ` (${people[0].name} keeps the odd ${rest} CP)` : ''}.`, 'good');
 });
 
 // ---------------------------------------------------------------- costly components and spell effects

@@ -248,6 +248,8 @@ function CharacterCard({ c }: { c: Character }) {
         </div>
       )}
       <StatusHistory c={c} />
+      {(c.trainedProficiencies ?? []).length > 0 && <p className="small">Learned in downtime: {c.trainedProficiencies!.join(', ')}</p>}
+      {(c.revivalPenalty ?? 0) > 0 && <p className="small warn-text">Back from the dead: −{c.revivalPenalty} to D20 Tests (eases by 1 each Long Rest).</p>}
       <label className="field grow">
         <span className="field-label">Notes</span>
         <textarea value={c.notes} rows={2} onChange={(e) => set({ notes: e.target.value })} />
