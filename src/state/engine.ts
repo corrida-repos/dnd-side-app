@@ -32,6 +32,7 @@ import { STABLE_WAKE_DIE, STABILIZE_DC } from '../rules/upkeep';
 import { RITUAL_EXTRA_MINUTES as RITUAL_TAG_MINUTES, spellInfo } from '../rules/rituals';
 import { maxWatchMinutes, slotTimes, watchMinutes, watchSight, type Sight } from '../rules/watch';
 import { abilityMod, ATTUNE_AWAY_MINUTES, IDENTIFY_MINUTES, MAX_ATTUNED, RITUAL_EXTRA_MINUTES } from '../rules/upkeep';
+import { COOK_RAW_MINUTES, DEFAULT_FIRE_COLD_LIMIT_F, FIRE_METHODS, FIRE_SPELLS, fireColdLimit, fireKeepsWarm, fireLighting, type FireMethod } from '../rules/campfire';
 import { fireThreat, rollWeather, temperatureAt, CLIMATES, weatherDamageAffinities, type Affinity } from '../rules/weather';
 import {
   exhaustionSummary,
@@ -211,12 +212,19 @@ export interface Exposure {
   reason: string;
 }
 
-export function exposure(s: State, activity: Activity): Exposure {
+/** Is a burning campfire keeping the camp warm at this temperature (table rule)? */
+export function campfireWarms(s: State, tempF: number = tempNow(s)): boolean {
+  return s.fire.lit && s.settings.fireWarmsCamp && fireKeepsWarm(tempF, s.settings.fireColdLimitF ?? DEFAULT_FIRE_COLD_LIMIT_F, s.fire.sheltered);
+}
+
+export function exposure(s: State, activity: Activity, tempF: number = tempNow(s)): Exposure {
   const magicShelter = activity !== 'travel' && s.effects.find((e) => e.shelter);
   if (magicShelter) return { cold: false, heat: false, reason: `Inside ${magicShelter.name}` };
   const indoors = s.place.shelter === 'building' || s.place.shelter === 'cave';
   if (activity !== 'travel' && indoors) return { cold: false, heat: false, reason: s.place.shelter === 'cave' ? 'Sheltered in a cave' : 'Indoors' };
-  if (activity !== 'travel' && s.fire.lit && s.settings.fireWarmsCamp) return { cold: false, heat: true, reason: 'Warmed by the campfire' };
+  if (activity !== 'travel' && campfireWarms(s, tempF)) return { cold: false, heat: true, reason: 'Warmed by the campfire' };
+  if (activity !== 'travel' && s.fire.lit && s.settings.fireWarmsCamp)
+    return { cold: true, heat: true, reason: `Too cold for the campfire to help (it protects down to ${fireColdLimit(s.settings.fireColdLimitF ?? DEFAULT_FIRE_COLD_LIMIT_F, s.fire.sheltered)}°F)` };
   return { cold: true, heat: true, reason: activity === 'travel' ? 'On the road' : s.place.shelter === 'tent' ? 'In a tent (still exposed to temperature)' : 'In the open' };
 }
 
@@ -342,7 +350,7 @@ function tickHour(s: State, ctx: Ctx, activity: Activity): void {
     }
   }
 
-  const exp = exposure(s, activity);
+  const exp = exposure(s, activity, temp);
   for (const c of s.characters) {
     if (!alive(c)) continue;
     if (exp.cold && temp <= 0 && !coldProtection(c, activity, s.settings.coldGear2014)) {
@@ -1196,21 +1204,88 @@ export const forage = act((d, ctx, charId: string) => {
   doForage(d, ctx, c, null);
 });
 
-export const lightFire = act((d, ctx) => {
+/** The party members who could light the fire with a spell, and the spell each would use. */
+export function fireSpellCasters(s: State): { c: Character; spell: string }[] {
+  const out: { c: Character; spell: string }[] = [];
+  for (const c of s.characters) {
+    if (c.kind !== 'pc' || !alive(c)) continue;
+    const sp = FIRE_SPELLS.find((n) => c.spells.some((x) => x.name.toLowerCase() === n.toLowerCase()));
+    if (sp) out.push({ c, spell: sp });
+  }
+  return out;
+}
+
+/** Does anyone in the party carry a Tinderbox? Null when nobody has an inventory recorded, so it can't be told. */
+export function partyHasTinderbox(s: State): boolean | null {
+  const pcs = s.characters.filter((c) => c.kind === 'pc');
+  if (!pcs.some((c) => c.inventory.length)) return null;
+  return pcs.some((c) => c.inventory.some((i) => /tinderbox/i.test(i.name)));
+}
+
+/**
+ * Light the campfire. With the lighting check on (table rule), someone makes a Wisdom (Survival) check: DC 10, +5 when
+ * the fuel is damp, +5 in strong wind or heavy rain (only possible in a sheltered pit), and +5 without a Tinderbox. Each
+ * try takes 1 minute with a Tinderbox or 10 without. A spell that lights fires works at once.
+ */
+export const lightFire = act((d, ctx, lighterId?: string, method: FireMethod = 'tinderbox') => {
   if (d.fire.lit) return;
   if (d.fire.fuelHours <= 0) {
     log(d, 'There is no fuel to light a fire. Gather wood first.', 'warn');
     return;
   }
-  const threat = fireThreat(d.weather, tempNow(d));
   const indoors = d.place.shelter === 'building' || d.place.shelter === 'cave';
-  if (threat && !d.fire.sheltered && !indoors) {
-    log(d, `The ${threat} keeps putting the flame out. Shelter the fire pit first.`, 'warn');
+  const how = fireLighting(d.weather, tempNow(d), d.fire.sheltered, indoors);
+  if (!how.possible) {
+    log(d, `The ${how.why[0]}.`, 'warn');
     return;
   }
-  advanceMut(d, ctx, 1, 'camp');
-  d.fire.lit = true;
-  log(d, 'You light a campfire with a Tinderbox (1 minute).', 'good');
+  const lighter = lighterId ? actorById(d, lighterId) : undefined;
+  if (method === 'spell') {
+    const caster = fireSpellCasters(d).find((x) => x.c.id === lighterId) ?? fireSpellCasters(d)[0];
+    if (!caster) {
+      log(d, 'Nobody knows a spell that lights a campfire (Prestidigitation, Druidcraft or Fire Bolt).', 'warn');
+      return;
+    }
+    d.fire.lit = true;
+    log(d, `${caster.c.name} casts ${caster.spell}, and the campfire catches at once.`, 'good');
+    return;
+  }
+  const m = FIRE_METHODS[method];
+  advanceMut(d, ctx, m.minutes, 'camp');
+  if (!d.settings.fireLightingCheck || !lighter) {
+    d.fire.lit = true;
+    log(d, `${lighter ? `${lighter.name} lights` : 'You light'} a campfire (${m.label.toLowerCase()}, ${m.minutes} min).`, 'good');
+    return;
+  }
+  const dc = how.dc + m.dcMod;
+  const bonus = lighter.survival - 2 * lighter.exhaustion;
+  const r = d20('normal', ctx.rng);
+  const total = r.value + bonus;
+  const reasons = [...how.why, ...(m.dcMod ? [`no Tinderbox (+${m.dcMod})`] : [])];
+  const roll = `Wisdom (Survival) ${r.value} ${signed(bonus)} = ${total} against DC ${dc}${reasons.length ? ` (${reasons.join(', ')})` : ''}`;
+  if (total >= dc) {
+    d.fire.lit = true;
+    log(d, `${lighter.name} gets the campfire going after ${m.minutes} min: ${roll}.`, 'good');
+  } else {
+    log(d, `${lighter.name} can't get the fire to catch: ${roll}. ${m.minutes} min spent; try again.`, 'warn');
+  }
+});
+
+/** Cook all the raw food in the camp stores over the fire, so it's safe to eat later (table rule). */
+export const cookRawFood = act((d, ctx) => {
+  if (!d.fire.lit) {
+    log(d, 'You need a lit fire to cook.', 'warn');
+    return;
+  }
+  const raw = d.stores.foodRawLb;
+  if (raw <= 0) {
+    log(d, 'There is no raw food to cook.');
+    return;
+  }
+  advanceMut(d, ctx, COOK_RAW_MINUTES, 'camp');
+  d.stores.foodLb = round2(d.stores.foodLb + raw);
+  d.stores.foodRawLb = 0;
+  log(d, `The party cooks ${fmtLb(round2(raw))} of raw food over the campfire (${COOK_RAW_MINUTES} min, table rule). It goes into the camp stores, safe to eat.`, 'good');
 });
 
 export const douseFire = act((d) => {

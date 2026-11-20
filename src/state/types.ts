@@ -638,6 +638,10 @@ export interface Settings {
   climateAdjustedPrecip: boolean;
   /** Table rule: a lit campfire keeps a camp from being exposed to extreme cold. */
   fireWarmsCamp: boolean;
+  /** Table rule: the campfire protects from the cold only down to this temperature (°F); a sheltered pit 10 °F lower. */
+  fireColdLimitF: number;
+  /** Table rule: lighting a campfire takes a Wisdom (Survival) check instead of always working. */
+  fireLightingCheck: boolean;
   /** Optional older rule: double water on days of 100 °F or hotter. */
   doubleWaterInHeat: boolean;
   /** Table rule: foraged food and water from questionable sources must be purified, or risk being Poisoned. */

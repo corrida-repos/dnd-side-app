@@ -253,6 +253,7 @@ export const TOPICS: Topic[] = [
       item('Boots of the Winterlands', 'uncommon', true, 'Cold Resistance, you tolerate 0 °F or lower without other protection, and you ignore Difficult Terrain from ice or snow.'),
       item('Ring of Cold Resistance', 'rare', false, 'Permanent Cold Resistance, and it doesn’t need attunement.'),
       item('Potion of Cold Resistance', 'uncommon', false, 'Cold Resistance for 1 hour: one hour of safe travel per potion.'),
+      { ...gear('Campfire', 'Resting or camping beside a burning fire keeps you out of extreme cold, down to −20°F by default (10°F lower in a sheltered pit). Adjust the limit in Settings.', ['It doesn’t help while traveling, and it goes out in strong wind or heavy rain unless the pit is sheltered.']), source: 'Table rule' },
       gear('Bedroll', 'While you sleep in it, you automatically succeed on extreme cold saves.', ['It only helps while you’re in it, not while walking.']),
       gear('Blanket', 'Advantage on extreme cold saves while wrapped in it.'),
     ],
@@ -312,13 +313,13 @@ export const TOPICS: Topic[] = [
   {
     id: 'fire',
     title: 'Campfire: lighting, fuel and cooking',
-    problem: 'Lighting a campfire with a Tinderbox takes 1 minute, wind and heavy rain put it out, fuel needs gathering, and a hot meal needs Cook’s Utensils.',
+    problem: 'Lighting a campfire takes a Wisdom (Survival) check (table rule: DC 10, harder with damp fuel, foul weather or no Tinderbox), wind and heavy rain put it out, and fuel needs gathering. Lit, it warms the camp down to a temperature limit, lights the night watch and cooks raw food and boils water.',
     ways: [
-      spell('Prestidigitation', 'Light or snuff out a candle, torch or small campfire instantly, and warm or flavor food.', [
+      spell('Prestidigitation', 'Light or snuff out a candle, torch or small campfire instantly, with no roll, and warm or flavor food.', [
         'It works on a small campfire only.',
         'Warming food doesn’t make raw meat safe. Cooking or purifying does.',
       ]),
-      spell('Druidcraft', 'Light or snuff out a candle, torch or campfire instantly.'),
+      spell('Druidcraft', 'Light or snuff out a candle, torch or campfire instantly, with no roll.'),
       spell('Elementalism', 'Beckon Fire’s embers light candles, torches and lamps.', ['A campfire isn’t on that list.']),
       spell('Fire Bolt', 'Sets alight flammable objects that aren’t worn or carried, campfires included.'),
       spell('Continual Flame', 'Gives light that never goes out, but no heat, so it doesn’t replace a fire for warmth or cooking.'),

@@ -67,13 +67,27 @@ function DateCard() {
 
 function RulesCard() {
   const s = useGame();
-  const set = (k: Exclude<keyof typeof s.settings, 'rawFoodDC' | 'coldNightF' | 'encounterOn' | 'exploreEncounterOn' | 'moonOffset' | 'stressPerLongRest' | 'fearPerLongRest' | 'lifestylePeriod' | 'moneychangerFee' | 'encounterBooks' | 'facilityBooks'>, v: boolean) => edit((d) => void (d.settings[k] = v));
+  const set = (k: Exclude<keyof typeof s.settings, 'rawFoodDC' | 'coldNightF' | 'fireColdLimitF' | 'encounterOn' | 'exploreEncounterOn' | 'moonOffset' | 'stressPerLongRest' | 'fearPerLongRest' | 'lifestylePeriod' | 'moneychangerFee' | 'encounterBooks' | 'facilityBooks'>, v: boolean) => edit((d) => void (d.settings[k] = v));
   return (
     <Card title="Rules options">
       <div className="stack tight">
         <Toggle checked={s.settings.autoRollSaves} onChange={(v) => set('autoRollSaves', v)} label="Roll saving throws for me" />
         <Rule>When this is off, saves wait on the Overview so players can roll their own dice.</Rule>
         <Toggle checked={s.settings.fireWarmsCamp} onChange={(v) => set('fireWarmsCamp', v)} label="A lit campfire protects the camp from extreme cold (table rule)" />
+        {s.settings.fireWarmsCamp && (
+          <div className="form-row">
+            <Num label="Campfire protects down to" value={s.settings.fireColdLimitF ?? -20} onChange={(v) => edit((d) => void (d.settings.fireColdLimitF = Math.round(v)))} min={-60} max={0} suffix="°F" width={3} />
+          </div>
+        )}
+        <Rule>
+          Below that temperature even people beside the fire make the hourly extreme cold saves. A sheltered pit (windbreak and roof) protects 10°F lower. It covers the camp while resting or camping, not while traveling, and
+          also counts as warm cover on a cold night.
+        </Rule>
+        <Toggle checked={s.settings.fireLightingCheck} onChange={(v) => set('fireLightingCheck', v)} label="Lighting a campfire takes a Wisdom (Survival) check (table rule)" />
+        <Rule>
+          DC 10 with dry fuel, +5 when rain or snow has dampened it, +5 in strong wind or heavy rain (only possible in a sheltered pit) and +5 without a Tinderbox (10 minutes a try instead of 1). Prestidigitation, Druidcraft
+          or Fire Bolt light it with no roll. Off, the PHB applies: a Tinderbox lights it in 1 minute.
+        </Rule>
         <Toggle checked={s.settings.coldNights} onChange={(v) => set('coldNights', v)} label="Cold nights: sleeping out without warm cover risks Exhaustion (table rule)" />
         {s.settings.coldNights && (
           <div className="form-row">
