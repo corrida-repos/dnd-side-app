@@ -19,6 +19,7 @@ import { Card, Meter, Num, Pill, Select, Text, Toggle, Rule } from './common';
 import type { Bastion, Facility } from '../state/types';
 import { COMMS, commCost, commDelay, type CommMethod } from '../rules/comms';
 import { formatDuration } from '../rules/calendar';
+import { SpeedUp } from './SpeedUp';
 
 const ORDER_HINT: Record<Order, string> = {
   Craft: 'What is being made, e.g. Longsword',
@@ -159,13 +160,16 @@ function BastionCard({ b }: { b: Bastion }) {
           <h3>Under construction</h3>
           <ul className="plain">
             {building.map((f) => (
-              <li key={f.id} className="armor-row">
+              <li key={f.id} className="facility">
+                <div className="armor-row">
                 <span>
                   {f.building!.what} <span className="muted small">({f.building!.costGp.toLocaleString()} GP)</span>
                 </span>
                 <span className="small">
-                  <Meter value={f.building!.totalDays - f.building!.daysLeft} max={f.building!.totalDays} tone="good" /> {f.building!.daysLeft} day(s) left
+                  <Meter value={f.building!.totalDays - f.building!.daysLeft} max={f.building!.totalDays} tone="good" /> {Math.ceil(f.building!.daysLeft)} workday(s) left
                 </span>
+                </div>
+                <SpeedUp target={{ kind: 'facility', bastionId: b.id, facilityId: f.id }} />
               </li>
             ))}
           </ul>

@@ -17,7 +17,7 @@ import { BUTCHER_DC, BUTCHER_MINUTES, isEdible, MEAT_LB, STRANGE_TYPES, yieldsHi
 import { addCoins, COIN_GP, coinCount, coinsFor, emptyPurse, exchange, fmtPurse, purseValue, spend, type Denom, type Purse } from '../rules/coins';
 import { detectContainer } from '../rules/containers';
 import type { DdbImport } from '../rules/ddb';
-import { FEED_GP_PER_DAY, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset } from '../rules/money';
+import { FEED_GP_PER_DAY, HIRELING_WAGE, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset } from '../rules/money';
 import { STABLE_WAKE_DIE, STABILIZE_DC } from '../rules/upkeep';
 import { RITUAL_EXTRA_MINUTES as RITUAL_TAG_MINUTES, spellInfo } from '../rules/rituals';
 import { maxWatchMinutes, slotTimes, watchMinutes, watchSight, type Sight } from '../rules/watch';
@@ -1443,15 +1443,26 @@ export const workOnProjects = act((d, ctx, projectIds: string[]) => {
   for (const p of projects) progress(d, p);
 });
 
+/** Project kinds that are hands-on work hired artisans can help with. */
+export const ARTISAN_KINDS: Project['kind'][] = ['nonmagical', 'potion'];
+
 function progress(s: State, p: Project): void {
-  const crafters = p.charIds.filter((id) => {
-    const c = charById(s, id);
-    return c && alive(c);
-  }).length;
+  const hired = ARTISAN_KINDS.includes(p.kind) ? (p.hiredArtisans ?? 0) : 0;
+  const crafters =
+    p.charIds.filter((id) => {
+      const c = charById(s, id);
+      return c && alive(c);
+    }).length + hired;
+  if (hired > 0) payGold(s, p.charIds, hired * HIRELING_WAGE.skilled, `${hired} hired artisan${hired > 1 ? 's' : ''} on ${p.name}`);
   // Normally only one other character can help (the DM can allow more).
   const amount = Math.max(1, s.settings.extraCraftHelpers ? crafters : Math.min(2, crafters));
   p.daysDone = Math.min(p.daysRequired, p.daysDone + amount);
-  if (p.daysDone >= p.daysRequired) {
+  if (p.daysDone >= p.daysRequired) progressFinish(s, p);
+  else log(s, `A day's work on ${p.name}: ${p.daysDone}/${p.daysRequired} workdays.`);
+}
+
+function progressFinish(s: State, p: Project): void {
+  {
     p.done = true;
     log(s, `Downtime project complete: ${p.name}.`, 'good');
     if (p.kind === 'activity' && p.notes) log(s, `${p.name} is done. Make the check: ${p.notes}. The DM decides the outcome.`);
@@ -1465,10 +1476,29 @@ function progress(s: State, p: Project): void {
         log(s, `${p.spell.name} is now in ${wiz.name}'s spellbook.`, 'good');
       }
     }
-  } else {
-    log(s, `A day's work on ${p.name}: ${p.daysDone}/${p.daysRequired} workdays.`);
   }
 }
+
+/**
+ * Fabricate (2024 PHB, level 4, 10 minutes): turns raw materials into a finished nonmagical object at once.
+ * Skilled work like weapons and armor needs the caster to be proficient with the artisan's tools.
+ */
+export const fabricateProject = act((d, ctx, projectId: string, casterId: string) => {
+  const p = d.projects.find((x) => x.id === projectId);
+  const caster = charById(d, casterId);
+  if (!p || p.done || p.kind !== 'nonmagical' || !caster || !alive(caster)) return;
+  if (!caster.spells.some((x) => x.name.toLowerCase() === 'fabricate')) {
+    log(d, `${caster.name} doesn't know Fabricate.`, 'warn');
+    return;
+  }
+  if (!useSlot(d, caster, 4, 'Fabricate')) return;
+  advanceMut(d, ctx, 10, 'work');
+  const np = d.projects.find((x) => x.id === projectId)!;
+  log(d, `${caster.name} casts Fabricate, and the raw materials reshape into ${np.name} in ten minutes.`, 'good');
+  np.daysDone = np.daysRequired;
+  np.hiredArtisans = 0;
+  progressFinish(d, np);
+});
 
 /** One full downtime day: work 8 hours, eat and drink, then Long Rest from 23:00. */
 export const downtimeDay = act((d, ctx, projectIds: string[]) => {
@@ -1513,75 +1543,154 @@ function useSlot(s: State, caster: Character, level: number, what: string): bool
   return true;
 }
 
-/** Daily construction pace for a business, counting crews, helpers and whether the owner is on site. */
-export function businessPace(s: State, b: Business): number {
-  const helpers = (b.helpers ?? []).filter((h) => {
+/** Something being built that crews, helpers and spells can speed up: a business or a Bastion facility. */
+export type BuildRef = { kind: 'business'; id: string } | { kind: 'facility'; bastionId: string; facilityId: string };
+
+interface BuildJob {
+  label: string;
+  what: string;
+  ownerId: string;
+  costGp: number;
+  totalDays: number;
+  doneDays: number;
+  crews: number;
+  helpers: { charId: string; skilled: boolean }[];
+  /** Business construction slows to a third while the owner is away; Bastion hirelings build regardless (2024 DMG). */
+  awayPenalty: boolean;
+  setDone: (n: number) => void;
+  setCrews: (n: number) => void;
+  setHelpers: (h: { charId: string; skilled: boolean }[]) => void;
+  finish: () => void;
+}
+
+export function buildJob(s: State, ref: BuildRef): BuildJob | null {
+  if (ref.kind === 'business') {
+    const b = s.businesses.find((x) => x.id === ref.id);
+    if (!b?.building) return null;
+    const w = b.building;
+    return {
+      label: b.name,
+      what: w.what,
+      ownerId: b.ownerId,
+      costGp: w.costGp,
+      totalDays: w.totalDays,
+      doneDays: w.daysDone,
+      crews: b.extraCrews ?? 0,
+      helpers: b.helpers ?? [],
+      awayPenalty: !b.overseeing,
+      setDone: (n) => void (w.daysDone = Math.round(Math.min(w.totalDays, n) * 1000) / 1000),
+      setCrews: (n) => void (b.extraCrews = n),
+      setHelpers: (h) => void (b.helpers = h),
+      finish: () => {
+        log(s, `${b.name} is built and open for business (${w.what}).`, 'good');
+        b.building = undefined;
+        b.extraCrews = 0;
+        b.helpers = [];
+      },
+    };
+  }
+  const bas = s.bastions.find((x) => x.id === ref.bastionId);
+  const f = bas?.facilities.find((x) => x.id === ref.facilityId);
+  if (!bas || !f?.building) return null;
+  const w = f.building;
+  return {
+    label: `${bas.name}: ${f.name}`,
+    what: w.what,
+    ownerId: bas.ownerId,
+    costGp: w.costGp,
+    totalDays: w.totalDays,
+    doneDays: w.totalDays - w.daysLeft,
+    crews: w.extraCrews ?? 0,
+    helpers: w.helpers ?? [],
+    awayPenalty: false,
+    setDone: (n) => void (w.daysLeft = Math.round(Math.max(0, w.totalDays - n) * 1000) / 1000),
+    setCrews: (n) => void (w.extraCrews = n),
+    setHelpers: (h) => void (w.helpers = h),
+    finish: () => {
+      log(s, `${bas.name}: ${w.what} is finished.`, 'good');
+      f.size = w.toSize;
+      f.built = true;
+      f.building = null;
+    },
+  };
+}
+
+/** Daily pace of a construction job, counting crews, helpers and the away penalty. */
+export function jobPace(s: State, job: BuildJob): number {
+  if (job.awayPenalty) return buildPace(job.crews, 0, 0) * AWAY_PROGRESS;
+  const helpers = job.helpers.filter((h) => {
     const c = charById(s, h.charId);
     return c && alive(c);
   });
-  const pace = buildPace(b.extraCrews ?? 0, helpers.filter((h) => h.skilled).length, helpers.filter((h) => !h.skilled).length);
-  // Helpers only work while the owner keeps the site going; away, everything slows to a third.
-  return b.overseeing ? pace : buildPace(b.extraCrews ?? 0, 0, 0) * AWAY_PROGRESS;
+  return buildPace(job.crews, helpers.filter((h) => h.skilled).length, helpers.filter((h) => !h.skilled).length);
+}
+
+export function businessPace(s: State, b: Business): number {
+  const job = buildJob(s, { kind: 'business', id: b.id });
+  return job ? jobPace(s, job) : 1;
+}
+
+/** Days left at the current pace for any construction job. */
+export function jobDaysLeft(s: State, ref: BuildRef): number {
+  const job = buildJob(s, ref);
+  if (!job) return 0;
+  return Math.ceil(Math.round(((job.totalDays - job.doneDays) / jobPace(s, job)) * 1000) / 1000);
+}
+
+/** Moves a job forward by a number of workdays and finishes it if done. */
+function advanceJob(job: BuildJob, days: number): void {
+  job.setDone(job.doneDays + days);
+  if (job.doneDays + days >= job.totalDays - 1e-6) job.finish();
 }
 
 /** Hires extra crews for the rest of the work: each costs half the construction price for the share still left. */
-export const hireBuildCrews = act((d, _ctx, businessId: string, crews: number) => {
-  const b = d.businesses.find((x) => x.id === businessId);
-  if (!b?.building) return;
+export const hireBuildCrews = act((d, _ctx, ref: BuildRef, crews: number) => {
+  const job = buildJob(d, ref);
+  if (!job) return;
   const want = Math.max(0, Math.min(MAX_EXTRA_CREWS, Math.round(crews)));
-  const added = want - (b.extraCrews ?? 0);
+  const added = want - job.crews;
+  job.setCrews(want);
   if (added <= 0) {
-    b.extraCrews = want;
-    if (added < 0) log(d, `${b.name}: extra crews let go; ${want} remain.`);
+    if (added < 0) log(d, `${job.label}: extra crews let go; ${want} remain.`);
     return;
   }
-  const left = 1 - b.building.daysDone / b.building.totalDays;
-  const cost = Math.round(b.building.costGp * CREW_COST_SHARE * left * added);
-  payGold(d, [b.ownerId], cost, `${added} extra building crew${added > 1 ? 's' : ''} for ${b.name}`);
-  b.netGp -= cost;
-  b.extraCrews = want;
-  log(d, `${b.name}: ${want} extra crew${want > 1 ? 's' : ''} on site. About ${buildDaysLeft(d, b)} days of work left.`);
+  const left = 1 - job.doneDays / job.totalDays;
+  const cost = Math.round(job.costGp * CREW_COST_SHARE * left * added);
+  payGold(d, [job.ownerId], cost, `${added} extra building crew${added > 1 ? 's' : ''} for ${job.label}`);
+  if (ref.kind === 'business') d.businesses.find((x) => x.id === ref.id)!.netGp -= cost;
+  else d.bastions.find((x) => x.id === ref.bastionId)!.goldSpent += cost;
+  log(d, `${job.label}: ${want} extra crew${want > 1 ? 's' : ''} on site. About ${jobDaysLeft(d, ref)} days of work left.`);
 });
 
 /** A caster uses a construction spell on the site: that much work is done at once. */
-export const castBuildSpell = act((d, ctx, businessId: string, casterId: string, spellName: string) => {
-  const b = d.businesses.find((x) => x.id === businessId);
+export const castBuildSpell = act((d, ctx, ref: BuildRef, casterId: string, spellName: string) => {
   const sp = BUILD_SPELLS.find((x) => x.name === spellName);
   const caster = charById(d, casterId);
-  if (!b?.building || !sp || !caster || !alive(caster)) return;
+  if (!buildJob(d, ref) || !sp || !caster || !alive(caster)) return;
   if (!caster.spells.some((x) => x.name.toLowerCase() === sp.name.toLowerCase())) {
     log(d, `${caster.name} doesn't know ${sp.name}.`, 'warn');
     return;
   }
   if (!useSlot(d, caster, sp.level, sp.name)) return;
   advanceMut(d, ctx, sp.name === 'Move Earth' ? 120 : 10, 'work');
-  const nb = d.businesses.find((x) => x.id === businessId)!;
-  if (!nb.building) return;
-  nb.building.daysDone = Math.min(nb.building.totalDays, nb.building.daysDone + sp.days);
-  log(d, `${caster.name} casts ${sp.name} on the ${nb.building.what}, saving about ${sp.days} day${sp.days > 1 ? 's' : ''} of work (${Math.floor(nb.building.daysDone)}/${nb.building.totalDays}).`, 'good');
-  if (nb.building.daysDone >= nb.building.totalDays) {
-    log(d, `${nb.name} is built and open for business (${nb.building.what}).`, 'good');
-    nb.building = undefined;
-  }
+  const job = buildJob(d, ref);
+  if (!job) return;
+  log(d, `${caster.name} casts ${sp.name} on the ${job.what}, saving about ${sp.days} day${sp.days > 1 ? 's' : ''} of work (${Math.floor(Math.min(job.totalDays, job.doneDays + sp.days))}/${job.totalDays}).`, 'good');
+  advanceJob(job, sp.days);
 });
 
 /** Each midnight: construction advances a day if the owner oversees it, a third of a day if not. */
 function progressBusinesses(s: State): void {
   for (const b of s.businesses) {
     if (!b.building) continue;
-    b.building.daysDone = Math.round((b.building.daysDone + businessPace(s, b)) * 1000) / 1000;
-    if (b.building.daysDone >= b.building.totalDays) {
-      log(s, `${b.name} is built and open for business (${b.building.what}).`, 'good');
-      b.building = undefined;
-    }
+    const job = buildJob(s, { kind: 'business', id: b.id })!;
+    advanceJob(job, jobPace(s, job));
   }
 }
 
 /** Days left on construction at the current pace. */
 export function buildDaysLeft(s: State, b: Business): number {
-  if (!b.building) return 0;
-  const left = b.building.totalDays - b.building.daysDone;
-  return Math.ceil(Math.round((left / businessPace(s, b)) * 1000) / 1000);
+  return jobDaysLeft(s, { kind: 'business', id: b.id });
 }
 
 /** The owner spends whole downtime days minding the business (work, meals, then a Long Rest). */
@@ -1650,13 +1759,8 @@ function progressBastions(s: State): void {
   for (const b of s.bastions) {
     for (const f of b.facilities) {
       if (!f.building) continue;
-      f.building.daysLeft -= 1;
-      if (f.building.daysLeft <= 0) {
-        log(s, `${b.name}: ${f.building.what} is finished (${f.building.totalDays} days).`, 'good');
-        f.size = f.building.toSize;
-        f.built = true;
-        f.building = null;
-      }
+      const job = buildJob(s, { kind: 'facility', bastionId: b.id, facilityId: f.id })!;
+      advanceJob(job, jobPace(s, job));
     }
     if ((s.dayIndex - b.lastTurnDay) % BASTION_TURN_DAYS === 0 && s.dayIndex > b.lastTurnDay) {
       log(s, `${b.name}: a Bastion turn is due. Give your special facilities their orders.`, 'warn');
