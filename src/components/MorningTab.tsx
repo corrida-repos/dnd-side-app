@@ -19,7 +19,9 @@ export function MorningTab() {
       <p className="muted">
         Daily tasks reset after every Long Rest. {done}/{total} done.
       </p>
-      <WaysAround topic="rituals" />
+      <Card>
+        <WaysAround topic={['rituals', 'concentration']} />
+      </Card>
       <div className="grid wide">
         {s.characters.filter((c) => c.kind !== 'mount').map((c) => (
           <MorningCard key={c.id} c={c} />

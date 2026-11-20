@@ -23,19 +23,24 @@ const setChar = (id: string, fn: (c: Character) => void) =>
 export function GearTab() {
   const s = useGame();
   return (
-    <div className="grid wide">
-      <MysteryOverview />
-      <AfterTheFight />
-      <PartyKnowledgeCard />
-      {s.characters.map((c) => (
-        <Card key={c.id} title={`${c.name} · ${c.className} ${c.level}`}>
-          <HpBlock c={c} />
-          {c.kind !== 'mount' && <ResourcesBlock c={c} />}
-          {c.kind !== 'mount' && <ItemsBlock c={c} />}
-          <InventoryBlock c={c} />
-          <AmmoBlock c={c} />
-        </Card>
-      ))}
+    <div className="stack">
+      <Card>
+        <WaysAround topic={['attunement', 'identify', 'ammo', 'shortRest']} />
+      </Card>
+      <div className="grid wide">
+        <MysteryOverview />
+        <AfterTheFight />
+        <PartyKnowledgeCard />
+        {s.characters.map((c) => (
+          <Card key={c.id} title={`${c.name} · ${c.className} ${c.level}`}>
+            <HpBlock c={c} />
+            {c.kind !== 'mount' && <ResourcesBlock c={c} />}
+            {c.kind !== 'mount' && <ItemsBlock c={c} />}
+            <InventoryBlock c={c} />
+            <AmmoBlock c={c} />
+          </Card>
+        ))}
+      </div>
     </div>
   );
 }
@@ -70,7 +75,6 @@ function MysteryOverview() {
         })}
       </ul>
       <p className="small muted">Open each item on its owner&apos;s card below to study it, cast Detect Magic or Identify, or reveal facts as the DM.</p>
-      <WaysAround topic={['identify', 'attunement']} />
     </Card>
   );
 }
@@ -178,7 +182,6 @@ function AfterTheFight() {
       <button className="primary" onClick={() => dispatch((st, cx) => E.recoverAmmo(st, cx, s.characters.map((c) => c.id)))}>
         Search the area and recover ammunition (1 min)
       </button>
-      <WaysAround topic={'ammo'} />
     </Card>
   );
 }

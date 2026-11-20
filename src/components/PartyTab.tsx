@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useGame, edit, dispatch } from '../state/store';
 import { newCharacter, defaultTasks } from '../state/defaults';
 import { CLASSES, isCaster } from '../rules/spells';
@@ -21,6 +21,7 @@ export function PartyTab() {
   const s = useGame();
   return (
     <div className="stack">
+      <SpeciesList />
       <div className="btn-row">
         <button className="primary" onClick={() => edit((d) => void d.characters.push(newCharacter()))}>
           + Add character
@@ -126,7 +127,8 @@ function ExhaustionEditor({ c, set }: { c: Character; set: (patch: Partial<Chara
         <Debuffs c={c} now={absNow(s)} />
       </div>
       <Rule>
-        Exhaustion {c.exhaustion}: {exhaustionSummary(c.exhaustion)}. A Long Rest removes the newest level, except levels from Malnutrition or Dehydration (🔒), which stay until a full day&apos;s food or water.
+        Exhaustion {c.exhaustion}: {exhaustionSummary(c.exhaustion)}. A Long Rest removes the newest level, except levels from Malnutrition or Dehydration (🔒), which stay until a full day&apos;s food
+        or water.
       </Rule>
     </div>
   );
@@ -146,11 +148,7 @@ function CharacterCard({ c }: { c: Character }) {
   };
   return (
     <Card
-      title={
-        <span>
-          {c.name}
-        </span>
-      }
+      title={<span>{c.name}</span>}
       actions={
         <button
           className="ghost bad"
@@ -168,6 +166,17 @@ function CharacterCard({ c }: { c: Character }) {
         <Num label="Level" value={c.level} onChange={(v) => set({ level: Math.round(v) })} min={1} max={20} width={2} />
         <Select label="Size" value={c.size} onChange={(v: Size) => set({ size: v })} options={SIZES} />
       </div>
+      {c.kind === 'pc' && (
+        <div className="form-row">
+          <label className="field">
+            <span className="field-label">Species</span>
+            <input type="text" list="species-2024" value={c.species} placeholder="e.g. Wood Elf" onChange={(e) => set({ species: e.target.value })} />
+          </label>
+          <Text label="Subclass" value={c.subclass} onChange={(v) => set({ subclass: v })} placeholder="e.g. Thief" />
+          <ListInput label="Feats" value={c.feats} onChange={(v) => set({ feats: v, chef: v.some((f) => /^chef\b/i.test(f)) })} placeholder="e.g. Ritual Caster, Lucky" />
+          <ListInput label="Invocations and other choices" value={c.features} onChange={(v) => set({ features: v })} placeholder="e.g. Devil's Sight" />
+        </div>
+      )}
       <div className="form-row">
         <Num label="Con save" value={c.conSave} onChange={(v) => set({ conSave: v })} width={3} />
         <Num label="Wis mod" value={c.wisMod} onChange={(v) => set({ wisMod: v })} width={3} />
@@ -183,7 +192,12 @@ function CharacterCard({ c }: { c: Character }) {
         <Select label="Fire damage" value={c.fireResist} onChange={(v: Resist) => set({ fireResist: v })} options={RESIST} />
       </div>
       <div className="chips">
-        <Toggle checked={c.coldWeatherGear} onChange={(v) => set({ coldWeatherGear: v })} label="Cold weather gear" title="Counts against extreme cold only under the optional 2014 rule; always counts as warm cover on a cold night" />
+        <Toggle
+          checked={c.coldWeatherGear}
+          onChange={(v) => set({ coldWeatherGear: v })}
+          label="Cold weather gear"
+          title="Counts against extreme cold only under the optional 2014 rule; always counts as warm cover on a cold night"
+        />
         <Toggle checked={c.bedroll} onChange={(v) => set({ bedroll: v })} label="Bedroll" title="Automatic success on extreme cold saves while sleeping in it" />
         <Toggle checked={c.blanket} onChange={(v) => set({ blanket: v })} label="Blanket" title="Advantage on extreme cold saves while wrapped in it" />
         <Toggle checked={c.heavyGarb} onChange={(v) => set({ heavyGarb: v })} label="Heavy clothing" title="Disadvantage on extreme heat saves under the optional 2014 rule" />
@@ -237,7 +251,7 @@ function CharacterCard({ c }: { c: Character }) {
       <h3>Camp skills</h3>
       <div className="chips">
         <Toggle checked={c.cooksUtensils} onChange={(v) => set({ cooksUtensils: v })} label="Proficient with Cook's Utensils" />
-        <Toggle checked={c.chef} onChange={(v) => set({ chef: v })} label="Chef feat" />
+        <Toggle checked={c.chef} onChange={(v) => set({ chef: v, feats: v ? [...c.feats.filter((f) => !/^chef\b/i.test(f)), 'Chef'] : c.feats.filter((f) => !/^chef\b/i.test(f)) })} label="Chef feat" />
       </div>
       {c.chef && (
         <div className="form-row">
@@ -269,5 +283,68 @@ function CharacterCard({ c }: { c: Character }) {
         </button>
       </div>
     </Card>
+  );
+}
+
+const SPECIES_2024 = [
+  'Aasimar',
+  'Dragonborn (Black)',
+  'Dragonborn (Blue)',
+  'Dragonborn (Brass)',
+  'Dragonborn (Bronze)',
+  'Dragonborn (Copper)',
+  'Dragonborn (Gold)',
+  'Dragonborn (Green)',
+  'Dragonborn (Red)',
+  'Dragonborn (Silver)',
+  'Dragonborn (White)',
+  'Dwarf',
+  'Drow',
+  'High Elf',
+  'Wood Elf',
+  'Forest Gnome',
+  'Rock Gnome',
+  'Goliath (Cloud)',
+  'Goliath (Fire)',
+  'Goliath (Frost)',
+  'Goliath (Hill)',
+  'Goliath (Stone)',
+  'Goliath (Storm)',
+  'Halfling',
+  'Human',
+  'Orc',
+  'Tiefling (Abyssal)',
+  'Tiefling (Chthonic)',
+  'Tiefling (Infernal)',
+];
+
+/** The 2024 species and lineages, offered as suggestions in the Species field. */
+export function SpeciesList() {
+  return (
+    <datalist id="species-2024">
+      {SPECIES_2024.map((x) => (
+        <option key={x} value={x} />
+      ))}
+    </datalist>
+  );
+}
+
+/** A comma-separated list that keeps what you type until you leave the field. */
+function ListInput({ label, value, onChange, placeholder }: { label: string; value: string[]; onChange: (v: string[]) => void; placeholder?: string }) {
+  const joined = value.join(', ');
+  const [txt, setTxt] = useState(joined);
+  useEffect(() => setTxt(joined), [joined]);
+  const commit = () =>
+    onChange(
+      txt
+        .split(',')
+        .map((x) => x.trim())
+        .filter(Boolean),
+    );
+  return (
+    <label className="field grow">
+      <span className="field-label">{label}</span>
+      <input type="text" value={txt} placeholder={placeholder} onChange={(e) => setTxt(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === 'Enter' && commit()} />
+    </label>
   );
 }

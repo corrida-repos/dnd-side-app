@@ -77,7 +77,7 @@ function ActiveCard() {
         })}
       </ul>
       {concentrating.length > 0 && <p className="small muted">Concentrating: {concentrating.map((c) => c.name).join(', ')}. Starting another Concentration spell ends the first one.</p>}
-      <WaysAround topic={'light'} />
+      <WaysAround topic={['light', 'concentration']} />
     </Card>
   );
 }

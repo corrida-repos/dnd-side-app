@@ -98,3 +98,19 @@ describe('D&D Beyond import', () => {
     expect(ddbJsonUrl('not a link')).toBeNull();
   });
 });
+
+describe('species, subclass, feats and class choices', () => {
+  it('reads them from the D&D Beyond JSON', () => {
+    const d = structuredClone(sample);
+    Object.assign(d.data, {
+      classes: [{ ...d.data.classes[0], subclassDefinition: { name: 'Gloom Stalker' } }],
+      feats: [{ definition: { name: 'Alert' } }],
+      options: { class: [{ definition: { name: "Devil's Sight" } }, { definition: { name: "Devil's Sight" } }], race: [], feat: [] },
+    });
+    const imp = parseDdbCharacter(d);
+    expect(imp.species).toBe('Wood Elf');
+    expect(imp.subclass).toBe('Gloom Stalker');
+    expect(imp.feats).toEqual(['Alert']);
+    expect(imp.features).toEqual(["Devil's Sight"]);
+  });
+});
