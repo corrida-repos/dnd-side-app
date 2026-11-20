@@ -1,0 +1,270 @@
+import { describe, expect, it } from 'vitest';
+import * as E from './engine';
+import { createDefaultState, newCharacter } from './defaults';
+import type { State } from './types';
+
+const ctx = (v = 0.5): E.Ctx => ({ rng: () => v });
+const LOW = ctx(0); // every die rolls 1
+const HIGH = ctx(0.999); // every die rolls max
+
+function fresh(patch: (s: State) => void = () => {}): State {
+  const s = createDefaultState(() => 0);
+  s.characters = [newCharacter({ name: 'A', conSave: 0 })];
+  s.log = [];
+  patch(s);
+  return s;
+}
+
+const calm = (s: State, high: number, low: number) => {
+  s.weather = { ...s.weather, high, low, wind: 'none', precip: 'none', dayIndex: s.dayIndex };
+};
+
+describe('clock', () => {
+  it('rolls into a new day and new weather at midnight', () => {
+    const s = fresh((d) => (d.minutes = 23 * 60));
+    const n = E.advance(s, ctx(), 120);
+    expect(n.dayIndex).toBe(s.dayIndex + 1);
+    expect(n.minutes).toBe(60);
+    expect(n.weather.dayIndex).toBe(n.dayIndex);
+  });
+});
+
+describe('end-of-day survival', () => {
+  it('gives Exhaustion for drinking less than half your water', () => {
+    const s = fresh((d) => {
+      d.minutes = 23 * 60;
+      d.characters[0].ateLbToday = 1;
+      d.characters[0].drankPintsToday = 3;
+    });
+    const n = E.advance(s, ctx(), 60);
+    expect(n.characters[0].exhaustion).toBe(1);
+    expect(n.characters[0].dehydrated).toBe(true);
+    expect(n.characters[0].drankPintsToday).toBe(0);
+  });
+
+  it('adds Exhaustion from the fifth day without food', () => {
+    const s = fresh((d) => {
+      d.place.waterSource = true;
+      d.characters[0].daysWithoutFood = 4;
+      d.characters[0].drankPintsToday = 8;
+      d.minutes = 23 * 60;
+    });
+    const n = E.advance(s, ctx(), 60);
+    expect(n.characters[0].daysWithoutFood).toBe(5);
+    expect(n.characters[0].exhaustion).toBe(1);
+    expect(n.characters[0].malnourished).toBe(true);
+  });
+
+  it('calls for a DC 10 save after eating less than half', () => {
+    const s = fresh((d) => {
+      d.minutes = 23 * 60;
+      d.characters[0].ateLbToday = 0.25;
+      d.characters[0].drankPintsToday = 8;
+    });
+    expect(E.advance(s, LOW, 60).characters[0].exhaustion).toBe(1);
+    expect(E.advance(s, HIGH, 60).characters[0].exhaustion).toBe(0);
+  });
+
+  it('can queue saves for players to roll instead', () => {
+    const s = fresh((d) => {
+      d.settings.autoRollSaves = false;
+      d.minutes = 23 * 60;
+      d.characters[0].ateLbToday = 0.25;
+      d.characters[0].drankPintsToday = 8;
+    });
+    const n = E.advance(s, ctx(), 60);
+    expect(n.pending).toHaveLength(1);
+    const r = E.resolvePending(n, ctx(), n.pending[0].id, 'fail');
+    expect(r.pending).toHaveLength(0);
+    expect(r.characters[0].exhaustion).toBe(1);
+    expect(r.characters[0].malnourished).toBe(true);
+  });
+});
+
+describe('extreme temperatures', () => {
+  it('makes exposed characters save each hour in extreme cold, unless protected', () => {
+    const s = fresh((d) => {
+      d.minutes = 10 * 60;
+      calm(d, -10, -20);
+      d.characters.push(newCharacter({ name: 'Furry', coldWeatherGear: true }));
+    });
+    const n = E.advance(s, LOW, 120);
+    expect(n.characters[0].exhaustion).toBe(2);
+    expect(n.characters[1].exhaustion).toBe(0);
+  });
+
+  it('lets a campfire or building protect from cold (table rule)', () => {
+    const s = fresh((d) => {
+      d.minutes = 10 * 60;
+      calm(d, -10, -20);
+      d.fire = { lit: true, fuelHours: 10, sheltered: false };
+    });
+    expect(E.advance(s, LOW, 60).characters[0].exhaustion).toBe(0);
+    const t = fresh((d) => {
+      d.minutes = 10 * 60;
+      calm(d, -10, -20);
+      d.place.shelter = 'building';
+    });
+    expect(E.advance(t, LOW, 60).characters[0].exhaustion).toBe(0);
+  });
+
+  it('raises the heat DC by 1 each hour without water', () => {
+    const s = fresh((d) => {
+      d.minutes = 12 * 60;
+      calm(d, 115, 112);
+      d.place.waterSource = false;
+      d.stores.waterGal = 0;
+      d.characters[0].waterPints = 0;
+      d.characters[0].conSave = 3;
+    });
+    // d20 = 2 (rng 0.06) + 3 = 5: passes DC 5 in hour 1, fails DC 6 in hour 2
+    const n = E.advance(s, ctx(0.06), 120);
+    expect(n.characters[0].heatHours).toBe(2);
+    expect(n.characters[0].exhaustion).toBe(1);
+    const withWater = fresh((d) => {
+      d.minutes = 12 * 60;
+      calm(d, 115, 112);
+      d.place.waterSource = false;
+      d.characters[0].waterPints = 2;
+    });
+    expect(E.advance(withWater, LOW, 120).characters[0].exhaustion).toBe(0);
+  });
+});
+
+describe('campfire', () => {
+  it('burns fuel and is put out by strong wind unless sheltered', () => {
+    const s = fresh((d) => {
+      calm(d, 60, 40);
+      d.fire = { lit: true, fuelHours: 3, sheltered: false };
+    });
+    const burned = E.advance(s, ctx(), 120);
+    expect(burned.fire.fuelHours).toBe(1);
+    expect(burned.fire.lit).toBe(true);
+    const out = E.advance(burned, ctx(), 60);
+    expect(out.fire.lit).toBe(false);
+
+    const windy = fresh((d) => {
+      d.weather = { ...d.weather, wind: 'strong', precip: 'none', high: 60, low: 40 };
+      d.fire = { lit: true, fuelHours: 5, sheltered: false };
+    });
+    expect(E.advance(windy, ctx(), 60).fire.lit).toBe(false);
+    windy.fire.sheltered = true;
+    expect(E.advance(windy, ctx(), 60).fire.lit).toBe(true);
+    expect(E.lightFire({ ...windy, fire: { lit: false, fuelHours: 5, sheltered: false } }, ctx()).fire.lit).toBe(false);
+  });
+
+  it('needs a lit fire to cook, and feeds the party from stores', () => {
+    const s = fresh((d) => {
+      calm(d, 60, 40);
+      d.stores.foodLb = 5;
+    });
+    expect(E.cookMeal(s, ctx(), null).characters[0].ateLbToday).toBe(0);
+    s.fire = { lit: true, fuelHours: 4, sheltered: false };
+    const n = E.cookMeal(s, ctx(), s.characters[0].id);
+    expect(n.characters[0].ateLbToday).toBe(0.5);
+    expect(n.stores.foodLb).toBe(4.5);
+  });
+});
+
+describe('rests', () => {
+  it('removes 1 Exhaustion on a Long Rest unless malnourished', () => {
+    const s = fresh((d) => {
+      calm(d, 60, 40);
+      d.characters[0].exhaustion = 2;
+      d.characters.push(newCharacter({ name: 'B', exhaustion: 2, malnourished: true }));
+      d.minutes = 8 * 60;
+    });
+    const n = E.longRest(s, ctx(), false);
+    expect(n.characters[0].exhaustion).toBe(1);
+    expect(n.characters[1].exhaustion).toBe(2);
+    expect(n.minutes).toBe(16 * 60);
+  });
+
+  it('allows only one Long Rest per 24 hours', () => {
+    const s = fresh((d) => calm(d, 60, 40));
+    const a = E.longRest(s, ctx(), false);
+    expect(E.canLongRest(a).ok).toBe(false);
+    const b = E.longRest(a, ctx(), false);
+    expect(b.minutes).toBe(a.minutes);
+    const later = E.advance(a, ctx(), 16 * 60);
+    expect(E.canLongRest(later).ok).toBe(true);
+  });
+
+  it('opens spell preparation by class after a Long Rest and resets daily tasks', () => {
+    const s = fresh((d) => {
+      calm(d, 60, 40);
+      d.characters = [newCharacter({ name: 'W', className: 'Wizard' }), newCharacter({ name: 'P', className: 'Paladin' }), newCharacter({ name: 'S', className: 'Sorcerer' })];
+      d.characters.forEach((c) => c.tasks.forEach((t) => (t.done = true)));
+    });
+    const n = E.longRest(s, ctx(), false);
+    expect(n.characters.map((c) => [c.prepOpen, c.swapsLeft])).toEqual([
+      [true, 0],
+      [false, 1],
+      [false, 0],
+    ]);
+    expect(n.characters[0].tasks.every((t) => !t.done)).toBe(true);
+  });
+});
+
+describe('travel and foraging', () => {
+  it('covers miles by pace and forces saves past 8 hours', () => {
+    const s = fresh((d) => {
+      calm(d, 60, 40);
+      d.minutes = 6 * 60;
+      d.place.waterSource = true;
+    });
+    const n = E.travel(s, LOW, { hours: 10, pace: 'normal', difficult: false, foragerIds: [] });
+    expect(n.travel.milesToday).toBe(30);
+    expect(n.characters[0].exhaustion).toBe(2); // DC 11 and DC 12 failed on 1s
+  });
+
+  it('adds foraged food and water to the stores', () => {
+    const s = fresh((d) => {
+      calm(d, 60, 40);
+      d.stores = { foodLb: 0, waterGal: 0 };
+      d.characters[0].wisMod = 1;
+    });
+    const n = E.forage(s, HIGH, s.characters[0].id);
+    expect(n.stores.foodLb).toBe(7);
+    expect(n.stores.waterGal).toBe(7);
+  });
+});
+
+describe('spell preparation', () => {
+  it('only lets you change spells when the rules allow', () => {
+    const s = fresh((d) => {
+      d.characters = [
+        newCharacter({
+          name: 'P',
+          className: 'Paladin',
+          swapsLeft: 1,
+          prepOpen: false,
+          spells: [
+            { name: 'Bless', level: 1, prepared: true, alwaysPrepared: false },
+            { name: 'Heroism', level: 1, prepared: false, alwaysPrepared: false },
+          ],
+        }),
+      ];
+    });
+    const id = s.characters[0].id;
+    expect(E.togglePrepared(s, ctx(), id, 'Heroism', false).characters[0].spells[1].prepared).toBe(false);
+    const swapped = E.replaceSpell(s, ctx(), id, 'Bless', 'Heroism');
+    expect(swapped.characters[0].spells.map((x) => x.prepared)).toEqual([false, true]);
+    expect(swapped.characters[0].swapsLeft).toBe(0);
+    expect(E.togglePrepared(s, ctx(), id, 'Heroism', true).characters[0].spells[1].prepared).toBe(true);
+  });
+});
+
+describe('downtime', () => {
+  it('progresses projects by the number of crafters', () => {
+    const s = fresh((d) => {
+      calm(d, 60, 40);
+      d.characters.push(newCharacter({ name: 'B' }));
+      d.projects = [{ id: 'p', name: 'Plate', kind: 'nonmagical', charIds: d.characters.map((c) => c.id), daysRequired: 3, daysDone: 0, costGp: 750, notes: '', done: false }];
+    });
+    const a = E.workOnProjects(s, ctx(), ['p']);
+    expect(a.projects[0].daysDone).toBe(2);
+    const b = E.workOnProjects(a, ctx(), ['p']);
+    expect(b.projects[0]).toMatchObject({ daysDone: 3, done: true });
+  });
+});
