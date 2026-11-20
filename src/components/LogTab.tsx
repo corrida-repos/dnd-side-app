@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useGame, edit } from '../state/store';
 import { Card, Select, Toggle } from './common';
 import type { Tone } from '../state/types';
+import { groupLog, groupStatus, senseText } from './senseView';
 
 export function LogTab() {
   const s = useGame();
@@ -59,35 +60,35 @@ export function LogTab() {
 
       {view === 'chronicle' ? (
         <ul className="log full">
-          {s.log
-            .filter((l) => (tone === 'all' || l.tone === tone) && (who === 'all' || l.charIds?.includes(who)) && (!players || l.sense) && match(`${l.text} ${l.sense ?? ''}`))
-            .map((l) => (
-              <li key={l.id} className={`log-${l.tone}`}>
-                <span className="muted small">{l.stamp}</span>{' '}
-                {players ? (
-                  <span className="sense-only">
-                    {l.charIds?.length ? <b>{l.charIds.map(name).join(', ')}: </b> : null}
-                    {l.sense}
-                  </span>
-                ) : (
-                  <>
-                    {l.text}
-                    {l.sense && <span className="sense">“{l.sense}”</span>}
-                  </>
-                )}
-              </li>
-            ))}
+          {groupLog(s.log.filter((l) => (tone === 'all' || l.tone === tone) && (who === 'all' || l.charIds?.includes(who)) && (!players || l.sense) && match(`${l.text} ${l.sense ?? ''}`))).map((l) => (
+            <li key={l.id} className={`log-${l.tone}`}>
+              <span className="muted small">{l.stamp}</span>{' '}
+              {players ? (
+                <span className="sense-only">{senseText(s, l.charIds ?? [], l.sense!)}</span>
+              ) : (
+                <>
+                  {l.text}
+                  {l.sense && <span className="sense">{senseText(s, l.charIds ?? [], l.sense)}</span>}
+                </>
+              )}
+            </li>
+          ))}
         </ul>
       ) : (
         <ul className="log full">
-          {s.statusLog
-            .filter((e) => (who === 'all' || e.charId === who) && match(`${e.text} ${e.sense}`))
-            .map((e) => (
-              <li key={e.id} className={`log-${e.tone}`}>
-                <span className="muted small">{e.stamp}</span> <b>{name(e.charId)}</b>
-                {players ? <span className="sense-only"> {e.sense}</span> : <> · {e.text}<span className="sense">“{e.sense}”</span></>}
-              </li>
-            ))}
+          {groupStatus(s.statusLog.filter((e) => (who === 'all' || e.charId === who) && match(`${e.text} ${e.sense}`))).map((e) => (
+            <li key={e.id} className={`log-${e.tone}`}>
+              <span className="muted small">{e.stamp}</span>{' '}
+              {players ? (
+                <span className="sense-only">{senseText(s, e.charIds, e.sense)}</span>
+              ) : (
+                <>
+                  <b>{e.charIds.map(name).join(', ')}</b> · {e.text}
+                  <span className="sense">{senseText(s, e.charIds, e.sense)}</span>
+                </>
+              )}
+            </li>
+          ))}
           {!s.statusLog.length && <li className="muted">No status changes yet.</li>}
         </ul>
       )}

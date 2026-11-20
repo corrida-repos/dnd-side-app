@@ -6,6 +6,7 @@ import { formatClock, formatDate, formatDuration } from '../rules/calendar';
 import { ABUNDANCE_LABEL, PACES, foodNeedLb, waterNeedPints, fmtLb, fmtWater } from '../rules/survival';
 import { Card, Meter, Num, Pill, Rule, Select, Text, Toggle } from './common';
 import { Debuffs } from './Debuffs';
+import { groupLog, senseText } from './senseView';
 import type { Abundance, Pace, Shelter, WaterQuality } from '../state/types';
 import { NAV_LABEL, NAV_FOR_CLIMATE, type NavTerrain } from '../rules/navigation';
 import { readSky, rangeLabel } from '../rules/skyclock';
@@ -627,10 +628,10 @@ function RecentLog() {
   return (
     <Card title="Recent events" className="span-2">
       <ul className="log">
-        {s.log.slice(0, 12).map((l) => (
+        {groupLog(s.log.slice(0, 16)).slice(0, 12).map((l) => (
           <li key={l.id} className={`log-${l.tone}`}>
             <span className="muted small">{l.stamp}</span> {l.text}
-            {l.sense && <span className="sense">“{l.sense}”</span>}
+            {l.sense && <span className="sense">{senseText(s, l.charIds ?? [], l.sense)}</span>}
           </li>
         ))}
         {!s.log.length && <li className="muted">Nothing has happened yet. Advance time, travel or rest to begin.</li>}

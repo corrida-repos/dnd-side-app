@@ -63,7 +63,8 @@ const STATUS_MAX = 5000;
 
 /** Something the characters notice (with or without a specific character): logged with a sensory description. */
 export function noticed(s: State, kind: SenseKey, chars: Character[], text: string, tone: Tone = 'info'): void {
-  const feel = sense(kind, s.statusLog.length + text.length);
+  // Same line for everyone affected at the same moment, so the party can be described together.
+  const feel = sense(kind, absNow(s) + kind.length * 7);
   log(s, text, tone, { charIds: chars.map((c) => c.id), status: chars.length > 0, sense: feel });
   for (const c of chars) {
     s.statusLog.unshift({ id: uid(), stamp: stamp(s), at: absNow(s), charId: c.id, kind, text, sense: feel, tone });

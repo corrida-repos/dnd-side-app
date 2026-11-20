@@ -5,6 +5,7 @@ import { CLASSES, isCaster } from '../rules/spells';
 import { SIZES, exhaustionSummary, foodNeedLb, WATER_GAL_PER_DAY, proficiencyBonus, ARMOR_TIMES, ARMOR_LABEL, causesOf, EXHAUSTION_CAUSE_LABEL } from '../rules/survival';
 import { Card, Num, Select, Text, Toggle, Rule } from './common';
 import { Debuffs } from './Debuffs';
+import { senseText } from './senseView';
 import type { ArmorKind, Character, ClassName, ExhaustionCause, Resist, Size } from '../state/types';
 import * as E2 from '../state/engine';
 import { absNow, log, type Track } from '../state/engine';
@@ -49,7 +50,7 @@ function StatusHistory({ c }: { c: Character }) {
         {(all ? mine : mine.slice(0, 8)).map((e) => (
           <li key={e.id} className={`log-${e.tone}`}>
             <span className="muted small">{e.stamp}</span> {e.text}
-            <span className="sense">“{e.sense}”</span>
+            <span className="sense">{senseText(s, [e.charId], e.sense)}</span>
           </li>
         ))}
       </ul>
