@@ -400,6 +400,8 @@ export interface Project {
   product?: { name: string; qty: number; magic?: boolean; valueGp?: number };
   /** For copying a spell: its name and level, and whose spellbook gets it. */
   spell?: { name: string; level: number };
+  /** Skilled hirelings with the right tools assisting the work, paid 2 GP each per workday. */
+  hiredArtisans?: number;
 }
 
 export interface Construction {
@@ -409,6 +411,9 @@ export interface Construction {
   costGp: number;
   /** Size the facility becomes when the work is done. */
   toSize: FacilitySize;
+  /** Extra paid crews and party members helping (table rule). */
+  extraCrews?: number;
+  helpers?: { charId: string; skilled: boolean }[];
 }
 
 export interface Facility {
