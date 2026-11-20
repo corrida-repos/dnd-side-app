@@ -173,6 +173,7 @@ export function createDefaultState(rng: Rng): State {
     encounterClock: 0,
     exploreTurns: 0,
     encounterExclude: [],
+    encounterSourcesOff: [],
     restStart: null,
   };
   const ids = state.characters.map((c) => c.id);

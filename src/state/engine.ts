@@ -4253,8 +4253,9 @@ export const grantGift = act((d, _ctx, charId: string, type: GiftType, name: str
 export function encounterPool(s: State): EncounterCreature[] {
   const byName = new Map<string, EncounterCreature>();
   if (s.settings.srdEncounters) for (const c of SRD_POOL) byName.set(c.name.toLowerCase(), c);
+  const off = new Set(s.encounterSourcesOff);
   for (const c of s.bestiary) {
-    if (!c.cr || !c.env?.length) continue;
+    if (!c.cr || !c.env?.length || off.has(c.source ?? '?')) continue;
     byName.set(c.name.toLowerCase(), { name: c.name, cr: c.cr, size: c.size, type: c.type.toLowerCase(), align: c.align ?? 'N', env: c.env, source: c.source, flags: c.flags });
   }
   const out = new Set(s.encounterExclude.map((n) => n.toLowerCase()));
