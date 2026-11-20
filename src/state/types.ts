@@ -219,6 +219,14 @@ export interface Character {
   speed: number;
   className: ClassName;
   level: number;
+  /** Species and lineage as written, e.g. "Wood Elf" or "Dragonborn (Silver)". */
+  species: string;
+  /** Subclass name, e.g. "Thief" or "Circle of the Land". */
+  subclass: string;
+  /** Feats by name, e.g. "Ritual Caster". */
+  feats: string[];
+  /** Other chosen features: Eldritch Invocations, Fighting Style, Metamagic and the like. */
+  features: string[];
   size: Size;
   conSave: number;
   conScore: number;

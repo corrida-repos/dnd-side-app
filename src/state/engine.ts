@@ -4342,6 +4342,11 @@ export const importDdb = act((d, _ctx, imp: DdbImport, parts: DdbParts) => {
       tempHp: imp.tempHp,
       hitDie: imp.hitDie,
       hitDiceSpent: imp.hitDiceSpent,
+      species: imp.species || c.species,
+      subclass: imp.subclass || c.subclass,
+      feats: imp.feats.length ? imp.feats : c.feats,
+      chef: imp.feats.length ? imp.feats.some((f) => /^chef\b/i.test(f)) : c.chef,
+      features: imp.features.length ? imp.features : c.features,
     });
   }
   if (parts.inventory) {

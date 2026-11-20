@@ -363,7 +363,7 @@ function WatchCard() {
         Each watch is {formatDuration(len)}. A Long Rest allows up to 2 hours of light activity such as standing watch (4 hours for characters who Trance). In Dim Light passive Perception takes −5. In Darkness,
         anyone without Darkvision relies on hearing alone (👂), unless the campfire or a light source lasts the whole watch.
       </Rule>
-      <WaysAround topic={['watch', 'longRest']} />
+      <WaysAround topic="watch" />
     </Card>
   );
 }

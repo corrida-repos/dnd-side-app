@@ -1018,3 +1018,58 @@ select {
 .way-party .pill {
   white-space: normal;
 }
+.ways-chips {
+  gap: 6px;
+}
+.chip {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.chip.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.ways-section {
+  margin-top: 10px;
+}
+.ways-section h4 {
+  margin: 0 0 4px;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.ways-now h4 {
+  color: var(--good);
+}
+.way-ruling {
+  margin-top: 4px;
+  padding: 4px 8px;
+  border-left: 3px solid var(--info);
+  background: var(--surface);
+  border-radius: 4px;
+}
+.ways-more {
+  margin-top: 8px;
+}
+.ways-index {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+.ways-index a {
+  color: var(--accent);
+}
+.ways-group-title {
+  margin: 8px 0 8px;
+}
+.ways-anchor {
+  scroll-margin-top: 12px;
+}
