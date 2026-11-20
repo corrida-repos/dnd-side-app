@@ -127,6 +127,11 @@ function applySaveResult(s: State, c: Character, p: Omit<PendingSave, 'id' | 'st
       log(s, `${c.name} is Poisoned for an hour by ${p.reason} (Disadvantage on attack rolls and ability checks).`, 'bad');
       return;
     }
+    if (p.kind === 'raw') {
+      c.sick = true;
+      log(s, `${c.name} falls Sick from ${p.reason}: Poisoned (Disadvantage on attack rolls and ability checks) until they finish a Long Rest.`, 'bad');
+      return;
+    }
     if (p.kind === 'malnutrition') c.malnourished = true;
     gainExhaustion(s, c, 1, p.reason);
   }
@@ -322,6 +327,10 @@ export const longRest = act((d, ctx, force = false) => {
         log(d, `${c.name} recovers 1 Exhaustion level. Now level ${c.exhaustion}.`, 'good');
       }
     }
+    if (c.sick) {
+      c.sick = false;
+      log(d, `${c.name} sleeps off the sickness and is no longer Poisoned.`, 'good');
+    }
     for (const t of c.tasks) if (t.daily) t.done = false;
     if (isCaster(c.className)) {
       const rule = PREP_RULE[c.className];
@@ -385,17 +394,16 @@ function doForage(s: State, ctx: Ctx, c: Character, pace: Pace | null): void {
   if (total >= dc) {
     const food = Math.max(0, die(6, ctx.rng) + c.wisMod);
     const water = Math.max(0, die(6, ctx.rng) + c.wisMod);
-    const raw = s.settings.wildNeedsPurifying;
-    if (raw) {
-      s.stores.foodUnsafeLb += food;
-      s.stores.waterUnsafeGal += water;
-    } else {
-      s.stores.foodLb += food;
-      s.stores.waterGal += water;
-    }
+    const rawFood = s.settings.rawFoodRisk;
+    const dirtyWater = s.settings.wildNeedsPurifying;
+    if (rawFood) s.stores.foodRawLb += food;
+    else s.stores.foodLb += food;
+    if (dirtyWater) s.stores.waterUnsafeGal += water;
+    else s.stores.waterGal += water;
+    const notes = [rawFood && 'the food is raw and should be cooked', dirtyWater && 'the water needs purifying'].filter(Boolean).join(', and ');
     log(
       s,
-      `${c.name} forages: Wisdom (Survival) ${r.rolls.join('/')} ${signed(c.survival - 2 * c.exhaustion)} = ${total} against DC ${dc}. Finds ${food} lb of food and ${water} gal of water${raw ? ', which need purifying before they are safe' : ' for the camp stores'}.`,
+      `${c.name} forages: Wisdom (Survival) ${r.rolls.join('/')} ${signed(c.survival - 2 * c.exhaustion)} = ${total} against DC ${dc}. Finds ${food} lb of food and ${water} gal of water${notes ? `: ${notes}` : ' for the camp stores'}.`,
       'good',
     );
   } else {
@@ -468,7 +476,7 @@ function takeFood(s: State, c: Character, lb: number, source: FoodSource): Taken
   };
   const safeStores = () => pull(s.stores.foodLb, (v) => (s.stores.foodLb = v));
   const rations = () => pull(c.rationsLb, (v) => (c.rationsLb = v));
-  const unsafeStores = () => (unsafe += pull(s.stores.foodUnsafeLb, (v) => (s.stores.foodUnsafeLb = v)));
+  const unsafeStores = () => (unsafe += pull(s.stores.foodRawLb, (v) => (s.stores.foodRawLb = v)));
   if (source === 'stores') (safeStores(), unsafeStores());
   else if (source === 'cook') (unsafeStores(), safeStores(), rations());
   else if (source === 'rations') rations();
@@ -514,10 +522,17 @@ function takeWater(s: State, c: Character, pints: number, source: WaterSource): 
   return { amount, unsafe: round2(unsafe) };
 }
 
-/** Eating or drinking unpurified wild supplies: DC 10 Con save or Poisoned for an hour (table rule). */
+/**
+ * Table rules. Raw food: Con save (DC from Settings) or Sick, which means Poisoned until a Long Rest.
+ * Unpurified water: DC 10 Con save or Poisoned for an hour.
+ */
 function riskTainted(s: State, ctx: Ctx, c: Character, unsafe: number, what: 'food' | 'water'): void {
-  if (unsafe <= 0 || !s.settings.wildNeedsPurifying) return;
-  requestSave(s, ctx, c, 'tainted', TAINTED_DC, 'normal', `unpurified ${what}`);
+  if (unsafe <= 0) return;
+  if (what === 'food') {
+    if (s.settings.rawFoodRisk) requestSave(s, ctx, c, 'raw', s.settings.rawFoodDC, 'normal', `eating ${fmtLb(unsafe)} of raw food`);
+  } else if (s.settings.wildNeedsPurifying) {
+    requestSave(s, ctx, c, 'tainted', TAINTED_DC, 'normal', 'unpurified water');
+  }
 }
 
 export const eat = act((d, ctx, charId: string, lb: number, source: 'rations' | 'stores') => {
@@ -527,7 +542,7 @@ export const eat = act((d, ctx, charId: string, lb: number, source: 'rations' | 
   log(
     d,
     got.amount > 0
-      ? `${c.name} eats ${fmtLb(got.amount)} from ${source === 'rations' ? 'their rations' : 'the camp stores'}${got.unsafe ? ` (${fmtLb(got.unsafe)} unpurified)` : ''}.`
+      ? `${c.name} eats ${fmtLb(got.amount)} from ${source === 'rations' ? 'their rations' : 'the camp stores'}${got.unsafe ? ` (${fmtLb(got.unsafe)} of it raw)` : ''}.`
       : `${c.name} has nothing to eat from ${source}.`,
     got.amount > 0 ? 'info' : 'warn',
   );
@@ -559,7 +574,7 @@ export const partyEat = act((d, ctx, portion: Portion) => {
     const want = portionFood(c, portion);
     if (want <= 0) continue;
     const got = takeFood(d, c, want, 'auto');
-    notes.push(`${c.name} ${fmtLb(got.amount)}${got.amount < want ? ' (short)' : ''}${got.unsafe ? ' (unpurified)' : ''}`);
+    notes.push(`${c.name} ${fmtLb(got.amount)}${got.amount < want ? ' (short)' : ''}${got.unsafe ? ' (some raw)' : ''}`);
     if (got.unsafe) risky.push([c, got.unsafe]);
   }
   log(d, notes.length ? `The party eats (camp stores first, then rations): ${notes.join(', ')}.` : 'Nobody needs to eat right now.', notes.some((n) => n.includes('short')) ? 'warn' : 'info');
@@ -628,7 +643,7 @@ export const cookMeal = act((d, ctx, cookId: string | null) => {
     const ok = r.value + bonus >= 10;
     flavor = ` ${cook.name} cooks: Wisdom with Cook's Utensils ${r.value} ${signed(bonus)} = ${r.value + bonus} against DC 10, ${ok ? 'a delicious meal' : 'edible, at least'}.`;
   }
-  const purified = cookedUnsafe > 0 ? ` Cooking it thoroughly makes the ${fmtLb(round2(cookedUnsafe))} of foraged food safe (table rule).` : '';
+  const purified = cookedUnsafe > 0 ? ` Cooking makes the ${fmtLb(round2(cookedUnsafe))} of raw food safe to eat.` : '';
   log(d, eaters.length ? `A hot meal at the campfire for ${eaters.join(', ')} (half a day's food each).${purified}${flavor}` : `Nothing to cook: the stores and rations are empty.${flavor}`, eaters.length ? 'good' : 'warn');
 });
 
@@ -645,15 +660,15 @@ export function canCastPurify(c: Character, mode: 'ritual' | 'slot'): { ok: bool
 }
 
 function purifyAll(s: State): string {
-  const food = s.stores.foodUnsafeLb;
+  const food = s.stores.foodRawLb;
   const water = s.stores.waterUnsafeGal;
   const skins = s.characters.filter((c) => c.waterUnsafe).length;
   s.stores.foodLb = round2(s.stores.foodLb + food);
   s.stores.waterGal = round2(s.stores.waterGal + water);
-  s.stores.foodUnsafeLb = 0;
+  s.stores.foodRawLb = 0;
   s.stores.waterUnsafeGal = 0;
   for (const c of s.characters) c.waterUnsafe = false;
-  const parts = [food && fmtLb(food) + ' of food', water && `${water} gal of stored water`, skins && `${skins} waterskin${skins > 1 ? 's' : ''}`].filter(Boolean);
+  const parts = [food && fmtLb(food) + ' of raw food', water && `${water} gal of stored water`, skins && `${skins} waterskin${skins > 1 ? 's' : ''}`].filter(Boolean);
   return parts.length ? parts.join(', ') : 'nothing that needed it';
 }
 

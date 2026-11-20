@@ -40,6 +40,7 @@ export function newCharacter(partial: Partial<Character> = {}): Character {
     shieldWorn: false,
     waterUnsafe: false,
     poisonedUntil: null,
+    sick: false,
     needsFood: true,
     needsWater: true,
     rationsLb: 5,
@@ -89,7 +90,7 @@ export function createDefaultState(rng: Rng): State {
     weather,
     weatherHistory: [weather],
     fire: { lit: false, fuelHours: 4, sheltered: false },
-    stores: { foodLb: 4, waterGal: 2, foodUnsafeLb: 0, waterUnsafeGal: 0 },
+    stores: { foodLb: 4, waterGal: 2, foodRawLb: 0, waterUnsafeGal: 0 },
     characters: [
       newCharacter({ name: 'Brother Aldous', className: 'Cleric', level: 3, conSave: 2, wisMod: 3, survival: 3, armorKind: 'heavy', armorName: 'Chain Mail', armorWorn: true, hasShield: true, shieldWorn: true, cooksUtensils: true, tasks: defaultTasks(true) }),
       newCharacter({ name: 'Pip Tallowmere', className: 'Wizard', level: 3, size: 'Small', conSave: 1, wisMod: 1, survival: 1, tasks: defaultTasks(true) }),
@@ -100,7 +101,7 @@ export function createDefaultState(rng: Rng): State {
     log: [],
     travel: { pace: 'normal', hoursToday: 0, milesToday: 0 },
     lastLongRestEnd: null,
-    settings: { autoRollSaves: true, climateAdjustedPrecip: false, fireWarmsCamp: true, doubleWaterInHeat: false, wildNeedsPurifying: true, sleepInArmorPenalty: false },
+    settings: { autoRollSaves: true, climateAdjustedPrecip: false, fireWarmsCamp: true, doubleWaterInHeat: false, wildNeedsPurifying: true, sleepInArmorPenalty: false, rawFoodRisk: true, rawFoodDC: 10 },
     spellLibrary: [],
     bastions: [],
   };

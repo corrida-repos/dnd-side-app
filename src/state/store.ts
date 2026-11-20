@@ -18,7 +18,7 @@ function migrate(raw: unknown): State | null {
     settings: { ...base.settings, ...parsed.settings },
     travel: { ...base.travel, ...parsed.travel },
     fire: { ...base.fire, ...parsed.fire },
-    stores: { ...base.stores, ...parsed.stores },
+    stores: { ...base.stores, ...parsed.stores, foodRawLb: parsed.stores?.foodRawLb ?? (parsed.stores as { foodUnsafeLb?: number } | undefined)?.foodUnsafeLb ?? 0 },
     place: { ...base.place, ...parsed.place },
     bastions: parsed.bastions ?? [],
   } as State;

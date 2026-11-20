@@ -78,10 +78,10 @@ function StoresCard() {
         <Num label="Water" value={s.stores.waterGal} onChange={(v) => edit((d) => void (d.stores.waterGal = v))} min={0} step={0.5} suffix="gal" width={4} />
       </div>
       <div className="form-row">
-        <Num label="Unpurified food" value={s.stores.foodUnsafeLb} onChange={(v) => edit((d) => void (d.stores.foodUnsafeLb = v))} min={0} step={0.5} suffix="lb" width={4} />
+        <Num label="Raw food" value={s.stores.foodRawLb} onChange={(v) => edit((d) => void (d.stores.foodRawLb = v))} min={0} step={0.5} suffix="lb" width={4} />
         <Num label="Unpurified water" value={s.stores.waterUnsafeGal} onChange={(v) => edit((d) => void (d.stores.waterUnsafeGal = v))} min={0} step={0.5} suffix="gal" width={4} />
       </div>
-      <Rule>Shared supplies. Foraged food and water arrive unpurified. Party meals use clean stores first, then each person's rations or waterskin, and unpurified supplies only as a last resort.</Rule>
+      <Rule>Shared supplies. Foraged food arrives raw and foraged water unpurified. Party meals use safe stores first, then each person's rations or waterskin, and raw or unpurified supplies only as a last resort.</Rule>
       <div className="btn-row">
         <button disabled={!s.place.waterSource} onClick={() => dispatch(E.refillWater)} title={s.place.waterSource ? '' : 'No water source at this place'}>
           Refill all waterskins
@@ -99,20 +99,22 @@ function PurifyCard() {
   const [caster, setCaster] = useState<string>(() => s.characters.find((c) => c.spells.some((x) => x.name.toLowerCase() === PURIFY_SPELL.toLowerCase()))?.id ?? '');
   const [mode, setMode] = useState<'ritual' | 'slot'>('ritual');
   const skins = s.characters.filter((c) => c.waterUnsafe);
-  const dirty = s.stores.foodUnsafeLb > 0 || s.stores.waterUnsafeGal > 0 || skins.length > 0;
+  const dirty = s.stores.foodRawLb > 0 || s.stores.waterUnsafeGal > 0 || skins.length > 0;
   const casterChar = s.characters.find((c) => c.id === caster);
   const check = casterChar ? E.canCastPurify(casterChar, mode) : { ok: true, reason: '' };
   return (
-    <Card title={<span>Purifying food and water {dirty ? <Pill tone="warn">Needs purifying</Pill> : <Pill tone="good">All safe</Pill>}</span>}>
+    <Card title={<span>Raw food and dirty water {dirty ? <Pill tone="warn">Needs purifying</Pill> : <Pill tone="good">All safe</Pill>}</span>}>
       <ul className="plain small">
-        <li>Unpurified food: {fmtLb(s.stores.foodUnsafeLb)}</li>
+        <li>Raw food: {fmtLb(s.stores.foodRawLb)}</li>
+        {s.characters.some((c) => c.sick) && <li className="bad-text">Sick: {s.characters.filter((c) => c.sick).map((c) => c.name).join(', ')}</li>}
         <li>Unpurified water: {s.stores.waterUnsafeGal} gal</li>
         <li>Tainted waterskins: {skins.length ? skins.map((c) => c.name).join(', ') : 'none'}</li>
         <li>
           Water source here: {s.place.waterSource ? (s.place.waterQuality === 'clean' ? 'clean' : 'questionable') : 'none'}
         </li>
       </ul>
-      {!s.settings.wildNeedsPurifying && <Rule>Purifying is switched off in Settings, so wild food and water are treated as safe.</Rule>}
+      {!s.settings.wildNeedsPurifying && <Rule>Water purifying is switched off in Settings, so wild water is treated as safe.</Rule>}
+      {!s.settings.rawFoodRisk && <Rule>The raw food risk is switched off in Settings, so foraged food is safe to eat as it is.</Rule>}
 
       <h3>Magical: {PURIFY_SPELL}</h3>
       <div className="form-row">
@@ -145,8 +147,8 @@ function PurifyCard() {
         </button>
       </div>
       <Rule>
-        Table rules: boiling over a lit campfire makes all water safe, and cooking a hot meal uses up foraged food first and makes it safe. Eating or drinking anything unpurified means a DC {TAINTED_DC} Con save,
-        or you are Poisoned for 1 hour (Disadvantage on attack rolls and ability checks).
+        Table rules: boiling over a lit campfire makes all water safe, and cooking a hot meal uses up raw food first and makes it safe. Eating <b>raw food</b> means a DC {s.settings.rawFoodDC} Con save, or you
+        are <b>Sick</b>: Poisoned (Disadvantage on attack rolls and ability checks) until you finish a Long Rest. Drinking <b>unpurified water</b> means a DC {TAINTED_DC} Con save, or you are Poisoned for 1 hour.
       </Rule>
     </Card>
   );

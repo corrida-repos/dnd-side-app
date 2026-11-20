@@ -221,12 +221,13 @@ describe('travel and foraging', () => {
   it('adds foraged food and water to the stores', () => {
     const s = fresh((d) => {
       calm(d, 60, 40);
-      d.stores = { foodLb: 0, waterGal: 0, foodUnsafeLb: 0, waterUnsafeGal: 0 };
+      d.stores = { foodLb: 0, waterGal: 0, foodRawLb: 0, waterUnsafeGal: 0 };
       d.characters[0].wisMod = 1;
     });
     const n = E.forage(s, HIGH, s.characters[0].id);
-    expect(n.stores).toMatchObject({ foodLb: 0, waterGal: 0, foodUnsafeLb: 7, waterUnsafeGal: 7 });
+    expect(n.stores).toMatchObject({ foodLb: 0, waterGal: 0, foodRawLb: 7, waterUnsafeGal: 7 });
     s.settings.wildNeedsPurifying = false;
+    s.settings.rawFoodRisk = false;
     expect(E.forage(s, HIGH, s.characters[0].id).stores).toMatchObject({ foodLb: 7, waterGal: 7 });
   });
 });
@@ -275,7 +276,7 @@ describe('purifying food and water', () => {
     calm(d, 60, 40);
     d.place.waterSource = true;
     d.place.waterQuality = 'questionable';
-    d.stores = { foodLb: 0, waterGal: 0, foodUnsafeLb: 3, waterUnsafeGal: 2 };
+    d.stores = { foodLb: 0, waterGal: 0, foodRawLb: 3, waterUnsafeGal: 2 };
   };
 
   it('fills waterskins with tainted water from a questionable source', () => {
@@ -289,13 +290,38 @@ describe('purifying food and water', () => {
     expect(E.refillWater(s, ctx()).characters[0].waterUnsafe).toBe(false);
   });
 
-  it('makes you save or be Poisoned for an hour after eating unpurified food', () => {
+  it('makes you save or fall Sick after eating raw food, until a Long Rest', () => {
     const s = fresh(wild);
     const n = E.eat(s, LOW, s.characters[0].id, 0.5, 'stores');
+    expect(n.characters[0].sick).toBe(true);
+    expect(E.eat(s, HIGH, s.characters[0].id, 0.5, 'stores').characters[0].sick).toBe(false);
+    expect(E.advance(n, ctx(), 6 * 60).characters[0].sick).toBe(true);
+    expect(E.longRest(n, ctx(), false).characters[0].sick).toBe(false);
+  });
+
+  it('uses the raw food DC from Settings, and can be switched off', () => {
+    const s = fresh((d) => {
+      wild(d);
+      d.settings.rawFoodDC = 15;
+      d.characters[0].conSave = 4;
+    });
+    // d20 = 11 (rng 0.5) + 4 = 15: passes DC 15, fails DC 16
+    expect(E.eat(s, ctx(0.5), s.characters[0].id, 0.5, 'stores').characters[0].sick).toBe(false);
+    s.settings.rawFoodDC = 16;
+    expect(E.eat(s, ctx(0.5), s.characters[0].id, 0.5, 'stores').characters[0].sick).toBe(true);
+    s.settings.rawFoodRisk = false;
+    expect(E.eat(s, LOW, s.characters[0].id, 0.5, 'stores').characters[0].sick).toBe(false);
+  });
+
+  it('still gives an hour of Poisoned for unpurified water', () => {
+    const s = fresh((d) => {
+      wild(d);
+      d.characters[0].waterPints = 0;
+    });
+    const n = E.drink(s, LOW, s.characters[0].id, 2, 'stores');
     expect(n.characters[0].poisonedUntil).toBe(E.absNow(n) + 60);
-    expect(E.eat(s, HIGH, s.characters[0].id, 0.5, 'stores').characters[0].poisonedUntil).toBeNull();
-    const later = E.advance(n, ctx(), 60);
-    expect(later.characters[0].poisonedUntil).toBeNull();
+    expect(n.characters[0].sick).toBe(false);
+    expect(E.advance(n, ctx(), 60).characters[0].poisonedUntil).toBeNull();
   });
 
   it('prefers safe water and only risks the questionable stream when it has to', () => {
@@ -315,10 +341,10 @@ describe('purifying food and water', () => {
     });
     const id = s.characters[0].id;
     expect(E.canCastPurify(s.characters[0], 'ritual').ok).toBe(false);
-    expect(E.purifySpell(s, ctx(), id, 'ritual').stores.foodUnsafeLb).toBe(3);
+    expect(E.purifySpell(s, ctx(), id, 'ritual').stores.foodRawLb).toBe(3);
     s.characters[0].spells[0].prepared = true;
     const n = E.purifySpell(s, ctx(), id, 'ritual');
-    expect(n.stores).toEqual({ foodLb: 3, waterGal: 2, foodUnsafeLb: 0, waterUnsafeGal: 0 });
+    expect(n.stores).toEqual({ foodLb: 3, waterGal: 2, foodRawLb: 0, waterUnsafeGal: 0 });
     expect(n.characters[0].waterUnsafe).toBe(false);
     expect(n.minutes).toBe(s.minutes + 10);
     expect(E.purifySpell(s, ctx(), id, 'slot').minutes).toBe(s.minutes);
@@ -334,7 +360,7 @@ describe('purifying food and water', () => {
     const boiled = E.boilWater(s, ctx());
     expect(boiled.stores).toMatchObject({ waterGal: 2, waterUnsafeGal: 0 });
     const cooked = E.cookMeal(s, LOW, null);
-    expect(cooked.stores.foodUnsafeLb).toBe(2.5);
+    expect(cooked.stores.foodRawLb).toBe(2.5);
     expect(cooked.characters[0].poisonedUntil).toBeNull();
   });
 });

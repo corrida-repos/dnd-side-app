@@ -60,8 +60,10 @@ export interface Character {
   shieldWorn: boolean;
   /** Waterskin was filled from a source that hasn't been purified. */
   waterUnsafe: boolean;
-  /** Absolute minute when the Poisoned condition from tainted food or water ends. */
+  /** Absolute minute when the Poisoned condition from tainted water ends. */
   poisonedUntil: number | null;
+  /** Sick from eating raw food: Poisoned until the creature finishes a Long Rest. */
+  sick: boolean;
   needsFood: boolean;
   needsWater: boolean;
   rationsLb: number;
@@ -109,12 +111,12 @@ export interface Fire {
 export interface Stores {
   foodLb: number;
   waterGal: number;
-  /** Foraged or found supplies that still need purifying. */
-  foodUnsafeLb: number;
+  /** Raw foraged or hunted food: cook it or purify it before eating. */
+  foodRawLb: number;
   waterUnsafeGal: number;
 }
 
-export type SaveKind = 'cold' | 'heat' | 'march' | 'malnutrition' | 'tainted';
+export type SaveKind = 'cold' | 'heat' | 'march' | 'malnutrition' | 'tainted' | 'raw';
 
 export interface PendingSave {
   id: string;
@@ -191,6 +193,9 @@ export interface Settings {
   wildNeedsPurifying: boolean;
   /** Optional rule (Xanathar's Guide): sleeping in Medium or Heavy armor spoils the Long Rest. */
   sleepInArmorPenalty: boolean;
+  /** Table rule: eating raw food calls for a Con save, or the creature is Sick (Poisoned until a Long Rest). */
+  rawFoodRisk: boolean;
+  rawFoodDC: number;
 }
 
 export interface Travel {

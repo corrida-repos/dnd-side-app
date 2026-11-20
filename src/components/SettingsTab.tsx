@@ -62,7 +62,7 @@ function DateCard() {
 
 function RulesCard() {
   const s = useGame();
-  const set = (k: keyof typeof s.settings, v: boolean) => edit((d) => void (d.settings[k] = v));
+  const set = (k: Exclude<keyof typeof s.settings, 'rawFoodDC'>, v: boolean) => edit((d) => void (d.settings[k] = v));
   return (
     <Card title="Rules options">
       <div className="stack tight">
@@ -72,8 +72,15 @@ function RulesCard() {
         <Toggle checked={s.settings.climateAdjustedPrecip} onChange={(v) => set('climateAdjustedPrecip', v)} label="Adjust the precipitation roll for climate (deserts drier, jungles wetter)" />
         <Rule>When this is off, the plain DMG d20 table is used everywhere.</Rule>
         <Toggle checked={s.settings.doubleWaterInHeat} onChange={(v) => set('doubleWaterInHeat', v)} label="Double water needs on days of 100 °F or hotter (2014 rule)" />
-        <Toggle checked={s.settings.wildNeedsPurifying} onChange={(v) => set('wildNeedsPurifying', v)} label="Foraged food and questionable water must be purified (table rule)" />
-        <Rule>When this is on, eating or drinking unpurified supplies means a DC 10 Con save or Poisoned for 1 hour. Purify Food and Drink, boiling or cooking makes them safe.</Rule>
+        <Toggle checked={s.settings.rawFoodRisk} onChange={(v) => set('rawFoodRisk', v)} label="Raw food can make you sick (table rule)" />
+        {s.settings.rawFoodRisk && (
+          <div className="form-row">
+            <Num label="Raw food save DC" value={s.settings.rawFoodDC} onChange={(v) => edit((d) => void (d.settings.rawFoodDC = Math.round(v)))} min={1} max={30} width={3} />
+          </div>
+        )}
+        <Rule>Eating raw food means a Con save, or the character is Sick: Poisoned until they finish a Long Rest. Cooking it or casting Purify Food and Drink makes it safe.</Rule>
+        <Toggle checked={s.settings.wildNeedsPurifying} onChange={(v) => set('wildNeedsPurifying', v)} label="Questionable and foraged water must be purified (table rule)" />
+        <Rule>Drinking unpurified water means a DC 10 Con save, or the character is Poisoned for 1 hour. Purify Food and Drink or boiling makes it safe.</Rule>
         <Toggle checked={s.settings.sleepInArmorPenalty} onChange={(v) => set('sleepInArmorPenalty', v)} label="Sleeping in Medium or Heavy armor spoils the Long Rest (optional Xanathar's rule)" />
       </div>
     </Card>

@@ -230,7 +230,7 @@ function PartyStatusCard() {
                     <ExhaustionBadge level={c.exhaustion} />
                     {c.malnourished && <Pill tone="bad">Malnourished</Pill>}
                     {c.dehydrated && <Pill tone="bad">Dehydrated</Pill>}
-                    {c.poisonedUntil != null && <Pill tone="bad">Poisoned</Pill>}
+                    {c.sick ? <Pill tone="bad" title="Poisoned until they finish a Long Rest">Sick (Poisoned)</Pill> : c.poisonedUntil != null && <Pill tone="bad">Poisoned</Pill>}
                     {c.armorKind !== 'none' && !c.armorWorn && <Pill tone="warn">Armor off</Pill>}
                   </td>
                   <td>
@@ -273,7 +273,7 @@ function PartyStatusCard() {
         <button onClick={() => dispatch((st, c) => E.partyDrink(st, c, 'topup'))}>Top up today's water</button>
       </div>
       <p className="muted small">
-        Camp stores: {fmtLb(s.stores.foodLb)} food, {s.stores.waterGal} gal water{s.stores.foodUnsafeLb + s.stores.waterUnsafeGal > 0 ? `, plus ${fmtLb(s.stores.foodUnsafeLb)} food and ${s.stores.waterUnsafeGal} gal water still to purify` : ''}. Survival is checked at midnight: drinking less than half your water gives 1 Exhaustion level. Eating less than half your food
+        Camp stores: {fmtLb(s.stores.foodLb)} food, {s.stores.waterGal} gal water{s.stores.foodRawLb + s.stores.waterUnsafeGal > 0 ? `, plus ${fmtLb(s.stores.foodRawLb)} raw food and ${s.stores.waterUnsafeGal} gal water still to cook or purify` : ''}. Survival is checked at midnight: drinking less than half your water gives 1 Exhaustion level. Eating less than half your food
         means a DC 10 Con save. After 5 days with no food you gain a level every day.
       </p>
     </Card>
