@@ -4,7 +4,8 @@ import * as E from '../state/engine';
 import { CLIMATES, environmentEffects, temperatureAt, weatherSummary, type ClimateId, type Weather } from '../rules/weather';
 import { formatClock, formatDate, formatDuration } from '../rules/calendar';
 import { ABUNDANCE_LABEL, PACES, foodNeedLb, waterNeedPints, fmtLb, fmtWater } from '../rules/survival';
-import { Card, ExhaustionBadge, Meter, Num, Pill, Select, Text, Toggle } from './common';
+import { Card, Meter, Num, Pill, Select, Text, Toggle } from './common';
+import { Debuffs } from './Debuffs';
 import type { Abundance, Pace, Shelter, WaterQuality } from '../state/types';
 
 export function Overview() {
@@ -230,7 +231,7 @@ function PartyStatusCard() {
           <thead>
             <tr>
               <th>Name</th>
-              <th>Exhaustion</th>
+              <th>Debuffs</th>
               <th>Food today</th>
               <th>Water today</th>
               <th>Carrying</th>
@@ -261,10 +262,7 @@ function PartyStatusCard() {
                     </div>
                   </td>
                   <td>
-                    <ExhaustionBadge level={c.exhaustion} />
-                    {c.malnourished && <Pill tone="bad">Malnourished</Pill>}
-                    {c.dehydrated && <Pill tone="bad">Dehydrated</Pill>}
-                    {c.sick ? <Pill tone="bad" title="Poisoned until they finish a Long Rest">Sick (Poisoned)</Pill> : c.poisonedUntil != null && <Pill tone="bad">Poisoned</Pill>}
+                    <Debuffs c={c} now={E.absNow(s)} />
                     {c.armorKind !== 'none' && !c.armorWorn && <Pill tone="warn">Armor off</Pill>}
                     {s.settings.coldNights && s.weather.low <= s.settings.coldNightF && !E.hasWarmCover(c) && <Pill tone="warn" title="No Bedroll, Blanket or cold weather gear for tonight">No warm cover</Pill>}
                   </td>
@@ -272,7 +270,6 @@ function PartyStatusCard() {
                     {c.needsFood ? (
                       <>
                         <Meter value={c.ateLbToday} max={fNeed} /> {fmtLb(c.ateLbToday)} / {fmtLb(fNeed)}
-                        {c.daysWithoutFood > 0 && <div className="small bad-text">{c.daysWithoutFood} day(s) without food</div>}
                       </>
                     ) : (
                       <span className="muted">Doesn't eat</span>

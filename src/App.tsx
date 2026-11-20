@@ -50,6 +50,8 @@ export function App() {
   const Active = TABS.find((x) => x.id === tab)!.el;
   const pending = s.pending.length;
   const restWait = E.minutesUntilLongRest(s);
+  const now = E.absNow(s);
+  const debuffed = s.characters.filter((c) => c.exhaustion > 0 || c.sick || (c.poisonedUntil != null && c.poisonedUntil > now)).length;
   const danger = s.characters.filter((c) => c.exhaustion >= 3).length;
   return (
     <div className="app">
@@ -74,6 +76,11 @@ export function App() {
             🛏 {restWait ? `Long Rest in ${formatDuration(restWait)}` : 'Long Rest ready'}
           </span>
           {danger > 0 && <span className="status-item bad-text">⚠ {danger} badly exhausted</span>}
+          {debuffed > 0 && (
+            <button className="status-item status-link bad-text" onClick={() => setTab('overview')} title="See the Party status table on the Overview">
+              ⚕ {debuffed} with debuffs
+            </button>
+          )}
         </div>
       </header>
       <nav className="tabs" role="tablist">

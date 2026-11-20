@@ -1,10 +1,12 @@
+import { useState } from 'react';
 import { useGame, edit } from '../state/store';
 import { newCharacter, defaultTasks } from '../state/defaults';
 import { CLASSES, isCaster } from '../rules/spells';
-import { SIZES, exhaustionSummary, foodNeedLb, WATER_GAL_PER_DAY, proficiencyBonus, ARMOR_TIMES, ARMOR_LABEL } from '../rules/survival';
-import { Card, ExhaustionBadge, Num, Select, Text, Toggle, Rule } from './common';
-import type { ArmorKind, Character, ClassName, Resist, Size } from '../state/types';
-import { log } from '../state/engine';
+import { SIZES, exhaustionSummary, foodNeedLb, WATER_GAL_PER_DAY, proficiencyBonus, ARMOR_TIMES, ARMOR_LABEL, causesOf, EXHAUSTION_CAUSE_LABEL } from '../rules/survival';
+import { Card, Num, Select, Text, Toggle, Rule } from './common';
+import { Debuffs } from './Debuffs';
+import type { ArmorKind, Character, ClassName, ExhaustionCause, Resist, Size } from '../state/types';
+import { absNow, log } from '../state/engine';
 
 const RESIST = [
   { value: 'none', label: 'None' },
@@ -31,6 +33,42 @@ export function PartyTab() {
   );
 }
 
+function ExhaustionEditor({ c, set }: { c: Character; set: (patch: Partial<Character>) => void }) {
+  const s = useGame();
+  const [cause, setCause] = useState<ExhaustionCause>('other');
+  const causes = causesOf(c);
+  return (
+    <div className="exh-editor">
+      <div className="form-row">
+        <span className="field">
+          <span className="field-label">Exhaustion</span>
+          <span className="inline-group">
+            <button aria-label="Remove the newest Exhaustion level" onClick={() => set({ exhaustion: Math.max(0, c.exhaustion - 1), exhaustionCauses: causes.slice(0, -1) })}>
+              −
+            </button>
+            <b className="exh">{c.exhaustion}</b>
+            <button aria-label="Add an Exhaustion level" disabled={c.exhaustion >= 6} onClick={() => set({ exhaustion: c.exhaustion + 1, exhaustionCauses: [...causes, cause] })}>
+              +
+            </button>
+          </span>
+        </span>
+        <Select
+          label="Cause for +"
+          value={cause}
+          onChange={setCause}
+          options={(Object.keys(EXHAUSTION_CAUSE_LABEL) as ExhaustionCause[]).map((k) => ({ value: k, label: EXHAUSTION_CAUSE_LABEL[k] }))}
+        />
+      </div>
+      <div className="debuff-line">
+        <Debuffs c={c} now={absNow(s)} />
+      </div>
+      <Rule>
+        Exhaustion {c.exhaustion}: {exhaustionSummary(c.exhaustion)}. A Long Rest removes the newest level, except levels from Malnutrition or Dehydration (🔒), which stay until a full day&apos;s food or water.
+      </Rule>
+    </div>
+  );
+}
+
 function CharacterCard({ c }: { c: Character }) {
   const set = (patch: Partial<Character>) =>
     edit((d) => {
@@ -47,7 +85,7 @@ function CharacterCard({ c }: { c: Character }) {
     <Card
       title={
         <span>
-          {c.name} <ExhaustionBadge level={c.exhaustion} />
+          {c.name}
         </span>
       }
       actions={
@@ -71,16 +109,8 @@ function CharacterCard({ c }: { c: Character }) {
         <Num label="Con save" value={c.conSave} onChange={(v) => set({ conSave: v })} width={3} />
         <Num label="Wis mod" value={c.wisMod} onChange={(v) => set({ wisMod: v })} width={3} />
         <Num label="Survival" value={c.survival} onChange={(v) => set({ survival: v })} width={3} />
-        <span className="field">
-          <span className="field-label">Exhaustion</span>
-          <span className="inline-group">
-            <button onClick={() => set({ exhaustion: Math.max(0, c.exhaustion - 1) })}>−</button>
-            <b className="exh">{c.exhaustion}</b>
-            <button onClick={() => set({ exhaustion: Math.min(6, c.exhaustion + 1) })}>+</button>
-          </span>
-        </span>
       </div>
-      <Rule>Exhaustion {c.exhaustion}: {exhaustionSummary(c.exhaustion)}. A Long Rest removes 1 level.</Rule>
+      <ExhaustionEditor c={c} set={set} />
 
       <h3>Weathering the elements</h3>
       <div className="form-row">

@@ -13,6 +13,8 @@ export type Abundance = 'abundant' | 'limited' | 'scarce';
 export type Pace = 'fast' | 'normal' | 'slow';
 export type Activity = 'camp' | 'rest' | 'travel' | 'work';
 export type Tone = 'info' | 'warn' | 'bad' | 'good';
+/** What caused each Exhaustion level. */
+export type ExhaustionCause = 'malnutrition' | 'dehydration' | 'cold' | 'heat' | 'march' | 'coldNight' | 'other';
 export type ArmorKind = 'none' | 'light' | 'medium' | 'heavy';
 export type WaterQuality = 'clean' | 'questionable';
 
@@ -48,6 +50,8 @@ export interface Character {
   wisMod: number;
   survival: number;
   exhaustion: number;
+  /** One cause per Exhaustion level, oldest first. Kept in step with `exhaustion`. */
+  exhaustionCauses: ExhaustionCause[];
   coldResist: Resist;
   fireResist: Resist;
   coldWeatherGear: boolean;

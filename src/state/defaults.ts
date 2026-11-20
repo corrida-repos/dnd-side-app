@@ -29,6 +29,7 @@ export function newCharacter(partial: Partial<Character> = {}): Character {
     wisMod: 0,
     survival: 0,
     exhaustion: 0,
+    exhaustionCauses: [],
     coldResist: 'none',
     fireResist: 'none',
     coldWeatherGear: false,

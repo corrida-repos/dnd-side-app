@@ -1,4 +1,4 @@
-import type { ArmorKind, Character, Size, Abundance, Pace } from '../state/types';
+import type { ArmorKind, Character, ExhaustionCause, Size, Abundance, Pace } from '../state/types';
 
 export const SIZES: Size[] = ['Tiny', 'Small', 'Medium', 'Large', 'Huge', 'Gargantuan'];
 
@@ -69,3 +69,32 @@ export const TAINTED_DC = 10;
 export const TAINTED_POISON_MINUTES = 60;
 /** Table rule: boiling a batch of water over a campfire. */
 export const BOIL_MINUTES = 30;
+
+export const EXHAUSTION_CAUSE_LABEL: Record<ExhaustionCause, string> = {
+  malnutrition: 'Malnutrition',
+  dehydration: 'Dehydration',
+  cold: 'Extreme cold',
+  heat: 'Extreme heat',
+  march: 'Forced march',
+  coldNight: 'Cold night',
+  other: 'Other',
+};
+
+/** Causes for each Exhaustion level, padded with "other" or trimmed so there is exactly one per level. */
+export function causesOf(c: Character): ExhaustionCause[] {
+  const list = (c.exhaustionCauses ?? []).slice(0, c.exhaustion);
+  while (list.length < c.exhaustion) list.push('other');
+  return list;
+}
+
+/** Exhaustion from malnutrition or dehydration can't be removed until the creature has eaten or drunk a full day's worth. */
+export function isLocked(c: Character, cause: ExhaustionCause): boolean {
+  return (cause === 'malnutrition' && c.malnourished) || (cause === 'dehydration' && c.dehydrated);
+}
+
+/** Groups the levels by cause, e.g. [{ cause: 'cold', count: 2, locked: false }]. */
+export function exhaustionBreakdown(c: Character): { cause: ExhaustionCause; label: string; count: number; locked: boolean }[] {
+  const counts = new Map<ExhaustionCause, number>();
+  for (const k of causesOf(c)) counts.set(k, (counts.get(k) ?? 0) + 1);
+  return [...counts.entries()].map(([cause, count]) => ({ cause, label: EXHAUSTION_CAUSE_LABEL[cause], count, locked: isLocked(c, cause) }));
+}

@@ -1,4 +1,4 @@
-import type { Activity, Bastion, Character, Facility, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
+import type { Activity, Bastion, Character, ExhaustionCause, Facility, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
 import { BASIC_BUILD, BASTION_TURN_DAYS, ENLARGE, rollBastionEvent, SIZE_LABEL, SPECIAL_FACILITIES, type FacilitySize } from '../rules/bastion';
 import { d20, die, combineModes, signed, type Rng, type RollMode } from '../rules/dice';
 import { dateFromIndex, formatClock, formatDate, formatDuration } from '../rules/calendar';
@@ -14,6 +14,9 @@ import {
   fmtLb,
   fmtWater,
   heatDisadvantage,
+  causesOf,
+  isLocked,
+  EXHAUSTION_CAUSE_LABEL,
   wearsBulkyArmor,
   armorTime,
   ARMOR_LABEL,
@@ -117,11 +120,30 @@ export function heatProtection(c: Character, hasWater: boolean): string | null {
 
 // ---------------------------------------------------------------- saves & exhaustion
 
-export function gainExhaustion(s: State, c: Character, n: number, why: string): void {
+const CAUSE_OF_SAVE: Partial<Record<SaveKind, ExhaustionCause>> = { cold: 'cold', heat: 'heat', march: 'march', malnutrition: 'malnutrition', chill: 'coldNight' };
+
+export function gainExhaustion(s: State, c: Character, n: number, why: string, cause: ExhaustionCause = 'other'): void {
   if (!alive(c)) return;
-  c.exhaustion = Math.min(6, c.exhaustion + n);
-  log(s, `${c.name} gains ${n} Exhaustion level${n > 1 ? 's' : ''} (${why}). Now level ${c.exhaustion}: ${exhaustionSummary(c.exhaustion)}.`, 'bad');
+  const causes = causesOf(c);
+  const add = Math.min(n, 6 - c.exhaustion);
+  for (let i = 0; i < add; i++) causes.push(cause);
+  c.exhaustion = Math.min(6, c.exhaustion + add);
+  c.exhaustionCauses = causes;
+  log(s, `${c.name} gains ${n} Exhaustion level${n > 1 ? 's' : ''} from ${EXHAUSTION_CAUSE_LABEL[cause]} (${why}). Now level ${c.exhaustion}: ${exhaustionSummary(c.exhaustion)}.`, 'bad');
   if (c.exhaustion >= 6) log(s, `${c.name} dies of exhaustion.`, 'bad');
+}
+
+/** Removes the newest level that isn't locked by malnutrition or dehydration. Returns its cause, or null if none could go. */
+export function recoverExhaustion(c: Character): ExhaustionCause | null {
+  const causes = causesOf(c);
+  for (let i = causes.length - 1; i >= 0; i--) {
+    if (isLocked(c, causes[i])) continue;
+    const [gone] = causes.splice(i, 1);
+    c.exhaustionCauses = causes;
+    c.exhaustion = causes.length;
+    return gone;
+  }
+  return null;
 }
 
 function applySaveResult(s: State, c: Character, p: Omit<PendingSave, 'id' | 'stamp'>, passed: boolean, detail: string): void {
@@ -129,16 +151,16 @@ function applySaveResult(s: State, c: Character, p: Omit<PendingSave, 'id' | 'st
   if (!passed) {
     if (p.kind === 'tainted') {
       c.poisonedUntil = absNow(s) + TAINTED_POISON_MINUTES;
-      log(s, `${c.name} is Poisoned for an hour by ${p.reason} (Disadvantage on attack rolls and ability checks).`, 'bad');
+      log(s, `${c.name} has a Waterborne illness from ${p.reason}: Poisoned for an hour (Disadvantage on attack rolls and ability checks).`, 'bad');
       return;
     }
     if (p.kind === 'raw') {
       c.sick = true;
-      log(s, `${c.name} falls Sick from ${p.reason}: Poisoned (Disadvantage on attack rolls and ability checks) until they finish a Long Rest.`, 'bad');
+      log(s, `${c.name} has Food poisoning from ${p.reason}: Poisoned (Disadvantage on attack rolls and ability checks) until they finish a Long Rest.`, 'bad');
       return;
     }
     if (p.kind === 'malnutrition') c.malnourished = true;
-    gainExhaustion(s, c, 1, p.reason);
+    gainExhaustion(s, c, 1, p.reason, CAUSE_OF_SAVE[p.kind]);
   }
 }
 
@@ -217,7 +239,7 @@ function endOfDay(s: State, ctx: Ctx): void {
       const need = waterNeedPints(c, hotDay, s.settings.doubleWaterInHeat);
       if (c.drankPintsToday < need / 2) {
         c.dehydrated = true;
-        gainExhaustion(s, c, 1, `dehydration: drank ${fmtWater(c.drankPintsToday)} of ${fmtWater(need)}`);
+        gainExhaustion(s, c, 1, `drank ${fmtWater(c.drankPintsToday)} of ${fmtWater(need)}`, 'dehydration');
       } else if (c.drankPintsToday >= need && c.dehydrated) {
         c.dehydrated = false;
         log(s, `${c.name} is fully rehydrated, so dehydration Exhaustion can be removed again.`, 'good');
@@ -229,7 +251,7 @@ function endOfDay(s: State, ctx: Ctx): void {
         c.daysWithoutFood += 1;
         if (c.daysWithoutFood >= 5) {
           c.malnourished = true;
-          gainExhaustion(s, c, 1, `malnutrition: day ${c.daysWithoutFood} without food`);
+          gainExhaustion(s, c, 1, `day ${c.daysWithoutFood} without food`, 'malnutrition');
         } else log(s, `${c.name} ate nothing today (${c.daysWithoutFood} day${c.daysWithoutFood > 1 ? 's' : ''} without food).`, 'warn');
       } else {
         c.daysWithoutFood = 0;
@@ -256,7 +278,7 @@ function expireConditions(s: State): void {
   for (const c of s.characters) {
     if (c.poisonedUntil != null && now >= c.poisonedUntil) {
       c.poisonedUntil = null;
-      log(s, `${c.name} is no longer Poisoned.`, 'good');
+      log(s, `${c.name} recovers from the Waterborne illness and is no longer Poisoned.`, 'good');
     }
   }
 }
@@ -347,16 +369,17 @@ export const longRest = act((d, ctx, force = false) => {
       log(d, `${c.name} wakes with their armor off. Putting it on takes ${armorTime(c, 'don')} min.`);
     }
     if (c.exhaustion > 0 && !armorSpoiled) {
-      if (c.malnourished || c.dehydrated) {
-        log(d, `${c.name} can't shed Exhaustion yet: still ${c.malnourished ? 'malnourished' : 'dehydrated'}.`, 'warn');
+      const gone = recoverExhaustion(c);
+      if (gone) {
+        log(d, `${c.name} recovers 1 Exhaustion level (${EXHAUSTION_CAUSE_LABEL[gone]}). Now level ${c.exhaustion}.`, 'good');
       } else {
-        c.exhaustion -= 1;
-        log(d, `${c.name} recovers 1 Exhaustion level. Now level ${c.exhaustion}.`, 'good');
+        const why = [c.malnourished && 'Malnutrition (needs a full day of food)', c.dehydrated && 'Dehydration (needs a full day of water)'].filter(Boolean).join(' and ');
+        log(d, `${c.name} can't shed Exhaustion yet: every level left comes from ${why}.`, 'warn');
       }
     }
     if (c.sick) {
       c.sick = false;
-      log(d, `${c.name} sleeps off the sickness and is no longer Poisoned.`, 'good');
+      log(d, `${c.name} sleeps off the Food poisoning and is no longer Poisoned.`, 'good');
     }
     for (const t of c.tasks) if (t.daily) t.done = false;
     if (isCaster(c.className)) {

@@ -171,7 +171,7 @@ describe('rests', () => {
     const s = fresh((d) => {
       calm(d, 60, 40);
       d.characters[0].exhaustion = 2;
-      d.characters.push(newCharacter({ name: 'B', exhaustion: 2, malnourished: true }));
+      d.characters.push(newCharacter({ name: 'B', exhaustion: 2, exhaustionCauses: ['malnutrition', 'malnutrition'], malnourished: true }));
       d.minutes = 8 * 60;
     });
     const n = E.longRest(s, ctx(), false);
@@ -536,5 +536,45 @@ describe('cold nights, bedrolls and blankets', () => {
     // Out of bed, the Bedroll doesn't help
     const awake = E.advance(s, ctx(), 60, 'camp');
     expect(awake.pending.some((p) => p.charId === s.characters[0].id)).toBe(true);
+  });
+});
+
+describe('labelled debuffs', () => {
+  it('records the cause of every Exhaustion level', () => {
+    const s = fresh((d) => {
+      d.minutes = 23 * 60;
+      calm(d, -10, -20);
+      d.characters[0].daysWithoutFood = 4;
+      d.characters[0].drankPintsToday = 0;
+    });
+    // Hour of extreme cold (fails on a 1), then midnight: dehydration and the fifth day without food.
+    const n = E.advance(s, LOW, 60);
+    expect(n.characters[0].exhaustionCauses).toEqual(['cold', 'dehydration', 'malnutrition']);
+    expect(n.characters[0].exhaustion).toBe(3);
+    expect(n.log.some((l) => l.text.includes('from Extreme cold'))).toBe(true);
+    expect(n.log.some((l) => l.text.includes('from Dehydration'))).toBe(true);
+    expect(n.log.some((l) => l.text.includes('from Malnutrition'))).toBe(true);
+  });
+
+  it('only removes levels that are not locked by malnutrition or dehydration', () => {
+    const c = newCharacter({ exhaustion: 3, exhaustionCauses: ['malnutrition', 'cold', 'dehydration'], malnourished: true, dehydrated: true });
+    expect(E.recoverExhaustion(c)).toBe('cold');
+    expect(c.exhaustionCauses).toEqual(['malnutrition', 'dehydration']);
+    expect(E.recoverExhaustion(c)).toBeNull();
+    c.dehydrated = false;
+    expect(E.recoverExhaustion(c)).toBe('dehydration');
+    expect(c).toMatchObject({ exhaustion: 1, exhaustionCauses: ['malnutrition'] });
+  });
+
+  it('labels the forced march and cold night levels, and pads older saves with "other"', () => {
+    const s = fresh((d) => {
+      calm(d, 60, 40);
+      d.minutes = 6 * 60;
+      d.place.waterSource = true;
+    });
+    const n = E.travel(s, LOW, { hours: 9, pace: 'normal', difficult: false, foragerIds: [] });
+    expect(n.characters[0].exhaustionCauses).toEqual(['march']);
+    const legacy = newCharacter({ exhaustion: 2, exhaustionCauses: undefined as unknown as [] });
+    expect(E.recoverExhaustion(legacy)).toBe('other');
   });
 });

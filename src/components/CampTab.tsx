@@ -106,7 +106,7 @@ function PurifyCard() {
     <Card title={<span>Raw food and dirty water {dirty ? <Pill tone="warn">Needs purifying</Pill> : <Pill tone="good">All safe</Pill>}</span>}>
       <ul className="plain small">
         <li>Raw food: {fmtLb(s.stores.foodRawLb)}</li>
-        {s.characters.some((c) => c.sick) && <li className="bad-text">Sick: {s.characters.filter((c) => c.sick).map((c) => c.name).join(', ')}</li>}
+        {s.characters.some((c) => c.sick) && <li className="bad-text">Food poisoning: {s.characters.filter((c) => c.sick).map((c) => c.name).join(', ')}</li>}
         <li>Unpurified water: {s.stores.waterUnsafeGal} gal</li>
         <li>Tainted waterskins: {skins.length ? skins.map((c) => c.name).join(', ') : 'none'}</li>
         <li>
