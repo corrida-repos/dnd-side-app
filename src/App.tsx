@@ -19,6 +19,7 @@ import { StorageTab } from './components/StorageTab';
 import { LogTab } from './components/LogTab';
 import { SettingsTab } from './components/SettingsTab';
 import { WaysTab } from './components/WaysAround';
+import { onGoTo } from './components/nav';
 
 const TABS = [
   { id: 'overview', label: 'Overview', el: Overview },
@@ -53,6 +54,16 @@ function readTab(): TabId {
 export function App() {
   const s = useGame();
   const [tab, setTab] = useState<TabId>(readTab);
+  useEffect(
+    () =>
+      onGoTo((t) => {
+        if (TABS.some((x) => x.id === t)) {
+          setTab(t as TabId);
+          window.scrollTo(0, 0);
+        }
+      }),
+    [],
+  );
   useEffect(() => {
     try {
       localStorage.setItem('wayfarers-ledger:tab', tab);

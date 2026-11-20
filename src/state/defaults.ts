@@ -105,6 +105,10 @@ export function newCharacter(partial: Partial<Character> = {}): Character {
     swapsLeft: 0,
     tasks: defaultTasks(isCaster(className)),
     notes: '',
+    species: '',
+    subclass: '',
+    feats: [],
+    features: [],
     ...partial,
   };
 }

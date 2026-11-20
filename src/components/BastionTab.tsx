@@ -60,7 +60,7 @@ export function BastionTab() {
           </li>
           <li>Construction moves forward every in-game day, even while the party is away adventuring.</li>
         </ul>
-        <WaysAround topic={['building', 'messages']} />
+        <WaysAround topic={['bastionEvents', 'building']} />
       </Card>
     </div>
   );
@@ -303,6 +303,7 @@ function RemoteCard({ b }: { b: Bastion }) {
             </ul>
           )}
           <Rule>DMG: if you can&apos;t give new orders, your hirelings carry out the Maintain order. Orders count for a turn only if they reach the Bastion before it starts; reports travel back the same way.</Rule>
+          <WaysAround topic="messages" />
         </>
       )}
     </div>

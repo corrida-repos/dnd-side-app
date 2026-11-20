@@ -22,9 +22,22 @@ export interface Way {
   how: string;
   /** Edge cases and fine print. */
   catches?: string[];
+  /** How the rules settle a question tables argue about: the rules-as-written reading, and a common table ruling if it differs. */
+  ruling?: Ruling;
   rarity?: string;
   attune?: boolean;
+  /** Words that identify the species or subclass in a character's details, e.g. ["elf", "drow"]. */
+  keys?: string[];
+  /** A lineage, ancestry or legacy the species needs, e.g. ["silver", "white"]. */
+  choice?: string[];
   source?: string;
+}
+
+export interface Ruling {
+  /** The rules-as-written answer, with the text it rests on. */
+  raw: string;
+  /** A common table ruling, when many tables play it differently. */
+  table?: string;
 }
 
 export type TopicId =
@@ -71,7 +84,13 @@ export type TopicId =
   | 'disease'
   | 'encounters'
   | 'services'
-  | 'poisonHarvest';
+  | 'poisonHarvest'
+  | 'saves'
+  | 'concentration'
+  | 'bastionEvents'
+  | 'timekeeping'
+  | 'poison'
+  | 'shopping';
 
 export interface Topic {
   id: TopicId;
@@ -86,7 +105,7 @@ const spell = (name: string, how: string, catches?: string[]): Way => {
   return { name, kind: 'spell', level: SPELL_FACTS[name].level, how, catches };
 };
 const feature = (className: string, level: number, name: string, how: string, catches?: string[], source?: string): Way => ({ name, kind: 'class', className, level, how, catches, source });
-const sub = (className: string, subclass: string, level: number, name: string, how: string, catches?: string[], source?: string): Way => ({
+const sub = (className: string, subclass: string, level: number, name: string, how: string, catches?: string[], source?: string, keys?: string[]): Way => ({
   name,
   kind: 'subclass',
   className,
@@ -95,13 +114,16 @@ const sub = (className: string, subclass: string, level: number, name: string, h
   how,
   catches,
   source,
+  keys,
 });
 const feat = (name: string, how: string, catches?: string[]): Way => ({ name, kind: 'feat', how, catches });
-const species = (name: string, how: string, catches?: string[], level?: number): Way => ({ name, kind: 'species', how, catches, level });
+const species = (name: string, how: string, catches?: string[], level?: number, match: { keys?: string[]; choice?: string[] } = {}): Way => ({ name, kind: 'species', how, catches, level, ...match });
 const invocation = (name: string, level: number, how: string, catches?: string[]): Way => ({ name, kind: 'invocation', className: 'Warlock', level, how, catches });
 const gear = (name: string, how: string, catches?: string[]): Way => ({ name, kind: 'gear', how, catches });
 const item = (name: string, rarity: string, attune: boolean, how: string, catches?: string[]): Way => ({ name, kind: 'magic-item', rarity, attune, how, catches });
 const bastion = (name: string, level: number, how: string, catches?: string[]): Way => ({ name, kind: 'bastion', level, how, catches });
+
+const ruled = (way: Way, raw: string, table?: string): Way => ({ ...way, ruling: { raw, table } });
 
 const LONG_REST_CAST = 'Casting it during a Long Rest interrupts the rest (any spell other than a cantrip does), so cast it before you settle down.';
 
@@ -112,11 +134,10 @@ export const TOPICS: Topic[] = [
     problem:
       'Every creature needs food by size each day. Eating less than half means a DC 10 Con save or Exhaustion, five days of nothing means Exhaustion every day, and that Exhaustion stays until a full day of food is eaten.',
     ways: [
-      spell('Goodberry', 'Ten berries; each one is a full day of nourishment for one creature, whatever its size, plus 1 HP.', [
+      ruled(spell('Goodberry', 'Ten berries; each one is a full day of nourishment for one creature, whatever its size, plus 1 HP.', [
         'The berries vanish after 24 hours, so you can’t stockpile them.',
-        'It feeds “a creature”, so one berry covers a horse or a Large ally as well as a halfling (RAW; some DMs scale it by size).',
         'It’s food only. It gives no water.',
-      ]),
+      ]), 'A berry “provides enough nourishment to sustain a creature for one day”, with no size limit, so it covers a horse or a Large ally too.', 'Some tables scale it by size (2 berries for Large, 4 for Huge).'),
       spell('Create Food and Water', '45 lb of food and 30 gallons of water: a day’s food for about 15 Medium creatures or 5 horses.', [
         'The food spoils after 24 hours if uneaten. The water doesn’t.',
         'Only Clerics and Paladins have it on their lists.',
@@ -165,7 +186,7 @@ export const TOPICS: Topic[] = [
       feature('Barbarian', 3, 'Primal Knowledge', 'While raging, make the Survival check with Strength instead of Wisdom.', [
         'Rage needs a Bonus Action and ends early if you don’t keep it going, so roll quickly.',
       ]),
-      species('Elf (Keen Senses)', 'Proficiency in Survival (or Insight or Perception).'),
+      species('Elf (Keen Senses)', 'Proficiency in Survival (or Insight or Perception).', undefined, undefined, { keys: ['elf', 'drow'] }),
       feat('Skilled', 'Three skill or tool proficiencies, so Survival for whoever needs it.'),
       { ...gear('Slow pace', 'Traveling at a Slow pace gives Advantage on Survival (and Perception) checks.'), source: 'PHB rule' },
     ],
@@ -200,9 +221,9 @@ export const TOPICS: Topic[] = [
       spell('Protection from Poison', 'Ends Poisoned and gives Advantage on saves to avoid it for an hour: cast it before a doubtful meal.'),
       spell("Heroes' Feast", 'Immunity to the Poisoned condition for 24 hours.'),
       feature('Paladin', 1, 'Lay on Hands', 'Spend 5 points from the pool to remove the Poisoned condition.'),
-      sub('Monk', 'Mercy', 6, "Physician's Touch", 'Hand of Healing also ends Poisoned.'),
+      sub('Monk', 'Warrior of Mercy', 6, "Physician's Touch", 'Hand of Healing also ends Poisoned.'),
       feature('Monk', 10, 'Self-Restoration', 'Ends Poisoned on yourself at the end of each of your turns.'),
-      sub('Druid', 'Land', 10, "Nature's Ward", 'Immune to the Poisoned condition.'),
+      sub('Druid', 'Circle of the Land', 10, "Nature's Ward", 'Immune to the Poisoned condition.'),
       species('Dwarf (Dwarven Resilience)', 'Advantage on saves to avoid or end Poisoned, and Poison Resistance.'),
       gear('Antitoxin', 'Bonus Action to drink: Advantage on saves against Poisoned for 1 hour. 50 GP.'),
       gear('Cook’s Utensils', 'Detect spoiled or poisoned food with a DC 15 Wisdom check before anyone eats it.'),
@@ -222,14 +243,12 @@ export const TOPICS: Topic[] = [
         LONG_REST_CAST,
       ]),
       spell("Mordenkainen's Magnificent Mansion", 'A warm extradimensional house for 24 hours, with food for 100.'),
-      spell('Rope Trick', 'An extradimensional space for up to eight Medium creatures for an hour.', ['The spell doesn’t promise warmth. Ask your DM whether it shelters you from the cold.']),
+      ruled(spell('Rope Trick', 'An extradimensional space for up to eight Medium creatures for an hour.'), 'Unlike Tiny Hut, the spell says nothing about the air or temperature inside, so it doesn’t stop extreme cold saves.', 'Many tables treat the pocket as sheltered, like a tent.'),
       spell('Protection from Energy', 'Cold Resistance for an hour, so that hour’s save succeeds automatically.', ['Concentration, and it lasts exactly one hour: recast it every hour or it lapses.']),
-      spell('Fire Shield', 'The warm shield gives Cold Resistance for 10 minutes, with no Concentration.', [
-        '10 minutes doesn’t cover an hour. RAW, you only need Resistance when the save comes, so some DMs allow casting it just before; others don’t.',
-      ]),
-      sub('Warlock', 'Fiend', 10, 'Fiendish Resilience', 'Choose Cold after a Short or Long Rest: Resistance until you change it, so every cold save succeeds.'),
+      ruled(spell('Fire Shield', 'The warm shield gives Cold Resistance for 10 minutes, with no Concentration.'), 'The save comes “at the end of each hour”, and a creature with Cold Resistance at that moment succeeds automatically, so casting it in the last 10 minutes of each hour works.', 'Some tables require Resistance for the whole hour.'),
+      sub('Warlock', 'Fiend Patron', 10, 'Fiendish Resilience', 'Choose Cold after a Short or Long Rest: Resistance until you change it, so every cold save succeeds.'),
       feat('Boon of Energy Resistance', 'Resistance to two damage types, changeable each Long Rest: pick Cold for a winter journey.'),
-      species('Dragonborn (Silver or White ancestry)', 'Permanent Cold Resistance.'),
+      species('Dragonborn (Silver or White)', 'Permanent Cold Resistance.', undefined, undefined, { choice: ['silver', 'white'] }),
       item('Ring of Warmth', 'uncommon', true, 'You and everything you wear and carry are unharmed by temperatures of 0 °F or lower.'),
       item('Boots of the Winterlands', 'uncommon', true, 'Cold Resistance, you tolerate 0 °F or lower without other protection, and you ignore Difficult Terrain from ice or snow.'),
       item('Ring of Cold Resistance', 'rare', false, 'Permanent Cold Resistance, and it doesn’t need attunement.'),
@@ -250,12 +269,12 @@ export const TOPICS: Topic[] = [
       item('Decanter of Endless Water', 'uncommon', false, 'Unlimited drinking water, so no heat saves.'),
       spell("Leomund's Tiny Hut", 'Comfortable air inside for 8 hours. Rest out the hottest part of the day. Ritual.'),
       spell('Protection from Energy', 'Fire Resistance for one hour: that hour’s save succeeds automatically.', ['Concentration, and only one hour long.']),
-      spell('Fire Shield', 'The chill shield gives Fire Resistance for 10 minutes.', ['Too short to cover an hour unless your DM lets you time it just before the save.']),
+      ruled(spell('Fire Shield', 'The chill shield gives Fire Resistance for 10 minutes.'), 'The heat save comes at the end of each hour, so Fire Resistance from a shield cast in the last 10 minutes counts.', 'Some tables require Resistance for the whole hour.'),
       spell('Mage Armor', 'AC without Medium or Heavy armor, so there’s no Disadvantage on the heat saves.'),
-      sub('Warlock', 'Fiend', 10, 'Fiendish Resilience', 'Choose Fire: every heat save succeeds automatically.'),
+      sub('Warlock', 'Fiend Patron', 10, 'Fiendish Resilience', 'Choose Fire: every heat save succeeds automatically.'),
       feat('Boon of Energy Resistance', 'Choose Fire Resistance for a desert crossing.'),
-      species('Tiefling (Infernal legacy)', 'Permanent Fire Resistance.'),
-      species('Dragonborn (Brass, Gold or Red ancestry)', 'Permanent Fire Resistance.'),
+      species('Tiefling (Infernal)', 'Permanent Fire Resistance.', undefined, undefined, { choice: ['infernal'] }),
+      species('Dragonborn (Brass, Gold or Red)', 'Permanent Fire Resistance.', undefined, undefined, { choice: ['brass', 'gold', 'red'] }),
       item('Ring of Fire Resistance', 'rare', false, 'Permanent Fire Resistance, and it doesn’t need attunement.'),
       item('Potion of Fire Resistance', 'uncommon', false, 'One hour of Fire Resistance.'),
       feature('Barbarian', 1, 'Unarmored Defense', 'Good AC without armor, so there’s no Disadvantage from Medium or Heavy armor. Monks have the same benefit.'),
@@ -276,7 +295,7 @@ export const TOPICS: Topic[] = [
       spell('Gust of Wind', 'Disperses gas and fog in a 60-foot line, and puts out unprotected flames.'),
       spell('Create or Destroy Water', 'Destroy Water clears fog in a 30-foot cube.'),
       spell('Wind Wall', 'A 50-foot wall of wind that blocks gas, fog and flying creatures for a minute.'),
-      gear('Hooded or Bullseye Lantern', 'An enclosed flame that wind doesn’t put out the way it does a torch or campfire (DM’s call in a gale).'),
+      ruled(gear('Hooded or Bullseye Lantern', 'Light that keeps going when the weather puts out torches and campfires.'), 'Strong wind and heavy rain extinguish “open flames”. A lantern’s flame is enclosed, so it stays lit; torches, candles and campfires don’t.'),
     ],
   },
   {
@@ -284,7 +303,7 @@ export const TOPICS: Topic[] = [
     title: 'High altitude',
     problem: 'Above 10,000 feet each hour of travel counts as 2 for forced marching. Acclimatizing takes 30 days, and creatures can’t acclimatize above 20,000 feet unless they’re native to it.',
     ways: [
-      item('Necklace of Adaptation', 'uncommon', true, 'You can breathe normally in any environment, so thin air doesn’t tax you (DM’s call on the travel rule).'),
+      ruled(item('Necklace of Adaptation', 'uncommon', true, 'You can breathe normally in any environment.'), 'High altitude is taxing “because of the reduced amount of oxygen in the air”, and the necklace lets you breathe normally anywhere, so its wearer travels as if acclimatized.'),
       spell('Wind Walk', 'Fly in cloud form instead of climbing.', ['It doesn’t change the altitude rule, but the trip takes a fraction of the time.']),
       spell('Teleport', 'Skip the climb entirely if you know the destination.'),
       species('Goliath', 'There’s no altitude trait in 2024. The 2014 Goliath’s “Mountain Born” acclimatization is gone, so check which version your table uses.'),
@@ -303,7 +322,7 @@ export const TOPICS: Topic[] = [
       spell('Elementalism', 'Beckon Fire’s embers light candles, torches and lamps.', ['A campfire isn’t on that list.']),
       spell('Fire Bolt', 'Sets alight flammable objects that aren’t worn or carried, campfires included.'),
       spell('Continual Flame', 'Gives light that never goes out, but no heat, so it doesn’t replace a fire for warmth or cooking.'),
-      species('Gnome (Rock Gnome)', 'A 10-minute Prestidigitation casting makes a Tiny clockwork fire starter that anyone can trigger as a Bonus Action.'),
+      species('Gnome (Rock Gnome)', 'A 10-minute Prestidigitation casting makes a Tiny clockwork fire starter that anyone can trigger as a Bonus Action.', undefined, undefined, { choice: ['rock'] }),
       feature('Artificer', 1, "Tinker's Magic", 'Conjure a Tinderbox, Torch, Oil or Lamp with Tinker’s Tools. They last until your next Long Rest.', undefined, 'EFA'),
       feat('Chef', 'Proficiency with Cook’s Utensils, plus Replenishing Meals on Short Rests and Bolstering Treats.'),
       spell("Mordenkainen's Magnificent Mansion", 'Its servants light fires and serve a nine-course banquet.'),
@@ -330,13 +349,14 @@ export const TOPICS: Topic[] = [
       spell('Prayer of Healing', 'Up to five creatures gain the benefits of a Short Rest, plus 2d8 HP, in 10 minutes instead of an hour.', [
         'Each creature can benefit only once until it finishes a Long Rest.',
         'It’s cast instead of a rest, not during one: casting a spell interrupts a Short Rest.',
+        'Features that recharge on a Short Rest recharge too (see the Exhaustion entry for the reasoning).',
       ]),
       feat('Durable', 'Spend a Hit Point Die as a Bonus Action at any time, no rest needed.'),
       feat('Healer', 'With a Healer’s Kit, let a creature spend a Hit Point Die as a Utilize action and add your Proficiency Bonus.'),
       feat('Chef', 'A Replenishing Meal on a Short Rest: +1d8 HP for each creature that spends Hit Point Dice.'),
       feature('Warlock', 2, 'Magical Cunning', 'A 1-minute rite restores up to half your Pact Magic slots, once per Long Rest, with no Short Rest needed.'),
       feature('Wizard', 1, 'Arcane Recovery', 'Recover slots on a Short Rest (half your Wizard level in combined levels), once per day.'),
-      sub('Druid', 'Land', 6, 'Natural Recovery', 'Recover slots on a Short Rest, once per Long Rest.'),
+      sub('Druid', 'Circle of the Land', 6, 'Natural Recovery', 'Recover slots on a Short Rest, once per Long Rest.'),
       item('Periapt of Wound Closure', 'uncommon', true, 'Each Hit Point Die heals double.'),
       item('Potion of Vitality', 'very rare', false, 'For 24 hours, Hit Point Dice heal their maximum.'),
       spell('Rope Trick', 'An hour in a pocket space no attack or spell can enter: exactly one safe Short Rest.', [
@@ -353,8 +373,9 @@ export const TOPICS: Topic[] = [
     ways: [
       species('Elf (Trance)', 'You don’t need to sleep, magic can’t put you to sleep, and you finish a Long Rest in 4 hours of conscious meditation.', [
         'You still need the Long Rest itself, and the 16-hour wait still applies.',
+        'Xanathar’s sleep-deprivation rule counts Long Rests, not sleep, so an elf who skips the 4-hour trance still makes the save.',
         'Because you stay conscious, you notice things as if awake (the tracker lets you watch 4 hours).',
-      ]),
+      ], undefined, { keys: ['elf', 'drow'] }),
       spell("Leomund's Tiny Hut", 'Other creatures and objects can’t pass in, and spells of level 3 or lower can’t be cast through it, so a rest is far less likely to be interrupted. Ritual.', [
         LONG_REST_CAST,
         'Spells of level 4 or higher still get through, and the spell ends if the caster leaves.',
@@ -374,11 +395,9 @@ export const TOPICS: Topic[] = [
     ways: [
       spell('Alarm', 'Wakes the caster mentally, or rings audibly, when anyone enters the warded area. Covers the whole night with no watcher. Ritual.'),
       spell("Mordenkainen's Faithful Hound", 'Watches for 8 hours with 30-foot Truesight and barks a warning.'),
-      spell('Find Familiar', 'The familiar keeps watch, has Darkvision in many forms and can wake you by telepathy.', [
-        'Ask your DM whether a familiar, which doesn’t sleep, can stand watch all night. It’s a common ruling.',
-      ]),
+      ruled(spell('Find Familiar', 'The familiar keeps watch, has Darkvision in many forms and can wake you by telepathy.'), 'Nothing in the spell says a familiar doesn’t sleep, and Xanathar’s says most creatures do, so it can cover a watch shift but not the whole night.', 'Many tables let a familiar watch all night, since it’s a spirit in animal form.'),
       spell("Leomund's Tiny Hut", 'Nothing outside can see in, and creatures can’t come in: fewer reasons to keep watch.'),
-      species('Elf (Trance)', 'Rests in 4 hours and stays conscious while doing so, so elves can take double watches.'),
+      species('Elf (Trance)', 'Rests in 4 hours and stays conscious while doing so, so elves can take double watches.', undefined, undefined, { keys: ['elf', 'drow'] }),
       feat('Observant', 'Expertise or proficiency in Perception (or Insight or Investigation), raising passive Perception.'),
       feat('Alert', 'Add your Proficiency Bonus to Initiative and swap Initiative with an ally when something does get through.'),
       invocation("Devil's Sight", 2, 'See normally in magical and nonmagical darkness to 120 feet: the watcher’s Perception isn’t hampered at night.'),
@@ -391,16 +410,11 @@ export const TOPICS: Topic[] = [
     title: 'Removing Exhaustion',
     problem: 'Each level gives −2 to D20 Tests and −5 ft Speed. Normally only a Long Rest removes one level, and Exhaustion from hunger or thirst stays until the need is met.',
     ways: [
-      spell('Greater Restoration', 'Removes 1 Exhaustion level (or a curse, petrification, etc.).', [
-        'The 100 GP diamond dust is consumed.',
-        'Malnutrition and dehydration say the level “can’t be removed” until the creature eats or drinks enough. Strictly that blocks this spell too; some DMs let magic win.',
-      ]),
-      item('Potion of Vitality', 'very rare', false, 'Removes all Exhaustion levels and ends Poisoned.', ['The same “can’t be removed” question applies for levels from hunger or thirst.']),
+      ruled(spell('Greater Restoration', 'Removes 1 Exhaustion level (or a curse, petrification, etc.).', ['The 100 GP diamond dust is consumed.']), 'Malnutrition and dehydration say their Exhaustion “can’t be removed until the creature eats (or drinks) the full amount”. That specific rule blocks the spell too, so the tracker keeps those levels 🔒 locked until the need is met.', 'Some tables let magic win and remove a locked level anyway.'),
+      ruled(item('Potion of Vitality', 'very rare', false, 'Removes all Exhaustion levels and ends Poisoned.'), 'Levels from malnutrition or dehydration “can’t be removed” until the need is met, so the potion clears every other level and leaves those.', 'Some tables let the potion clear them too.'),
       feature('Ranger', 10, 'Tireless', 'Every Short Rest removes 1 Exhaustion level as well.'),
       bastion('Reliquary', 13, 'After a Long Rest in your Bastion you get a Charm to cast Greater Restoration once without a slot or diamond dust.'),
-      spell('Prayer of Healing', 'Gives the benefits of a Short Rest in 10 minutes, which can let a level 10+ Ranger lose a level of Exhaustion through Tireless.', [
-        'Tireless works when you finish a Short Rest; whether the spell counts is the DM’s call.',
-      ]),
+      ruled(spell('Prayer of Healing', 'Gives the benefits of a Short Rest in 10 minutes, so a level 10+ Ranger also loses a level of Exhaustion through Tireless.'), 'The Short Rest rules list “some features are recharged by a Short Rest” among the rest’s benefits, and the spell grants “the benefits of a Short Rest”, so features that trigger when you finish a Short Rest (Tireless, Arcane Recovery, Pact Magic slots) apply.', 'Strict tables allow only the listed benefit: spending Hit Point Dice.'),
       feature('Monk', 14, 'Disciplined Survivor', 'Proficiency in all saves, and spend 1 Focus Point to reroll a failed save: forced march, cold and heat saves included.'),
       feature('Paladin', 6, 'Aura of Protection', 'Allies within 10 feet add the Paladin’s Charisma modifier to every save: cold, heat, forced march and malnutrition saves alike.', [
         'The aura is only 10 feet, and it switches off while the Paladin is Incapacitated (asleep, for instance).',
@@ -480,7 +494,7 @@ export const TOPICS: Topic[] = [
     title: 'Mounts and pack animals',
     problem: 'Mounts cost money, need food and water by size every day, tire like characters do and need rest after galloping.',
     ways: [
-      spell('Find Steed', 'An otherworldly steed that comes back whenever you recast the spell.', ['The 2024 text doesn’t say whether it eats or drinks; most tables say it doesn’t. Ask your DM.']),
+      ruled(spell('Find Steed', 'An otherworldly steed that comes back whenever you recast the spell.'), 'The Otherworldly Steed stat block has no trait freeing it from food, water or sleep, so the rules for a Large creature apply: add it as a mount and it eats like a horse.', 'Most tables say a summoned spirit doesn’t eat: untick “needs food” and “needs water” on its mount card.'),
       spell('Phantom Steed', 'A quasi-real horse that needs no food or water, a ritual (no slot) and 13 miles an hour.'),
       spell("Tenser's Floating Disk", 'Carries 500 lb, follows you and never eats. Ritual.', ['It can’t cross a 10-foot drop, and the spell ends if you get 100 feet away.']),
       spell('Goodberry', 'One berry is a full day’s food for a horse too.'),
@@ -536,8 +550,8 @@ export const TOPICS: Topic[] = [
       spell('Produce Flame', '20-foot light for 10 minutes, with no fuel.'),
       invocation("Devil's Sight", 2, 'See normally in any darkness, magical included, to 120 feet.'),
       sub('Ranger', 'Gloom Stalker', 3, 'Umbral Sight', 'Darkvision 60 ft (or +60), and you’re invisible to creatures relying on Darkvision to see you.'),
-      sub('Wizard', 'Diviner', 10, 'The Third Eye', 'Darkvision 120 ft until your next rest.'),
-      sub('Barbarian', 'Wild Heart', 6, 'Aspect of the Wilds (Owl)', 'Darkvision 60 ft, or +60 ft.'),
+      sub('Wizard', 'Diviner', 10, 'The Third Eye', 'Darkvision 120 ft until your next rest.', undefined, undefined, ['divin']),
+      sub('Barbarian', 'Path of the Wild Heart', 6, 'Aspect of the Wilds (Owl)', 'Darkvision 60 ft, or +60 ft.'),
       species('Dwarf, Orc or Drow', 'Darkvision 120 ft. Most other 2024 species have 60 ft; Humans, Halflings and Goliaths have none.'),
       item('Goggles of Night', 'uncommon', false, 'Darkvision 60 ft, or +60 ft.'),
       item('Driftglobe', 'uncommon', false, 'Casts Light at will (and Daylight once per dawn) and floats after you.'),
@@ -570,14 +584,14 @@ export const TOPICS: Topic[] = [
       invocation('Master of Myriad Forms', 5, 'Cast Alter Self at will: gills whenever you need them.'),
       spell('Polymorph', 'Turn someone into a fish or seal for an hour.'),
       feature('Druid', 2, 'Wild Shape', 'Turn into a swimming beast for hours at a time (half your Druid level).'),
-      sub('Druid', 'Sea', 6, 'Aquatic Affinity', 'A Swim Speed equal to your Speed.'),
+      sub('Druid', 'Circle of the Sea', 6, 'Aquatic Affinity', 'A Swim Speed equal to your Speed.'),
       feature('Ranger', 6, 'Roving', 'A Swim Speed (and a Climb Speed).'),
-      sub('Barbarian', 'Wild Heart', 6, 'Aspect of the Wilds (Salmon)', 'A Swim Speed.'),
+      sub('Barbarian', 'Path of the Wild Heart', 6, 'Aspect of the Wilds (Salmon)', 'A Swim Speed.'),
       spell('Protection from Energy', 'Cold Resistance: you automatically succeed on frigid water saves.'),
-      species('Dragonborn (Silver or White)', 'Cold Resistance: automatic success on frigid water saves.'),
+      species('Dragonborn (Silver or White)', 'Cold Resistance: automatic success on frigid water saves.', undefined, undefined, { choice: ['silver', 'white'] }),
       item('Cap of Water Breathing', 'uncommon', false, 'Creates an air bubble around your head underwater.'),
       item('Necklace of Adaptation', 'uncommon', true, 'Breathe normally in any environment.'),
-      item('Ring of Warmth', 'uncommon', true, 'Unharmed by freezing temperatures (DM’s call for icy water).'),
+      ruled(item('Ring of Warmth', 'uncommon', true, 'Unharmed by temperatures of 0 °F or lower.'), 'Only Cold Resistance or Immunity, or being adapted to icy water, makes frigid water saves succeed. The ring grants neither, and frigid water is usually warmer than 0 °F, so it doesn’t help in the water.'),
     ],
   },
   {
@@ -586,9 +600,7 @@ export const TOPICS: Topic[] = [
     problem: 'Thin ice, slippery ice, webs, razorvine, poisonous gas, rockslides, quicksand and deep water each call for saves or checks.',
     ways: [
       spell('Water Walk', 'Ten creatures cross water, mud, snow and quicksand as if it were solid ground. Ritual.'),
-      spell('Freedom of Movement', 'Ignore Difficult Terrain, and magic can’t Restrain or Paralyze you; escape nonmagical restraints with 5 feet of movement.', [
-        'Webs from a spell (Web) can’t Restrain you, but natural spider webs can, though you escape them with 5 feet of movement.',
-      ]),
+      ruled(spell('Freedom of Movement', 'Ignore Difficult Terrain, and magic can’t Restrain or Paralyze you; escape nonmagical restraints with 5 feet of movement.'), 'A Web spell can’t Restrain you at all. Natural spider webs are nonmagical restraints, so they can catch you, but you spend 5 feet of movement to slip out automatically.'),
       spell('Spider Climb', 'Walk on walls and ceilings around the hazard.'),
       spell('Levitate', 'Float over thin ice or quicksand.'),
       spell('Feather Fall', 'A Reaction that slows a fall for up to five creatures.'),
@@ -612,9 +624,10 @@ export const TOPICS: Topic[] = [
       ]),
       spell('Detect Magic', 'Shows which items are magical and their school. Ritual.'),
       spell('Legend Lore', 'Lore about a famous item, curses and history included.'),
-      { ...gear('Short Rest of study', 'Spend a Short Rest focused on the item while touching it to learn its properties.'), source: 'DMG rule' },
+      { ...gear('Short Rest of study', 'Spend a Short Rest focused on the item while touching it to learn its properties (but not a curse).'), source: 'PHB rule' },
+      { ...gear('A taste', 'A little taste is enough to tell you what a potion does: no spell or rest needed.'), source: 'PHB rule' },
       bastion('Arcane Study', 5, 'After a Long Rest in your Bastion you get a Charm to cast Identify without a slot or the pearl.'),
-      sub('Wizard', 'Diviner', 10, 'The Third Eye', 'Read any language, such as runes on the item.'),
+      sub('Wizard', 'Diviner', 10, 'The Third Eye', 'Read any language, such as runes on the item.', undefined, undefined, ['divin']),
       spell('Remove Curse', 'Ends attunement to a cursed item once the curse shows.'),
     ],
   },
@@ -642,7 +655,7 @@ export const TOPICS: Topic[] = [
       gear('Healer’s Kit', 'Stabilize without a Medicine check (10 uses).'),
       feat('Durable', 'Advantage on death saves.'),
       species('Orc (Relentless Endurance)', 'Drop to 1 HP instead of 0 once per Long Rest.'),
-      sub('Paladin', 'Ancients', 15, 'Undying Sentinel', 'Drop to 1 HP instead, and regain HP, once per Long Rest.'),
+      sub('Paladin', 'Oath of the Ancients', 15, 'Undying Sentinel', 'Drop to 1 HP instead, and regain HP, once per Long Rest.'),
       feat('Boon of Recovery', 'Drop to 1 HP instead and regain half your HP, once per Long Rest.'),
       item('Periapt of Wound Closure', 'uncommon', true, 'Turn a death save of 9 or lower into a 10.'),
       bastion('Sanctuary', 5, 'A Charm to cast Healing Word without a slot after a Long Rest in your Bastion.'),
@@ -773,7 +786,7 @@ export const TOPICS: Topic[] = [
     title: 'Copying spells into a spellbook',
     problem: 'Copying a new spell takes 2 hours and 50 GP per spell level; recopying your own book takes 1 hour and 10 GP per level.',
     ways: [
-      sub('Wizard', 'Abjurer, Diviner, Evoker or Illusionist', 3, 'Savant', 'Two spells of your school free at level 3, and one more each time you gain a new spell slot level: no time or gold.'),
+      sub('Wizard', 'Abjurer, Diviner, Evoker or Illusionist', 3, 'Savant', 'Two spells of your school free at level 3, and one more each time you gain a new spell slot level: no time or gold.', undefined, undefined, ['abjur', 'divin', 'evok', 'evoc', 'illusion']),
       feature('Wizard', 5, 'Memorize Spell', 'Swap a prepared spell on a Short Rest: less need to copy just in case.'),
       { ...gear('Backup spellbook', 'Recopying spells you already know costs a fifth of the gold and half the time, so keep a spare book.'), source: 'PHB rule' },
     ],
@@ -837,7 +850,7 @@ export const TOPICS: Topic[] = [
     title: 'Fear and stress',
     problem: 'Fear and stress (table rule) build up and ease only slowly with rests.',
     ways: [
-      spell('Calm Emotions', 'Suppresses Charmed and Frightened.', ['Humanoids only. Each target makes a Charisma save, which willing allies can choose to fail.']),
+      spell('Calm Emotions', 'Suppresses Charmed and Frightened.', ['Humanoids only. Each target makes a Charisma save, but the 2024 rules let any creature choose to fail a save, so allies are affected.']),
       spell('Heroism', 'Immune to Frightened, plus Temporary HP each turn.'),
       spell("Heroes' Feast", 'Immune to Frightened for 24 hours.'),
       feature('Paladin', 10, 'Aura of Courage', 'Allies within your aura are immune to Frightened.'),
@@ -854,11 +867,11 @@ export const TOPICS: Topic[] = [
       spell('Lesser Restoration', 'Ends Sight Rot immediately (the DMG names it).', ['The 2024 spell lists no general disease cure: it doesn’t end Cackle Fever or Sewer Plague.']),
       spell('Heal', 'Ends Sight Rot immediately and restores 70 HP.'),
       spell('Greater Restoration', 'Sewer Plague ends when the creature’s Exhaustion reaches 0, so removing its last level cures it.', [
-        'Cackle Fever’s Exhaustion lasts until the contagion ends; whether magic can remove it early is the DM’s call.',
+        'It doesn’t help with Cackle Fever: that level “lasts until the contagion ends”, so it comes straight back.',
       ]),
       item('Potion of Vitality', 'very rare', false, 'Removes all Exhaustion, which ends Sewer Plague outright.'),
       feature('Ranger', 10, 'Tireless', 'Each Short Rest removes an Exhaustion level, which can bring Sewer Plague to 0 and end it.'),
-      spell('Purify Food and Drink', 'Sight Rot is caught by drinking tainted water: purifying the water first should keep it out (DM’s call on “rot”). Ritual.'),
+      ruled(spell('Purify Food and Drink', 'Sight Rot is caught by drinking tainted water, so purify the water first. Ritual.'), 'The spell “removes poison and rot from nonmagical food and drink”. The water is nonmagical and the taint is rot, so purified water no longer carries Sight Rot.', 'Some tables say a magical contagion needs Lesser Restoration and that the spell does nothing.'),
       gear('Herbalism Kit', 'An hour makes an ointment that suppresses Sight Rot for 24 hours; three days of it end the disease.'),
       species('Gnome', 'Immune to Cackle Fever.'),
       feature('Paladin', 6, 'Aura of Protection', 'Allies within 10 feet add the Paladin’s Charisma modifier to every save, the contagion saves included.'),
@@ -922,6 +935,131 @@ export const TOPICS: Topic[] = [
       bastion('Garden (Poison)', 5, 'Two vials of Antitoxin or one of Basic Poison per Harvest order.'),
     ],
   },
+  {
+    id: 'saves',
+    title: 'Saving throws over time',
+    problem: 'Cold, heat, forced marches, malnutrition, frigid water and disease all come down to Con saves, one after another.',
+    ways: [
+      feature('Paladin', 6, 'Aura of Protection', 'You and allies within 10 feet add your Charisma modifier (at least +1) to every save.', ['It switches off while the Paladin is Incapacitated, asleep included, so it doesn’t cover saves made in your sleep.']),
+      feature('Monk', 14, 'Disciplined Survivor', 'Proficiency in every save, and spend 1 Focus Point to reroll a failed one.'),
+      feat('Resilient', 'Proficiency in Constitution saves (choose Constitution).'),
+      feat('Lucky', 'Spend a Luck Point for Advantage on a save, several times per Long Rest.'),
+      species('Halfling (Luck)', 'Reroll a 1 on any save.'),
+      species('Human (Resourceful)', 'Heroic Inspiration after every Long Rest: reroll one die.'),
+      feat('Musician', 'Give allies Heroic Inspiration after each rest.'),
+      spell('Bless', '+1d4 to saves for three creatures.', ['Concentration for only 1 minute: it suits one dangerous save, not hourly ones.']),
+      bastion('Meditation Chamber', 13, 'Seven days of meditation give Advantage on two randomly chosen kinds of saves for the next 7 days.'),
+      { ...gear('Avoid the save instead', 'Most hourly saves have an automatic success: Cold or Fire Resistance, a Bedroll at night, drinkable water in the heat. See the topics for each one.'), source: 'Tip' },
+    ],
+  },
+  {
+    id: 'concentration',
+    title: 'One Concentration spell at a time',
+    problem: 'Each caster holds only one Concentration spell; casting another ends the first, and taking damage calls for a Con save to keep it.',
+    ways: [
+      { ...gear('Share the load', 'Concentration is per caster: let different casters hold Protection from Energy, Pass without Trace and Guidance.'), source: 'Tip' },
+      spell("Leomund's Tiny Hut", 'Shelter for 8 hours with no Concentration, unlike Protection from Energy.'),
+      spell('Fire Shield', 'Cold or Fire Resistance with no Concentration (10 minutes).'),
+      spell('Light', 'Light with no Concentration, unlike Dancing Lights.'),
+      spell('Continual Flame', 'Permanent light with no Concentration.'),
+      feat('War Caster', 'Advantage on Con saves to keep Concentration.'),
+      invocation('Eldritch Mind', 1, 'Advantage on Con saves to keep Concentration.'),
+      feat('Resilient', 'Proficiency in Constitution saves, which covers Concentration saves.'),
+      item('Ring of Spell Storing', 'rare', true, 'A caster stores a spell (up to 5 levels); the ally wearing the ring casts it and concentrates on it themselves, so the caster stays free for another Concentration spell.'),
+    ],
+  },
+  {
+    id: 'bastionEvents',
+    title: 'Bastion events and attacks',
+    problem: 'Each Maintain order rolls a Bastion event. An attack rolls 6d6 and loses a defender for each 1; with no defenders, a special facility shuts down for a turn.',
+    ways: [
+      bastion('Barrack', 5, 'Recruit up to four Bastion Defenders per order, at no cost. Any defenders at all keep facilities from shutting down in an attack.'),
+      bastion('Armory', 5, 'When stocked (100 GP + 100 per defender, half with a Smithy), roll d8s instead of d6s, so fewer 1s and fewer losses.', ['The stock is used up by the attack, whatever happens.']),
+      { ...gear('Defensive walls', 'A Bastion fully enclosed by walls rolls 2 fewer dice in an attack (250 GP and 10 days per 5-foot square).'), source: 'DMG rule' },
+      bastion('War Room', 17, 'Each lieutenant housed in the Bastion removes one more die from the attack roll.'),
+      bastion('Meditation Chamber', 13, 'An Empower order lets you roll twice on the next Bastion event and choose.'),
+      spell('Guards and Wards', 'Wards the Bastion’s halls; permanent after a year of daily castings.'),
+      spell('Glyph of Warding', 'Permanent traps at the gates from one casting.'),
+      spell('Alarm', 'Warns of intruders. Ritual.'),
+      { ...gear('Give real orders', 'Events only happen on Maintain turns, so giving facilities other orders avoids the roll entirely.'), source: 'DMG rule' },
+    ],
+  },
+  {
+    id: 'timekeeping',
+    title: 'Telling the time without a clock',
+    problem: 'With no timepiece, reading the sky is a Wisdom (Survival) check: DC 10 under a clear sky, 15 when overcast, 20 underground. A failure is off by 1d4 hours.',
+    ways: [
+      spell('Guidance', '+1d4 to the Survival check.'),
+      spell('Enhance Ability', 'Advantage on Wisdom checks.'),
+      feature('Ranger', 2, 'Deft Explorer', 'Expertise in Survival.'),
+      gear('Navigator’s Tools', 'Fix your position by the stars (DC 15) on a clear night, which also pins down the hour.'),
+      spell('Druidcraft', 'Predicts the next 24 hours of weather, so you know when the sky will be readable.'),
+      { ...gear('No clocks in 2024', 'Neither the 2024 Player’s Handbook nor the Dungeon Master’s Guide sells a clock or timepiece, so a working one is a DM-placed treasure.'), source: 'Note' },
+    ],
+  },
+  {
+    id: 'poison',
+    title: 'Poisons and the Poisoned condition',
+    problem: 'A poison calls for a Con save; a failure means Poison damage, the Poisoned condition (Disadvantage on attack rolls and ability checks) or worse, for minutes or hours.',
+    ways: [
+      spell('Protection from Poison', 'Ends Poisoned, then Advantage on saves against it and Poison Resistance for an hour.'),
+      spell('Lesser Restoration', 'Ends Poisoned as a Bonus Action.'),
+      spell('Heal', 'Ends Poisoned (and Blinded and Deafened) and restores 70 HP.'),
+      spell("Heroes' Feast", 'Immunity to Poisoned and Poison Resistance for 24 hours: cast it before entering a poisoner’s lair.'),
+      feature('Paladin', 1, 'Lay on Hands', '5 points from the pool remove Poisoned.'),
+      sub('Monk', 'Warrior of Mercy', 6, "Physician's Touch", 'Hand of Healing ends Poisoned.'),
+      feature('Monk', 10, 'Self-Restoration', 'Ends Poisoned on yourself at the end of each of your turns.'),
+      sub('Druid', 'Circle of the Land', 10, "Nature's Ward", 'Immune to the Poisoned condition.'),
+      species('Dwarf (Dwarven Resilience)', 'Advantage on saves to avoid or end Poisoned, and Poison Resistance.'),
+      species('Tiefling (Abyssal)', 'Poison Resistance (halves the damage, though not the condition).', undefined, undefined, { choice: ['abyssal'] }),
+      feat('Boon of Energy Resistance', 'Choose Poison Resistance.'),
+      gear('Antitoxin', 'Bonus Action: Advantage on saves against Poisoned for 1 hour (50 GP).'),
+      item('Periapt of Proof against Poison', 'rare', true, 'Immunity to Poisoned and Poison damage.'),
+      item('Periapt of Health', 'uncommon', true, 'Advantage on saves to avoid or end Poisoned, and 2d4 + 2 HP once per dawn.'),
+      item('Potion of Vitality', 'very rare', false, 'Ends Poisoned and removes Exhaustion.'),
+      item('Ring of Poison Resistance', 'rare', false, 'Permanent Poison Resistance.'),
+      bastion('Garden (Poison)', 5, 'Two vials of Antitoxin per Harvest order.'),
+      bastion('Greenhouse', 9, 'Fruits of Restoration act as Lesser Restoration, three a day.'),
+    ],
+  },
+  {
+    id: 'shopping',
+    title: 'Buying gear and selling loot',
+    problem: 'Shops charge full price, small settlements may not stock what you need, and selling usually fetches half.',
+    ways: [
+      feat('Crafter', '20% off every nonmagical item you buy.'),
+      { ...gear('Make it yourself', 'Crafting needs raw materials worth half the price, so a proficient crafter halves the cost (and takes a day per 10 GP).'), source: 'PHB rule' },
+      bastion('Storehouse', 5, 'A hireling procures nonmagical goods worth up to 500 GP in 7 days (2,000 GP from level 9, 5,000 from 13), and sells your goods for 10% to 100% over the standard price.'),
+      bastion('Stable', 9, 'Sell mounts for 20% over the standard price (50% from level 13, 100% from 17).'),
+      bastion('Smithy', 5, 'Hirelings craft Smith’s Tools items, so you pay for materials, not the shop price.'),
+      bastion('Workshop', 5, 'Hirelings craft adventuring gear with the Workshop’s tools.'),
+      spell('Mending', 'Repair torn or broken gear instead of replacing it.'),
+      spell('Fabricate', 'Turn raw materials into finished goods in 10 minutes (proficiency needed for weapons and armor).'),
+      feature('Artificer', 1, "Tinker's Magic", 'Conjure common gear (rope, a lamp, caltrops and more) that lasts until your next Long Rest.', undefined, 'EFA'),
+      spell('Teleportation Circle', 'Reach a city’s permanent circle when the village shop doesn’t have it.'),
+      spell('Sending', 'Ask a merchant or contact in another town whether they have it before you make the trip.'),
+    ],
+  },
+];
+
+/** How the topics are grouped on the Ways Around tab. */
+export const TOPIC_GROUPS: { title: string; topics: TopicId[] }[] = [
+  { title: 'Food, water, poison and illness', topics: ['food', 'water', 'foraging', 'hunting', 'tainted', 'poison', 'disease', 'poisonHarvest'] },
+  { title: 'Weather and the wild', topics: ['cold', 'heat', 'weather', 'altitude', 'breath', 'hazards'] },
+  { title: 'Rest, recovery and saves', topics: ['shortRest', 'longRest', 'watch', 'exhaustion', 'saves', 'dying', 'death', 'fear'] },
+  { title: 'Travel and exploration', topics: ['march', 'lost', 'tracking', 'encounters', 'exploration', 'mounts', 'timekeeping'] },
+  { title: 'Camp and gear', topics: ['fire', 'light', 'armor', 'carrying', 'ammo'] },
+  { title: 'Magic', topics: ['rituals', 'concentration', 'identify', 'attunement', 'divination', 'dailyCasting'] },
+  { title: 'Money, downtime and Bastions', topics: ['lifestyle', 'shopping', 'hirelings', 'services', 'crafting', 'spellbook', 'downtime', 'messages', 'building', 'bastionEvents'] },
+];
+
+/** The sections options are sorted into, in display order. */
+export const WAY_SECTIONS: { title: string; kinds: WayKind[] }[] = [
+  { title: 'Spells', kinds: ['spell'] },
+  { title: 'Class features', kinds: ['class', 'subclass', 'invocation'] },
+  { title: 'Species and feats', kinds: ['species', 'feat'] },
+  { title: 'Gear, items and rules', kinds: ['gear', 'magic-item'] },
+  { title: 'Bastion facilities', kinds: ['bastion'] },
 ];
 
 export const TOPIC_BY_ID: Record<TopicId, Topic> = Object.fromEntries(TOPICS.map((t) => [t.id, t])) as Record<TopicId, Topic>;
@@ -940,6 +1078,8 @@ export interface PartyMatch {
   charId: string;
   name: string;
   status: MatchStatus;
+  /** What a "maybe" depends on, e.g. "if they're a Thief". */
+  note?: string;
 }
 
 export const STATUS_TEXT: Record<MatchStatus, string> = {
@@ -947,9 +1087,12 @@ export const STATUS_TEXT: Record<MatchStatus, string> = {
   ritual: 'can cast as a ritual from the spellbook',
   known: 'knows it, not prepared',
   has: 'has it',
-  maybe: 'if they took this subclass',
+  maybe: 'might have it',
   list: 'on their spell list',
 };
+
+/** The label shown for a match: the note for a "maybe", otherwise the status. */
+export const matchText = (m: PartyMatch): string => m.note ?? STATUS_TEXT[m.status];
 
 /** Strip a wizard's name and punctuation so "Leomund's Tiny Hut" matches "Tiny Hut". */
 export function normalizeSpellName(name: string): string {
@@ -982,44 +1125,78 @@ export function maxSpellLevel(className: string, level: number): number {
   }
 }
 
-const textOf = (c: Character): string => [c.notes, ...c.resources.map((r) => r.name), ...c.items.map((i) => i.name), ...c.inventory.map((i) => i.name)].join('\n').toLowerCase();
+const norm = (x: string): string => x.toLowerCase().replace(/[’']/g, "'").trim();
+const splitList = (x: string): string[] => x.split(/,\s*|\s+or\s+/).map(norm).filter(Boolean);
+const hasWord = (hay: string, word: string): boolean => new RegExp(`(^|[^a-z])${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).test(hay);
 
-/** The key words of a feat, species or item name, e.g. "Elf (Trance)" → "elf". */
-const baseName = (name: string): string =>
-  name
-    .replace(/\s*\(.*\)\s*/g, '')
-    .trim()
-    .toLowerCase();
+/** Free text about a character: notes, resource, item and inventory names. */
+const textOf = (c: Character): string => norm([c.notes, ...c.resources.map((r) => r.name), ...c.items.map((i) => i.name), ...c.inventory.map((i) => i.name)].join('\n'));
+
+/** The name before any parentheses, e.g. "Elf (Trance)" → "elf". */
+const baseName = (name: string): string => norm(name.replace(/\s*\(.*\)\s*/g, ''));
+
+/** Treat an "Other" character whose details mention Artificer as an Artificer. */
+const classOf = (c: Character): string => (c.className === 'Other' && /artificer/i.test(`${c.subclass} ${c.notes} ${c.features.join(' ')}`) ? 'Artificer' : c.className);
+
+function matchSpecies(way: Way, c: Character): Omit<PartyMatch, 'charId' | 'name'> | null {
+  const keys = way.keys ?? splitList(baseName(way.name));
+  const sp = norm(c.species ?? '');
+  const hay = sp || textOf(c);
+  if (!keys.some((k) => hasWord(hay, k))) return null;
+  if (!way.choice) return { status: 'has' };
+  const detail = `${sp} ${textOf(c)}`;
+  if (way.choice.some((k) => hasWord(detail, k))) return { status: 'has' };
+  return { status: 'maybe', note: `if they have the ${way.choice.map((k) => k[0].toUpperCase() + k.slice(1)).join(' or ')} ${keys[0] === 'tiefling' ? 'legacy' : keys[0] === 'gnome' ? 'lineage' : 'ancestry'}` };
+}
 
 /** Who in the party can use this way, and how ready they are. */
 export function matchParty(way: Way, chars: Character[]): PartyMatch[] {
   const out: PartyMatch[] = [];
   for (const c of chars) {
     if (c.kind !== 'pc') continue;
-    let status: MatchStatus | null = null;
+    const cls = classOf(c);
+    const text = textOf(c);
+    let m: Omit<PartyMatch, 'charId' | 'name'> | null = null;
     if (way.kind === 'spell') {
       const fact = SPELL_FACTS[way.name];
       const key = normalizeSpellName(way.name);
-      const sp = c.spells.find((s) => normalizeSpellName(s.name) === key);
+      const sp = c.spells.find((x) => normalizeSpellName(x.name) === key);
       if (sp) {
-        if (sp.prepared || sp.alwaysPrepared) status = 'ready';
-        else if (fact?.ritual && c.className === 'Wizard') status = 'ritual';
-        else status = 'known';
-      } else if (fact && fact.classes.includes(c.className) && maxSpellLevel(c.className, c.level) >= fact.level) {
-        status = 'list';
-      } else if (textOf(c).includes(key)) {
-        status = 'has';
+        if (sp.prepared || sp.alwaysPrepared) m = { status: 'ready' };
+        else if (fact?.ritual && c.className === 'Wizard') m = { status: 'ritual' };
+        else m = { status: 'known' };
+      } else if (fact && fact.classes.includes(cls) && maxSpellLevel(cls, c.level) >= fact.level) {
+        m = { status: 'list' };
+      } else if (text.includes(key)) {
+        m = { status: 'has' };
       }
-    } else if (way.kind === 'class' || way.kind === 'invocation') {
-      if (way.className === c.className && c.level >= (way.level ?? 1)) status = way.kind === 'invocation' ? 'maybe' : 'has';
-      if (way.kind === 'invocation' && textOf(c).includes(way.name.toLowerCase())) status = 'has';
+    } else if (way.kind === 'class') {
+      if (way.className === cls && c.level >= (way.level ?? 1)) m = { status: 'has' };
     } else if (way.kind === 'subclass') {
-      if (way.className === c.className && c.level >= (way.level ?? 1)) status = textOf(c).includes(way.name.toLowerCase()) ? 'has' : 'maybe';
+      if (way.className === cls && c.level >= (way.level ?? 1)) {
+        const keys = way.keys ?? splitList(way.subclass ?? '').map((k) => k.replace(/^(circle|oath|path|college|domain|way|warrior|school) of (the )?/, '').replace(/ patron$/, ''));
+        const sub = norm(c.subclass ?? '');
+        const anySub = way.subclass === 'any subclass';
+        if (anySub) m = { status: 'has' };
+        else if (sub) m = keys.some((k) => hasWord(sub, k)) ? { status: 'has' } : null;
+        else m = keys.some((k) => hasWord(text, k)) || hasWord(text, norm(way.name)) ? { status: 'has' } : { status: 'maybe', note: `if their subclass is ${way.subclass}` };
+      }
+    } else if (way.kind === 'invocation') {
+      const name = norm(way.name);
+      const listed = (c.features ?? []).map(norm);
+      if (listed.some((f) => f.includes(name)) || text.includes(name)) m = { status: 'has' };
+      else if (cls === 'Warlock' && c.level >= (way.level ?? 1) && !listed.length) m = { status: 'maybe', note: 'if they took this invocation' };
+    } else if (way.kind === 'feat') {
+      const name = baseName(way.name);
+      const feats = (c.feats ?? []).map(norm);
+      if (feats.some((f) => f.startsWith(name) || name.startsWith(f)) || (name === 'chef' && c.chef) || text.includes(name)) m = { status: 'has' };
+    } else if (way.kind === 'species') {
+      m = matchSpecies(way, c);
     } else {
       const words = baseName(way.name);
-      if (words && textOf(c).includes(words)) status = 'has';
+      if (words && text.includes(words)) m = { status: 'has' };
     }
-    if (status) out.push({ charId: c.id, name: c.name, status });
+    if (m) out.push({ charId: c.id, name: c.name, ...m });
   }
   return out;
 }

@@ -79,7 +79,7 @@ function ActiveCard() {
         })}
       </ul>
       {concentrating.length > 0 && <p className="small muted">Concentrating: {concentrating.map((c) => c.name).join(', ')}. Starting another Concentration spell ends the first one.</p>}
-      <WaysAround topic={'light'} />
+      <WaysAround topic={['light', 'concentration']} />
     </Card>
   );
 }
@@ -406,6 +406,7 @@ function PoisonCard() {
         </ul>
       )}
       <Rule>2024 DMG poisons. Contact poisons work on touch, ingested ones in food or drink, inhaled ones as powder or gas, injury ones on a weapon or ammunition. Saves and lasting effects run on their own; Midnight Tears waits for midnight and Pale Tincture rechecks every 24 hours.</Rule>
+      <WaysAround topic={'poison'} />
     </Card>
   );
 }

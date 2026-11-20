@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { newCharacter } from '../state/defaults';
 import type { CharacterSpell } from '../state/types';
 import { SPELL_FACTS } from './shortcutSpells';
-import { matchParty, maxSpellLevel, normalizeSpellName, rankWays, searchWays, TOPIC_BY_ID, TOPICS, wayKey, wayLabel, type Way } from './shortcuts';
+import { matchParty, matchText, maxSpellLevel, normalizeSpellName, rankWays, searchWays, TOPIC_BY_ID, TOPIC_GROUPS, TOPICS, WAY_SECTIONS, wayKey, wayLabel, type Way } from './shortcuts';
 
 const spellRef = (name: string, prepared: boolean, level = 1): CharacterSpell => ({ name, level, prepared, alwaysPrepared: false });
 const way = (topic: keyof typeof TOPIC_BY_ID, name: string): Way => {
@@ -45,6 +45,7 @@ describe('ways around catalog', () => {
     expect(wayLabel(way('cold', "Leomund's Tiny Hut"))).toBe('Level 3 spell · ritual');
     expect(wayLabel(way('food', 'Self-Restoration'))).toBe('Monk 10');
     expect(wayLabel(way('attunement', 'Use Magic Device'))).toBe('Rogue (Thief) 13');
+    expect(wayLabel(way('tainted', "Nature's Ward"))).toBe('Druid (Circle of the Land) 10');
   });
 
   it('searches names, descriptions and edge cases', () => {
@@ -105,5 +106,67 @@ describe('matching the party', () => {
     const rows = rankWays(TOPIC_BY_ID.food.ways, [druid]);
     expect(rows[0].way.name).toBe('Goodberry');
     expect(rows[0].matches[0].status).toBe('ready');
+  });
+});
+
+describe('matching species, subclasses, feats and invocations', () => {
+  it('matches species and asks about lineage when it matters', () => {
+    const drow = newCharacter({ id: 'd', name: 'Dee', species: 'Drow' });
+    expect(matchParty(way('longRest', 'Elf (Trance)'), [drow])[0].status).toBe('has');
+    const plain = newCharacter({ id: 'p', name: 'Pl', species: 'Dragonborn' });
+    const m = matchParty(way('cold', 'Dragonborn (Silver or White)'), [plain])[0];
+    expect(m.status).toBe('maybe');
+    expect(matchText(m)).toBe('if they have the Silver or White ancestry');
+    const silver = newCharacter({ id: 's', name: 'Sil', species: 'Dragonborn (Silver)' });
+    expect(matchParty(way('cold', 'Dragonborn (Silver or White)'), [silver])[0].status).toBe('has');
+    expect(matchParty(way('heat', 'Dragonborn (Brass, Gold or Red)'), [silver])[0].status).toBe('maybe');
+    const human = newCharacter({ id: 'h', name: 'Hu', species: 'Human' });
+    expect(matchParty(way('longRest', 'Elf (Trance)'), [human])).toEqual([]);
+  });
+
+  it('uses the subclass field when it is filled in', () => {
+    const land = newCharacter({ id: 'l', name: 'Land', className: 'Druid', level: 10, subclass: 'Circle of the Land' });
+    const moon = newCharacter({ id: 'm', name: 'Moon', className: 'Druid', level: 10, subclass: 'Circle of the Moon' });
+    const unknown = newCharacter({ id: 'u', name: 'Unk', className: 'Druid', level: 10 });
+    const rows = matchParty(way('tainted', "Nature's Ward"), [land, moon, unknown]);
+    expect(rows.map((r) => [r.name, r.status])).toEqual([
+      ['Land', 'has'],
+      ['Unk', 'maybe'],
+    ]);
+    expect(matchText(rows[1])).toBe('if their subclass is Circle of the Land');
+    const evoker = newCharacter({ id: 'e', name: 'Evo', className: 'Wizard', level: 3, subclass: 'School of Evocation' });
+    expect(matchParty(way('spellbook', 'Savant'), [evoker])[0].status).toBe('has');
+  });
+
+  it('matches feats and invocations by name', () => {
+    const c = newCharacter({ id: 'f', name: 'Fe', feats: ['Ritual Caster'], className: 'Warlock', level: 5, features: ["Devil's Sight"] });
+    expect(matchParty(way('rituals', 'Ritual Caster'), [c])[0].status).toBe('has');
+    expect(matchParty(way('light', "Devil's Sight"), [c])[0].status).toBe('has');
+    expect(matchParty(way('breath', 'Gift of the Depths'), [c])).toEqual([]);
+    const blank = newCharacter({ id: 'b', name: 'Bl', className: 'Warlock', level: 5 });
+    expect(matchParty(way('breath', 'Gift of the Depths'), [blank])[0].status).toBe('maybe');
+    const chef = newCharacter({ id: 'c', name: 'Ch', chef: true });
+    expect(matchParty(way('fire', 'Chef'), [chef])[0].status).toBe('has');
+  });
+});
+
+describe('organization', () => {
+  it('puts every topic in exactly one group', () => {
+    const grouped = TOPIC_GROUPS.flatMap((g) => g.topics);
+    expect(new Set(grouped).size).toBe(grouped.length);
+    expect([...grouped].sort()).toEqual(TOPICS.map((t) => t.id).sort());
+  });
+
+  it('sorts every kind of option into a section', () => {
+    const kinds = new Set(TOPICS.flatMap((t) => t.ways.map((w) => w.kind)));
+    for (const k of kinds) expect(WAY_SECTIONS.some((sec) => sec.kinds.includes(k)), k).toBe(true);
+  });
+
+  it('settles every argued point with a rules-as-written answer', () => {
+    const ruled = TOPICS.flatMap((t) => t.ways).filter((w) => w.ruling);
+    expect(ruled.length).toBeGreaterThan(10);
+    for (const w of ruled) expect(w.ruling!.raw.length, w.name).toBeGreaterThan(30);
+    const text = JSON.stringify(TOPICS);
+    expect(text).not.toMatch(/DM’s call|Ask your DM|some DMs/);
   });
 });

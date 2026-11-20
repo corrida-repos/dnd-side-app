@@ -50,6 +50,10 @@ export interface DdbImport {
   exhaustion: number;
   deathSaves: { successes: number; failures: number; stable: boolean };
   feats: string[];
+  species: string;
+  subclass: string;
+  /** Chosen class options such as Eldritch Invocations. */
+  features: string[];
   warnings: string[];
 }
 
@@ -213,6 +217,10 @@ export function parseDdbCharacter(raw: unknown): DdbImport {
   const exhaustion = Math.min(6, num(arr(d.conditions).find((c) => num(c.id) === 4)?.level));
   const ds = obj(d.deathSaves);
   const feats = arr(d.feats).map((f) => str(obj(f.definition).name)).filter(Boolean);
+  const species = str(race.fullName) || str(race.baseName);
+  const subclass = str(obj(main.subclassDefinition).name);
+  const options = obj(d.options);
+  const features = [...new Set([...arr(options.class), ...arr(options.race), ...arr(options.feat)].map((o) => str(obj(o.definition).name)).filter(Boolean))];
 
   return {
     ddbId: num(d.id),
@@ -243,6 +251,9 @@ export function parseDdbCharacter(raw: unknown): DdbImport {
     exhaustion,
     deathSaves: { successes: num(ds.successCount), failures: num(ds.failCount), stable: !!ds.isStabilized },
     feats,
+    species,
+    subclass,
+    features,
     warnings,
   };
 }
