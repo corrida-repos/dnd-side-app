@@ -294,6 +294,12 @@ export interface Character {
   sick: boolean;
   /** Magical contagions (2024 DMG): Cackle Fever, Sewer Plague, Sight Rot. */
   contagions: Contagion[];
+  /** −4 to D20 Tests after Raise Dead or Resurrection, easing by 1 each Long Rest. */
+  revivalPenalty?: number;
+  /** Remove Curse was cast: attunement to cursed items can be ended. */
+  curseBroken?: boolean;
+  /** Poisons that act later: Midnight Tears at midnight, Pale Tincture every 24 hours. */
+  poisonTimers?: { id: string; name: string; nextAt: number; successes: number }[];
   /** Advantage on saves against contagions until this minute (after recuperating). */
   recuperatedUntil?: number;
   needsFood: boolean;
@@ -654,6 +660,8 @@ export interface Settings {
   noTimepiece: boolean;
   /** Table rule: heavy precipitation and darkness each add +5 to the navigation DC. */
   poorVisibilityNav: boolean;
+  /** Costly Material components must be in the caster's inventory and are used up (2024 PHB). */
+  trackComponents: boolean;
   /** Optional 2014 DMG rule: running a business as a downtime activity. */
   runningBusiness: boolean;
   /** Roll random encounter checks automatically by the location's danger while travelling, camping, resting and exploring. */

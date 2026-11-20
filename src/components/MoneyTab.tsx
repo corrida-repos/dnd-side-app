@@ -8,6 +8,7 @@ import { Card, Num, Pill, Select, Text, Toggle, Rule } from './common';
 import { HIRELING_ROLES, MESSENGER_GP_PER_MILE, type HirelingRole } from '../rules/hirelings';
 import { coinCount, DENOMS, purseValue, type Denom } from '../rules/coins';
 import type { Hireling } from '../state/types';
+import { TARGET_SPELLS } from '../rules/components';
 import { COMMON_SPELL_REQUESTS, PASSAGE, SPELL_SERVICES, spellServiceAvailable, type Settlement } from '../rules/services';
 import { WaysAround } from './WaysAround';
 
@@ -286,6 +287,7 @@ function ServicesCard() {
   const [here, setHere] = useState<Settlement>('town');
   const [spell, setSpell] = useState(COMMON_SPELL_REQUESTS[0].name);
   const [custom, setCustom] = useState(1);
+  const [target, setTarget] = useState('');
   const payers = payer === 'party' ? pcs.map((c) => c.id) : [payer];
   const f = PASSAGE.find((x) => x.id === fare)!;
   const fareGp = ((f.gpPerMile ?? 0) * amount + (f.gpPerDay ?? 0) * amount + (f.gpFlat ?? 0)) * people;
@@ -317,8 +319,23 @@ function ServicesCard() {
         {req?.componentGp ? ` + ${fmtGp(req.componentGp)} components` : ''}. {available ? 'A caster can be found here.' : `Only found in a ${tier.where === 'city' ? 'city' : 'town or city'}.`}
         {req && <span className="muted"> {req.note}</span>}
       </p>
-      <button className="small" disabled={!available} onClick={() => dispatch((st, cx) => E.payForService(st, cx, payers, spellGp, `having ${req ? req.name : `a level ${custom} spell`} cast`))}>
+      {req && TARGET_SPELLS[req.name] && (
+        <Select label="Cast on" value={target} onChange={setTarget} options={[{ value: '', label: 'Choose…' }, ...s.characters.map((c) => ({ value: c.id, label: `${c.name}${c.diedAt != null ? ' (dead)' : ''}` }))]} />
+      )}
+      <button
+        className="small"
+        disabled={!available || (!!req && !!TARGET_SPELLS[req.name] && !target)}
+        onClick={() =>
+          dispatch((st, cx) => {
+            let next = E.payForService(st, cx, payers, spellGp, `having ${req ? req.name : `a level ${custom} spell`} cast`);
+            if (req && TARGET_SPELLS[req.name] && target) next = E.spellOnTarget(next, cx, req.name, target);
+            if (req?.name === 'Purify Food and Drink') next = E.purifySpell(next, cx, null, 'slot');
+            return next;
+          })
+        }
+      >
         Pay {fmtGp(spellGp)}
+        {req && TARGET_SPELLS[req.name] ? ' and cast' : ''}
       </button>
       <Rule>2024 PHB services. Higher-level casters are harder to find: level 3+ only in towns and cities, level 6+ only in cities. Spells with costly components add their cost. Daily food and lodging are already part of lifestyle expenses.</Rule>
       <WaysAround topic={'services'} />

@@ -36,6 +36,8 @@ export const COMMON_SPELL_REQUESTS: { name: string; level: number; componentGp: 
   { name: 'Revivify', level: 3, componentGp: 300, note: 'Diamonds worth 300+ GP, consumed. Within 1 minute of death.' },
   { name: 'Greater Restoration', level: 5, componentGp: 100, note: 'Diamond dust worth 100+ GP, consumed. Removes 1 Exhaustion level, or ends a curse, Charmed or Petrified, among others.' },
   { name: 'Raise Dead', level: 5, componentGp: 500, note: 'A diamond worth 500+ GP, consumed. Dead no longer than 10 days.' },
+  { name: 'Reincarnate', level: 5, componentGp: 1000, note: 'Rare oils worth 1,000+ GP, consumed. Dead no longer than 10 days; a new body.' },
   { name: 'Heal', level: 6, componentGp: 0, note: 'Restores 70 HP and ends Blinded, Deafened and Poisoned.' },
   { name: 'Resurrection', level: 7, componentGp: 1000, note: 'A diamond worth 1,000+ GP, consumed. Dead no longer than a century.' },
+  { name: 'True Resurrection', level: 9, componentGp: 25000, note: 'Diamonds worth 25,000+ GP, consumed. Dead no longer than 200 years.' },
 ];
