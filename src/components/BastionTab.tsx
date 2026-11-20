@@ -17,6 +17,8 @@ import {
 } from '../rules/bastion';
 import { Card, Meter, Num, Pill, Select, Text, Toggle, Rule } from './common';
 import type { Bastion, Facility } from '../state/types';
+import { COMMS, commCost, commDelay, type CommMethod } from '../rules/comms';
+import { formatDuration } from '../rules/calendar';
 
 const ORDER_HINT: Record<Order, string> = {
   Craft: 'What is being made, e.g. Longsword',
@@ -124,10 +126,17 @@ function BastionCard({ b }: { b: Bastion }) {
         ))}
       </ul>
       <Toggle
-        checked={b.maintain}
-        onChange={(v) => edit((d) => void (d.bastions.find((x) => x.id === b.id)!.maintain = v))}
-        label="Maintain order for the whole Bastion (no other orders; roll a Bastion event)"
+        checked={b.distanceMiles > 0 ? (b.draftMaintain ?? b.maintain) : b.maintain}
+        onChange={(v) =>
+          edit((d) => {
+            const t = d.bastions.find((x) => x.id === b.id)!;
+            if (t.distanceMiles > 0) t.draftMaintain = v;
+            else t.maintain = v;
+          })
+        }
+        label={b.distanceMiles > 0 ? 'Draft: Maintain order for the whole Bastion' : 'Maintain order for the whole Bastion (no other orders; roll a Bastion event)'}
       />
+      <RemoteCard b={b} />
       <div className="btn-row">
         <button className="primary" disabled={due < 1} onClick={() => dispatch((st, cx) => E.resolveBastionTurn(st, cx, b.id))}>
           Resolve Bastion turn
@@ -186,7 +195,10 @@ function WallsRow({ b }: { b: Bastion }) {
 }
 
 function FacilityRow({ b, f }: { b: Bastion; f: Facility }) {
-  const maintain = b.maintain;
+  const away = b.distanceMiles > 0;
+  const maintain = away ? (b.draftMaintain ?? b.maintain) : b.maintain;
+  const order = away ? (f.draftOrder ?? f.order) : f.order;
+  const note = away ? (f.draftNote ?? f.orderNote) : f.orderNote;
   const step = ENLARGE[f.size];
   const set = (patch: Partial<Facility>) =>
     edit((d) => {
@@ -219,11 +231,65 @@ function FacilityRow({ b, f }: { b: Bastion; f: Facility }) {
       </div>
       {f.kind === 'special' && f.built && !maintain && (
         <div className="form-row">
-          <Select label="Order" value={f.order === 'Maintain' ? (SPECIAL_FACILITIES.find((x) => x.name === f.name)?.order ?? 'Craft') : f.order} onChange={(v: Order) => set({ order: v })} options={ORDERS.filter((o) => o !== 'Maintain')} />
-          <Text label="Details" value={f.orderNote} onChange={(v) => set({ orderNote: v })} placeholder={ORDER_HINT[f.order]} />
+          <Select label={away ? 'Draft order' : 'Order'} value={order === 'Maintain' ? (SPECIAL_FACILITIES.find((x) => x.name === f.name)?.order ?? 'Craft') : order} onChange={(v: Order) => set(away ? { draftOrder: v } : { order: v })} options={ORDERS.filter((o) => o !== 'Maintain')} />
+          <Text label="Details" value={note} onChange={(v) => set(away ? { draftNote: v } : { orderNote: v })} placeholder={ORDER_HINT[order]} />
+          {away && f.draftOrder && f.draftOrder !== f.order && <span className="small muted">In force: {f.order}</span>}
         </div>
       )}
     </li>
+  );
+}
+
+const METHODS = Object.keys(COMMS) as CommMethod[];
+
+function RemoteCard({ b }: { b: Bastion }) {
+  const s = useGame();
+  const [method, setMethod] = useState<CommMethod>('messenger');
+  const [helper, setHelper] = useState('');
+  const away = b.distanceMiles > 0;
+  const info = COMMS[method];
+  const delay = commDelay(method, b.distanceMiles);
+  const cost = commCost(method, b.distanceMiles);
+  const now = E.absNow(s);
+  const messengers = s.hirelings.filter((h) => h.active && h.role === 'messenger');
+  const casters = s.characters.filter((c) => info.needs && c.spells.some((x) => x.name.toLowerCase() === info.needs!.toLowerCase()));
+  const helpers = info.needs === 'messenger' ? messengers.map((h) => ({ value: h.id, label: `${h.name}${h.busyUntil && h.busyUntil > now ? ` (back in ${formatDuration(h.busyUntil - now)})` : ''}` })) : casters.map((c) => ({ value: c.id, label: c.name }));
+  const helperId = helpers.find((x) => x.value === helper)?.value ?? helpers[0]?.value ?? '';
+  const moving = s.dispatches.filter((m) => m.bastionId === b.id && !m.delivered);
+  const set = (patch: Partial<Bastion>) => edit((d) => void Object.assign(d.bastions.find((x) => x.id === b.id)!, patch));
+  return (
+    <div className="add-facility">
+      <div className="btn-row tight">
+        <Num label="Owner's distance" value={b.distanceMiles} onChange={(v) => set({ distanceMiles: Math.max(0, Math.round(v)) })} min={0} suffix="miles" width={4} />
+        {away ? <Pill tone="warn">Away: orders must be sent</Pill> : <Pill tone="good">At the Bastion: orders given in person</Pill>}
+        {away && b.ordersArrived && <Pill tone="good">New orders arrived</Pill>}
+      </div>
+      {away && (
+        <>
+          <div className="btn-row tight">
+            <Select label="Send orders by" value={method} onChange={setMethod} options={METHODS.map((m) => ({ value: m, label: COMMS[m].label }))} />
+            {info.needs && <Select label={info.needs === 'messenger' ? 'Messenger' : 'Caster'} value={helperId} onChange={setHelper} options={helpers.length ? helpers : [{ value: '', label: info.needs === 'messenger' ? 'Hire a messenger first' : `Nobody knows ${info.needs}` }]} />}
+            <button className="primary small" disabled={delay == null || (!!info.needs && !helperId)} onClick={() => dispatch((st, cx) => E.sendBastionOrders(st, cx, b.id, method, helperId || null))}>
+              Send drafted orders
+            </button>
+          </div>
+          <p className="small muted">
+            {delay == null ? `Out of range (${info.maxMiles} miles at most).` : `Arrives in ${delay === 0 ? 'an instant' : formatDuration(delay)}${cost ? `, costs ${cost} GP` : ''}.`} {info.note}
+          </p>
+          <Select label="Reports come back by" value={b.reportMethod} onChange={(v: CommMethod) => set({ reportMethod: v })} options={METHODS.filter((m) => !COMMS[m].needs || m === 'sending').map((m) => ({ value: m, label: COMMS[m].label }))} />
+          {moving.length > 0 && (
+            <ul className="plain small">
+              {moving.map((m) => (
+                <li key={m.id}>
+                  {m.direction === 'orders' ? '→ Orders' : '← Report'} by {COMMS[m.method].label.toLowerCase()}: arrives in {formatDuration(Math.max(1, m.arrivesAt - now))}
+                </li>
+              ))}
+            </ul>
+          )}
+          <Rule>DMG: if you can&apos;t give new orders, your hirelings carry out the Maintain order. Orders count for a turn only if they reach the Bastion before it starts; reports travel back the same way.</Rule>
+        </>
+      )}
+    </div>
   );
 }
 

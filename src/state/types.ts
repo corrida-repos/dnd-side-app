@@ -9,6 +9,7 @@ import type { Rarity } from '../rules/crafting';
 import type { Creature } from '../rules/hunting';
 import type { TerrainType } from '../rules/terrain';
 import type { ItemRef } from '../rules/hazards';
+import type { CommMethod } from '../rules/comms';
 import type { HirelingRole } from '../rules/hirelings';
 import type { ClueKind, StudyMethod } from '../rules/identify';
 import type { WeightSource } from '../rules/encumbrance';
@@ -373,6 +374,8 @@ export interface Hireling {
   /** Who pays: a character's id, or "party" to split between the adventurers. */
   payer: string;
   active: boolean;
+  /** Absolute minute a messenger gets back from an errand. */
+  busyUntil?: number;
 }
 
 export interface Project {
@@ -416,6 +419,26 @@ export interface Facility {
   /** Unfinished work. A facility that's still being built can't take orders. */
   building: Construction | null;
   built: boolean;
+  /** Orders written while the owner is away, not yet sent. */
+  draftOrder?: Order;
+  draftNote?: string;
+}
+
+export interface Dispatch {
+  id: string;
+  bastionId: string;
+  /** Orders travelling to the Bastion, or a report travelling back to the owner. */
+  direction: 'orders' | 'report';
+  method: CommMethod;
+  sentAt: number;
+  arrivesAt: number;
+  costGp: number;
+  delivered: boolean;
+  /** Orders being carried: Bastion-wide Maintain, or each facility's order. */
+  maintain?: boolean;
+  orders?: { facilityId: string; order: Order; note: string }[];
+  report?: string;
+  hirelingId?: string;
 }
 
 export interface Bastion {
@@ -430,6 +453,14 @@ export interface Bastion {
   goldSpent: number;
   /** The Maintain order covers the whole Bastion and blocks other orders. */
   maintain: boolean;
+  /** How far the owner is from the Bastion, in miles. 0 means they're there and can give orders in person. */
+  distanceMiles: number;
+  /** Maintain order being drafted while away. */
+  draftMaintain?: boolean;
+  /** New orders reached the Bastion since its last turn. */
+  ordersArrived: boolean;
+  /** How the Bastion sends its turn reports to an absent owner. */
+  reportMethod: CommMethod;
   notes: string;
 }
 
@@ -491,7 +522,7 @@ export interface Settings {
   fearPerLongRest: number;
   /** Table rule: weather favors or hinders certain damage types (+1 or -1 per damage die). */
   weatherDamage: boolean;
-  /** Optional older rule: Encumbered over 5 × Strength, Heavily Encumbered over 10 × Strength. */
+  /** Variant encumbrance is always used now; kept so older saves load. */
   variantEncumbrance: boolean;
   /** 2014 rule: cold weather gear means an automatic success against extreme cold. */
   coldGear2014: boolean;
@@ -583,4 +614,6 @@ export interface State {
   spellClasses: Record<string, string[]>;
   giftLibrary: { name: string; type: string }[];
   recipeNames: string[];
+  /** Messages travelling to and from distant Bastions. */
+  dispatches: Dispatch[];
 }

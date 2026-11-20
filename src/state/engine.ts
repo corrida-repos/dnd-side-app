@@ -8,6 +8,7 @@ import { LOST_RECHECK_DIE, navigationDC } from '../rules/navigation';
 import { TERRAIN, clampPace } from '../rules/terrain';
 import { readSky, SKY_DC } from '../rules/skyclock';
 import { MESSENGER_GP_PER_MILE } from '../rules/hirelings';
+import { COMMS, commCost, commDelay, type CommMethod } from '../rules/comms';
 import { HAZARDS, type GiftType, type HazardId } from '../rules/hazards';
 import { ARCANA_DC, STUDY_MINUTES, type StudyMethod } from '../rules/identify';
 import { FEED_LB_PER_DAY, MOUNT_CAPACITY, carryingCapacity, COINS_PER_LB, estimateWeight, loadLevel, parseInventory, RATION_WEIGHT, type LoadLevel } from '../rules/encumbrance';
@@ -606,6 +607,7 @@ export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activi
     if (before < dawn && absNow(s) >= dawn) atDawn(s, ctx);
     checkItemsLeftBehind(s);
     tickEffects(s, before);
+    deliverDispatches(s);
     if (s.minutes % 60 === 0) tickHour(s, ctx, activity);
     if (s.minutes >= MIN_PER_DAY) endOfDay(s, ctx);
   }
@@ -1514,7 +1516,7 @@ export const foundBastion = act((d, _ctx, ownerId: string, name: string) => {
   if (!owner) return;
   const free = (fname: string, size: FacilitySize): Facility => ({ id: uid(), name: fname, kind: 'basic', size, order: 'Maintain', orderNote: '', building: null, built: true });
   // A new Bastion comes with two free basic facilities: one Cramped, one Roomy (swap them for others if you like).
-  d.bastions.push({ id: uid(), name: name || `${owner.name}'s Bastion`, ownerId, facilities: [free('Bedroom', 'cramped'), free('Dining Room', 'roomy')], lastTurnDay: d.dayIndex, turns: 0, lastEvent: '', goldSpent: 0, notes: '', maintain: false });
+  d.bastions.push({ id: uid(), name: name || `${owner.name}'s Bastion`, ownerId, facilities: [free('Bedroom', 'cramped'), free('Dining Room', 'roomy')], lastTurnDay: d.dayIndex, turns: 0, lastEvent: '', goldSpent: 0, notes: '', maintain: false, distanceMiles: 0, ordersArrived: false, reportMethod: 'courier' });
   log(d, `${owner.name} founds a Bastion: ${name || `${owner.name}'s Bastion`}.`, 'good');
 });
 
@@ -1573,16 +1575,117 @@ export const resolveBastionTurn = act((d, ctx, bastionId: string) => {
   b.lastTurnDay += BASTION_TURN_DAYS;
   b.turns += 1;
   const working = b.facilities.filter((f) => f.kind === 'special' && f.built);
-  const orders = b.maintain ? ['Maintain (the whole Bastion)'] : working.map((f) => `${f.name}: ${f.order}${f.orderNote ? ` (${f.orderNote})` : ''}`);
+  // An absent owner's orders only count if they arrived in time; otherwise the hirelings Maintain (DMG).
+  const away = b.distanceMiles > 0;
+  const maintain = b.maintain || (away && !b.ordersArrived);
+  if (away && !b.ordersArrived && !b.maintain) log(d, `No new orders reached ${b.name} before this turn, so its hirelings Maintain.`, 'warn');
+  const orders = maintain ? ['Maintain (the whole Bastion)'] : working.map((f) => `${f.name}: ${f.order}${f.orderNote ? ` (${f.orderNote})` : ''}`);
   log(d, `${b.name}, Bastion turn ${b.turns}. Orders: ${orders.join('; ') || 'none'}.`);
-  if (b.maintain || !working.length) {
+  b.ordersArrived = false;
+  if (maintain || !working.length) {
     const e = rollBastionEvent(ctx.rng);
     b.lastEvent = `Turn ${b.turns}: ${e.event} (d100 = ${e.roll})`;
     log(d, `${b.name}: every facility was maintained, so roll a Bastion event. d100 = ${e.roll}: ${e.event}. See the DMG for what happens.`, e.event === 'Attack' || e.event === 'Criminal Hireling' || e.event === 'Lost Hirelings' ? 'warn' : 'info');
   } else {
     b.lastEvent = `Turn ${b.turns}: orders carried out`;
   }
+  // The owner hears about it only when the report reaches them.
+  if (away) {
+    const delay = commDelay(b.reportMethod, b.distanceMiles) ?? commDelay('courier', b.distanceMiles)!;
+    const now = absNow(d);
+    d.dispatches.push({ id: uid(), bastionId: b.id, direction: 'report', method: b.reportMethod, sentAt: now, arrivesAt: now + delay, costGp: 0, delivered: false, report: b.lastEvent });
+    log(d, `${b.name} sends its report by ${COMMS[b.reportMethod].label.toLowerCase()}; it should reach ${charById(d, b.ownerId)?.name ?? 'the owner'} in ${formatDuration(Math.max(1, delay))}.`);
+  }
 });
+
+/** Sends the drafted orders to a distant Bastion. They take effect when they arrive. */
+export const sendBastionOrders = act((d, ctx, bastionId: string, method: CommMethod, helperId: string | null) => {
+  const b = d.bastions.find((x) => x.id === bastionId);
+  if (!b) return;
+  const info = COMMS[method];
+  const delay = commDelay(method, b.distanceMiles);
+  if (delay == null) {
+    log(d, `${info.label} can't reach ${b.name}: it's ${b.distanceMiles} miles away (at most ${info.maxMiles}).`, 'warn');
+    return;
+  }
+  let hirelingId: string | undefined;
+  if (info.needs === 'messenger') {
+    const h = d.hirelings.find((x) => x.id === helperId && x.active && x.role === 'messenger');
+    if (!h) {
+      log(d, 'Choose an employed messenger hireling to carry the orders.', 'warn');
+      return;
+    }
+    if (h.busyUntil && h.busyUntil > absNow(d)) {
+      log(d, `${h.name} is still out on another errand (back in ${formatDuration(h.busyUntil - absNow(d))}).`, 'warn');
+      return;
+    }
+    hirelingId = h.id;
+    h.busyUntil = absNow(d) + delay * 2;
+  } else if (info.needs) {
+    const caster = helperId ? charById(d, helperId) : undefined;
+    const knows = caster?.spells.find((x) => x.name.toLowerCase() === info.needs!.toLowerCase());
+    if (!caster || !knows) {
+      log(d, `Someone who knows ${info.needs} has to cast it.`, 'warn');
+      return;
+    }
+    const ritual = method === 'animal';
+    if (!ritual && info.slotLevel) {
+      const slot = caster.resources
+        .filter((r) => /(spell|pact) slots \(level (\d)\)/i.test(r.name) && Number(/level (\d)/i.exec(r.name)![1]) >= info.slotLevel! && r.current > 0)
+        .sort((x, y) => Number(/level (\d)/i.exec(x.name)![1]) - Number(/level (\d)/i.exec(y.name)![1]))[0];
+      if (caster.resources.some((r) => /slots/i.test(r.name)) && !slot) {
+        log(d, `${caster.name} has no spell slot of level ${info.slotLevel} or higher left for ${info.needs}.`, 'warn');
+        return;
+      }
+      if (slot) slot.current -= 1;
+    }
+    advanceMut(d, ctx, ritual ? 11 : 1, 'camp');
+  }
+  const cost = commCost(method, b.distanceMiles);
+  const now = absNow(d);
+  const working = b.facilities.filter((f) => f.kind === 'special' && f.built);
+  const maintain = b.draftMaintain ?? b.maintain;
+  d.dispatches.push({
+    id: uid(),
+    bastionId: b.id,
+    direction: 'orders',
+    method,
+    sentAt: now,
+    arrivesAt: now + delay,
+    costGp: cost,
+    delivered: false,
+    maintain,
+    orders: working.map((f) => ({ facilityId: f.id, order: f.draftOrder ?? f.order, note: f.draftNote ?? f.orderNote })),
+    hirelingId,
+  });
+  if (cost > 0) payGold(d, [b.ownerId], cost, `sending orders to ${b.name}`);
+  log(d, `Orders for ${b.name} go out by ${info.label.toLowerCase()} (${b.distanceMiles} miles). ${delay === 0 ? 'They arrive at once.' : `They should arrive in ${formatDuration(delay)}.`}`);
+  deliverDispatches(d);
+});
+
+/** Messages that have reached their destination take effect. */
+function deliverDispatches(s: State): void {
+  const now = absNow(s);
+  for (const m of s.dispatches) {
+    if (m.delivered || m.arrivesAt > now) continue;
+    m.delivered = true;
+    const b = s.bastions.find((x) => x.id === m.bastionId);
+    if (!b) continue;
+    if (m.direction === 'orders') {
+      b.maintain = !!m.maintain;
+      b.draftMaintain = undefined;
+      for (const o of m.orders ?? []) {
+        const f = b.facilities.find((x) => x.id === o.facilityId);
+        if (f) Object.assign(f, { order: o.order, orderNote: o.note, draftOrder: undefined, draftNote: undefined });
+      }
+      b.ordersArrived = true;
+      log(s, `Orders reach ${b.name} by ${COMMS[m.method].label.toLowerCase()}, ${formatDuration(Math.max(1, now - m.sentAt))} after they were sent: ${m.maintain ? 'Maintain' : (m.orders ?? []).map((o) => `${b.facilities.find((f) => f.id === o.facilityId)?.name}: ${o.order}`).join('; ')}.`, 'good');
+    } else {
+      log(s, `Word from ${b.name} arrives by ${COMMS[m.method].label.toLowerCase()}: ${m.report}.`, 'good');
+    }
+  }
+  s.dispatches = s.dispatches.filter((m) => !m.delivered || now - m.arrivesAt < 30 * MIN_PER_DAY);
+}
 
 // ---------------------------------------------------------------- HP, Hit Point Dice, items
 
@@ -2303,7 +2406,7 @@ export function carriedLoad(s: State, c: Character): Load {
   const magic = c.items.filter((it) => !listed.has(it.name.toLowerCase()) && !listed.has((it.partyName ?? '').toLowerCase())).reduce((a, it) => a + estimateWeight(it.name).weight, 0);
   const total = Math.round((gear + food + water + coins + magic) * 10) / 10;
   const capacity = c.carryCapacity ?? carryingCapacity(c.strScore, c.size);
-  return { gear, food, water, coins, magic, total, capacity, level: loadLevel(total, capacity, c.kind === 'mount' ? 0 : c.strScore, s.settings.variantEncumbrance) };
+  return { gear, food, water, coins, magic, total, capacity, level: loadLevel(total, capacity, c.kind === 'mount' ? 0 : c.strScore, true) };
 }
 
 export const addInventory = act((d, _ctx, charId: string, text: string) => {

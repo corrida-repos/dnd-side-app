@@ -45,7 +45,7 @@ describe('carried load', () => {
     s.characters = [c];
     const after = E.addInventory(s, { rng: () => 0.5 }, c.id, 'Plate Armor\n2 Torches');
     const load = E.carriedLoad(after, after.characters[0]);
-    expect(load).toMatchObject({ gear: 67, food: 10, water: 5, coins: 1, magic: 1, total: 84, capacity: 150, level: 'light' });
+    expect(load).toMatchObject({ gear: 67, food: 10, water: 5, coins: 1, magic: 1, total: 84, capacity: 150, level: 'encumbered' });
     const dup = E.addInventory(after, { rng: () => 0.5 }, c.id, 'Cloak of Protection');
     expect(E.carriedLoad(dup, dup.characters[0]).magic).toBe(0);
   });

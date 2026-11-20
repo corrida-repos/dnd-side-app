@@ -102,7 +102,6 @@ function RulesCard() {
         <Toggle checked={s.settings.noTimepiece} onChange={(v) => set('noTimepiece', v)} label="Nobody has a timepiece: show the time as nature's cues" />
         <Rule>The header and the Time card show the part of the day (Dawn, Mid-morning, Dusk and so on) instead of the exact clock. The DM can peek at the exact time on the Time card.</Rule>
         <Toggle checked={s.settings.poorVisibilityNav} onChange={(v) => set('poorVisibilityNav', v)} label="Heavy rain or snow, and darkness, each make navigating harder (+5 DC, table rule)" />
-        <Toggle checked={s.settings.variantEncumbrance} onChange={(v) => set('variantEncumbrance', v)} label="Encumbered over 5 × Strength, Heavily Encumbered over 10 × Strength (optional older rule)" />
         <Toggle checked={s.settings.coinWeight} onChange={(v) => set('coinWeight', v)} label="Coins count toward carried weight (50 per pound)" />
         <Toggle checked={s.settings.coldGear2014} onChange={(v) => set('coldGear2014', v)} label="Cold weather gear protects against extreme cold (2014 rule; 2024 only counts Cold Resistance or Immunity)" />
         <Toggle checked={s.settings.heavyClothing2014} onChange={(v) => set('heavyClothing2014', v)} label="Heavy clothing gives Disadvantage on extreme heat saves (2014 rule; 2024 only counts Medium or Heavy armor)" />

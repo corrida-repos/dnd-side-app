@@ -147,7 +147,7 @@ export type LoadLevel = 'light' | 'encumbered' | 'heavy' | 'over';
 
 /**
  * 2024 rules: you can carry up to your capacity; beyond it you can only drag, at a Speed of 5 ft at most.
- * Optional older variant: over 5 × Strength is Encumbered (−10 ft), over 10 × Strength is Heavily Encumbered (−20 ft, Disadvantage).
+ * Variant encumbrance (always used at this table): over 5 × Strength is Encumbered (−10 ft), over 10 × Strength is Heavily Encumbered (−20 ft, Disadvantage).
  */
 export function loadLevel(load: number, capacity: number, str: number, variant: boolean): LoadLevel {
   if (load > capacity) return 'over';

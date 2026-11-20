@@ -17,7 +17,8 @@ function migrate(raw: unknown): State | null {
     ...base,
     ...parsed,
     version: SAVE_VERSION,
-    settings: { ...base.settings, ...parsed.settings },
+    // Variant encumbrance is always on.
+    settings: { ...base.settings, ...parsed.settings, variantEncumbrance: true },
     travel: { ...base.travel, ...parsed.travel },
     fire: { ...base.fire, ...parsed.fire },
     stores: { ...base.stores, ...parsed.stores, foodRawLb: parsed.stores?.foodRawLb ?? (parsed.stores as { foodUnsafeLb?: number } | undefined)?.foodUnsafeLb ?? 0 },
@@ -28,7 +29,7 @@ function migrate(raw: unknown): State | null {
       const terrain = known.includes(old.terrain ?? '') ? (old.terrain as State['place']['terrain']) : TERRAIN_FOR_CLIMATE[(old.climate ?? base.place.climate) as keyof typeof TERRAIN_FOR_CLIMATE];
       return { ...base.place, ...old, terrain, onRoute: old.onRoute ?? (old.navigation ? old.navigation === 'road' : base.place.onRoute), goodRoad: old.goodRoad ?? false, terrainNote: known.includes(old.terrain ?? '') ? old.terrainNote : old.terrain };
     })(),
-    bastions: (parsed.bastions ?? []).map((b) => ({ ...b, maintain: b.maintain ?? b.facilities.filter((f) => f.kind === 'special').every((f) => f.order === 'Maintain') })),
+    bastions: (parsed.bastions ?? []).map((b) => ({ ...b, maintain: b.maintain ?? b.facilities.filter((f) => f.kind === 'special').every((f) => f.order === 'Maintain'), distanceMiles: b.distanceMiles ?? 0, ordersArrived: b.ordersArrived ?? false, reportMethod: b.reportMethod ?? 'courier' })),
     watchOrder: parsed.watchOrder ?? [],
     watchPlan:
       parsed.watchPlan ??
@@ -50,6 +51,7 @@ function migrate(raw: unknown): State | null {
     spellClasses: parsed.spellClasses ?? {},
     giftLibrary: parsed.giftLibrary ?? [],
     recipeNames: parsed.recipeNames ?? [],
+    dispatches: parsed.dispatches ?? [],
     trackingStart: parsed.trackingStart ?? (parsed.dayIndex ?? base.dayIndex) * 1440 + (parsed.minutes ?? 0),
   } as State;
   // Characters saved by older versions pick up any newly added fields.
