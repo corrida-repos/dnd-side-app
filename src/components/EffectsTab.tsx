@@ -3,6 +3,7 @@ import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
 import { EFFECT_KIND_LABEL, EFFECT_PRESETS, EXPLORATION_TURN_MINUTES, holdBreathSeconds, type EffectKind } from '../rules/effects';
 import { abilityMod } from '../rules/upkeep';
+import { HAZARDS, type HazardId } from '../rules/hazards';
 import { formatClock, formatDuration } from '../rules/calendar';
 import { Card, Meter, Num, Pill, Select, Text, Toggle, Rule } from './common';
 
@@ -13,6 +14,7 @@ export function EffectsTab() {
       <AddEffectCard />
       <ExploreCard />
       <BreathCard />
+      <HazardCard />
     </div>
   );
 }
@@ -212,6 +214,49 @@ function BreathCard() {
         <Num value={mins} onChange={(v) => setMins(Math.max(1, Math.round(v)))} min={1} max={240} suffix="min" width={3} />
         <button onClick={() => dispatch((st, cx) => E.frigidWater(st, cx, c.id, mins))}>In frigid water for {mins} min</button>
       </div>
+    </Card>
+  );
+}
+
+function HazardCard() {
+  const s = useGame();
+  const [id, setId] = useState<HazardId>('slipperyIce');
+  const [who, setWho] = useState(s.characters[0]?.id ?? '');
+  const [bonus, setBonus] = useState(0);
+  const [hours, setHours] = useState(1);
+  const [weight, setWeight] = useState(300);
+  const hz = HAZARDS[id];
+  return (
+    <Card title="Hazards">
+      <div className="form-row">
+        <Select label="Hazard" value={id} onChange={setId} options={(Object.keys(HAZARDS) as HazardId[]).map((k) => ({ value: k, label: HAZARDS[k].name }))} />
+        <Select label="Who" value={who} onChange={setWho} options={s.characters.map((c) => ({ value: c.id, label: c.name }))} />
+      </div>
+      <p className="small">{hz.summary}</p>
+      {hz.save && (
+        <div className="btn-row tight">
+          <Num label={`${hz.save.ability} save bonus`} value={bonus} onChange={(v) => setBonus(Math.round(v))} width={2} />
+          <button className="small" onClick={() => dispatch((st, cx) => E.hazardSave(st, cx, who, id, bonus))}>
+            Roll the save (DC {hz.save.dc}){hz.save.damage ? `, ${hz.save.damage} ${hz.save.damageType}` : ''}
+          </button>
+        </div>
+      )}
+      {id === 'deepWater' && (
+        <div className="btn-row tight">
+          <Num value={hours} onChange={(v) => setHours(Math.max(1, Math.round(v)))} min={1} suffix="hours" width={2} />
+          <button className="small" onClick={() => dispatch((st, cx) => E.deepWater(st, cx, who, hours))}>
+            Swim through deep water
+          </button>
+        </div>
+      )}
+      {id === 'thinIce' && (
+        <div className="btn-row tight">
+          <Num value={weight} onChange={(v) => setWeight(Math.max(0, Math.round(v)))} min={0} suffix="lb on a square" width={4} />
+          <button className="small" onClick={() => dispatch((st, cx) => E.thinIce(st, cx, weight))}>
+            Test the ice
+          </button>
+        </div>
+      )}
     </Card>
   );
 }

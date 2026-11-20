@@ -8,6 +8,7 @@ import type { Lifestyle } from '../rules/money';
 import type { Rarity } from '../rules/crafting';
 import type { Creature } from '../rules/hunting';
 import type { TerrainType } from '../rules/terrain';
+import type { ItemRef } from '../rules/hazards';
 import type { HirelingRole } from '../rules/hirelings';
 import type { ClueKind, StudyMethod } from '../rules/identify';
 import type { WeightSource } from '../rules/encumbrance';
@@ -24,7 +25,7 @@ export type Pace = 'fast' | 'normal' | 'slow';
 export type Activity = 'camp' | 'rest' | 'travel' | 'work';
 export type Tone = 'info' | 'warn' | 'bad' | 'good';
 /** What caused each Exhaustion level. */
-export type ExhaustionCause = 'malnutrition' | 'dehydration' | 'cold' | 'heat' | 'march' | 'coldNight' | 'sleep' | 'frigid' | 'suffocation' | 'other';
+export type ExhaustionCause = 'malnutrition' | 'dehydration' | 'cold' | 'heat' | 'march' | 'coldNight' | 'sleep' | 'frigid' | 'suffocation' | 'deepWater' | 'other';
 export type ArmorKind = 'none' | 'light' | 'medium' | 'heavy';
 export type WaterQuality = 'clean' | 'questionable';
 
@@ -348,7 +349,7 @@ export interface Stores {
   waterUnsafeGal: number;
 }
 
-export type SaveKind = 'cold' | 'heat' | 'march' | 'malnutrition' | 'tainted' | 'raw' | 'chill' | 'sleep' | 'frigid';
+export type SaveKind = 'cold' | 'heat' | 'march' | 'malnutrition' | 'tainted' | 'raw' | 'chill' | 'sleep' | 'frigid' | 'deepWater';
 
 export interface PendingSave {
   id: string;
@@ -577,4 +578,9 @@ export interface State {
   /** Stashes, bank vaults and vehicles holding the party's things. */
   stashes: Stash[];
   journey: JourneyStage[];
+  /** Optional 5etools libraries the user loaded: magic items, spell class lists, supernatural gifts and recipe names. */
+  itemLibrary: ItemRef[];
+  spellClasses: Record<string, string[]>;
+  giftLibrary: { name: string; type: string }[];
+  recipeNames: string[];
 }

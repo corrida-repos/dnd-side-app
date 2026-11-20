@@ -188,6 +188,7 @@ function CharacterCard({ c }: { c: Character }) {
         <Toggle checked={c.blanket} onChange={(v) => set({ blanket: v })} label="Blanket" title="Advantage on extreme cold saves while wrapped in it" />
         <Toggle checked={c.heavyGarb} onChange={(v) => set({ heavyGarb: v })} label="Heavy clothing" title="Disadvantage on extreme heat saves under the optional 2014 rule" />
         <Toggle checked={c.coldWaterAdapted} onChange={(v) => set({ coldWaterAdapted: v })} label="Adapted to icy water" title="Automatic success against frigid water" />
+        <Toggle checked={c.swimSpeed} onChange={(v) => set({ swimSpeed: v })} label="Swim Speed" title="Unaffected by deep water" />
       </div>
 
       <Rule>A Bedroll means an automatic success on extreme cold saves while sleeping in it. A Blanket gives Advantage. Either one counts as warm cover on a cold night.</Rule>

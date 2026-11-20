@@ -15,7 +15,7 @@ import {
   type FacilitySize,
   type Order,
 } from '../rules/bastion';
-import { Card, Meter, Pill, Select, Text, Toggle, Rule } from './common';
+import { Card, Meter, Num, Pill, Select, Text, Toggle, Rule } from './common';
 import type { Bastion, Facility } from '../state/types';
 
 const ORDER_HINT: Record<Order, string> = {
@@ -164,7 +164,24 @@ function BastionCard({ b }: { b: Bastion }) {
       )}
 
       <AddFacility b={b} ownerLevel={owner?.level ?? 0} slotsLeft={slots - specials.length} />
+      <WallsRow b={b} />
     </Card>
+  );
+}
+
+function WallsRow({ b }: { b: Bastion }) {
+  const [squares, setSquares] = useState(8);
+  return (
+    <details className="add-facility">
+      <summary>Build defensive walls</summary>
+      <div className="btn-row tight">
+        <Num value={squares} onChange={(v) => setSquares(Math.max(1, Math.round(v)))} min={1} suffix="5-ft squares" width={3} />
+        <button className="small" onClick={() => dispatch((st, cx) => E.buildWalls(st, cx, b.id, squares))}>
+          Build ({(squares * 250).toLocaleString()} GP, {squares * 10} days)
+        </button>
+      </div>
+      <Rule>Walls are 20 feet high, and each 5-foot square takes 10 days and 250 GP. A Bastion fully enclosed by walls fares better when it&apos;s attacked.</Rule>
+    </details>
   );
 }
 

@@ -3,6 +3,7 @@ import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
 import { uid } from '../state/defaults';
 import { dateFromIndex, formatDuration } from '../rules/calendar';
+import { GIFT_TYPES, type GiftType } from '../rules/hazards';
 import { DIVINATION_SPELLS, divinationFailChance, moonPhase, RESURRECTION_SPELLS, RITUAL_PRESETS } from '../rules/longterm';
 import { Card, Meter, Num, Pill, Select, Text, Rule } from './common';
 
@@ -14,6 +15,7 @@ export function WorldTab() {
       <RitualsCard />
       <DeathCard />
       <DivinationCard />
+      <GiftsCard />
     </div>
   );
 }
@@ -240,6 +242,53 @@ function DivinationCard() {
       </p>
       <button onClick={() => dispatch((st, cx) => E.castDivination(st, cx, c.id, spell))}>Cast {spell}</button>
       <Rule>Each extra casting before a Long Rest adds a cumulative 25% chance of a random or missing answer. Counts reset when the caster finishes a Long Rest. Check the exact wording of each spell.</Rule>
+    </Card>
+  );
+}
+
+function GiftsCard() {
+  const s = useGame();
+  const [who, setWho] = useState(s.characters[0]?.id ?? '');
+  const [type, setType] = useState<GiftType>('Blessing');
+  const [name, setName] = useState('');
+  const [uses, setUses] = useState(1);
+  const [notes, setNotes] = useState('');
+  const active = s.effects.filter((e) => e.kind === 'gift' || e.kind === 'curse');
+  return (
+    <Card title="Supernatural gifts and curses">
+      {active.length === 0 && <p className="muted small">None yet.</p>}
+      <ul className="plain small">
+        {active.map((e) => (
+          <li key={e.id} className="armor-row">
+            <span>
+              <b>{e.name}</b> <span className="muted">on {e.targetIds.map((id) => E.charById(s, id)?.name).join(', ')}</span>
+              {e.notes && <span className="muted"> · {e.notes}</span>}
+            </span>
+            <button className="ghost small" onClick={() => dispatch((st, cx) => E.endEffect(st, cx, e.id))}>
+              {e.kind === 'curse' ? 'Lift' : 'End'}
+            </button>
+          </li>
+        ))}
+      </ul>
+      <div className="form-row">
+        <Select label="Who" value={who} onChange={setWho} options={s.characters.map((c) => ({ value: c.id, label: c.name }))} />
+        <Select label="Type" value={type} onChange={setType} options={GIFT_TYPES} />
+        <label className="field">
+          <span className="field-label">Name</span>
+          <input list="gift-names" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Heroism, the Restless Dead" />
+          <datalist id="gift-names">
+            {s.giftLibrary.filter((g) => g.type === type || type === 'Other').map((g) => (
+              <option key={g.name} value={g.name} />
+            ))}
+          </datalist>
+        </label>
+        {type === 'Charm' && <Num label="Uses" value={uses} onChange={(v) => setUses(Math.max(1, Math.round(v)))} min={1} width={2} />}
+      </div>
+      <Text label="What it does (notes)" value={notes} onChange={setNotes} wide />
+      <button disabled={!name.trim()} onClick={() => (dispatch((st, cx) => E.grantGift(st, cx, who, type, name.trim(), uses, notes.trim())), setName(''), setNotes(''))}>
+        {type === 'Curse' ? 'Curse them' : 'Grant'}
+      </button>
+      <Rule>Blessings and Boons last until the DM ends them. A Charm&apos;s uses appear with the character&apos;s limited uses on the Gear tab. Curses last until lifted, for example by Remove Curse.</Rule>
     </Card>
   );
 }

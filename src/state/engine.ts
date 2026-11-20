@@ -1,6 +1,6 @@
 import type { ActiveEffect, Activity, CharacterSpell, InventoryItem, LogEntry, Ritual, Stash, Bastion, Character, ExhaustionCause, Facility, MagicItem, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
 import { BASIC_BUILD, BASTION_TURN_DAYS, defaultSize, ENLARGE, rollBastionEvent, SIZE_LABEL, SPECIAL_FACILITIES, type FacilitySize } from '../rules/bastion';
-import { d20, die, combineModes, rollExpr, signed, type Rng, type RollMode } from '../rules/dice';
+import { d20, die, combineModes, rollDice, rollExpr, signed, type Rng, type RollMode } from '../rules/dice';
 import { dateFromIndex, formatClock, formatDate, formatDuration, lightAt, sunriseMinutes } from '../rules/calendar';
 import { EXPLORATION_TURN_MINUTES, LIGHT_WARNING_MINUTES, type EffectPreset } from '../rules/effects';
 import { divinationFailChance, SPELLBOOK_REPLACE } from '../rules/longterm';
@@ -8,6 +8,7 @@ import { LOST_RECHECK_DIE, navigationDC } from '../rules/navigation';
 import { TERRAIN, clampPace } from '../rules/terrain';
 import { readSky, SKY_DC } from '../rules/skyclock';
 import { MESSENGER_GP_PER_MILE } from '../rules/hirelings';
+import { HAZARDS, type GiftType, type HazardId } from '../rules/hazards';
 import { ARCANA_DC, STUDY_MINUTES, type StudyMethod } from '../rules/identify';
 import { FEED_LB_PER_DAY, MOUNT_CAPACITY, carryingCapacity, COINS_PER_LB, estimateWeight, loadLevel, parseInventory, RATION_WEIGHT, type LoadLevel } from '../rules/encumbrance';
 import { BUTCHER_DC, BUTCHER_MINUTES, isEdible, MEAT_LB, STRANGE_TYPES, yieldsHide, type Creature } from '../rules/hunting';
@@ -92,6 +93,7 @@ const CAUSE_SENSE: Record<ExhaustionCause, SenseKey> = {
   sleep: 'sleep',
   frigid: 'frigid',
   suffocation: 'frigid',
+  deepWater: 'frigid',
   other: 'sleep',
 };
 
@@ -212,7 +214,7 @@ export function heatProtection(c: Character, hasWater: boolean): string | null {
 
 // ---------------------------------------------------------------- saves & exhaustion
 
-const CAUSE_OF_SAVE: Partial<Record<SaveKind, ExhaustionCause>> = { cold: 'cold', heat: 'heat', march: 'march', malnutrition: 'malnutrition', chill: 'coldNight', sleep: 'sleep', frigid: 'frigid' };
+const CAUSE_OF_SAVE: Partial<Record<SaveKind, ExhaustionCause>> = { cold: 'cold', heat: 'heat', march: 'march', malnutrition: 'malnutrition', chill: 'coldNight', sleep: 'sleep', frigid: 'frigid', deepWater: 'deepWater' };
 const SUFFOCATION_NOTE = 'gone once they can breathe again';
 
 export function gainExhaustion(s: State, c: Character, n: number, why: string, cause: ExhaustionCause = 'other'): void {
@@ -1294,8 +1296,9 @@ export const cookMeal = act((d, ctx, cookId: string | null) => {
     const ok = r.value + bonus >= 10;
     flavor = ` ${cook.name} cooks: Wisdom with Cook's Utensils ${r.value} ${signed(bonus)} = ${r.value + bonus} against DC 10, ${ok ? 'a delicious meal' : 'edible, at least'}.`;
   }
+  const dish = d.recipeNames.length ? ` On the menu: ${d.recipeNames[absNow(d) % d.recipeNames.length]}.` : '';
   const purified = cookedUnsafe > 0 ? ` Cooking makes the ${fmtLb(round2(cookedUnsafe))} of raw food safe to eat.` : '';
-  log(d, eaters.length ? `A hot meal at the campfire for ${eaters.join(', ')} (half a day's food each).${purified}${flavor}` : `Nothing to cook: the stores and rations are empty.${flavor}`, eaters.length ? 'good' : 'warn');
+  log(d, eaters.length ? `A hot meal at the campfire for ${eaters.join(', ')} (half a day's food each).${dish}${purified}${flavor}` : `Nothing to cook: the stores and rations are empty.${flavor}`, eaters.length ? 'good' : 'warn');
 });
 
 // ---------------------------------------------------------------- purification
@@ -2568,4 +2571,65 @@ export const importDdb = act((d, _ctx, imp: DdbImport, parts: DdbParts) => {
       .join('; ')}.${imp.warnings.length ? ` Note: ${imp.warnings.join(' ')}` : ''}`,
     'good',
   );
+});
+
+// ---------------------------------------------------------------- hazards, walls, gifts
+
+/** Deep water: after each hour of swimming, a DC 10 Con save or 1 Exhaustion level (unless it has a Swim Speed). */
+export const deepWater = act((d, ctx, charId: string, hours: number) => {
+  const c = charById(d, charId);
+  if (!c) return;
+  log(d, `${c.name} swims through deep water for ${hours} hour(s)${c.swimSpeed ? ', untroubled thanks to their Swim Speed' : ''}.`);
+  for (let h = 0; h < hours; h++) {
+    advanceMut(d, ctx, 60, 'camp');
+    if (!c.swimSpeed && alive(c)) requestSave(d, ctx, c, 'deepWater', 10, 'normal', `deep water (hour ${h + 1})`);
+  }
+});
+
+/** Thin ice: rolls how much weight a 10-foot square holds. */
+export const thinIce = act((d, ctx, weightLb: number) => {
+  const holds = rollDice(3, 10, ctx.rng) * 10;
+  const breaks = weightLb > holds;
+  log(d, `The ice here holds ${holds} lb per 10-foot square, and ${weightLb} lb is on it. ${breaks ? 'It cracks and gives way: everyone on it falls into frigid water!' : 'It holds.'}`, breaks ? 'bad' : 'good');
+});
+
+/** A save against a hazard, with damage rolled and applied on a failure (or half on a success where the hazard allows it). */
+export const hazardSave = act((d, ctx, charId: string, id: HazardId, bonus: number) => {
+  const c = charById(d, charId);
+  const hz = HAZARDS[id];
+  if (!c || !hz.save) return;
+  const r = d20('normal', ctx.rng);
+  const total = r.value + bonus - 2 * c.exhaustion;
+  const ok = total >= hz.save.dc;
+  let dmgTxt = '';
+  if (hz.save.damage) {
+    const dmg = rollExpr(hz.save.damage, ctx.rng) ?? 0;
+    const taken = ok ? (hz.save.halfOnSave ? Math.floor(dmg / 2) : 0) : dmg;
+    if (taken > 0) {
+      dmgTxt = ` Takes ${taken} ${hz.save.damageType} damage.`;
+      Object.assign(d, changeHp(d, ctx, c.id, -taken));
+    }
+  }
+  log(d, `${c.name} vs ${hz.name}: ${hz.save.ability} save ${r.value} ${signed(bonus - 2 * c.exhaustion)} = ${total} against DC ${hz.save.dc}. ${ok ? 'Success.' : `Failure: ${c.name} ${hz.save.onFail}.`}${dmgTxt}`, ok ? 'good' : 'warn');
+});
+
+/** Bastion defensive walls: 250 GP and 10 days per 5-foot square. */
+export const buildWalls = act((d, _ctx, bastionId: string, squares: number) => {
+  const b = d.bastions.find((x) => x.id === bastionId);
+  if (!b || squares <= 0) return;
+  const days = squares * 10;
+  const gp = squares * 250;
+  b.facilities.push({ id: uid(), name: `Defensive walls (${squares} squares)`, kind: 'basic', size: 'cramped', order: 'Maintain', orderNote: '', built: false, building: { what: `Defensive walls (${squares} five-foot squares)`, daysLeft: days, totalDays: days, costGp: gp, toSize: 'cramped' } });
+  b.goldSpent += gp;
+  payGold(d, [b.ownerId], gp, `${squares} squares of defensive wall`);
+  log(d, `${b.name}: work starts on ${squares} squares of defensive wall (${gp.toLocaleString()} GP, ${days} days).`);
+});
+
+/** A supernatural gift or curse: a lasting effect on the character, and limited uses for a Charm. */
+export const grantGift = act((d, _ctx, charId: string, type: GiftType, name: string, uses: number, notes: string) => {
+  const c = charById(d, charId);
+  if (!c || !name.trim()) return;
+  d.effects.push({ id: uid(), name: `${type}: ${name}`, kind: type === 'Curse' ? 'curse' : 'gift', targetIds: [c.id], casterId: null, concentration: false, shelter: false, startedAt: absNow(d), endsAt: null, notes });
+  if (type === 'Charm' && uses > 0) c.resources.push({ id: uid(), name: `Charm: ${name}`, max: uses, current: uses, recharge: 'manual' });
+  log(d, `${c.name} ${type === 'Curse' ? 'is cursed' : 'receives a supernatural gift'}: ${type} of ${name}${type === 'Charm' && uses ? ` (${uses} use${uses > 1 ? 's' : ''})` : ''}.`, type === 'Curse' ? 'bad' : 'good');
 });

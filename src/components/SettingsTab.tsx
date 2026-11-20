@@ -3,6 +3,7 @@ import { useGame, edit, getState, importState, resetState } from '../state/store
 import { CALENDARS, dateFromIndex, indexFromDate, formatClock } from '../rules/calendar';
 import { parse5eToolsSpells } from '../rules/spells';
 import { parse5eToolsBestiary } from '../rules/hunting';
+import { parse5eToolsItems, parse5eToolsRecipes, parse5eToolsRewards, parse5eToolsSpellClasses } from '../rules/hazards';
 import { Card, Num, Select, Toggle, Rule } from './common';
 import { log } from '../state/engine';
 
@@ -13,6 +14,7 @@ export function SettingsTab() {
       <RulesCard />
       <SpellLibraryCard />
       <BestiaryCard />
+      <LibrariesCard />
       <SaveCard />
     </div>
   );
@@ -238,6 +240,54 @@ function BestiaryCard() {
         </div>
       )}
       {msg && <p className="small">{msg}</p>}
+    </Card>
+  );
+}
+
+function LibrariesCard() {
+  const s = useGame();
+  const [msg, setMsg] = useState('');
+  const load = async (f: File | undefined, kind: 'items' | 'classes' | 'gifts' | 'recipes') => {
+    if (!f) return;
+    try {
+      const json = JSON.parse(await f.text());
+      if (kind === 'items') {
+        const items = parse5eToolsItems(json);
+        edit((d) => void (d.itemLibrary = items));
+        setMsg(`Loaded ${items.length} magic items.`);
+      } else if (kind === 'classes') {
+        const map = parse5eToolsSpellClasses(json);
+        edit((d) => void (d.spellClasses = map));
+        setMsg(`Loaded class lists for ${Object.keys(map).length} spells.`);
+      } else if (kind === 'gifts') {
+        const g = parse5eToolsRewards(json);
+        edit((d) => void (d.giftLibrary = g));
+        setMsg(`Loaded ${g.length} supernatural gifts.`);
+      } else {
+        const r = parse5eToolsRecipes(json);
+        edit((d) => void (d.recipeNames = r));
+        setMsg(`Loaded ${r.length} recipe names.`);
+      }
+    } catch (e) {
+      setMsg(`Couldn't read that file: ${(e as Error).message}`);
+    }
+  };
+  const row = (label: string, file: string, kind: 'items' | 'classes' | 'gifts' | 'recipes', count: number) => (
+    <div className="armor-row">
+      <span className="small">
+        <b>{label}</b> <span className="muted">({file}) · {count ? `${count} loaded` : 'not loaded'}</span>
+      </span>
+      <input type="file" accept=".json,application/json" onChange={(e) => (load(e.target.files?.[0], kind), (e.target.value = ''))} />
+    </div>
+  );
+  return (
+    <Card title="More 5etools libraries (optional)">
+      {row('Magic items', 'items.json', 'items', s.itemLibrary.length)}
+      {row('Spell class lists', 'generated/gendata-spell-source-lookup.json', 'classes', Object.keys(s.spellClasses).length)}
+      {row('Supernatural gifts', 'rewards.json', 'gifts', s.giftLibrary.length)}
+      {row('Recipes', 'recipes.json', 'recipes', s.recipeNames.length)}
+      {msg && <p className="small">{msg}</p>}
+      <Rule>Only names and numbers are kept: rarity, attunement, charges and recharge for magic items; which classes get each spell; gift names and types; dish names. No rules text is stored.</Rule>
     </Card>
   );
 }

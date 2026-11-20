@@ -214,37 +214,37 @@ Checked against the 2024 *Player's Handbook* and *Dungeon Master's Guide* data t
 
 ---
 
-## Phase 6: New features suggested by 5etools 📋
+## Phase 6: New features suggested by 5etools ✅
 
 ### Journeys
-- 📋 **Journey stages:** plan a trip in stages (distance, terrain, weather), with one navigation and foraging check per stage, food and water used per stage, and an encounter distance roll when something turns up.
-- 📋 **Galloping mounts:** a mounted party can move twice the normal distance for 1 hour. After that the mounts need a Short or Long Rest before they can do it again.
-- 📋 **Ships and other vessels** from the 2024 PHB:
+- ✅ **Journey stages:** plan a trip in stages (distance, terrain, weather), with one navigation and foraging check per stage, food and water used per stage, and an encounter distance roll when something turns up.
+- ✅ **Galloping mounts:** a mounted party can move twice the normal distance for 1 hour. After that the mounts need a Short or Long Rest before they can do it again.
+- ✅ **Ships and other vessels** from the 2024 PHB:
   - Speeds: Airship 8 mph, Galley 4, Longship 3, Warship 2½, Sailing Ship 2, Rowboat 1½, Keelboat 1.
   - Each ship's crew, passengers and cargo.
   - Ships don't use travel pace, and can sail around the clock with crew shifts.
-- 📋 **Searching and tracking** DCs by terrain.
+- ✅ **Searching and tracking** DCs by terrain.
 
 ### Load and gear
 - ✅ **Encumbrance:**
   - Carrying capacity is Strength × 15 lb for Small or Medium creatures, ×7.5 for Tiny, ×30 for Large, ×60 for Huge, ×120 for Gargantuan.
   - Mount capacities: Camel 450 lb, Elephant 1,320, Draft Horse 540, Riding Horse 480, Mastiff 195, Mule 420, Pony 225, Warhorse 540.
   - Weights: rations 1 lb, water 8 lb per gallon, feed 10 lb per day.
-- 📋 **Magic item import from 5etools:** rarity, attunement, charges and how they recharge (for example "1d6 + 1 at dawn") fill in the item tracker automatically.
-- 📋 **Spell class lists from 5etools** (its spell source lookup file), to filter imported spells by class.
+- ✅ **Magic item import from 5etools:** rarity, attunement, charges and how they recharge (for example "1d6 + 1 at dawn") fill in the item tracker automatically.
+- ✅ **Spell class lists from 5etools** (its spell source lookup file), to filter imported spells by class.
 
 ### Class features
-- 📋 **Ranger Tireless** (level 10): a Short Rest removes 1 Exhaustion level.
-- 📋 **Bard Font of Inspiration** (level 5): Bardic Inspiration switches to coming back on a Short Rest automatically.
+- ✅ **Ranger Tireless** (level 10): a Short Rest removes 1 Exhaustion level.
+- ✅ **Bard Font of Inspiration** (level 5): Bardic Inspiration switches to coming back on a Short Rest automatically.
 
 ### More hazards and the wider world
-- 📋 **Hazard timers and rollers:**
+- ✅ **Hazard timers and rollers:**
   - Deep water: DC 10 Con save each hour of swimming without a Swim Speed, or 1 Exhaustion level.
   - Thin ice: holds 3d10 × 10 lb per 10-foot square.
   - Slippery ice, quicksand pits, poisonous gas, webs, razorvine and rockslides.
-- 📋 **Bastion defensive walls:** 250 GP and 10 days per 5-foot square, as a construction project.
-- 📋 **Supernatural gifts and curses:** Blessings, Boons and Charms (Charms have limited uses) as trackable effects, optionally imported from the 5etools rewards file.
-- 📋 **Campfire recipes:** optionally import recipe names from 5etools (the *Heroes' Feast* cookbook) to give hot meals some flavor.
+- ✅ **Bastion defensive walls:** 250 GP and 10 days per 5-foot square, as a construction project.
+- ✅ **Supernatural gifts and curses:** Blessings, Boons and Charms (Charms have limited uses) as trackable effects, optionally imported from the 5etools rewards file.
+- ✅ **Campfire recipes:** optionally import recipe names from 5etools (the *Heroes' Feast* cookbook) to give hot meals some flavor.
 
 ---
 

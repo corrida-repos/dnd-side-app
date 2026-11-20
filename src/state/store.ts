@@ -46,6 +46,10 @@ function migrate(raw: unknown): State | null {
     statusLog: parsed.statusLog ?? [],
     stashes: parsed.stashes ?? [],
     journey: parsed.journey ?? [],
+    itemLibrary: parsed.itemLibrary ?? [],
+    spellClasses: parsed.spellClasses ?? {},
+    giftLibrary: parsed.giftLibrary ?? [],
+    recipeNames: parsed.recipeNames ?? [],
     trackingStart: parsed.trackingStart ?? (parsed.dayIndex ?? base.dayIndex) * 1440 + (parsed.minutes ?? 0),
   } as State;
   // Characters saved by older versions pick up any newly added fields.

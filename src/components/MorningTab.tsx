@@ -149,7 +149,10 @@ function SpellPrep({ c }: { c: Character }) {
     return [...m.entries()];
   }, [c.spells]);
 
-  const libMatches = query.length >= 2 ? s.spellLibrary.filter((sp) => sp.name.toLowerCase().includes(query.toLowerCase()) && !c.spells.some((x) => x.name === sp.name)).slice(0, 12) : [];
+  const [classOnly, setClassOnly] = useState(true);
+  const hasClasses = Object.keys(s.spellClasses).length > 0;
+  const onList = (name: string) => !hasClasses || !classOnly || (s.spellClasses[name.toLowerCase()] ?? []).includes(c.className);
+  const libMatches = query.length >= 2 ? s.spellLibrary.filter((sp) => sp.name.toLowerCase().includes(query.toLowerCase()) && !c.spells.some((x) => x.name === sp.name) && onList(sp.name)).slice(0, 12) : [];
 
   const addSpell = (sp: { name: string; level: number; school?: string; source?: string; ritual?: boolean; concentration?: boolean }) =>
     setChar(c.id, (x) => {
@@ -269,6 +272,7 @@ function SpellPrep({ c }: { c: Character }) {
         {s.spellLibrary.length > 0 ? (
           <>
             <Text value={query} onChange={setQuery} placeholder={`Search ${s.spellLibrary.length} imported spells`} />
+            {hasClasses && <Toggle checked={classOnly} onChange={setClassOnly} label={`Only ${c.className} spells`} />}
             <div className="chips">
               {libMatches.map((sp) => (
                 <button key={`${sp.name}|${sp.source}`} className="ghost small" onClick={() => addSpell(sp)}>

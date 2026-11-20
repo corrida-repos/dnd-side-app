@@ -81,6 +81,7 @@ export const EXHAUSTION_CAUSE_LABEL: Record<ExhaustionCause, string> = {
   sleep: 'Sleep deprivation',
   frigid: 'Frigid water',
   suffocation: 'Suffocation',
+  deepWater: 'Deep water',
   other: 'Other',
 };
 

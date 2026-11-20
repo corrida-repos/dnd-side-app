@@ -1,10 +1,11 @@
-export type EffectKind = 'light' | 'spell' | 'potion' | 'curse' | 'other';
+export type EffectKind = 'light' | 'spell' | 'potion' | 'curse' | 'gift' | 'other';
 
 export const EFFECT_KIND_LABEL: Record<EffectKind, string> = {
   light: 'Light source',
   spell: 'Spell',
   potion: 'Potion',
   curse: 'Curse or long effect',
+  gift: 'Supernatural gift',
   other: 'Other',
 };
 

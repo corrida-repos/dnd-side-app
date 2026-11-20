@@ -567,7 +567,29 @@ function ItemsBlock({ c }: { c: Character }) {
       <details>
         <summary>Add a magic item</summary>
         <div className="form-row">
-          <Text label="True name (DM)" value={name} onChange={setName} placeholder="e.g. Wand of Magic Missiles" />
+          <label className="field">
+            <span className="field-label">True name (DM)</span>
+            <input
+              list="magic-item-names"
+              value={name}
+              placeholder="e.g. Wand of Magic Missiles"
+              onChange={(e) => {
+                setName(e.target.value);
+                const ref = s.itemLibrary.find((x) => x.name.toLowerCase() === e.target.value.toLowerCase());
+                if (ref) {
+                  setAttune(ref.attunement);
+                  setCharges(ref.charges ?? 0);
+                  setRegain(ref.regain);
+                  setRegainAt(ref.regainAt);
+                }
+              }}
+            />
+            <datalist id="magic-item-names">
+              {s.itemLibrary.map((x) => (
+                <option key={x.name} value={x.name} />
+              ))}
+            </datalist>
+          </label>
           {!identified && <Text label="The party calls it" value={partyName} onChange={setPartyName} placeholder="e.g. black wand carved with stars" />}
           <Num label="Charges" value={charges} onChange={(v) => setCharges(Math.max(0, Math.round(v)))} min={0} width={3} />
           {charges > 0 && (
