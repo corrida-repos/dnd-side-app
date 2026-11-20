@@ -2,6 +2,7 @@ import type { Character } from '../state/types';
 import { exhaustionBreakdown, exhaustionSummary } from '../rules/survival';
 import { formatDuration } from '../rules/calendar';
 import { Pill } from './common';
+import { CONTAGIONS } from '../rules/contagion';
 import { LOAD_LABEL } from '../rules/encumbrance';
 import type { Load } from '../state/engine';
 
@@ -28,6 +29,18 @@ export function Debuffs({ c, now, empty = true, load }: { c: Character; now: num
         Unconscious · stable{c.wakesAt != null ? `, wakes in ${formatDuration(Math.max(0, c.wakesAt - now))}` : ''}
       </Pill>,
     );
+  for (const x of c.diedAt == null ? (c.contagions ?? []) : []) {
+    const info = CONTAGIONS[x.kind];
+    if (!x.onset) continue;
+    const suppressed = x.suppressedUntil && x.suppressedUntil > now;
+    items.push(
+      <Pill key={`cont-${x.id}`} tone={suppressed ? 'warn' : 'bad'} title={`${info.effects} ${info.fighting}`}>
+        {info.name}
+        {x.kind === 'sightRot' ? (suppressed ? ` · ointment, ${formatDuration(x.suppressedUntil! - now)}` : ' · Blinded') : ''}
+        {x.kind === 'cackle' ? ` · ${x.successes}/3 saves` : ''}
+      </Pill>,
+    );
+  }
   for (const p of parts) {
     items.push(
       <Pill

@@ -11,6 +11,7 @@ import type { Creature } from '../rules/hunting';
 import type { TerrainType } from '../rules/terrain';
 import type { ItemRef } from '../rules/hazards';
 import type { CommMethod } from '../rules/comms';
+import type { ContagionKind } from '../rules/contagion';
 import type { HirelingRole } from '../rules/hirelings';
 import type { ClueKind, StudyMethod } from '../rules/identify';
 import type { WeightSource } from '../rules/encumbrance';
@@ -27,7 +28,7 @@ export type Pace = 'fast' | 'normal' | 'slow';
 export type Activity = 'camp' | 'rest' | 'travel' | 'work';
 export type Tone = 'info' | 'warn' | 'bad' | 'good';
 /** What caused each Exhaustion level. */
-export type ExhaustionCause = 'malnutrition' | 'dehydration' | 'cold' | 'heat' | 'march' | 'coldNight' | 'sleep' | 'frigid' | 'suffocation' | 'deepWater' | 'other';
+export type ExhaustionCause = 'malnutrition' | 'dehydration' | 'cold' | 'heat' | 'march' | 'coldNight' | 'sleep' | 'frigid' | 'suffocation' | 'deepWater' | 'contagion' | 'other';
 export type ArmorKind = 'none' | 'light' | 'medium' | 'heavy';
 export type WaterQuality = 'clean' | 'questionable';
 
@@ -291,6 +292,10 @@ export interface Character {
   poisonedUntil: number | null;
   /** Sick from eating raw food: Poisoned until the creature finishes a Long Rest. */
   sick: boolean;
+  /** Magical contagions (2024 DMG): Cackle Fever, Sewer Plague, Sight Rot. */
+  contagions: Contagion[];
+  /** Advantage on saves against contagions until this minute (after recuperating). */
+  recuperatedUntil?: number;
   needsFood: boolean;
   needsWater: boolean;
   rationsLb: number;
@@ -457,6 +462,20 @@ export interface Business {
   helpers?: { charId: string; skilled: boolean }[];
 }
 
+export interface Contagion {
+  id: string;
+  kind: ContagionKind;
+  infectedAt: number;
+  /** When symptoms start. */
+  onsetAt: number;
+  onset: boolean;
+  /** Cackle Fever: successful Long Rest saves so far (three end it). */
+  successes: number;
+  /** Sight Rot: ointment keeps it suppressed until this minute, and the total hours suppressed so far. */
+  suppressedUntil?: number;
+  suppressedHours?: number;
+}
+
 export interface Dispatch {
   id: string;
   bastionId: string;
@@ -494,6 +513,10 @@ export interface Bastion {
   ordersArrived: boolean;
   /** How the Bastion sends its turn reports to an absent owner. */
   reportMethod: CommMethod;
+  /** Consecutive turns with no orders from the owner (2024 DMG: as many as the owner's level and the hirelings leave). */
+  neglectedTurns?: number;
+  /** The hirelings have abandoned it (neglect or divestiture). */
+  abandoned?: boolean;
   notes: string;
 }
 

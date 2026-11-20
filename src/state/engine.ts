@@ -9,6 +9,9 @@ import { TERRAIN, clampPace } from '../rules/terrain';
 import { readSky, SKY_DC } from '../rules/skyclock';
 import { MESSENGER_GP_PER_MILE } from '../rules/hirelings';
 import { COMMS, commCost, commDelay, type CommMethod } from '../rules/comms';
+import { CONTAGIONS, RECUPERATE_DAYS, RECUPERATE_DC, SIGHT_ROT_CURE_HOURS, type ContagionKind } from '../rules/contagion';
+import { neglectLimit } from '../rules/bastion';
+import { POISON_HARVEST_DC, POTION_MISCIBILITY } from '../rules/potions';
 import { AWAY_PROGRESS, BUILD_SPELLS, BUSINESS_DEBT_PENALTY, BUSINESS_MAX_DAYS, CREW_COST_SHARE, MAX_EXTRA_CREWS, buildPace, rollBusiness } from '../rules/business';
 import { HAZARDS, type GiftType, type HazardId } from '../rules/hazards';
 import { ARCANA_DC, STUDY_MINUTES, type StudyMethod } from '../rules/identify';
@@ -98,6 +101,7 @@ const CAUSE_SENSE: Record<ExhaustionCause, SenseKey> = {
   frigid: 'frigid',
   suffocation: 'frigid',
   deepWater: 'frigid',
+  contagion: 'contagionOnset',
   other: 'sleep',
 };
 
@@ -133,6 +137,11 @@ export function payGold(s: State, payerIds: string[], amount: number, what: stri
     broke.length ? 'warn' : 'info',
   );
 }
+
+/** Pays for a service (fares, tolls, spellcasting), split among the payers. */
+export const payForService = act((d, _ctx, payerIds: string[], gp: number, what: string) => {
+  payGold(d, payerIds, Math.round(gp * 100) / 100, what);
+});
 
 export function receiveGold(s: State, payeeIds: string[], amount: number, what: string): void {
   if (!s.settings.chargeCosts || amount <= 0) return;
@@ -428,6 +437,7 @@ function atDawn(s: State, ctx: Ctx): void {
     }
   }
   if (refilled.length) log(s, `Dawn breaks. Recovered: ${refilled.join(', ')}.`, 'good');
+  contagionsAtDawn(s, ctx);
 }
 
 function checkItemsLeftBehind(s: State): void {
@@ -612,6 +622,7 @@ export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activi
     checkItemsLeftBehind(s);
     tickEffects(s, before);
     deliverDispatches(s);
+    tickContagions(s);
     if (s.minutes % 60 === 0) tickHour(s, ctx, activity);
     if (s.minutes >= MIN_PER_DAY) endOfDay(s, ctx);
     if (s.settings.encounters && activity !== 'work' && !opts.exploring) overlandEncounterClock(s, ctx, step, activity);
@@ -714,7 +725,9 @@ function completeLongRest(d: State, ctx: Ctx, watched: Record<string, number>): 
     } else if (c.armorKind !== 'none' && !c.armorWorn) {
       log(d, `${c.name} wakes with their armor off. Putting it on takes ${armorTime(c, 'don')} min.`);
     }
-    if (c.exhaustion > 0 && !armorSpoiled) {
+    const restless = sewerWeakened(c);
+    if (restless) status(d, c, 'contagionWorse', `${c.name} has Sewer Plague: this Long Rest restores no HP and removes no Exhaustion.`, 'warn');
+    if (c.exhaustion > 0 && !armorSpoiled && !restless) {
       const gone = recoverExhaustion(c);
       if (gone) {
         status(d, c, 'exhaustionEases', `${c.name} recovers 1 Exhaustion level (${EXHAUSTION_CAUSE_LABEL[gone]}). Now level ${c.exhaustion}.`, 'good');
@@ -742,12 +755,16 @@ function completeLongRest(d: State, ctx: Ctx, watched: Record<string, number>): 
     applyRestFocus(d, c);
     if (c.hp <= 0) {
       log(d, `${c.name} started the rest at 0 HP, so it doesn't restore HP or Hit Point Dice.`, 'warn');
+    } else if (restless) {
+      const regained = c.hitDiceSpent;
+      c.hitDiceSpent = Math.max(0, c.hitDiceSpent - regained);
     } else {
       c.hp = c.maxHp;
       c.tempHp = 0;
       const regained = armorSpoiled ? Math.max(1, Math.floor(c.level / 4)) : c.hitDiceSpent;
       c.hitDiceSpent = Math.max(0, c.hitDiceSpent - regained);
     }
+    cackleSaveAfterRest(d, ctx, c);
     const got = restoreAfterRest(d, ctx, c, 'long');
     if (got.length) log(d, `${c.name} recovers: ${got.join(', ')}.`, 'good');
     if (isCaster(c.className)) {
@@ -904,6 +921,46 @@ export interface TravelOpts {
   gallop?: boolean;
   /** Sailing or flying aboard a vessel from the Storage tab: its speed, no pace, no forced march. */
   vesselId?: string | null;
+  /** Everyone flies (or ignores Difficult Terrain): Fast pace allowed whatever the terrain (2024 DMG). */
+  flying?: boolean;
+  /** Sailing into a strong wind (half speed), or downstream on a river (+3 mph for keelboats and rowboats). */
+  againstWind?: boolean;
+  downstream?: boolean;
+}
+
+/** Travelers slowed to half Speed or less, which forces a Slow pace (2024 DMG "Slower Travelers"). */
+export function slowTravelers(s: State): string[] {
+  return s.characters
+    .filter((c) => alive(c) && !c.dying && !c.stable)
+    .filter((c) => {
+      const base = c.speed || 30;
+      const lvl = carriedLoad(s, c).level;
+      const loadPenalty = lvl === 'over' ? base : lvl === 'heavy' && c.kind !== 'mount' ? 20 : 0;
+      const exhaustion = 5 * c.exhaustion;
+      return base - loadPenalty - exhaustion <= base / 2;
+    })
+    .map((c) => c.name);
+}
+
+/** Speed of a vessel today: no sail in a dead calm, half into a strong wind, plus the current downstream. */
+export function vesselSpeed(s: State, v: Stash, o: { againstWind?: boolean; downstream?: boolean }): { mph: number; note: string } {
+  const base = v.speedMph ?? 1;
+  const name = v.name.toLowerCase();
+  const oared = /keelboat|rowboat|galley|longship/.test(name);
+  const magic = /airship/.test(name);
+  if (!magic && s.weather.wind === 'none' && !oared) return { mph: 0, note: 'Dead calm: a ship that relies on sails can’t move and must be rowed or towed' };
+  let mph = base;
+  const notes: string[] = [];
+  if (!magic && s.weather.wind === 'none') notes.push('dead calm, so the crew rows');
+  if (o.againstWind && s.weather.wind === 'strong' && !magic) {
+    mph /= 2;
+    notes.push('half speed into a strong wind');
+  }
+  if (o.downstream && /keelboat|rowboat/.test(name)) {
+    mph += 3;
+    notes.push('+3 mph with the current');
+  }
+  return { mph: Math.round(mph * 10) / 10, note: notes.join('; ') };
 }
 
 /** The navigation DC right now, or null when following a road, river or coast. */
@@ -929,8 +986,13 @@ export const travel = act((d, ctx, o: TravelOpts) => travelMut(d, ctx, o));
 function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
   const vessel = o.vesselId ? d.stashes.find((x) => x.id === o.vesselId && x.speedMph) : undefined;
   if (vessel) return sail(d, ctx, vessel, o);
-  const allowed = clampPace(o.pace, d.place.terrain, d.place.goodRoad);
-  if (allowed !== o.pace) {
+  if (o.flying && o.difficult) o = { ...o, difficult: false };
+  const slow = slowTravelers(d);
+  const allowed = slow.length ? 'slow' : o.flying ? o.pace : clampPace(o.pace, d.place.terrain, d.place.goodRoad);
+  if (slow.length && o.pace !== 'slow') {
+    log(d, `${slow.join(', ')} ${slow.length > 1 ? 'are' : 'is'} down to half Speed or less (load or Exhaustion), so the party must travel at a Slow pace.`, 'warn');
+    o = { ...o, pace: 'slow' };
+  } else if (allowed !== o.pace) {
     log(d, `${TERRAIN[d.place.terrain].label} terrain${d.place.goodRoad ? ', even with a good road,' : ''} only allows a ${allowed} pace.`, 'warn');
     o = { ...o, pace: allowed };
   }
@@ -1001,8 +1063,12 @@ function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
 
 /** Travel aboard a vessel: its own speed, no travel pace, and no forced march (the crew works in shifts). */
 function sail(d: State, ctx: Ctx, v: Stash, o: TravelOpts): number {
-  const mph = v.speedMph ?? 1;
-  log(d, `Aboard the ${v.name}, the party travels for ${o.hours} hour(s) at ${mph} mph.`);
+  const { mph, note } = vesselSpeed(d, v, o);
+  if (mph <= 0) {
+    log(d, `The ${v.name} goes nowhere: ${note}.`, 'warn');
+    return 0;
+  }
+  log(d, `Aboard the ${v.name}, the party travels for ${o.hours} hour(s) at ${mph} mph${note ? ` (${note})` : ''}.`);
   advanceMut(d, ctx, o.hours * 60, 'camp');
   const miles = Math.round(mph * o.hours * 10) / 10;
   d.travel.milesToday += miles;
@@ -1032,7 +1098,7 @@ export const runStage = act((d, ctx, stageId: string, o: Omit<TravelOpts, 'hours
     const st = stage()!;
     const vessel = o.vesselId ? d.stashes.find((x) => x.id === o.vesselId && x.speedMph) : undefined;
     const pace = clampPace(o.pace, st.terrain, st.goodRoad);
-    const mph = vessel?.speedMph ?? PACES[pace].mph * (st.difficult ? 0.5 : 1);
+    const mph = vessel ? Math.max(0.1, vesselSpeed(d, vessel, o).mph) : PACES[pace].mph * (st.difficult ? 0.5 : 1);
     const hours = Math.max(1, Math.min(vessel ? 24 : 8, Math.ceil((st.miles - st.milesDone) / mph)));
     const covered = travelMut(d, ctx, { ...o, pace, hours, difficult: st.difficult });
     st.milesDone = Math.min(st.miles, Math.round((st.milesDone + covered) * 10) / 10);
@@ -1524,6 +1590,169 @@ export const downtimeDay = act((d, ctx, projectIds: string[]) => {
   Object.assign(d, rested);
 });
 
+// ---------------------------------------------------------------- potions and poison
+
+/** 2024 DMG Potion Miscibility: roll when two potions are mixed (again for each extra potion). */
+export const mixPotions = act((d, ctx, what: string) => {
+  const roll = die(100, ctx.rng);
+  const r = POTION_MISCIBILITY.find((x) => roll <= x.upTo)!;
+  log(d, `Mixing ${what || 'potions'}: d100 = ${roll}. ${r.text}`, roll <= 25 ? 'bad' : roll >= 91 ? 'good' : 'info');
+});
+
+/** 2024 DMG: harvest one dose from a dead or Incapacitated venomous creature. 1d6 minutes, DC 20 Int (Nature) with a Poisoner's Kit. */
+export const harvestPoison = act((d, ctx, charId: string, bonus: number, creature: string) => {
+  const c = charById(d, charId);
+  if (!c || !alive(c)) return;
+  const mins = die(6, ctx.rng);
+  advanceMut(d, ctx, mins, 'camp');
+  const r = d20('normal', ctx.rng);
+  const total = r.value + bonus - 2 * c.exhaustion;
+  const name = creature || 'the creature';
+  const me = charById(d, charId)!;
+  if (total >= POISON_HARVEST_DC) {
+    me.inventory.push({ id: uid(), name: `Poison dose (${name})`, qty: 1, weight: 0, source: 'manual', valueGp: 0, container: null, ammo: null });
+    log(d, `${me.name} works over ${name} for ${mins} min with a Poisoner's Kit: Int (Nature) ${r.value} ${signed(bonus - 2 * c.exhaustion)} = ${total} vs DC ${POISON_HARVEST_DC}. One dose harvested; nothing more can be taken from it.`, 'good');
+  } else if (total <= POISON_HARVEST_DC - 5) {
+    log(d, `${me.name} botches the harvest from ${name} (${total} vs DC ${POISON_HARVEST_DC}, failed by 5 or more) and is exposed to its poison. Apply the creature's poison effect.`, 'bad');
+  } else {
+    log(d, `${me.name} spends ${mins} min on ${name} but can't extract any poison (${total} vs DC ${POISON_HARVEST_DC}).`, 'warn');
+  }
+});
+
+// ---------------------------------------------------------------- contagions
+
+const contagionMode = (s: State, c: Character): RollMode => (c.recuperatedUntil && c.recuperatedUntil > absNow(s) ? 'advantage' : 'normal');
+
+function sewerWeakened(c: Character): boolean {
+  return c.exhaustion > 0 && (c.contagions ?? []).some((x) => x.kind === 'sewer' && x.onset);
+}
+
+/** Removes a contagion and the Exhaustion it caused (Cackle Fever's fever lasts until the contagion ends). */
+function endContagion(s: State, c: Character, id: string, why: string): void {
+  const x = c.contagions.find((k) => k.id === id);
+  if (!x) return;
+  c.contagions = c.contagions.filter((k) => k.id !== id);
+  if (x.kind === 'cackle') {
+    const causes = causesOf(c);
+    const i = causes.lastIndexOf('contagion');
+    if (i >= 0) {
+      causes.splice(i, 1);
+      c.exhaustionCauses = causes;
+      c.exhaustion = causes.length;
+    }
+  }
+  status(s, c, 'contagionEnds', `${c.name} is free of ${CONTAGIONS[x.kind].name} (${why}).${x.kind === 'cackle' ? ' Immune to it for a year.' : ''}`, 'good');
+}
+
+/** Exposure to a contagion: optionally roll the save to resist, otherwise infect. */
+export const exposeContagion = act((d, ctx, charId: string, kind: ContagionKind, rollToResist: boolean) => {
+  const c = charById(d, charId);
+  if (!c || !alive(c)) return;
+  const info = CONTAGIONS[kind];
+  if (c.contagions.some((x) => x.kind === kind)) {
+    log(d, `${c.name} already has ${info.name}.`);
+    return;
+  }
+  if (rollToResist) {
+    const r = rollSave(c, info.catchDC, contagionMode(d, c), ctx.rng);
+    log(d, `${c.name} resists ${info.name}: DC ${info.catchDC} Con save. ${r.detail}${r.passed ? 'Resisted.' : 'Infected.'}`, r.passed ? 'good' : 'bad');
+    if (r.passed) return;
+  }
+  const now = absNow(d);
+  const onsetAt = info.incubates ? now + die(4, ctx.rng) * MIN_PER_DAY : now;
+  c.contagions.push({ id: uid(), kind, infectedAt: now, onsetAt, onset: false, successes: 0 });
+  if (info.incubates) log(d, `${c.name} carries ${info.name}. Symptoms start in ${formatDuration(onsetAt - now)} (1d4 days); the player doesn't know yet.`, 'warn');
+  tickContagions(d);
+});
+
+/** Starts symptoms when incubation ends, and counts Sight Rot ointment time. */
+function tickContagions(s: State): void {
+  const now = absNow(s);
+  for (const c of s.characters) {
+    for (const x of c.contagions ?? []) {
+      if (!x.onset && now >= x.onsetAt) {
+        x.onset = true;
+        if (x.kind === 'sightRot') status(s, c, 'blinded', `${c.name} has Sight Rot and is Blinded until it ends.`, 'bad');
+        else gainExhaustion(s, c, 1, CONTAGIONS[x.kind].name, 'contagion');
+      }
+      if (x.kind === 'sightRot' && x.suppressedUntil && now >= x.suppressedUntil) {
+        // A dose has run its full 24 hours.
+        x.suppressedUntil = undefined;
+        x.suppressedHours = (x.suppressedHours ?? 0) + 24;
+        if (x.suppressedHours >= SIGHT_ROT_CURE_HOURS) endContagion(s, c, x.id, '72 hours of ointment');
+        else status(s, c, 'blinded', `The ointment wears off and ${c.name}'s Sight Rot returns: Blinded (${x.suppressedHours}/72 hours treated).`, 'warn');
+      }
+    }
+  }
+}
+
+/** Sewer Plague: a save at dawn each day, worsening or easing by one Exhaustion level. */
+function contagionsAtDawn(s: State, ctx: Ctx): void {
+  for (const c of s.characters) {
+    if (!alive(c)) continue;
+    for (const x of [...(c.contagions ?? [])]) {
+      if (x.kind !== 'sewer' || !x.onset) continue;
+      const r = rollSave(c, CONTAGIONS.sewer.fightDC, contagionMode(s, c), ctx.rng);
+      if (!r.passed) {
+        log(s, `${c.name} fights Sewer Plague at dawn: DC 11 Con save. ${r.detail}Failed.`, 'bad');
+        gainExhaustion(s, c, 1, 'Sewer Plague worsens', 'contagion');
+        continue;
+      }
+      log(s, `${c.name} fights Sewer Plague at dawn: DC 11 Con save. ${r.detail}Success.`, 'good');
+      const causes = causesOf(c);
+      const i = causes.lastIndexOf('contagion');
+      causes.splice(i >= 0 ? i : causes.length - 1, 1);
+      c.exhaustionCauses = causes;
+      c.exhaustion = causes.length;
+      if (c.exhaustion === 0) endContagion(s, c, x.id, 'Exhaustion back to 0');
+      else status(s, c, 'contagionEases', `${c.name}'s Sewer Plague eases: Exhaustion level ${c.exhaustion}.`, 'good');
+    }
+  }
+}
+
+/** Cackle Fever: a save at the end of each Long Rest; three successes end it. */
+function cackleSaveAfterRest(s: State, ctx: Ctx, c: Character): void {
+  for (const x of [...(c.contagions ?? [])]) {
+    if (x.kind !== 'cackle' || !x.onset) continue;
+    const r = rollSave(c, CONTAGIONS.cackle.fightDC, contagionMode(s, c), ctx.rng);
+    if (r.passed) x.successes += 1;
+    log(s, `${c.name} fights Cackle Fever: DC 13 Con save. ${r.detail}${r.passed ? `Success (${x.successes}/3).` : 'Failed.'}`, r.passed ? 'good' : 'warn');
+    if (x.successes >= 3) endContagion(s, c, x.id, 'three successful saves');
+  }
+}
+
+/** Herbalism Kit ointment (1 hour to make): suppresses Sight Rot for 24 hours. */
+export const applySightRotOintment = act((d, ctx, charId: string, makerId: string) => {
+  const c = charById(d, charId);
+  const maker = charById(d, makerId);
+  const x = c?.contagions.find((k) => k.kind === 'sightRot');
+  if (!c || !x || !maker) return;
+  advanceMut(d, ctx, 60, 'camp');
+  const nx = charById(d, charId)!.contagions.find((k) => k.id === x.id);
+  if (!nx) return;
+  const now = absNow(d);
+  // Reapplying early: credit the hours the last dose has already covered.
+  if (nx.suppressedUntil) nx.suppressedHours = (nx.suppressedHours ?? 0) + Math.floor((now - (nx.suppressedUntil - 24 * 60)) / 60);
+  nx.suppressedUntil = now + 24 * 60;
+  log(d, `${maker.name} spends an hour with an Herbalism Kit and applies the ointment to ${c.name}'s eyes. Sight returns for 24 hours (${nx.suppressedHours ?? 0}/72 hours treated so far).`, 'good');
+});
+
+/** Magic or the DM ends a contagion (Heal or Lesser Restoration for Sight Rot). */
+export const cureContagion = act((d, _ctx, charId: string, contagionId: string, how: string) => {
+  const c = charById(d, charId);
+  if (c) endContagion(d, c, contagionId, how);
+});
+
+/** DMG: 3 days of recuperation, then a DC 15 Con save for Advantage on contagion saves for 24 hours. */
+export const recuperate = act((d, ctx, charId: string) => {
+  for (let i = 0; i < RECUPERATE_DAYS; i++) Object.assign(d, downtimeDay(d, ctx, []));
+  const c = charById(d, charId);
+  if (!c || !alive(c)) return;
+  const r = rollSave(c, RECUPERATE_DC, 'normal', ctx.rng);
+  log(d, `${c.name} spends ${RECUPERATE_DAYS} days recuperating, then makes a DC ${RECUPERATE_DC} Con save. ${r.detail}${r.passed ? 'Advantage on saves against contagions for the next 24 hours.' : 'No benefit this time.'}`, r.passed ? 'good' : 'warn');
+  if (r.passed) c.recuperatedUntil = absNow(d) + 24 * 60;
+});
+
 // ---------------------------------------------------------------- businesses
 
 export const addBusiness = act((d, _ctx, name: string, ownerId: string, gpPerDay: number, build?: { what: string; costGp: number; days: number; landGp: number }) => {
@@ -1839,7 +2068,7 @@ export const enlargeFacility = act((d, _ctx, bastionId: string, facilityId: stri
 /** Resolves one Bastion turn: logs each order, and rolls a Bastion event if every special facility was told to Maintain. */
 export const resolveBastionTurn = act((d, ctx, bastionId: string) => {
   const b = d.bastions.find((x) => x.id === bastionId);
-  if (!b || turnsDue(d, b) < 1) return;
+  if (!b || b.abandoned || turnsDue(d, b) < 1) return;
   b.lastTurnDay += BASTION_TURN_DAYS;
   b.turns += 1;
   const working = b.facilities.filter((f) => f.kind === 'special' && f.built);
@@ -1849,7 +2078,18 @@ export const resolveBastionTurn = act((d, ctx, bastionId: string) => {
   if (away && !b.ordersArrived && !b.maintain) log(d, `No new orders reached ${b.name} before this turn, so its hirelings Maintain.`, 'warn');
   const orders = maintain ? ['Maintain (the whole Bastion)'] : working.map((f) => `${f.name}: ${f.order}${f.orderNote ? ` (${f.orderNote})` : ''}`);
   log(d, `${b.name}, Bastion turn ${b.turns}. Orders: ${orders.join('; ') || 'none'}.`);
+  // Neglect: an owner who is dead, or away with no orders arriving, issues no orders this turn.
+  const owner = charById(d, b.ownerId);
+  const noOrders = !owner || !alive(owner) || (away && !b.ordersArrived);
+  b.neglectedTurns = noOrders ? (b.neglectedTurns ?? 0) + 1 : 0;
   b.ordersArrived = false;
+  const limit = neglectLimit(owner?.level ?? 1);
+  if (noOrders && b.neglectedTurns >= limit) {
+    b.abandoned = true;
+    log(d, `${b.name} has had no orders for ${b.neglectedTurns} turns in a row (the owner's level is ${owner?.level ?? '?'}). The hirelings abandon it, and the site will be looted. A new Bastion can be founded later, perhaps amid the ruins (2024 DMG).`, 'bad');
+    return;
+  }
+  if (noOrders && b.neglectedTurns >= limit - 1) log(d, `${b.name}: ${b.neglectedTurns} turn(s) without orders. One more and the hirelings walk away.`, 'warn');
   if (maintain || !working.length) {
     const e = rollBastionEvent(ctx.rng);
     b.lastEvent = `Turn ${b.turns}: ${e.event} (d100 = ${e.roll})`;
@@ -1957,7 +2197,9 @@ export const spendHitDie = act((d, ctx, charId: string) => {
   }
   const roll = die(c.hitDie, ctx.rng);
   const mod = abilityMod(c.conScore);
-  const healed = Math.max(1, roll + mod);
+  const weak = sewerWeakened(c);
+  const healed = Math.max(1, weak ? Math.floor((roll + mod) / 2) : roll + mod);
+  if (weak) log(d, `${c.name} has Sewer Plague and is Exhausted: Hit Point Dice heal only half.`, 'warn');
   const before = c.hp;
   c.hp = Math.min(c.maxHp, c.hp + healed);
   c.hitDiceSpent += 1;

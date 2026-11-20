@@ -7,6 +7,7 @@ import { HAZARDS, type HazardId } from '../rules/hazards';
 import { DANGER } from '../rules/encounters';
 import { formatClock, formatDuration } from '../rules/calendar';
 import { Card, Meter, Num, Pill, Select, Text, Toggle, Rule } from './common';
+import { CONTAGIONS, RECUPERATE_DAYS, RECUPERATE_DC, type ContagionKind } from '../rules/contagion';
 
 export function EffectsTab() {
   return (
@@ -16,6 +17,8 @@ export function EffectsTab() {
       <ExploreCard />
       <BreathCard />
       <HazardCard />
+      <ContagionCard />
+      <PotionMixCard />
     </div>
   );
 }
@@ -264,6 +267,99 @@ function HazardCard() {
           </button>
         </div>
       )}
+    </Card>
+  );
+}
+
+function ContagionCard() {
+  const s = useGame();
+  const now = E.absNow(s);
+  const people = s.characters.filter((c) => E.alive(c));
+  const [who, setWho] = useState('');
+  const [kind, setKind] = useState<ContagionKind>('sewer');
+  const [resist, setResist] = useState(true);
+  const [maker, setMaker] = useState('');
+  const whoId = people.find((c) => c.id === who)?.id ?? people[0]?.id ?? '';
+  const makerId = people.find((c) => c.id === maker)?.id ?? people[0]?.id ?? '';
+  const sick = people.filter((c) => (c.contagions ?? []).length > 0);
+  const info = CONTAGIONS[kind];
+  return (
+    <Card title="Diseases (magical contagions)">
+      {sick.length === 0 && <p className="muted small">Nobody is infected.</p>}
+      <ul className="plain">
+        {sick.flatMap((c) =>
+          c.contagions.map((x) => {
+            const ci = CONTAGIONS[x.kind];
+            return (
+              <li key={x.id} className="facility">
+                <div className="armor-row">
+                  <span>
+                    <b>{c.name}</b>: {ci.name}{' '}
+                    {!x.onset ? (
+                      <Pill tone="muted" title="Only the DM knows">Incubating · symptoms in {formatDuration(Math.max(0, x.onsetAt - now))}</Pill>
+                    ) : (
+                      <Pill tone="bad">Symptomatic</Pill>
+                    )}
+                    {x.kind === 'cackle' && <Pill tone="info">{x.successes}/3 Long Rest saves</Pill>}
+                    {x.kind === 'sightRot' && <Pill tone="info">{x.suppressedHours ?? 0}/72 h treated{x.suppressedUntil && x.suppressedUntil > now ? `, ointment ${formatDuration(x.suppressedUntil - now)} left` : ''}</Pill>}
+                    {c.recuperatedUntil && c.recuperatedUntil > now && <Pill tone="good">Advantage on saves ({formatDuration(c.recuperatedUntil - now)})</Pill>}
+                  </span>
+                </div>
+                <p className="small muted">{ci.fighting}</p>
+                <div className="btn-row tight">
+                  {x.kind === 'sightRot' && (
+                    <>
+                      <Select label="Ointment by" value={makerId} onChange={setMaker} options={people.map((p) => ({ value: p.id, label: p.name }))} />
+                      <button className="small" onClick={() => dispatch((st, cx) => E.applySightRotOintment(st, cx, c.id, makerId))}>
+                        Make and apply ointment (1 h)
+                      </button>
+                    </>
+                  )}
+                  <button className="small" onClick={() => dispatch((st, cx) => E.recuperate(st, cx, c.id))}>
+                    Recuperate {RECUPERATE_DAYS} days
+                  </button>
+                  <button className="small ghost" onClick={() => dispatch((st, cx) => E.cureContagion(st, cx, c.id, x.id, x.kind === 'sightRot' ? 'Heal or Lesser Restoration' : 'magic or the DM'))}>
+                    Cured by magic
+                  </button>
+                </div>
+              </li>
+            );
+          }),
+        )}
+      </ul>
+      <h3>Exposure</h3>
+      <div className="form-row">
+        <Select label="Who" value={whoId} onChange={setWho} options={people.map((c) => ({ value: c.id, label: c.name }))} />
+        <Select label="Contagion" value={kind} onChange={setKind} options={(Object.keys(CONTAGIONS) as ContagionKind[]).map((k) => ({ value: k, label: CONTAGIONS[k].name }))} />
+      </div>
+      <Toggle checked={resist} onChange={setResist} label={`Roll a DC ${info.catchDC} Constitution save to resist (off: infected outright, e.g. a tainted potion)`} />
+      <button className="small" disabled={!whoId} onClick={() => dispatch((st, cx) => E.exposeContagion(st, cx, whoId, kind, resist))}>
+        Expose
+      </button>
+      <p className="small muted">
+        <b>Caught from:</b> {info.source}
+      </p>
+      <p className="small muted">
+        <b>Effects:</b> {info.effects}
+      </p>
+      <Rule>
+        2024 DMG. Saves happen on their own: Sewer Plague at dawn, Cackle Fever after each Long Rest. Recuperating means {RECUPERATE_DAYS} days of nothing that would interrupt a Long Rest, then a DC {RECUPERATE_DC} Con save; success gives Advantage on saves against the contagion for 24 hours.
+      </Rule>
+    </Card>
+  );
+}
+
+function PotionMixCard() {
+  const [what, setWhat] = useState('');
+  return (
+    <Card title="Mixing potions">
+      <Text label="Which potions" value={what} onChange={setWhat} placeholder="e.g. Healing and Invisibility" />
+      <button className="small" onClick={() => dispatch((st, cx) => E.mixPotions(st, cx, what))}>
+        Roll on the Potion Miscibility table
+      </button>
+      <Rule>
+        2024 DMG: roll d100 whenever two potions are combined, whether poured together or drunk while another is still working. Roll again for each further potion. Unless the result is obvious, reveal it only when it shows. Drinking or giving a potion takes a Bonus Action, and a small taste reveals what a potion does.
+      </Rule>
     </Card>
   );
 }

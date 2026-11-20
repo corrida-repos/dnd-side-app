@@ -34,10 +34,14 @@ describe('journeys', () => {
     const g = E.travel(s, ctx(), { hours: 2, pace: 'normal', difficult: false, foragerIds: [], gallop: true });
     expect(g.travel.milesToday).toBe(9);
     expect(E.travel(g, ctx(), { hours: 1, pace: 'normal', difficult: false, foragerIds: [], gallop: true }).travel.milesToday).toBe(12);
-    const ship = E.createStash(fresh(), ctx(), 'Sea Wolf', 'vehicle', '', 200000, 2);
+    const calm = E.createStash(fresh(), ctx(), 'Sea Wolf', 'vehicle', '', 200000, 2);
+    expect(E.travel(calm, ctx(), { hours: 4, pace: 'normal', difficult: false, foragerIds: [], vesselId: calm.stashes[0].id }).travel.milesToday).toBe(0);
+    const ship = E.createStash(fresh((d) => (d.weather.wind = 'light')), ctx(), 'Sea Wolf', 'vehicle', '', 200000, 2);
     const sailed = E.travel(ship, ctx(), { hours: 24, pace: 'normal', difficult: false, foragerIds: [], vesselId: ship.stashes[0].id });
     expect(sailed.travel.milesToday).toBe(48);
     expect(sailed.characters[0].exhaustionCauses).not.toContain('march');
+    const strong = E.createStash(fresh((d) => (d.weather.wind = 'strong')), ctx(), 'Sea Wolf', 'vehicle', '', 200000, 2);
+    expect(E.travel(strong, ctx(), { hours: 2, pace: 'normal', difficult: false, foragerIds: [], vesselId: strong.stashes[0].id, againstWind: true }).travel.milesToday).toBe(2);
   });
 });
 
@@ -52,5 +56,16 @@ describe('class features on a Short Rest', () => {
     const n = E.shortRest(s, ctx());
     expect(n.characters[0].exhaustion).toBe(1);
     expect(n.characters[1].resources[0].current).toBe(3);
+  });
+
+  it('forces a Slow pace when someone is down to half Speed, and flying ignores terrain limits', () => {
+    const s = fresh((d) => {
+      d.place.terrain = 'mountain';
+      d.characters.push(newCharacter({ name: 'Tired', exhaustion: 3, exhaustionCauses: ['march', 'march', 'march'] }));
+    });
+    expect(E.slowTravelers(s)).toEqual(['Tired']);
+    expect(E.travel(s, ctx(), { hours: 1, pace: 'fast', difficult: false, foragerIds: [] }).travel.milesToday).toBe(2);
+    const fly = fresh((d) => (d.place.terrain = 'mountain'));
+    expect(E.travel(fly, ctx(), { hours: 1, pace: 'fast', difficult: true, foragerIds: [], flying: true }).travel.milesToday).toBe(4);
   });
 });

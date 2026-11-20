@@ -99,3 +99,6 @@ export function rollBastionEvent(rng: Rng): { roll: number; event: string } {
   const roll = die(100, rng);
   return { roll, event: EVENTS.find(([max]) => roll <= max)![1] };
 }
+
+/** 2024 DMG "Fall of a Bastion": with no orders for as many consecutive turns as the owner's level, the hirelings leave. */
+export const neglectLimit = (ownerLevel: number): number => Math.max(1, ownerLevel);
