@@ -89,8 +89,12 @@ function CharacterCard({ c }: { c: Character }) {
       </div>
       <div className="chips">
         <Toggle checked={c.coldWeatherGear} onChange={(v) => set({ coldWeatherGear: v })} label="Cold weather gear" />
+        <Toggle checked={c.bedroll} onChange={(v) => set({ bedroll: v })} label="Bedroll" title="Automatic success on extreme cold saves while sleeping in it" />
+        <Toggle checked={c.blanket} onChange={(v) => set({ blanket: v })} label="Blanket" title="Advantage on extreme cold saves while wrapped in it" />
         <Toggle checked={c.heavyGarb} onChange={(v) => set({ heavyGarb: v })} label="Heavy clothing" title="Disadvantage on extreme heat saves" />
       </div>
+
+      <Rule>A Bedroll means an automatic success on extreme cold saves while sleeping in it. A Blanket gives Advantage. Either one counts as warm cover on a cold night.</Rule>
 
       <h3>Armor</h3>
       <div className="form-row">

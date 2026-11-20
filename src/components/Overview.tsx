@@ -163,7 +163,16 @@ function WeatherCard() {
 
 function EffectsCard() {
   const s = useGame();
-  const effects = environmentEffects({ weather: s.weather, tempNow: E.tempNow(s), place: s.place, fire: s.fire, minutes: s.minutes });
+  const uncovered = s.characters.filter((c) => c.exhaustion < 6 && !E.hasWarmCover(c)).map((c) => c.name);
+  const effects = environmentEffects({
+    weather: s.weather,
+    tempNow: E.tempNow(s),
+    place: s.place,
+    fire: s.fire,
+    minutes: s.minutes,
+    coldNightF: s.settings.coldNights && !(s.fire.lit && s.settings.fireWarmsCamp) ? s.settings.coldNightF : null,
+    uncovered,
+  });
   return (
     <Card title="Conditions right now">
       <ul className="effects">
@@ -257,6 +266,7 @@ function PartyStatusCard() {
                     {c.dehydrated && <Pill tone="bad">Dehydrated</Pill>}
                     {c.sick ? <Pill tone="bad" title="Poisoned until they finish a Long Rest">Sick (Poisoned)</Pill> : c.poisonedUntil != null && <Pill tone="bad">Poisoned</Pill>}
                     {c.armorKind !== 'none' && !c.armorWorn && <Pill tone="warn">Armor off</Pill>}
+                    {s.settings.coldNights && s.weather.low <= s.settings.coldNightF && !E.hasWarmCover(c) && <Pill tone="warn" title="No Bedroll, Blanket or cold weather gear for tonight">No warm cover</Pill>}
                   </td>
                   <td>
                     {c.needsFood ? (

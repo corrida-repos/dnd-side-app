@@ -149,8 +149,8 @@ export interface Effect {
 
 const covered = (shelter: Shelter) => shelter === 'building' || shelter === 'cave';
 
-export function environmentEffects(args: { weather: Weather; tempNow: number; place: Place; fire: Fire; minutes: number }): Effect[] {
-  const { weather: w, tempNow, place, fire, minutes } = args;
+export function environmentEffects(args: { weather: Weather; tempNow: number; place: Place; fire: Fire; minutes: number; coldNightF?: number | null; uncovered?: string[] }): Effect[] {
+  const { weather: w, tempNow, place, fire, minutes, coldNightF, uncovered = [] } = args;
   const out: Effect[] = [];
   const clim = CLIMATES[w.climate];
   const indoors = covered(place.shelter);
@@ -207,7 +207,22 @@ export function environmentEffects(args: { weather: Weather; tempNow: number; pl
       tone: 'bad',
     });
   } else if (w.low <= 0) {
-    out.push({ id: 'cold-soon', title: 'Extreme cold expected', detail: `Today's low is ${w.low}°F. Plan for shelter, a fire, or cold weather gear.`, tone: 'warn' });
+    out.push({
+      id: 'cold-soon',
+      title: 'Extreme cold expected',
+      detail: `Today's low is ${w.low}°F. Plan for shelter, a fire, cold weather gear, or a Bedroll (automatic success while sleeping in it) or Blanket (Advantage).`,
+      tone: 'warn',
+    });
+  }
+  if (coldNightF != null && !clim.noWeather && w.low <= coldNightF && w.low > 0 && tempNow > 0 && !indoors) {
+    out.push({
+      id: 'cold-night',
+      title: `Cold night ahead (low ${w.low}°F)`,
+      detail:
+        `Anyone who sleeps out at ${coldNightF}°F or colder without a Bedroll, Blanket, cold weather gear, a campfire or shelter makes a DC 10 Con save when the Long Rest ends, or gains 1 Exhaustion level (table rule).` +
+        (uncovered.length ? ` No warm cover: ${uncovered.join(', ')}.` : ' Everyone has warm cover.'),
+      tone: uncovered.length ? 'warn' : 'info',
+    });
   }
 
   if (tempNow >= 100) {

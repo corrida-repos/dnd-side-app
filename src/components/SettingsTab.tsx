@@ -62,13 +62,23 @@ function DateCard() {
 
 function RulesCard() {
   const s = useGame();
-  const set = (k: Exclude<keyof typeof s.settings, 'rawFoodDC'>, v: boolean) => edit((d) => void (d.settings[k] = v));
+  const set = (k: Exclude<keyof typeof s.settings, 'rawFoodDC' | 'coldNightF'>, v: boolean) => edit((d) => void (d.settings[k] = v));
   return (
     <Card title="Rules options">
       <div className="stack tight">
         <Toggle checked={s.settings.autoRollSaves} onChange={(v) => set('autoRollSaves', v)} label="Roll saving throws for me" />
         <Rule>When this is off, saves wait on the Overview so players can roll their own dice.</Rule>
         <Toggle checked={s.settings.fireWarmsCamp} onChange={(v) => set('fireWarmsCamp', v)} label="A lit campfire protects the camp from extreme cold (table rule)" />
+        <Toggle checked={s.settings.coldNights} onChange={(v) => set('coldNights', v)} label="Cold nights: sleeping out without warm cover risks Exhaustion (table rule)" />
+        {s.settings.coldNights && (
+          <div className="form-row">
+            <Num label="Cold night at or below" value={s.settings.coldNightF} onChange={(v) => edit((d) => void (d.settings.coldNightF = Math.round(v)))} min={-20} max={60} suffix="°F" width={3} />
+          </div>
+        )}
+        <Rule>
+          If the temperature drops to this point during a Long Rest, anyone sleeping in the open without a Bedroll, Blanket, cold weather gear, a lit campfire (when that rule is on) or a building or cave makes a DC 10 Con save when they
+          wake, or gains 1 Exhaustion level. At 0 °F or below, the normal hourly extreme cold saves apply instead.
+        </Rule>
         <Toggle checked={s.settings.climateAdjustedPrecip} onChange={(v) => set('climateAdjustedPrecip', v)} label="Adjust the precipitation roll for climate (deserts drier, jungles wetter)" />
         <Rule>When this is off, the plain DMG d20 table is used everywhere.</Rule>
         <Toggle checked={s.settings.doubleWaterInHeat} onChange={(v) => set('doubleWaterInHeat', v)} label="Double water needs on days of 100 °F or hotter (2014 rule)" />

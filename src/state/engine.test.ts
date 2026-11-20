@@ -475,3 +475,66 @@ describe('long rest countdown', () => {
     expect(later.log.some((l) => l.text.startsWith('A Long Rest is possible again'))).toBe(false);
   });
 });
+
+describe('cold nights, bedrolls and blankets', () => {
+  // These sleepers don't eat or drink, so crossing midnight doesn't add dehydration Exhaustion.
+  const nc = (p: Parameters<typeof newCharacter>[0]) => newCharacter({ needsFood: false, needsWater: false, ...p });
+  const night = (d: State) => {
+    calm(d, 40, 20);
+    d.minutes = 22 * 60;
+    d.place.shelter = 'none';
+    d.fire.lit = false;
+  };
+
+  it('makes sleepers without warm cover save when they wake from a cold night', () => {
+    const s = fresh((d) => {
+      night(d);
+      d.characters = [nc({ name: 'Bare', bedroll: false, blanket: false }), nc({ name: 'Snug', bedroll: true }), nc({ name: 'Wrapped', bedroll: false, blanket: true })];
+    });
+    const n = E.longRest(s, LOW, false);
+    expect(n.characters.map((c) => c.exhaustion)).toEqual([1, 0, 0]);
+    expect(n.characters.every((c) => c.nightChill === null)).toBe(true);
+    expect(E.longRest(s, HIGH, false).characters[0].exhaustion).toBe(0);
+  });
+
+  it('leaves warm nights, fires, shelter and the switch alone', () => {
+    const bare = () => [nc({ name: 'Bare', bedroll: false })];
+    const mild = fresh((d) => {
+      night(d);
+      calm(d, 70, 50);
+      d.characters = bare();
+    });
+    expect(E.longRest(mild, LOW, false).characters[0].exhaustion).toBe(0);
+    const fire = fresh((d) => {
+      night(d);
+      d.characters = bare();
+      d.fire = { lit: true, fuelHours: 12, sheltered: true };
+    });
+    expect(E.longRest(fire, LOW, false).characters[0].exhaustion).toBe(0);
+    const off = fresh((d) => {
+      night(d);
+      d.characters = bare();
+      d.settings.coldNights = false;
+    });
+    expect(E.longRest(off, LOW, false).characters[0].exhaustion).toBe(0);
+  });
+
+  it('a Bedroll means automatic success against extreme cold while resting, and a Blanket gives Advantage', () => {
+    const s = fresh((d) => {
+      night(d);
+      calm(d, -10, -20);
+      d.settings.autoRollSaves = false;
+      d.characters = [nc({ name: 'Snug', bedroll: true }), nc({ name: 'Wrapped', bedroll: false, blanket: true })];
+    });
+    const n = E.longRest(s, ctx(), false);
+    // 23:00 and 24:00 are below 0 °F; the next day's weather is rolled fresh.
+    const snug = n.pending.filter((p) => p.charId === n.characters[0].id && p.kind === 'cold');
+    const wrapped = n.pending.filter((p) => p.charId === n.characters[1].id && p.kind === 'cold');
+    expect(snug).toHaveLength(0);
+    expect(wrapped.length).toBe(2);
+    expect(wrapped.every((p) => p.mode === 'advantage')).toBe(true);
+    // Out of bed, the Bedroll doesn't help
+    const awake = E.advance(s, ctx(), 60, 'camp');
+    expect(awake.pending.some((p) => p.charId === s.characters[0].id)).toBe(true);
+  });
+});

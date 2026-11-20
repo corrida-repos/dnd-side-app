@@ -92,12 +92,17 @@ export function exposure(s: State, activity: Activity): Exposure {
   return { cold: true, heat: true, reason: activity === 'travel' ? 'On the road' : s.place.shelter === 'tent' ? 'In a tent (still exposed to temperature)' : 'In the open' };
 }
 
-export function coldProtection(c: Character): string | null {
+/** Anything that means an automatic success against extreme cold. A Bedroll only counts while resting in it. */
+export function coldProtection(c: Character, activity: Activity = 'camp'): string | null {
   if (c.coldResist === 'immunity') return 'Cold Immunity';
   if (c.coldResist === 'resistance') return 'Cold Resistance';
   if (c.coldWeatherGear) return 'Cold weather gear';
+  if (c.bedroll && activity === 'rest') return 'Bedroll';
   return null;
 }
+
+/** Warm cover for a cold night: automatic protection, or a Blanket. */
+export const hasWarmCover = (c: Character): boolean => !!coldProtection(c, 'rest') || c.blanket;
 
 export function hasDrinkableWater(s: State, c: Character, activity: Activity): boolean {
   return c.waterPints > 0 || s.place.waterSource || (activity !== 'travel' && s.stores.waterGal + s.stores.waterUnsafeGal > 0);
@@ -189,8 +194,11 @@ function tickHour(s: State, ctx: Ctx, activity: Activity): void {
   const exp = exposure(s, activity);
   for (const c of s.characters) {
     if (!alive(c)) continue;
-    if (exp.cold && temp <= 0 && !coldProtection(c)) {
-      requestSave(s, ctx, c, 'cold', 10, 'normal', `extreme cold (${temp}°F)`);
+    if (exp.cold && temp <= 0 && !coldProtection(c, activity)) {
+      const wrapped = c.blanket && activity === 'rest';
+      requestSave(s, ctx, c, 'cold', 10, wrapped ? 'advantage' : 'normal', `extreme cold (${temp}°F)${wrapped ? ', wrapped in a Blanket' : ''}`);
+    } else if (activity === 'rest' && exp.cold && s.settings.coldNights && temp <= s.settings.coldNightF && !hasWarmCover(c)) {
+      c.nightChill = c.nightChill == null ? temp : Math.min(c.nightChill, temp);
     }
     if (exp.heat && temp >= 100) {
       if (!heatProtection(c, hasDrinkableWater(s, c, activity))) {
@@ -288,6 +296,8 @@ export const advanceTo = act((d, ctx, targetMinutes: number, activity: Activity 
  * 16 hours after the last one ended (24 hours after it started).
  */
 export const LONG_REST_COOLDOWN = 16 * 60;
+/** Table rule: Con save after a cold night spent without warm cover. */
+export const COLD_NIGHT_DC = 10;
 
 /** Minutes since the last Long Rest ended, or null if none has been tracked yet. */
 export function minutesSinceLongRest(s: State): number | null {
@@ -360,6 +370,13 @@ export const longRest = act((d, ctx, force = false) => {
     }
   }
   log(d, 'Long Rest complete: HP and all spent Hit Point Dice are restored, and morning tasks reset.', 'good');
+  // A cold night is judged on waking, after the rest's normal recovery.
+  for (const c of d.characters) {
+    if (c.nightChill != null && alive(c)) {
+      requestSave(d, ctx, c, 'chill', COLD_NIGHT_DC, 'normal', `a cold night (down to ${c.nightChill}°F) without a bedroll or blanket`);
+    }
+    c.nightChill = null;
+  }
 });
 
 // ---------------------------------------------------------------- travel

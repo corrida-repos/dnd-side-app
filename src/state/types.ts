@@ -51,6 +51,12 @@ export interface Character {
   coldResist: Resist;
   fireResist: Resist;
   coldWeatherGear: boolean;
+  /** PHB: while in a Bedroll you automatically succeed on saves against extreme cold. */
+  bedroll: boolean;
+  /** PHB: while wrapped in a Blanket you have Advantage on saves against extreme cold. */
+  blanket: boolean;
+  /** Coldest temperature felt while sleeping without warm cover during the current Long Rest. */
+  nightChill: number | null;
   /** Heavy clothing (armor is tracked separately): Disadvantage on extreme heat saves. */
   heavyGarb: boolean;
   armorKind: ArmorKind;
@@ -116,7 +122,7 @@ export interface Stores {
   waterUnsafeGal: number;
 }
 
-export type SaveKind = 'cold' | 'heat' | 'march' | 'malnutrition' | 'tainted' | 'raw';
+export type SaveKind = 'cold' | 'heat' | 'march' | 'malnutrition' | 'tainted' | 'raw' | 'chill';
 
 export interface PendingSave {
   id: string;
@@ -196,6 +202,9 @@ export interface Settings {
   /** Table rule: eating raw food calls for a Con save, or the creature is Sick (Poisoned until a Long Rest). */
   rawFoodRisk: boolean;
   rawFoodDC: number;
+  /** Table rule: sleeping out at or below coldNightF without warm cover risks Exhaustion. */
+  coldNights: boolean;
+  coldNightF: number;
 }
 
 export interface Travel {

@@ -15,6 +15,7 @@ Everything in D&D 5.5e (2024 *Player's Handbook* and *Dungeon Master's Guide*) t
 | In-game clock and calendar (Harptos, Gregorian, simple), daylight by season | Minutes → days |
 | Daily weather (DMG d20 tables), hourly temperature curve | Daily roll, hourly curve |
 | Extreme cold and heat saves, strong wind, heavy precipitation, high altitude | Every hour |
+| Cold nights: Bedroll and Blanket, sleeping out below freezing without warm cover | Each Long Rest |
 | Food and water by size, dehydration and malnutrition, 5 days without food | End of each day |
 | Exhaustion (2024: −2 per level to D20 Tests, −5 ft Speed) | Long Rest removes 1 |
 | Raw food (Con save or Sick until a Long Rest), unpurified water (Poisoned for 1 hour), purifying by spell, boiling or cooking | Per meal and drink, 1 hour, Long Rest |
