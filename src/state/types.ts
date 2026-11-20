@@ -435,6 +435,48 @@ export interface Facility {
   /** Orders written while the owner is away, not yet sent. */
   draftOrder?: Order;
   draftNote?: string;
+  /** The chosen order option and its details (2024 DMG facility options). */
+  plan?: OrderPlan;
+  draftPlan?: OrderPlan;
+  /** Work in progress from an earlier order; results arrive when it finishes. */
+  work?: FacilityWork | null;
+  /** Can't take orders for this many more Bastion turns (attack damage, lost hirelings). */
+  shutTurns?: number;
+  /** Garden: one type for a Roomy garden, two for a Vast one, each with its chosen product. */
+  gardens?: { type: string; product: string }[];
+  /** Guildhall guild, Training Area trainer, Pub beverage. */
+  guild?: string;
+  trainer?: string;
+  pubSpecial?: string;
+}
+
+export interface OrderPlan {
+  option: string;
+  text?: string;
+  gp?: number;
+  choice?: string;
+  rarity?: string;
+  people?: { charId: string; bonus: number }[];
+}
+
+export interface FacilityWork {
+  option: string;
+  label: string;
+  daysLeft: number;
+  plan: OrderPlan;
+}
+
+export type BastionDecision =
+  | { kind: 'bribe'; gp: number; facilityId: string | null }
+  | { kind: 'opportunity' }
+  | { kind: 'aid' };
+
+export interface BastionGuest {
+  id: string;
+  kind: 'renown' | 'sanctuary' | 'mercenary' | 'monster' | 'spellcaster' | 'refugees';
+  label: string;
+  /** Day index when they leave (none: until sent away). */
+  untilDay?: number;
 }
 
 export interface Business {
@@ -488,7 +530,7 @@ export interface Dispatch {
   delivered: boolean;
   /** Orders being carried: Bastion-wide Maintain, or each facility's order. */
   maintain?: boolean;
-  orders?: { facilityId: string; order: Order; note: string }[];
+  orders?: { facilityId: string; order: Order; note: string; plan?: OrderPlan }[];
   report?: string;
   hirelingId?: string;
 }
@@ -517,6 +559,22 @@ export interface Bastion {
   neglectedTurns?: number;
   /** The hirelings have abandoned it (neglect or divestiture). */
   abandoned?: boolean;
+  /** Bastion Defenders housed in Barracks (Menagerie creatures are listed separately). */
+  defenders?: number;
+  menagerie?: { name: string; size: 'Small' | 'Medium' | 'Large'; defends: boolean }[];
+  armoryStocked?: boolean;
+  lieutenants?: number;
+  army?: { guards: number; horses: number } | null;
+  guests?: BastionGuest[];
+  /** Meditation Chamber: roll the next event twice. */
+  innerPeace?: boolean;
+  /** Demiplane runes and Sanctum rites last until these day indexes. */
+  demiplaneUntilDay?: number;
+  rites?: { charId: string; untilDay: number } | null;
+  /** A choice the owner must make for the last event. */
+  decision?: BastionDecision | null;
+  /** Research findings and other reports, newest first. */
+  reports?: string[];
   notes: string;
 }
 

@@ -462,7 +462,7 @@ describe('bastions', () => {
     s = E.advance(s, ctx(), 7 * 1440);
     expect(E.turnsDue(s, s.bastions[0])).toBe(1);
     const worked = E.resolveBastionTurn(s, ctx(), id);
-    expect(worked.bastions[0]).toMatchObject({ turns: 1, lastEvent: 'Turn 1: orders carried out' });
+    expect(worked.bastions[0]).toMatchObject({ turns: 1, lastEvent: 'Turn 1: 1 order(s) under way' });
     expect(E.turnsDue(worked, worked.bastions[0])).toBe(0);
     s.bastions[0].maintain = true; // Maintain covers the whole Bastion
     expect(E.resolveBastionTurn(s, ctx(0), id).bastions[0].lastEvent).toBe('Turn 1: All Is Well (d100 = 1)');
