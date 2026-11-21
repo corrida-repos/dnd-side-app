@@ -97,6 +97,7 @@ export const MECHANICS: Mechanic[] = [
   { key: 'runningBusiness', tier: 3, area: 'Downtime', source: '2014 DMG', label: 'Running a business as a downtime activity', cost: 'Upkeep and profit rolls for every business the party owns.' },
   { key: 'regionDailyRoll', tier: 3, area: 'World', source: 'Table rule', label: 'Supernatural regions roll their table each dawn', cost: 'A daily roll and its effect while in a supernatural region.' },
   { key: 'appraiseCrafts', tier: 3, area: 'Money', source: 'Table rule', label: 'Jeweler’s Tools also value jewelry; History values art objects at DC 15', cost: 'More appraisal rolls before selling treasure.' },
+  { key: 'improvised', tier: 3, area: 'Gear', source: 'Table rule', label: 'Improvised attempts without the right tool: DC +5, twice as long', cost: 'More checks become possible without the proper kit, each slower and harder.' },
   { key: 'appraiseByEye', tier: 3, area: 'Money', source: 'Table rule', label: 'Anyone can judge a valuable’s worth by eye at DC 20', cost: 'More appraisal rolls before selling treasure.' },
 
   // ---- Tier 4: the fiddliest rules, which add work in combat or at every sale.

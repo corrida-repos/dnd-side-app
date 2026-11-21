@@ -34,6 +34,9 @@ function extras(s: Settings): Partial<Record<SwitchKey, { inline?: ReactNode; mo
     weatherDamage: {
       more: 'Outdoors: heavy rain favors Lightning and hinders Fire, and a thunderstorm also favors Thunder. Falling snow and extreme cold favor Cold and hinder Fire. Extreme heat favors Fire and hinders Cold. Clear daylight favors Radiant, night favors Necrotic, and humid swamp air favors Poison. The Underdark favors Necrotic and hinders Radiant. Favored means +1 damage per damage die, hindered means −1 per die (minimum 1).',
     },
+    improvised: {
+      more: 'Covers testing food, drink and plants without a tool, cooking without Cook’s Utensils (Wisdom (Survival), DC 15), harvesting poison without a Poisoner’s Kit (DC 25) and Sight Rot ointment without an Herbalism Kit (2 hours, DC 15). Lighting a fire without a Tinderbox and judging value by eye have their own switches and follow the same +5 step.',
+    },
     appraiseMisjudge: {
       more: 'The 2024 PHB only says Jeweler’s Tools discern a gem’s value (Intelligence, DC 15), with Advantage if the appraiser is also proficient in a skill that applies. A misjudged value is one treasure tier off (10, 50, 100, 500, 1,000 or 5,000 GP for gems; 25, 250, 750, 2,500 or 7,500 GP for art), and the party can’t tell from the log. Selling, a merchant or the DM reveals the truth, and spells always use the true value.',
     },

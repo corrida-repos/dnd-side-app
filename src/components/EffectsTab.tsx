@@ -286,6 +286,7 @@ function ContagionCard() {
   const [kind, setKind] = useState<ContagionKind>('sewer');
   const [resist, setResist] = useState(true);
   const [maker, setMaker] = useState('');
+  const [herbBonus, setHerbBonus] = useState(0);
   const whoId = people.find((c) => c.id === who)?.id ?? people[0]?.id ?? '';
   const makerId = people.find((c) => c.id === maker)?.id ?? people[0]?.id ?? '';
   const sick = people.filter((c) => (c.contagions ?? []).length > 0);
@@ -317,9 +318,27 @@ function ContagionCard() {
                   {x.kind === 'sightRot' && (
                     <>
                       <Select label="Ointment by" value={makerId} onChange={setMaker} options={people.map((p) => ({ value: p.id, label: p.name }))} />
-                      <button className="small" onClick={() => dispatch((st, cx) => E.applySightRotOintment(st, cx, c.id, makerId))}>
-                        Make and apply ointment (1 h)
-                      </button>
+                      {(() => {
+                        const kit = !!people.find((p) => p.id === makerId)?.inventory.some((i) => /herbalism kit/i.test(i.name));
+                        if (kit)
+                          return (
+                            <button className="small" onClick={() => dispatch((st, cx) => E.applySightRotOintment(st, cx, c.id, makerId))}>
+                              Make and apply ointment (1 h)
+                            </button>
+                          );
+                        if (!s.settings.improvised) return <span className="small muted">Needs an Herbalism Kit.</span>;
+                        return (
+                          <>
+                            <Num label="Int (Nature or Medicine)" value={herbBonus} onChange={(v) => setHerbBonus(Math.round(v))} width={2} />
+                            <button className="small" title="Table rule: no Herbalism Kit, so foraged herbs, twice the time and a DC 15 check" onClick={() => dispatch((st, cx) => E.applySightRotOintment(st, cx, c.id, makerId, false, herbBonus))}>
+                              Improvise ointment without a kit (2 h, DC 15)
+                            </button>
+                            <button className="small ghost" title="They have a kit that isn't listed in their inventory" onClick={() => dispatch((st, cx) => E.applySightRotOintment(st, cx, c.id, makerId))}>
+                              Has a kit (1 h)
+                            </button>
+                          </>
+                        );
+                      })()}
                     </>
                   )}
                   <button className="small" onClick={() => dispatch((st, cx) => E.recuperate(st, cx, c.id))}>
