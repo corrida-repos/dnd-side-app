@@ -99,6 +99,15 @@ function RulesCard() {
           wake, or gains 1 Exhaustion level. At 0 °F or below, the normal hourly extreme cold saves apply instead.
         </Rule>
         <Toggle checked={s.settings.trackComponents} onChange={(v) => set('trackComponents', v)} label="Costly spell components must be carried and are used up (2024 PHB)" />
+        <Toggle checked={s.settings.appraiseCrafts} onChange={(v) => set('appraiseCrafts', v)} label="Jeweler's Tools also value jewelry; History values art objects at DC 15 (table rule)" />
+        <Toggle checked={s.settings.appraiseByEye} onChange={(v) => set('appraiseByEye', v)} label="Anyone can judge a valuable's worth by eye at DC 20 (table rule)" />
+        <Toggle checked={s.settings.appraiseOneTry} onChange={(v) => set('appraiseOneTry', v)} label="One appraisal try per person until a rest (table rule)" />
+        <Toggle checked={s.settings.appraiseTime} onChange={(v) => set('appraiseTime', v)} label="A careful appraisal takes 10 minutes (table rule)" />
+        <Toggle checked={s.settings.appraiseMisjudge} onChange={(v) => set('appraiseMisjudge', v)} label="Secret appraisal rolls; failing by 5 or more gives a wrong value (optional table rule)" />
+        <Rule>
+          The 2024 PHB only says Jeweler&apos;s Tools discern a gem&apos;s value (Intelligence, DC 15), with Advantage if the appraiser is also proficient in a skill that applies. These switches cover everything else. A misjudged value is one
+          treasure tier off (10, 50, 100, 500, 1,000 or 5,000 GP for gems; 25, 250, 750, 2,500 or 7,500 GP for art), and the party can&apos;t tell from the log. Selling, a merchant or the DM reveals the truth, and spells always use the true value.
+        </Rule>
         <Toggle checked={s.settings.downtimeOutcomes} onChange={(v) => set('downtimeOutcomes', v)} label="Downtime activities roll their outcomes (optional Xanathar's rules)" />
         <Toggle checked={s.settings.lifestyleRisks} onChange={(v) => set('lifestyleRisks', v)} label="Lifestyle risks in town: theft, disease and attention once a week (table rule)" />
         <Toggle checked={(s.settings.facilityBooks ?? []).includes('FRHoF')} onChange={(v) => edit((d) => void (d.settings.facilityBooks = [...(d.settings.facilityBooks ?? []).filter((x) => x !== 'FRHoF'), ...(v ? (['FRHoF'] as const) : [])]))} label="Bastion facilities from Forgotten Realms: Heroes of Faerûn" />

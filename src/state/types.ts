@@ -117,6 +117,10 @@ export interface InventoryItem {
   valueGp?: number;
   /** The party doesn't know its value yet; valueGp, if set, is the DM's secret true value. Appraising reveals it. */
   valueHidden?: boolean;
+  /** A misjudged appraisal: what the party wrongly believes one is worth (optional table rule). */
+  valueBelieved?: number;
+  /** Who has already tried and failed to appraise it since the last rest (optional table rule). */
+  appraiseTried?: string[];
   /** The inventory item this is packed inside, if any. */
   containerId?: string | null;
   /** Set when this item is itself a container. */
@@ -742,6 +746,16 @@ export interface Settings {
   downtimeOutcomes: boolean;
   /** Costly Material components must be in the caster's inventory and are used up (2024 PHB). */
   trackComponents: boolean;
+  /** Table rule: Jeweler's Tools also cover jewelry and precious metals; Intelligence (History) values art objects at DC 15. */
+  appraiseCrafts: boolean;
+  /** Table rule: anyone can try to judge a valuable's worth by eye, Intelligence (Investigation or History) at DC 20. */
+  appraiseByEye: boolean;
+  /** Table rule: someone who fails to appraise an item can't try it again until after a rest. */
+  appraiseOneTry: boolean;
+  /** Table rule: a careful appraisal takes 10 minutes. */
+  appraiseTime: boolean;
+  /** Optional table rule: failing an appraisal by 5 or more gives a confident wrong value, and appraisal rolls are secret. */
+  appraiseMisjudge: boolean;
   /** Optional 2014 DMG rule: running a business as a downtime activity. */
   runningBusiness: boolean;
   /** Roll random encounter checks automatically by the location's danger while travelling, camping, resting and exploring. */

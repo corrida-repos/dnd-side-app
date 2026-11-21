@@ -13,7 +13,8 @@ import { CONTAGIONS, RECUPERATE_DAYS, RECUPERATE_DC, SIGHT_ROT_CURE_HOURS, type 
 import { neglectLimit } from '../rules/bastion';
 import { magicItemCrafting, nonmagicalCrafting, SCROLL_CRAFTING, type Rarity } from '../rules/crafting';
 import { ALL_IS_WELL, BARRACK_ROOM, BASTION_CHARMS, CONSTRUCTS, CREATURE_ROOM, GROVE_ROOM, GROVE_UNITS, MUSEUM_ORIGINS, NECROPOLIS_ROOM, EVENT_PREFERENCE, FACILITY_OPTIONS, GARDEN_PRODUCTS, GUILDS, MENAGERIE_CREATURES, MENAGERIE_ROOM, SHIPS, TRAINERS, TREASURE_TABLE, facilityHirelings, stableMarkup, storehouseLimit, storehouseMarkup, type GardenType } from '../rules/bastionOrders';
-import { APPRAISE_DC, GEM, knownValue, priceOf, saleRate, sameStack, valueUnknown } from '../rules/shop';
+import { knownValue, misjudged, priceOf, saleRate, sameStack, valueSecret, valueUnknown } from '../rules/shop';
+import { APPRAISE_MINUTES, JEWELER_TOOLS, appraiseCheck, misjudgedValue, valuableKind, type AppraiseMethod } from '../rules/appraise';
 import { groundDifficulty, meltInches, mudAfter, snowfallInches } from '../rules/ground';
 import { activityOf, COMPLICATIONS, resolveActivity, type ActivityOpts, type Complication } from '../rules/downtimeOutcomes';
 import { GROUP_ASSISTANCE, PATRONS, type PatronKind } from '../rules/patrons';
@@ -758,6 +759,7 @@ export const longRest = act((d, ctx, force = false) => {
     return;
   }
   log(d, 'The party settles in for a Long Rest (8 hours: at least 6 asleep, no more than 2 of light activity).');
+  clearAppraiseTries(d);
   const watched = standWatches(d, ctx);
   d.restStart = absNow(d);
   advanceMut(d, ctx, 8 * 60, 'rest');
@@ -957,6 +959,7 @@ export const interruptedRest = act((d, ctx, o: InterruptOpts) => {
 /** Short Rest benefits: resources, rest focus (attuning, identifying), Chef. Requires at least 1 HP. */
 function finishShortRest(d: State, ctx: Ctx): void {
   d.travel.gallopUsed = false;
+  clearAppraiseTries(d);
   for (const c of d.characters) {
     if (!alive(c)) continue;
     if (c.hp <= 0) {
@@ -2396,7 +2399,11 @@ export const sellItem = act((d, _ctx, charId: string, itemId: string, qty: numbe
   const n = Math.max(1, Math.min(it.qty, Math.round(qty)));
   const unit = it.valueGp ?? priceOf(it.name);
   if (unit == null) return void log(d, `Nobody will name a price for the ${it.name} until its value is known. Set a value on the item first.`, 'warn');
-  const named = valueUnknown(it) ? ` The buyer looks it over and values it at ${fmtGp(unit)} each.` : '';
+  const named = valueUnknown(it)
+    ? ` The buyer looks it over and values it at ${fmtGp(unit)} each.`
+    : misjudged(it) && it.valueBelieved !== unit
+      ? ` The buyer values it at ${fmtGp(unit)} each, not the ${fmtGp(it.valueBelieved!)} the party thought.`
+      : '';
   const bonus = d.patron && saleRate(it.name) < 1 ? (PATRONS[d.patron.kind].saleBonus ?? 0) : 0;
   const rate = saleRate(it.name) * (1 + bonus);
   const gp = Math.round(unit * n * rate * 100) / 100;
@@ -2443,13 +2450,16 @@ function useComponent(s: State, c: Character, spell: string): boolean {
       log(s, `${c.name} uses the Reliquary talisman in place of ${comp.what}. It must go back to the Reliquary to recharge.`, 'good');
       return true;
     }
-    const blank = c.inventory.find((i) => i.name.toLowerCase().includes(comp.match) && i.valueGp == null);
+    const matches = c.inventory.filter((i) => i.name.toLowerCase().includes(comp.match));
+    const blank = matches.find((i) => i.valueGp == null);
     log(s, blank
       ? `${c.name} needs ${comp.what} to cast ${spell}. Nobody knows what the ${blank.name} is worth yet: appraise it or set its value.`
-      : `${c.name} needs ${comp.what} to cast ${spell} and doesn't carry it. Add it to the inventory with its value (e.g. "Diamond (300 GP)").`, 'warn');
+      : matches.length
+        ? `${c.name} reaches for the ${matches[0].name} to cast ${spell}, but the magic doesn't take: it isn't worth enough (needs ${comp.what}).`
+        : `${c.name} needs ${comp.what} to cast ${spell} and doesn't carry it. Add it to the inventory with its value (e.g. "Diamond (300 GP)").`, 'warn');
     return false;
   }
-  const guessed = componentUnknown(c, comp);
+  const guessed = c.inventory.filter((i) => i.name.toLowerCase().includes(comp.match) && valueSecret(i));
   if (!comp.consumed) return true;
   let left = comp.gp;
   for (const it of c.inventory.filter((i) => i.name.toLowerCase().includes(comp.match)).sort((a, b) => (a.valueGp ?? 0) - (b.valueGp ?? 0))) {
@@ -4939,40 +4949,78 @@ export const holderValue = (items: InventoryItem[], purse: Purse): number => Mat
 
 // ---------------------------------------------------------------- appraisal
 
-export type AppraiseMethod = 'tools' | 'merchant' | 'dm';
+export type { AppraiseMethod } from '../rules/appraise';
+
+/** Someone who can appraise: a character, or an active appraiser hireling (who brings their own tools and bonus). */
+function appraiserOf(d: State, id: string): { id: string; name: string; tools: boolean; bonus: number | null; exhaustion: number } | undefined {
+  if (id.startsWith('h:')) {
+    const h = d.hirelings.find((x) => `h:${x.id}` === id && x.active);
+    return h ? { id, name: `${h.name} (hireling)`, tools: h.role === 'appraiser', bonus: h.bonus, exhaustion: 0 } : undefined;
+  }
+  const c = charById(d, id);
+  return c ? { id, name: c.name, tools: c.inventory.some((i) => JEWELER_TOOLS.test(i.name)), bonus: null, exhaustion: c.exhaustion ?? 0 } : undefined;
+}
+
+/** A rest gives everyone a fresh try at appraising (optional one-try rule). */
+function clearAppraiseTries(d: State): void {
+  for (const c of d.characters) for (const i of c.inventory) delete i.appraiseTried;
+}
 
 /**
- * Learning what an item of unknown value is worth. Jeweler's Tools discern a gem's value
- * (Intelligence check, DC 15, 2024 PHB); a merchant in a settlement values anything (table rule);
- * or the DM simply says. `trueGp` records the DM's value first if none was set.
+ * Learning what an item of unknown value is worth (or re-checking a value the party may have misjudged).
+ * - tools: Jeweler's Tools discern a gem's value, Intelligence DC 15 (2024 PHB); jewelry too under the crafts table rule.
+ * - eye: art by Intelligence (History) at DC 15 (crafts table rule), anything else by eye at DC 20 (table rule).
+ * - merchant: a merchant in a settlement names a price (table rule). dm: the DM simply says.
+ * Advantage when proficient in both a skill and a tool that apply (2024 PHB). `trueGp` records the DM's value if none was set.
  */
-export const appraiseItem = act((d, ctx, ownerId: string, itemId: string, method: AppraiseMethod, appraiserId: string | null, bonus: number, trueGp?: number) => {
+export const appraiseItem = act((d, ctx, ownerId: string, itemId: string, method: AppraiseMethod, appraiserId: string | null, bonus: number, trueGp?: number, advantage = false) => {
   const c = charById(d, ownerId);
   const it = c?.inventory.find((i) => i.id === itemId);
-  if (!c || !it || !valueUnknown(it)) return;
+  if (!c || !it || !valueSecret(it)) return;
+  const st = d.settings;
   if (trueGp != null && trueGp > 0 && it.valueGp == null) {
     it.valueGp = trueGp;
     it.valueHidden = true;
   }
+  const each = it.qty > 1 ? ' each' : '';
   const reveal = (how: string) => {
     if (it.valueGp == null) return void log(d, `${how}, but no value has been set for the ${it.name}. DM: enter what it's worth.`, 'warn');
+    const was = it.valueBelieved;
     delete it.valueHidden;
-    log(d, `${how}: the ${it.name} is worth ${fmtGp(it.valueGp)}${it.qty > 1 ? ' each' : ''}.`, 'good');
+    delete it.valueBelieved;
+    delete it.appraiseTried;
+    log(d, `${how}: the ${it.name} is worth ${fmtGp(it.valueGp)}${each}${was != null && was !== it.valueGp ? `, not the ${fmtGp(was)} the party thought` : ''}.`, 'good');
   };
   if (method === 'dm') return reveal('The DM reveals it');
   if (method === 'merchant') {
     if (!d.place.settlement) return void log(d, `There's no merchant out here to value the ${it.name}. Find a town or city.`, 'warn');
     return reveal('A merchant turns it over and names a price');
   }
-  if (!GEM.test(it.name)) return void log(d, `Jeweler's Tools discern a gem's value. For the ${it.name}, ask a merchant or the DM.`, 'warn');
-  const who = appraiserId ? charById(d, appraiserId) : undefined;
+  const who = appraiserId ? appraiserOf(d, appraiserId) : undefined;
   if (!who) return;
-  if (!who.inventory.some((i) => /jeweler'?s tools/i.test(i.name))) return void log(d, `${who.name} needs Jeweler's Tools to appraise the ${it.name}.`, 'warn');
-  const r = d20('normal', ctx.rng);
-  const total = r.value + bonus - 2 * (who.exhaustion ?? 0);
-  const roll = `Intelligence check ${r.value} ${signed(bonus)}${who.exhaustion ? ` −${2 * who.exhaustion} Exhaustion` : ''} = ${total} against DC ${APPRAISE_DC}`;
-  if (total < APPRAISE_DC) return void log(d, `${who.name} studies the ${it.name} through a loupe (${roll}) and can't tell a fine stone from a flawed one.`, 'warn');
-  reveal(`${who.name} studies the ${it.name} through a loupe (${roll}) and judges its cut and clarity`);
+  const check = appraiseCheck(it.name, method, st);
+  if (!check.ok) return void log(d, `${check.why}. For the ${it.name}, try another way, ask a merchant, or the DM.`, 'warn');
+  if (method === 'tools' && !who.tools) return void log(d, `${who.name} needs Jeweler's Tools to appraise the ${it.name}.`, 'warn');
+  if (st.appraiseOneTry && it.appraiseTried?.includes(who.id)) return void log(d, `${who.name} has already tried to value the ${it.name}. They need a rest before trying again (table rule), or someone else can try.`, 'warn');
+  if (st.appraiseTime) advanceMut(d, ctx, APPRAISE_MINUTES, 'camp');
+  const mod = who.bonus ?? bonus;
+  const mode = advantage && check.canAdvantage ? 'advantage' : 'normal';
+  const r = d20(mode, ctx.rng);
+  const total = r.value + mod - 2 * who.exhaustion;
+  const secret = st.appraiseMisjudge;
+  const roll = secret ? '' : ` (${check.label}: ${r.rolls.join('/')}${mode === 'advantage' ? ' with Advantage' : ''} ${signed(mod)}${who.exhaustion ? ` −${2 * who.exhaustion} Exhaustion` : ''} = ${total} against DC ${check.dc})`;
+  const studies = method === 'tools' ? `${who.name} studies the ${it.name} through a loupe${roll}` : `${who.name} looks the ${it.name} over carefully${roll}`;
+  if (total >= check.dc) return reveal(`${studies} and judges its worth`);
+  if (secret && total <= check.dc - 5 && it.valueGp != null) {
+    const guess = misjudgedValue(it.valueGp, valuableKind(it.name), ctx.rng() >= 0.5);
+    it.valueHidden = true;
+    it.valueBelieved = guess;
+    delete it.appraiseTried;
+    // Reads exactly like a success: the party can't tell.
+    return void log(d, `${studies} and judges its worth: the ${it.name} is worth ${fmtGp(guess)}${each}.`, 'good');
+  }
+  if (st.appraiseOneTry) it.appraiseTried = [...(it.appraiseTried ?? []), who.id];
+  log(d, `${studies} and can't tell ${method === 'tools' ? 'a fine stone from a flawed one' : 'what it would fetch'}.`, 'warn');
 });
 
 

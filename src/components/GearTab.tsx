@@ -8,8 +8,9 @@ import { formatClock, formatDuration } from '../rules/calendar';
 import { Card, Meter, Num, Pill, Select, Text, Toggle, Rule } from './common';
 import type { Character, InventoryItem, MagicItem, Resource } from '../state/types';
 import { LOAD_LABEL, RATION_WEIGHT } from '../rules/encumbrance';
-import { fmtGp } from '../rules/money';
-import { APPRAISE_DC, GEM, valueUnknown } from '../rules/shop';
+import { fmtGp, MAGIC_ITEM_VALUE } from '../rules/money';
+import { misjudged, valueSecret, valueUnknown } from '../rules/shop';
+import { APPRAISE_EYE_DC, APPRAISE_MINUTES, JEWELER_TOOLS, appraiseCheck } from '../rules/appraise';
 import { PartyKnowledgeCard, PlayerItemView } from './ItemKnowledge';
 import { ARCANA_DC, CLUE_KIND_LABEL, SCHOOLS_OF_MAGIC, STUDY_LABEL, STUDY_MINUTES, type ClueKind } from '../rules/identify';
 import { RARITY_LABEL, type Rarity } from '../rules/crafting';
@@ -267,6 +268,8 @@ function InventoryBlock({ c }: { c: Character }) {
                     <Pill tone="warn" title={`Nobody in the party knows what ${i.qty > 1 ? 'these are' : 'it is'} worth yet.${i.valueGp != null ? ` DM: ${fmtGp(i.valueGp)} each.` : ' No value set.'}`}>
                       value unknown
                     </Pill>
+                  ) : misjudged(i) ? (
+                    <span className="muted" title={`DM: misjudged. Really ${i.valueGp != null ? fmtGp(i.valueGp) : '?'} each.`}> {fmtGp(i.valueBelieved! * i.qty)}</span>
                   ) : i.valueGp ? (
                     <span className="muted"> {fmtGp(i.valueGp * i.qty)}</span>
                   ) : null}
@@ -311,71 +314,105 @@ function InventoryBlock({ c }: { c: Character }) {
   );
 }
 
-/** Items whose value the party doesn't know, and ways to find out. */
+/** Items whose value the party doesn't know (or may have misjudged), and ways to find out. */
 function AppraiseBlock({ c }: { c: Character }) {
   const s = useGame();
-  const unknown = c.inventory.filter(valueUnknown);
-  const hideable = c.inventory.filter((i) => !valueUnknown(i) && i.valueGp != null);
-  const pcs = s.characters.filter((x) => x.kind !== 'mount');
+  const st = s.settings;
+  const secret = c.inventory.filter(valueSecret);
+  const hideable = c.inventory.filter((i) => !valueSecret(i) && i.valueGp != null);
+  const pcs = s.characters.filter((x) => x.kind !== 'mount' && x.diedAt == null);
+  const pros = s.hirelings.filter((h) => h.active && h.role === 'appraiser');
   const [itemId, setItemId] = useState('');
   const [who, setWho] = useState('');
   const [bonus, setBonus] = useState(0);
+  const [adv, setAdv] = useState(false);
   const [trueGp, setTrueGp] = useState(0);
   const [hideId, setHideId] = useState('');
-  const it = unknown.find((i) => i.id === itemId) ?? unknown[0];
-  const appraiser = pcs.find((x) => x.id === who) ?? pcs.find((x) => x.inventory.some((i) => /jeweler'?s tools/i.test(i.name))) ?? c;
-  const hasTools = appraiser.inventory.some((i) => /jeweler'?s tools/i.test(i.name));
-  const go = (m: E.AppraiseMethod) => dispatch((st, cx) => E.appraiseItem(st, cx, c.id, it!.id, m, appraiser.id, bonus, it!.valueGp == null && trueGp > 0 ? trueGp : undefined));
-  if (!unknown.length && !hideable.length) return null;
+  const it = secret.find((i) => i.id === itemId) ?? secret[0];
+  const toolsOf = (x: Character) => x.inventory.some((i) => JEWELER_TOOLS.test(i.name));
+  const whoId = who || (pros[0] ? `h:${pros[0].id}` : (pcs.find(toolsOf) ?? c).id);
+  const pro = pros.find((h) => `h:${h.id}` === whoId);
+  const person = pcs.find((x) => x.id === whoId);
+  const hasTools = pro ? true : person ? toolsOf(person) : false;
+  const tried = !!(st.appraiseOneTry && it?.appraiseTried?.includes(whoId));
+  const tools = it ? appraiseCheck(it.name, 'tools', st) : null;
+  const eye = it ? appraiseCheck(it.name, 'eye', st) : null;
+  const go = (m: E.AppraiseMethod) => dispatch((st2, cx) => E.appraiseItem(st2, cx, c.id, it!.id, m, whoId, bonus, it!.valueGp == null && trueGp > 0 ? trueGp : undefined, adv));
+  if (!secret.length && !hideable.length) return null;
+  const mins = st.appraiseTime ? `, ${APPRAISE_MINUTES} min` : '';
   return (
     <>
-      {unknown.length > 0 && (
+      {secret.length > 0 && (
         <>
           <h3>
-            Value unknown <Pill tone="warn">{unknown.length}</Pill>
+            Value unknown <Pill tone="warn">{secret.length}</Pill>
           </h3>
-          <p className="small muted">{unknown.map((i) => `${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}`).join(', ')}</p>
+          <p className="small muted">
+            {secret.map((i) => `${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}${misjudged(i) ? ` (party thinks ${fmtGp(i.valueBelieved!)}; DM: really ${i.valueGp != null ? fmtGp(i.valueGp) : '?'})` : ''}`).join(', ')}
+          </p>
           <div className="btn-row tight">
-            <Select value={it?.id ?? ''} onChange={setItemId} options={unknown.map((i) => ({ value: i.id, label: i.name }))} />
+            <Select value={it?.id ?? ''} onChange={setItemId} options={secret.map((i) => ({ value: i.id, label: i.name }))} />
             {it && it.valueGp == null && <Num label="True value (DM)" value={trueGp} onChange={(v) => setTrueGp(Math.max(0, v))} min={0} suffix="GP" width={5} />}
           </div>
           {it && (
-            <div className="btn-row tight">
-              {GEM.test(it.name) && (
-                <>
-                  <Select value={appraiser.id} onChange={setWho} options={pcs.map((x) => ({ value: x.id, label: `${x.name}${x.inventory.some((i) => /jeweler'?s tools/i.test(i.name)) ? ' (Jeweler’s Tools)' : ''}` }))} />
-                  <Num label="Int bonus" value={bonus} onChange={(v) => setBonus(Math.round(v))} width={2} />
-                  <button className="small" disabled={!hasTools} title={hasTools ? undefined : `${appraiser.name} carries no Jeweler's Tools`} onClick={() => go('tools')}>
-                    Jeweler&apos;s Tools (DC {APPRAISE_DC})
+            <>
+              <div className="btn-row tight">
+                <Select
+                  value={whoId}
+                  onChange={setWho}
+                  options={[
+                    ...pcs.map((x) => ({ value: x.id, label: `${x.name}${toolsOf(x) ? ' (Jeweler’s Tools)' : ''}` })),
+                    ...pros.map((h) => ({ value: `h:${h.id}`, label: `${h.name} (appraiser, ${h.bonus >= 0 ? '+' : ''}${h.bonus})` })),
+                  ]}
+                />
+                {!pro && <Num label="Int bonus" value={bonus} onChange={(v) => setBonus(Math.round(v))} width={2} />}
+                {(tools?.canAdvantage || eye?.canAdvantage) && <Toggle checked={adv} onChange={setAdv} label="Proficient in both the skill and a tool that apply (Advantage)" />}
+              </div>
+              <div className="btn-row tight">
+                {tools?.ok && (
+                  <button className="small" disabled={!hasTools || tried} title={hasTools ? undefined : 'Needs Jeweler’s Tools'} onClick={() => go('tools')}>
+                    Jeweler&apos;s Tools (DC {tools.dc}
+                    {mins})
                   </button>
-                </>
-              )}
-              <button className="small ghost" disabled={!s.place.settlement} title={s.place.settlement ? undefined : 'Only in a town or city'} onClick={() => go('merchant')}>
-                Ask a merchant
-              </button>
-              <button className="small ghost" onClick={() => go('dm')}>
-                DM reveals
-              </button>
-            </div>
+                )}
+                {eye?.ok && (
+                  <button className="small" disabled={tried} title={eye.label} onClick={() => go('eye')}>
+                    {eye.dc === APPRAISE_EYE_DC ? 'Judge by eye' : 'History'} (DC {eye.dc}
+                    {mins})
+                  </button>
+                )}
+                <button className="small ghost" disabled={!s.place.settlement} title={s.place.settlement ? undefined : 'Only in a town or city'} onClick={() => go('merchant')}>
+                  Ask a merchant
+                </button>
+                <button className="small ghost" onClick={() => go('dm')}>
+                  DM reveals
+                </button>
+              </div>
+              {tried && <p className="small warn-text">{pro?.name ?? person?.name} already tried; they need a rest first, or someone else can try.</p>}
+            </>
           )}
         </>
       )}
       {hideable.length > 0 && (
         <div className="btn-row tight">
           <Select value={hideId || hideable[0].id} onChange={setHideId} options={hideable.map((i) => ({ value: i.id, label: `${i.name} (${fmtGp(i.valueGp!)})` }))} />
-          <button className="small ghost" onClick={() => set(hideId || hideable[0].id)}>
+          <button className="small ghost" onClick={() => hide(hideId || hideable[0].id)}>
             Hide its value from the party
           </button>
         </div>
       )}
       <Rule>
-        Jeweler&apos;s Tools: Discern a gem&apos;s value with an Intelligence check, DC 15; add your Proficiency Bonus if proficient (2024 PHB). Table rule: a merchant in a town or city will value anything, and selling reveals the price. A
-        spell&apos;s costly component works if the item is truly worth enough, whether or not anyone knows it.
+        Jeweler&apos;s Tools: Discern a gem&apos;s value, Intelligence DC 15; Advantage if also proficient in a skill that applies, such as Investigation (2024 PHB).
+        {st.appraiseCrafts && ' Table rule: the tools also judge jewelry and precious metals, and Intelligence (History) values art at DC 15 (Advantage with Painter’s Supplies or another fitting tool).'}
+        {st.appraiseByEye && ` Table rule: anyone can judge anything by eye, Intelligence (Investigation or History) at DC ${APPRAISE_EYE_DC}.`}
+        {st.appraiseOneTry && ' Table rule: one try each until a rest.'}
+        {st.appraiseMisjudge && ' Table rule: rolls are secret, and failing by 5 or more gives a confident wrong value.'} A merchant in a town or city will value anything (table rule), and selling reveals the price. A
+        spell&apos;s costly component works if the item is truly worth enough, whether or not anyone knows it. Switches are on the Settings tab.
       </Rule>
     </>
   );
 
-  function set(iid: string) {
+  function hide(iid: string) {
     setChar(c.id, (x) => {
       const i = x.inventory.find((y) => y.id === iid);
       if (i) i.valueHidden = true;
@@ -592,6 +629,15 @@ function ItemsBlock({ c }: { c: Character }) {
                 <span>
                   <b>{it.identified ? it.name : it.partyName || 'Unknown item'}</b>
                   {!it.identified && <span className="muted small"> (really: {it.name})</span>}{' '}
+                  {it.identified && it.rarity ? (
+                    <span className="muted small" title="DMG magic item value by rarity. Selling usually fetches about half.">
+                      {RARITY_LABEL[it.rarity]}, worth about {fmtGp(MAGIC_ITEM_VALUE[it.rarity])}{' '}
+                    </span>
+                  ) : (
+                    <Pill tone="warn" title={it.identified ? 'Set its rarity to see its DMG value.' : 'Identifying it reveals its rarity, and so roughly what it’s worth (DMG).'}>
+                      value unknown
+                    </Pill>
+                  )}{' '}
                   {it.requiresAttunement && (it.attuned ? <Pill tone="good">Attuned</Pill> : <Pill tone="muted">Needs attunement</Pill>)}
                   {it.charges != null && it.maxCharges != null && (
                     <Pill tone="info">

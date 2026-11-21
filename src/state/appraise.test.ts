@@ -3,12 +3,17 @@ import * as E from './engine';
 import { createDefaultState, newCharacter } from './defaults';
 import { playerItems } from '../components/playerChecklist';
 import { parseInventoryLine } from '../rules/encumbrance';
-import { knownValue, sameStack, valueUnknown } from '../rules/shop';
+import { knownValue, misjudged, sameStack, valueUnknown } from '../rules/shop';
+import { appraiseCheck, misjudgedValue, valuableKind } from '../rules/appraise';
 import type { InventoryItem } from './types';
 
 const ctx = (v = 0.5): E.Ctx => ({ rng: () => v });
 const LOW = ctx(0);
 const HIGH = ctx(0.999);
+const seq = (...v: number[]): E.Ctx => {
+  let n = 0;
+  return { rng: () => v[Math.min(n++, v.length - 1)] };
+};
 
 const item = (p: Partial<InventoryItem>): InventoryItem => ({ id: p.name ?? 'x', name: 'Thing', qty: 1, weight: 0, source: 'manual', container: null, ammo: null, ...p });
 
@@ -113,5 +118,100 @@ describe('items of unknown value', () => {
   it('stash value counts only what the party knows', () => {
     const s = party();
     expect(E.holderValue(s.characters[0].inventory, { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 })).toBe(0);
+  });
+
+  it('sorts valuables and picks the check each switch allows', () => {
+    expect(valuableKind('Diamond')).toBe('gem');
+    expect(valuableKind('Gold necklace')).toBe('jewelry');
+    expect(valuableKind('Silver statuette')).toBe('art');
+    const on = { appraiseCrafts: true, appraiseByEye: true };
+    expect(appraiseCheck('Gold necklace', 'tools', on)).toMatchObject({ ok: true, dc: 15 });
+    expect(appraiseCheck('Gold necklace', 'tools', { ...on, appraiseCrafts: false }).ok).toBe(false);
+    expect(appraiseCheck('Silver statuette', 'eye', on)).toMatchObject({ ok: true, dc: 15, label: 'Intelligence (History)' });
+    expect(appraiseCheck('Silver statuette', 'eye', { ...on, appraiseCrafts: false })).toMatchObject({ ok: true, dc: 20 });
+    expect(appraiseCheck('Diamond', 'eye', on)).toMatchObject({ ok: true, dc: 20, canAdvantage: false });
+    expect(appraiseCheck('Diamond', 'eye', { appraiseCrafts: false, appraiseByEye: false }).ok).toBe(false);
+  });
+
+  it('anyone can judge by eye, but at DC 20', () => {
+    let s = party();
+    const id = s.characters[0].id;
+    s = E.appraiseItem(s, ctx(0.9), id, 'd', 'eye', id, 0); // 19
+    expect(valueUnknown(s.characters[0].inventory[0])).toBe(true);
+    s = E.appraiseItem(s, HIGH, id, 'd', 'eye', id, 0); // 20
+    expect(valueUnknown(s.characters[0].inventory[0])).toBe(false);
+    s = party();
+    s.settings.appraiseByEye = false;
+    s = E.appraiseItem(s, HIGH, id, 'd', 'eye', id, 10);
+    expect(valueUnknown(s.characters[0].inventory[0])).toBe(true);
+  });
+
+  it('skill and tool proficiency together give Advantage (2024 PHB)', () => {
+    let s = party();
+    const [cleric, cutter] = s.characters;
+    s = E.appraiseItem(s, seq(0, 0.999), cleric.id, 'd', 'tools', cutter.id, 0);
+    expect(valueUnknown(s.characters[0].inventory[0])).toBe(true);
+    s = E.appraiseItem(s, seq(0, 0.999), cleric.id, 'd', 'tools', cutter.id, 0, undefined, true);
+    expect(valueUnknown(s.characters[0].inventory[0])).toBe(false);
+    expect(s.log.some((l) => l.text.includes('with Advantage'))).toBe(true);
+  });
+
+  it('one try each until a rest, when that rule is on', () => {
+    let s = party();
+    s.settings.appraiseOneTry = true;
+    const [cleric, cutter] = s.characters;
+    s = E.appraiseItem(s, LOW, cleric.id, 'd', 'tools', cutter.id, 0);
+    s = E.appraiseItem(s, HIGH, cleric.id, 'd', 'tools', cutter.id, 0);
+    expect(valueUnknown(s.characters[0].inventory[0])).toBe(true);
+    s = E.appraiseItem(s, HIGH, cleric.id, 'd', 'eye', cleric.id, 0);
+    expect(valueUnknown(s.characters[0].inventory[0])).toBe(false);
+    s = party();
+    s.settings.appraiseOneTry = true;
+    s = E.appraiseItem(s, LOW, cleric.id, 'd', 'tools', cutter.id, 0);
+    s = E.shortRest(s, ctx());
+    expect(s.characters[0].inventory[0].appraiseTried).toBeUndefined();
+  });
+
+  it('a careful appraisal takes 10 minutes, when that rule is on', () => {
+    let s = party();
+    const t = s.minutes;
+    s = E.appraiseItem(s, LOW, s.characters[0].id, 'd', 'tools', s.characters[1].id, 0);
+    expect(s.minutes).toBe(t);
+    s.settings.appraiseTime = true;
+    s = E.appraiseItem(s, LOW, s.characters[0].id, 'd', 'tools', s.characters[1].id, 0);
+    expect(E.absNow(s) - E.absNow(party())).toBe(10);
+  });
+
+  it('misjudging: a secret roll failed by 5 or more gives a wrong value that selling corrects', () => {
+    expect(misjudgedValue(300, 'gem', true)).toBe(500);
+    expect(misjudgedValue(1000, 'gem', false)).toBe(500);
+    expect(misjudgedValue(10, 'gem', false)).toBe(50);
+    let s = party();
+    s.settings.appraiseMisjudge = true;
+    s.place.settlement = true;
+    const [cleric, cutter] = s.characters;
+    s = E.appraiseItem(s, ctx(0), cleric.id, 'd', 'tools', cutter.id, 0); // 1 vs 15; rng 0 → lower tier
+    const d = s.characters[0].inventory[0];
+    expect(misjudged(d)).toBe(true);
+    expect(knownValue(d)).toBe(100);
+    expect(s.log.some((l) => l.text.includes('DC'))).toBe(false);
+    expect(playerItems(s, s.characters[0]).find((p) => p.text.includes('Revivify'))?.text).toContain('Can’t cast');
+    s = E.sellItem(s, ctx(), cleric.id, 'd', 1);
+    expect(s.log.some((l) => l.text.includes('not the 100 GP the party thought'))).toBe(true);
+  });
+
+  it('an appraiser hireling uses their own tools and bonus', () => {
+    let s = party();
+    s.hirelings = [{ id: 'h1', name: 'Odo', role: 'appraiser', bonus: 20, passivePerception: 10, skilled: true, wageGp: 2, payer: 'party', active: true }];
+    s = E.appraiseItem(s, LOW, s.characters[0].id, 'd', 'tools', 'h:h1', 0);
+    expect(valueUnknown(s.characters[0].inventory[0])).toBe(false);
+  });
+
+  it('a stone that isn’t worth enough says so instead of saying it’s missing', () => {
+    let s = party();
+    s.characters[0].inventory[0] = item({ id: 'd', name: 'Diamond', valueGp: 50 });
+    s.characters[2].diedAt = E.absNow(s);
+    s = E.castSpell(s, ctx(), s.characters[0].id, 'Revivify', 'slot', s.characters[2].id);
+    expect(s.log.some((l) => l.text.includes('isn’t worth enough') || l.text.includes("isn't worth enough"))).toBe(true);
   });
 });
