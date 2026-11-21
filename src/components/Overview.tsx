@@ -2,6 +2,8 @@ import { DANGER, DANGERS, type Danger } from '../rules/encounters';
 import { useState } from 'react';
 import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
+import { attentionItems } from './attention';
+import { goTo } from './nav';
 import { CLIMATES, environmentEffects, temperatureAt, weatherSummary, type ClimateId, type Weather } from '../rules/weather';
 import { formatClock, formatDate, formatDuration } from '../rules/calendar';
 import { PACES, foodNeedLb, waterNeedPints, fmtLb, fmtWater } from '../rules/survival';
@@ -15,19 +17,63 @@ import { DEEP_SNOW_IN, groundDifficulty, OBSTACLES } from '../rules/ground';
 import { WaysAround } from './WaysAround';
 import type { TopicId } from '../rules/shortcuts';
 
+/** The DM's dashboard: what needs attention, the clock, the party, the conditions and what just happened. */
 export function Overview() {
   return (
     <div className="grid">
+      <AttentionCard />
+      <PendingCard />
       <ClockCard />
       <WeatherCard />
-      <EffectsCard />
-      <PendingCard />
       <PartyStatusCard />
-      <TravelCard />
-      <JourneyCard />
-      <PlaceCard />
+      <EffectsCard />
       <RecentLog />
     </div>
+  );
+}
+
+/** Getting from place to place: the travel controls, journey stages and where the party is. */
+export function TravelTab() {
+  return (
+    <div className="grid">
+      <TravelCard />
+      <PlaceCard />
+      <JourneyCard />
+    </div>
+  );
+}
+
+function AttentionCard() {
+  const s = useGame();
+  const [showSecret, setShowSecret] = useState(true);
+  const items = attentionItems(s).filter((i) => showSecret || !i.dmOnly);
+  const secrets = attentionItems(s).some((i) => i.dmOnly);
+  return (
+    <Card title={<>Needs attention {items.length > 0 && <Pill tone={items.some((i) => i.tone === 'bad') ? 'bad' : 'warn'}>{items.length}</Pill>}</>} className={`attention ${items.length ? 'span-2' : 'quiet'}`}>
+      {items.length === 0 ? (
+        <p className="muted small">Nothing waiting on you.</p>
+      ) : (
+        <ul className="plain attention-list">
+          {items.map((i) => (
+            <li key={i.id} className={`attention-item ${i.tone}`}>
+              <span>
+                {i.dmOnly && <Pill tone="muted">DM only</Pill>} {i.text}
+              </span>
+              {i.tab !== 'overview' && (
+                <button className="ghost small" onClick={() => goTo(i.tab)}>
+                  Open
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {secrets && (
+        <button className="ghost tiny" onClick={() => setShowSecret(!showSecret)} title="Hide secrets when players can see the screen">
+          {showSecret ? 'Hide DM-only items' : 'Show DM-only items'}
+        </button>
+      )}
+    </Card>
   );
 }
 
@@ -52,9 +98,6 @@ function ClockCard() {
       </div>
       <SkyLine />
       <div className="btn-row">
-        <button onClick={() => adv(10)}>+10 min</button>
-        <button onClick={() => adv(60)}>+1 hour</button>
-        <button onClick={() => adv(240)}>+4 hours</button>
         <span className="inline-group">
           <Num value={custom} onChange={setCustom} min={1} max={10080} suffix="min" width={4} />
           <button onClick={() => adv(custom)}>Advance</button>

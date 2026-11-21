@@ -95,30 +95,62 @@ function persist(): void {
 
 export const getState = (): State => state;
 
-export function dispatch(fn: (s: State, c: Ctx) => State): void {
-  state = fn(state, ctx);
+/** Earlier states for Undo: actions (time, rolls, purchases) are recorded; typing in fields is not. */
+const history: { state: State; label: string }[] = [];
+const HISTORY_MAX = 30;
+let version = 0;
+
+function commit(next: State, undoable: boolean, name?: string): void {
+  if (next === state) return;
+  if (undoable) {
+    const label = name ?? (next.log[0] && next.log[0].id !== state.log[0]?.id ? next.log[0].text : 'the last change');
+    history.push({ state, label });
+    if (history.length > HISTORY_MAX) history.shift();
+  }
+  state = next;
+  version += 1;
   persist();
   listeners.forEach((l) => l());
 }
 
+/** Runs an action; `label` names it for Undo (otherwise the newest log line does). */
+export function dispatch(fn: (s: State, c: Ctx) => State, label?: string): void {
+  commit(fn(state, ctx), true, label);
+}
+
 /** Convenience for simple field edits: mutate a draft copy. */
 export function edit(fn: (draft: State) => void): void {
-  dispatch((s) => {
-    const d = structuredClone(s);
-    fn(d);
-    return d;
-  });
+  const d = structuredClone(state);
+  fn(d);
+  commit(d, false);
+}
+
+/** What Undo would take back, if anything. */
+export const undoLabel = (): string | null => history[history.length - 1]?.label ?? null;
+
+export function undo(): void {
+  const prev = history.pop();
+  if (!prev) return;
+  state = prev.state;
+  version += 1;
+  persist();
+  listeners.forEach((l) => l());
+}
+
+/** Re-renders on every change, including Undo (for components that show undoLabel). */
+export function useVersion(): number {
+  return useSyncExternalStore(subscribe, () => version);
 }
 
 export function importState(raw: unknown): boolean {
   const s = migrate(raw);
   if (!s) return false;
-  dispatch(() => s);
+  commit(s, true);
   return true;
 }
 
 export function resetState(): void {
-  dispatch(() => createDefaultState(ctx.rng));
+  commit(createDefaultState(ctx.rng), true);
 }
 
 const subscribe = (l: () => void) => {

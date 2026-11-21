@@ -1,10 +1,23 @@
-# Wayfarer's Ledger
+# D&D Life Manager
 
 **Live app:** https://corrida-repos.github.io/dnd-side-app/
 
 A tracker for every nitty-gritty part of D&D 5.5e life that isn't tied to one campaign or adventure and doesn't run on combat's seconds-long timescale: time, travel, weather, survival, rests, upkeep, money, downtime and the wider world. It follows the 2024 *Player's Handbook* and *Dungeon Master's Guide*, marks anything else as a table rule you can switch off, and describes what the characters notice when their condition changes. It runs in the browser, needs no server, and saves to local storage.
 
+## Running a session
+
+The app is arranged the way a session runs:
+
+- **At the table:** the Dashboard (what needs attention, the clock, the party, conditions and the latest events), Travel, Camp & Survival, Encounters, and Effects & Lights.
+- **Party:** Characters, Gear & Resources, and Spells & Morning.
+- **Between adventures:** Downtime, Bastions, Money & Shop, and Storage.
+- **World:** the World (moons, factions, rivals, patron, regions), the Chronicle, Ways Around, and Settings.
+
+A control bar stays on screen on every tab: the time, +10 minutes, +1 hour, +4 hours, Short and Long Rests, **Undo** (also Ctrl/Cmd+Z, outside text fields) and a count of things to handle. The Dashboard's **Needs attention** list gathers saves to roll, dying characters, hunger and thirst late in the day, guttering lights, Bastion turns and decisions, finished downtime awaiting its outcome, unresolved obstacles, overdue debts and restless rivals, each with a button to where it's handled. Secrets such as a hidden disease incubating are marked *DM only* and can be hidden while players can see the screen. Keys 1–4 switch sections.
+
 ## What it tracks
+
+
 
 | Area | What it does |
 | --- | --- |

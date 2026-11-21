@@ -358,7 +358,7 @@ function SaveCard() {
             const blob = new Blob([JSON.stringify(getState(), null, 2)], { type: 'application/json' });
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
-            a.download = `wayfarers-ledger-${new Date().toISOString().slice(0, 10)}.json`;
+            a.download = `dnd-life-manager-${new Date().toISOString().slice(0, 10)}.json`;
             a.click();
             URL.revokeObjectURL(a.href);
           }}
@@ -375,7 +375,7 @@ function SaveCard() {
             const f = e.target.files?.[0];
             if (!f) return;
             try {
-              setMsg(importState(JSON.parse(await f.text())) ? 'Save loaded.' : "That file doesn't look like a Wayfarer's Ledger save.");
+              setMsg(importState(JSON.parse(await f.text())) ? 'Save loaded.' : "That file doesn't look like a D&D Life Manager save.");
             } catch {
               setMsg("Couldn't read that file.");
             }

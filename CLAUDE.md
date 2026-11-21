@@ -2,7 +2,7 @@
 
 ## What this app is for
 
-Wayfarer's Ledger handles every nitty-gritty part of D&D life that isn't tied to one campaign or adventure and doesn't run on combat's seconds-long timescale: time, travel, weather, survival, rests, upkeep, money, downtime and the wider world. Follow the 2024 rules (PHB/DMG), mark anything else as a table rule or optional rule with a switch, and give players in-world descriptions of what their characters notice when something changes over time.
+D&D Life Manager handles every nitty-gritty part of D&D life that isn't tied to one campaign or adventure and doesn't run on combat's seconds-long timescale: time, travel, weather, survival, rests, upkeep, money, downtime and the wider world. Follow the 2024 rules (PHB/DMG), mark anything else as a table rule or optional rule with a switch, and give players in-world descriptions of what their characters notice when something changes over time.
 
 ## How to work
 
