@@ -328,6 +328,25 @@ describe('purifying food and water', () => {
     expect(E.longRest(n, ctx(), false).characters[0]).toMatchObject({ sick: false, sickFrom: '' });
   });
 
+  it('lets Antitoxin help the save but never cure the sickness', () => {
+    const s = fresh((d) => {
+      wild(d);
+      d.characters[0].waterPints = 0;
+    });
+    const id = s.characters[0].id;
+    const sick = E.drink(s, LOW, id, 2, 'stores');
+    const dosed = E.drinkAntitoxin(sick, ctx(), id);
+    expect(dosed.characters[0].sick).toBe(true);
+    expect(dosed.log[0].text).toMatch(/still Sick/);
+    // Taken before drinking, it grants Advantage: one low and one high roll passes.
+    let n = 0;
+    const alternating: E.Ctx = { rng: () => (n++ % 2 ? 0.99 : 0) };
+    const protectedFirst = E.drink(E.drinkAntitoxin(s, ctx(), id), alternating, id, 2, 'stores');
+    expect(protectedFirst.characters[0].sick).toBe(false);
+    expect(protectedFirst.log.some((l) => /with Antitoxin/.test(l.text))).toBe(true);
+    expect(E.antitoxinActive(E.advance(protectedFirst, ctx(), 61), protectedFirst.characters[0])).toBe(false);
+  });
+
   it('records both causes, and anything that ends Poisoned ends the sickness', () => {
     const s = fresh((d) => {
       wild(d);

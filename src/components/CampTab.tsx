@@ -212,6 +212,9 @@ function PurifyCard() {
   const dirty = s.stores.foodRawLb > 0 || s.stores.waterUnsafeGal > 0 || skins.length > 0;
   const casterChar = s.characters.find((c) => c.id === caster);
   const check = casterChar ? E.canCastPurify(casterChar, mode) : { ok: true, reason: '' };
+  const pcs = s.characters.filter((c) => c.kind === 'pc');
+  const [drinker, setDrinker] = useState('');
+  const drinkerId = pcs.find((c) => c.id === drinker)?.id ?? pcs[0]?.id ?? '';
   return (
     <Card title={<span>Raw food and dirty water {dirty ? <Pill tone="warn">Needs purifying</Pill> : <Pill tone="good">All safe</Pill>}</span>}>
       <ul className="plain small">
@@ -221,8 +224,8 @@ function PurifyCard() {
           .map((c) => (
             <li key={c.id} className="bad-text">
               {c.name} is Sick from {c.sickFrom || 'raw food or unpurified water'}: Poisoned until a Long Rest.{' '}
-              <button className="ghost tiny" onClick={() => dispatch((st, cx) => E.curePoison(st, cx, c.id))}>
-                Cured (Lesser Restoration or similar)
+              <button className="ghost tiny" title="Lesser Restoration, Protection from Poison, Lay on Hands (5 points), Heal and the like. Antitoxin doesn't end it." onClick={() => dispatch((st, cx) => E.curePoison(st, cx, c.id))}>
+                Cured by magic
               </button>
             </li>
           ))}
@@ -233,6 +236,18 @@ function PurifyCard() {
         </li>
       </ul>
       {!s.settings.wildNeedsPurifying && <Rule>Water purifying is switched off in Settings, so wild water is treated as safe.</Rule>}
+      <div className="btn-row tight">
+        <Select value={drinkerId} onChange={setDrinker} options={pcs.map((c) => ({ value: c.id, label: c.name }))} />
+        <button className="small" disabled={!drinkerId} onClick={() => dispatch((st, cx) => E.drinkAntitoxin(st, cx, drinkerId))}>
+          Drink Antitoxin first
+        </button>
+        {pcs.filter((c) => E.antitoxinActive(s, c)).map((c) => (
+          <Pill key={c.id} tone="good">
+            {c.name}: Antitoxin, {formatDuration(Math.max(1, (c.antitoxinUntil ?? 0) - E.absNow(s)))} left
+          </Pill>
+        ))}
+      </div>
+      <Rule>Antitoxin gives Advantage on the save for an hour, so drink it before a doubtful meal or drink. It doesn&apos;t cure someone who is already Sick.</Rule>
       {!s.settings.rawFoodRisk && <Rule>The raw food risk is switched off in Settings, so foraged food is safe to eat as it is.</Rule>}
 
       <h3>Magical: {PURIFY_SPELL}</h3>
