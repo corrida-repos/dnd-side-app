@@ -401,17 +401,51 @@ function dailyCosts(s: State): void {
       const cost = patronLifestyleCost(s, c.lifestyle);
       const next = dateFromIndex(s.calendar, s.startYear, s.dayIndex + 1);
       const period = s.settings.lifestylePeriod;
-      if (cost > 0) {
-        if (period === 'day') payGold(s, [c.id], cost, `a day of ${LIFESTYLE_LABEL[c.lifestyle]} living`);
-        else if (period === 'week' && (s.dayIndex + 1) % 7 === 0) payGold(s, [c.id], cost * 7, `a week of ${LIFESTYLE_LABEL[c.lifestyle]} living`);
-        else if (period === 'month' && next.day === 1) payGold(s, [c.id], cost * next.month.days, `a month of ${LIFESTYLE_LABEL[c.lifestyle]} living`);
+      if (period === 'day') payGold(s, [c.id], cost, `a day of ${LIFESTYLE_LABEL[c.lifestyle]} living`);
+      else {
+        // Weekly or monthly bills cover only the days actually spent in town.
+        c.lifestyleOwed = (c.lifestyleOwed ?? 0) + cost;
+        const due = period === 'week' ? (s.dayIndex + 1) % 7 === 0 : next.day === 1;
+        if (due) settleLifestyle(s, c, `the ${period}'s ${LIFESTYLE_LABEL[c.lifestyle]} living`);
+      }
+      if (s.settings.debtDropsLifestyle && s.settings.chargeCosts && c.gp < 0 && c.lifestyle !== 'wretched') {
+        const tiers = Object.keys(LIFESTYLE_GP) as Lifestyle[];
+        const lower = tiers[tiers.indexOf(c.lifestyle) - 1];
+        status(s, c, 'lifestyleDrops', `${c.name} can't pay their way and moves to cheaper lodgings: ${LIFESTYLE_LABEL[lower]} living from now on (table rule).`, 'warn');
+        c.lifestyle = lower;
       }
     }
     if (fed.length) log(s, `Town living covers meals and lodging for ${fed.join(', ')}.`);
+  } else {
+    for (const c of adventurers(s)) if (c.lifestyleOwed) settleLifestyle(s, c, 'lodgings and meals on leaving town');
+    if (s.settings.hirelingsEat) hirelingsEat(s);
   }
   for (const h of s.hirelings) {
     if (h.active && h.wageGp > 0) payGold(s, h.payer === 'party' ? [] : [h.payer], h.wageGp, `${h.name}'s daily wage`);
   }
+}
+
+function settleLifestyle(s: State, c: Character, what: string): void {
+  const owed = Math.round((c.lifestyleOwed ?? 0) * 100) / 100;
+  c.lifestyleOwed = 0;
+  payGold(s, [c.id], owed, what);
+}
+
+/** Table rule: hirelings on the road eat and drink a Medium creature's share from the camp stores. */
+function hirelingsEat(s: State): void {
+  const now = absNow(s);
+  const fed = s.hirelings.filter((h) => h.active && !(h.busyUntil && h.busyUntil > now));
+  if (!fed.length) return;
+  const food = Math.min(fed.length, s.stores.foodLb);
+  const water = Math.min(fed.length, s.stores.waterGal);
+  s.stores.foodLb = Math.round((s.stores.foodLb - food) * 100) / 100;
+  s.stores.waterGal = Math.round((s.stores.waterGal - water) * 100) / 100;
+  const short = [food < fed.length && `${+(fed.length - food).toFixed(1)} lb of food`, water < fed.length && `${+(fed.length - water).toFixed(1)} gal of water`].filter(Boolean);
+  log(
+    s,
+    `The hirelings (${fed.map((h) => h.name).join(', ')}) eat and drink from the camp stores: ${+food.toFixed(1)} lb of food and ${+water.toFixed(1)} gal of water.${short.length ? ` The stores come up ${short.join(' and ')} short, and the hirelings grumble.` : ''}`,
+    short.length ? 'warn' : 'info',
+  );
 }
 
 function endOfDay(s: State, ctx: Ctx): void {
@@ -664,6 +698,7 @@ function expireConditions(s: State): void {
 /** Moves the clock forward, firing the hourly and end-of-day checks along the way. */
 export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activity, opts: { exploring?: boolean } = {}): void {
   let remaining = Math.max(0, Math.round(minutes));
+  if (remaining > 0 && s.settings.deathSavesResolve) resolveDying(s, ctx);
   while (remaining > 0) {
     const toNextHour = 60 - (s.minutes % 60);
     const step = Math.min(remaining, toNextHour);
@@ -998,6 +1033,42 @@ export interface TravelOpts {
   downstream?: boolean;
 }
 
+/** Table rule: Unconscious companions who must be carried because there aren't enough spare mounts for them. */
+export function carriedDowned(s: State): string[] {
+  if (!s.settings.carryDowned) return [];
+  const down = s.characters.filter((c) => c.kind !== 'mount' && c.diedAt == null && (c.dying || c.stable));
+  if (!down.length) return [];
+  const up = (c: Character) => alive(c) && !c.dying && !c.stable;
+  const spare = s.characters.filter((c) => c.kind === 'mount' && up(c)).length - s.characters.filter((c) => c.kind !== 'mount' && up(c)).length;
+  return spare >= down.length ? [] : down.map((c) => c.name);
+}
+
+/** The chosen navigator if they can act; otherwise (table rule) whoever conscious has the best Survival. */
+function activeNavigator(s: State, navId: string | null | undefined): Character | undefined {
+  const chosen = navId ? actorById(s, navId) : undefined;
+  if (chosen && alive(chosen) && !chosen.dying && !chosen.stable) return chosen;
+  if (!s.settings.fallbackNavigator) return undefined;
+  const best = s.characters
+    .filter((c) => c.kind === 'pc' && alive(c) && !c.dying && !c.stable)
+    .sort((a, b) => b.survival - 2 * b.exhaustion - (a.survival - 2 * a.exhaustion))[0];
+  if (best && currentNavigationDC(s).dc != null) {
+    log(s, `${chosen ? `${chosen.name} can't navigate, so` : 'Nobody is set to navigate, so'} ${best.name} (best Survival) finds the way (table rule).`);
+  }
+  return best;
+}
+
+/** Table rule: it's night (or underground), there's no light, and someone in the party can't see in the dark. */
+function travelsBlind(s: State): boolean {
+  if (!s.settings.nightTravelSlow) return false;
+  const underground = !!CLIMATES[s.weather.climate].noWeather;
+  if (!underground && lightAt(s.minutes % MIN_PER_DAY, seasonOf(s)).phase !== 'Night') return false;
+  const now = absNow(s);
+  if (s.effects.some((e) => e.kind === 'light' && (e.endsAt == null || e.endsAt > now))) return false;
+  const walkers = s.characters.filter((c) => c.kind !== 'mount' && alive(c) && !c.dying && !c.stable);
+  if (walkers.some((c) => c.inventory.some((i) => /torch|lantern|candle/i.test(i.name)))) return false;
+  return walkers.some((c) => !c.darkvision);
+}
+
 /** Travelers slowed to half Speed or less, which forces a Slow pace (2024 DMG "Slower Travelers"). */
 export function slowTravelers(s: State): string[] {
   return s.characters
@@ -1062,6 +1133,11 @@ function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
     log(d, `With ${ground} underfoot, the going counts as Difficult Terrain (half speed).`, 'warn');
     o = { ...o, difficult: true };
   }
+  const carried = carriedDowned(d);
+  if (carried.length && o.pace !== 'slow') {
+    log(d, `The party carries ${carried.join(' and ')}, Unconscious, with no spare mount to bear them, so it travels at a Slow pace (table rule).`, 'warn');
+    o = { ...o, pace: 'slow' };
+  }
   const slow = slowTravelers(d);
   const allowed = slow.length ? 'slow' : o.flying ? o.pace : clampPace(o.pace, d.place.terrain, d.place.goodRoad || !!d.travel.paceBoost);
   if (slow.length && o.pace !== 'slow') {
@@ -1083,8 +1159,8 @@ function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
   log(d, `The party sets out at a ${o.pace} pace for ${o.hours} hour(s)${o.difficult ? ' over Difficult Terrain' : ''}. ${p.note}.`);
   const navId = o.navigatorId === undefined ? d.travel.navigatorId : o.navigatorId;
   d.travel.navigatorId = navId ?? null;
-  const nav = navId ? actorById(d, navId) : undefined;
-  if (nav && alive(nav) && !d.travel.lost && navigate(d, ctx, nav, o.pace) === false) {
+  const nav = activeNavigator(d, navId);
+  if (nav && !d.travel.lost && navigate(d, ctx, nav, o.pace) === false) {
     d.travel.lost = true;
     d.travel.lostRecheckIn = die(LOST_RECHECK_DIE, ctx.rng);
   }
@@ -1095,7 +1171,13 @@ function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
     log(d, mounts < riders ? 'Not everyone has a mount, so the party can’t gallop.' : 'The mounts need a Short or Long Rest before they can gallop again.', 'warn');
     gallop = false;
   }
+  let darkWarned = false;
   for (let i = 0; i < o.hours; i++) {
+    const blind = o.pace !== 'slow' && travelsBlind(d);
+    if (blind && !darkWarned) {
+      darkWarned = true;
+      log(d, 'Night falls and not everyone can see in the dark. Without a light, the party picks its way forward at a Slow pace (table rule).', 'warn');
+    }
     advanceMut(d, ctx, 60, 'travel');
     d.travel.hoursToday += altitude ? 2 : 1;
     const burst = gallop && i === 0 ? 2 : 1;
@@ -1103,12 +1185,12 @@ function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
       d.travel.gallopUsed = true;
       log(d, 'The mounts gallop for an hour, covering twice the distance.');
     }
-    const step = p.mph * (o.difficult ? 0.5 : 1) * burst;
+    const step = (blind ? PACES.slow.mph : p.mph) * (o.difficult ? 0.5 : 1) * burst;
     miles += step;
     if (d.travel.lost) {
       offCourse += step;
       d.travel.lostRecheckIn -= 1;
-      if (d.travel.lostRecheckIn <= 0 && nav && alive(nav)) {
+      if (d.travel.lostRecheckIn <= 0 && nav) {
         if (navigate(d, ctx, nav, o.pace) !== false) {
           d.travel.lost = false;
           log(d, `${nav.name} realises the party has gone astray and finds the way again, ${+(d.travel.milesOffCourse + offCourse).toFixed(1)} miles off course.`, 'good');
@@ -1128,13 +1210,16 @@ function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
   if (d.travel.lost) d.travel.milesOffCourse += offCourse;
   if (offCourse > 0 && d.travel.lost) log(d, `${+offCourse.toFixed(1)} of those miles went the wrong way. The party is still lost.`, 'warn');
   log(d, `Covered ${+miles.toFixed(1)} miles. That makes ${+d.travel.milesToday.toFixed(1)} miles and ${d.travel.hoursToday} travel hour(s) since the last Long Rest.`);
-  const stageDays = Math.max(1, Math.round(o.hours / 8));
+  // One foraging roll per 8 hours on the road, with a shorter leg finding a share of a day's food.
   for (const id of o.foragerIds) {
     const c = charById(d, id);
-    if (c) doForage(d, ctx, c, o.pace, stageDays);
+    if (c) for (let h = o.hours; h > 0; h -= 8) doForage(d, ctx, c, o.pace, Math.min(8, h) / 8);
   }
   return d.travel.lost ? 0 : miles;
 }
+
+/** Table rule: the check to hold a ship's course through a storm. */
+export const STORM_AT_SEA_DC = 15;
 
 /** Travel aboard a vessel: its own speed, no travel pace, and no forced march (the crew works in shifts). */
 function sail(d: State, ctx: Ctx, v: Stash, o: TravelOpts): number {
@@ -1145,7 +1230,18 @@ function sail(d: State, ctx: Ctx, v: Stash, o: TravelOpts): number {
   }
   log(d, `Aboard the ${v.name}, the party travels for ${o.hours} hour(s) at ${mph} mph${note ? ` (${note})` : ''}.`);
   advanceMut(d, ctx, o.hours * 60, 'camp');
-  const miles = Math.round(mph * o.hours * 10) / 10;
+  let miles = Math.round(mph * o.hours * 10) / 10;
+  if (d.settings.stormsAtSea && d.weather.wind === 'strong' && d.weather.precip === 'heavy' && !/airship/i.test(v.name)) {
+    const helm = activeNavigator(d, d.travel.navigatorId);
+    const r = d20('normal', ctx.rng);
+    const total = r.value + (helm ? helm.survival - 2 * helm.exhaustion : 0);
+    if (total >= STORM_AT_SEA_DC) {
+      log(d, `A storm lashes the ${v.name}. ${helm?.name ?? 'The crew'} keeps her on course: Wisdom (Survival) ${total} against DC ${STORM_AT_SEA_DC}.`, 'good');
+    } else {
+      miles = Math.round(miles * 5) / 10;
+      log(d, `A storm lashes the ${v.name} and drives her off course: Wisdom (Survival) ${total} against DC ${STORM_AT_SEA_DC}. Only half the distance counts (table rule).`, 'warn');
+    }
+  }
   d.travel.milesToday += miles;
   log(d, `The ${v.name} covers ${miles} miles.`);
   return miles;
@@ -1199,6 +1295,7 @@ export const runStage = act((d, ctx, stageId: string, o: Omit<TravelOpts, 'hours
 
 // ---------------------------------------------------------------- foraging, fire, food
 
+/** Forage for `days` days' worth of searching (a fraction for a short leg of travel). */
 function doForage(s: State, ctx: Ctx, c: Character, pace: Pace | null, days = 1): void {
   if (!alive(c)) return;
   const dc = TERRAIN[s.place.terrain].forageDC;
@@ -1207,8 +1304,8 @@ function doForage(s: State, ctx: Ctx, c: Character, pace: Pace | null, days = 1)
   const total = r.value + c.survival - 2 * c.exhaustion;
   if (total >= dc) {
     // Food and water found per day of the journey stage.
-    const food = Math.max(0, die(6, ctx.rng) + c.wisMod) * days;
-    const water = Math.max(0, die(6, ctx.rng) + c.wisMod) * days;
+    const food = Math.round(Math.max(0, die(6, ctx.rng) + c.wisMod) * days);
+    const water = Math.round(Math.max(0, die(6, ctx.rng) + c.wisMod) * days);
     const rawFood = s.settings.rawFoodRisk;
     const dirtyWater = s.settings.wildNeedsPurifying;
     if (rawFood) s.stores.foodRawLb += food;
@@ -4239,7 +4336,11 @@ function addDeathFailures(s: State, c: Character, n: number, why: string): void 
 /** A death saving throw: 10 or higher succeeds, a 1 counts as two failures, a 20 brings them back with 1 HP. */
 export const deathSave = act((d, ctx, charId: string) => {
   const c = charById(d, charId);
-  if (!c || !c.dying || c.diedAt != null) return;
+  if (c) rollDeathSave(d, ctx, c);
+});
+
+function rollDeathSave(d: State, ctx: Ctx, c: Character): void {
+  if (!c.dying || c.diedAt != null) return;
   const r = die(20, ctx.rng);
   if (r === 20) {
     c.hp = 1;
@@ -4253,7 +4354,16 @@ export const deathSave = act((d, ctx, charId: string) => {
     log(d, `${c.name} death save: ${r}, a success (${c.deathSuccesses}/3).`, 'good');
     if (c.deathSuccesses >= 3) makeStable(d, ctx, c, 'three death save successes');
   } else addDeathFailures(d, c, 1, `a death save of ${r}`);
-});
+}
+
+/** Table rule: time can't move on while someone is dying, so their remaining death saves are rolled now. */
+function resolveDying(s: State, ctx: Ctx): void {
+  for (const c of s.characters) {
+    if (!c.dying || c.diedAt != null) continue;
+    log(s, `${c.name} is dying and time moves on, so their remaining death saves are rolled now (table rule).`, 'warn');
+    for (let i = 0; i < 10 && c.dying && c.diedAt == null; i++) rollDeathSave(s, ctx, c);
+  }
+}
 
 /** Stabilize with a Wisdom (Medicine) check, or automatically (Healer's Kit, Spare the Dying). */
 export const stabilize = act((d, ctx, charId: string, helperId: string | null, method: 'medicine' | 'sure', medicineBonus?: number) => {

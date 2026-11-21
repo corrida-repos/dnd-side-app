@@ -185,14 +185,14 @@ export function environmentEffects(args: { weather: Weather; tempNow: number; pl
         title: `Heavy ${kind}${underCover ? ' (you are under cover)' : ''}`,
         detail:
           'The area is Lightly Obscured, and creatures in it have Disadvantage on Wisdom (Perception) checks.' +
-          (kind === 'snow' ? ' Deep snow may count as Difficult Terrain (DM’s call).' : ' Heavy rain also puts out open flames.'),
+          (kind === 'snow' ? ' Snow builds up on the ground, and a foot or more makes the going Difficult Terrain (table rule).' : ' Heavy rain also puts out open flames.'),
         tone: underCover ? 'info' : 'warn',
       });
     } else {
       out.push({
         id: 'precip',
         title: `Light ${kind}`,
-        detail: kind === 'snow' ? 'No direct effect. Snow that builds up may become Difficult Terrain (DM’s call).' : 'No mechanical effect.',
+        detail: kind === 'snow' ? 'No direct effect. Snow builds up on the ground, and a foot or more makes the going Difficult Terrain (table rule).' : 'No mechanical effect.',
         tone: 'info',
       });
     }

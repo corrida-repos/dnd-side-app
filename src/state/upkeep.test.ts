@@ -117,6 +117,7 @@ describe('charges, resources, HP and Hit Point Dice', () => {
     expect(rested.characters[0]).toMatchObject({ hp: 30, hitDiceSpent: 0 });
     const down = E.changeHp(healed, ctx(), s.characters[0].id, -50);
     expect(down.characters[0].hp).toBe(0);
+    down.settings.deathSavesResolve = false;
     expect(E.longRest(down, ctx(), false).characters[0].hp).toBe(0);
   });
 });

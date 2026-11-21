@@ -81,17 +81,22 @@ describe('crafting, lifestyle and feed', () => {
     expect(E.workOnProjects(s, ctx(), ['p']).projects[0].daysDone).toBe(3);
   });
 
-  it('can charge lifestyle weekly instead of daily', () => {
+  it('charges weekly lifestyle for the days spent in town', () => {
     const s = fresh((d) => {
       d.place.settlement = true;
       d.settings.lifestylePeriod = 'week';
       d.characters[0].lifestyle = 'modest';
-      d.dayIndex = 6;
+      d.dayIndex = 4;
       d.minutes = 23 * 60;
     });
-    expect(E.advance(s, ctx(), 60).characters[0].gp).toBe(93);
-    s.dayIndex = 3;
-    expect(E.advance(s, ctx(), 60).characters[0].gp).toBe(100);
+    // Three nights in town (days 4, 5 and 6): billed 3 GP at the end of the week, not 7.
+    expect(E.advance(s, ctx(), 49 * 60).characters[0].gp).toBe(97);
+    // One night in town, then leaving: the bill is settled the next day on the road.
+    s.dayIndex = 1;
+    const owing = E.advance(s, ctx(), 60);
+    expect(owing.characters[0]).toMatchObject({ gp: 100, lifestyleOwed: 1 });
+    owing.place.settlement = false;
+    expect(E.advance(owing, ctx(), 24 * 60).characters[0]).toMatchObject({ gp: 99, lifestyleOwed: 0 });
   });
 
   it('weighs mount feed at 10 lb per day', () => {
