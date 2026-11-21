@@ -124,6 +124,14 @@ function RulesCard() {
         <Toggle checked={s.settings.noTimepiece} onChange={(v) => set('noTimepiece', v)} label="Nobody has a timepiece: show the time as nature's cues" />
         <Rule>The header and the Time card show the part of the day (Dawn, Mid-morning, Dusk and so on) instead of the exact clock. The DM can peek at the exact time on the Time card.</Rule>
         <Toggle checked={s.settings.poorVisibilityNav} onChange={(v) => set('poorVisibilityNav', v)} label="Heavy rain or snow, and darkness, each make navigating harder (+5 DC, table rule)" />
+        <Toggle checked={s.settings.deathSavesResolve} onChange={(v) => set('deathSavesResolve', v)} label="Time can't pass while someone is dying: their death saves roll at once (table rule)" />
+        <Toggle checked={s.settings.carryDowned} onChange={(v) => set('carryDowned', v)} label="Carrying an Unconscious companion without a spare mount forces a Slow pace (table rule)" />
+        <Toggle checked={s.settings.fallbackNavigator} onChange={(v) => set('fallbackNavigator', v)} label="With no navigator able to act, the best Survival in the party finds the way (table rule)" />
+        <Toggle checked={s.settings.nightTravelSlow} onChange={(v) => set('nightTravelSlow', v)} label="Travelling at night without a light, if anyone lacks Darkvision, goes at a Slow pace (table rule)" />
+        <Rule>A Torch, Lantern or Candle in anyone's inventory, or an active light effect, counts as light.</Rule>
+        <Toggle checked={s.settings.stormsAtSea} onChange={(v) => set('stormsAtSea', v)} label="Storms at sea: a DC 15 Wisdom (Survival) check or half the day's sailing is lost off course (table rule)" />
+        <Toggle checked={s.settings.hirelingsEat} onChange={(v) => set('hirelingsEat', v)} label="Hirelings eat and drink from the camp stores outside settlements (table rule)" />
+        <Rule>1 lb of food and 1 gallon of water each per day. In a settlement their wages cover their keep.</Rule>
         <Toggle checked={s.settings.coinWeight} onChange={(v) => set('coinWeight', v)} label="Coins count toward carried weight (50 per pound)" />
         <Toggle checked={s.settings.coldGear2014} onChange={(v) => set('coldGear2014', v)} label="Cold weather gear protects against extreme cold (2014 rule; 2024 only counts Cold Resistance or Immunity)" />
         <Toggle checked={s.settings.heavyClothing2014} onChange={(v) => set('heavyClothing2014', v)} label="Heavy clothing gives Disadvantage on extreme heat saves (2014 rule; 2024 only counts Medium or Heavy armor)" />
@@ -134,10 +142,12 @@ function RulesCard() {
           onChange={(v) => edit((d) => void (d.settings.lifestylePeriod = v))}
           options={[
             { value: 'day', label: 'Every day' },
-            { value: 'week', label: 'At the start of each week' },
-            { value: 'month', label: 'At the start of each month' },
+            { value: 'week', label: 'At the end of each week' },
+            { value: 'month', label: 'At the end of each month' },
           ]}
         />
+        <Rule>Weekly and monthly bills cover only the days spent in town, and anything owed is settled on leaving.</Rule>
+        <Toggle checked={s.settings.debtDropsLifestyle} onChange={(v) => set('debtDropsLifestyle', v)} label="A character in debt drops to a cheaper lifestyle each day they can't pay (table rule)" />
         <Toggle checked={s.settings.climateAdjustedPrecip} onChange={(v) => set('climateAdjustedPrecip', v)} label="Adjust the precipitation roll for climate (deserts drier, jungles wetter)" />
         <Rule>When this is off, the plain DMG d20 table is used everywhere.</Rule>
         <Toggle checked={s.settings.doubleWaterInHeat} onChange={(v) => set('doubleWaterInHeat', v)} label="Double water needs on days of 100 °F or hotter (2014 rule)" />

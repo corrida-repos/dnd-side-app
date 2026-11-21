@@ -220,6 +220,8 @@ export interface Character {
   /** Coins actually carried, by denomination. */
   purse: Purse;
   lifestyle: Lifestyle;
+  /** Lifestyle run up in town but not yet paid (weekly or monthly billing). */
+  lifestyleOwed?: number;
   /** Mount speed in feet (mounts only). */
   speed: number;
   className: ClassName;
@@ -722,7 +724,7 @@ export interface Settings {
   heavyClothing2014: boolean;
   /** Allow more than one helper on a crafting project (the DM can). */
   extraCraftHelpers: boolean;
-  /** How often lifestyle is paid: every day, at the start of each week, or at the start of each month. */
+  /** How often lifestyle is paid: every day, or at the end of each week or month for the days spent in town. */
   lifestylePeriod: 'day' | 'week' | 'month';
   /** Count coins toward carried weight (50 coins per pound, treating gold as coins). */
   coinWeight: boolean;
@@ -750,6 +752,20 @@ export interface Settings {
   srdEncounters: boolean;
   /** Built-in creatures from other books (5etools source codes) used in the random encounter tables. */
   encounterBooks: string[];
+  /** Table rule: when time moves on, anyone still dying rolls their remaining death saves at once. */
+  deathSavesResolve: boolean;
+  /** Table rule: carrying an Unconscious companion without a spare mount forces a Slow pace. */
+  carryDowned: boolean;
+  /** Table rule: with no navigator able to act, the conscious character with the best Survival finds the way. */
+  fallbackNavigator: boolean;
+  /** Table rule: hirelings eat and drink from the camp stores outside settlements (1 lb food, 1 gal water a day each). */
+  hirelingsEat: boolean;
+  /** Table rule: travelling at night without light, when someone lacks Darkvision, goes at a Slow pace. */
+  nightTravelSlow: boolean;
+  /** Table rule: sailing through a storm calls for a DC 15 Wisdom (Survival) check, or half the distance is lost off course. */
+  stormsAtSea: boolean;
+  /** Table rule: a character in debt who can't pay drops to a cheaper lifestyle. */
+  debtDropsLifestyle: boolean;
 }
 
 export interface Travel {

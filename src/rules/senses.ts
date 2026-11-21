@@ -18,6 +18,7 @@ export type SenseKey =
   | 'frigid'
   | 'exhaustionEases'
   | 'exhaustionStuck'
+  | 'lifestyleDrops'
   | 'foodPoisoning'
   | 'foodPoisoningEnds'
   | 'waterIllness'
@@ -86,6 +87,7 @@ export const SENSES: Record<SenseKey, SenseDef> = {
   frigid: F('feels muscles cramping and strength failing in the icy water', 'feels nothing below the waist anymore in the freezing water'),
   exhaustionEases: F('feels lighter and clearer after the rest', 'feels some of the heaviness lift after sleeping'),
   exhaustionStuck: F('feels just as drained as before, the body craving food or water more than sleep', 'feels a deep weariness that sleep alone won’t fix'),
+  lifestyleDrops: N('notices the rooms getting smaller and the meals thinner now the money has run out', 'notices the landlord’s cooler welcome and a cheaper bed'),
   foodPoisoning: F('feels violent stomach cramps and cold sweats', 'feels a churning gut and shaking hands'),
   foodPoisoningEnds: F('feels the cramps gone at last, weak but settled', 'feels hollow but well again'),
   contagionOnset: F('feels feverish and achy, with a heaviness settling into the limbs', 'feels a creeping, sweaty fatigue that sleep does not touch'),
