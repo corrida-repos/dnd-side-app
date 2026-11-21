@@ -10,6 +10,7 @@ export type HirelingRole =
   | 'healer'
   | 'artisan'
   | 'scribe'
+  | 'appraiser'
   | 'interpreter'
   | 'teamster'
   | 'sailor'
@@ -38,6 +39,7 @@ export const HIRELING_ROLES: Record<HirelingRole, RoleInfo> = {
   healer: { label: 'Healer', skilled: true, does: 'Binds wounds and stabilizes the dying.', skill: 'Medicine', hook: 'Can stabilize a dying character with their Medicine bonus.' },
   artisan: { label: 'Artisan', skilled: true, does: 'Helps with crafting (must have proficiency with the tool).', skill: 'a tool' },
   scribe: { label: 'Scribe', skilled: true, does: 'Copies documents and letters, and helps scribe scrolls.', skill: "Calligrapher's Supplies" },
+  appraiser: { label: 'Appraiser (table rule)', skilled: true, does: 'Judges what gems, jewelry and art are worth, with their own Jeweler’s Tools.', skill: "Jeweler's Tools", hook: 'Can appraise items of unknown value on the Gear & Resources tab.' },
   interpreter: { label: 'Interpreter', skilled: true, does: 'Translates languages the party doesn’t speak.' },
   teamster: { label: 'Teamster or driver', skilled: true, does: 'Drives wagons and carts and handles draft animals.', skill: 'Land Vehicles' },
   sailor: { label: 'Sailor', skilled: true, does: 'Crews a boat or ship (larger ships need a crew of skilled hirelings).', skill: 'Water Vehicles' },

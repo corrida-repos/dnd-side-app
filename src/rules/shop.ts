@@ -14,22 +14,29 @@ interface Valued {
   name: string;
   valueGp?: number;
   valueHidden?: boolean;
+  valueBelieved?: number;
 }
 
 /**
  * The party doesn't know what one is worth: the DM hid its value, or it's a gem,
  * piece of jewelry or art object with no value recorded and no PHB price.
  */
-export const valueUnknown = (i: Valued): boolean => !!i.valueHidden || (i.valueGp == null && FULL_VALUE.test(i.name) && priceOf(i.name) == null);
+export const valueUnknown = (i: Valued): boolean => (!!i.valueHidden && i.valueBelieved == null) || (!i.valueHidden && i.valueGp == null && FULL_VALUE.test(i.name) && priceOf(i.name) == null);
 
-/** Value of one as the party knows it; undefined while it's unknown. */
-export const knownValue = (i: Valued): number | undefined => (valueUnknown(i) ? undefined : i.valueGp);
+/** A misjudged appraisal: the party believes a wrong value (the true one is still hidden). */
+export const misjudged = (i: Valued): boolean => !!i.valueHidden && i.valueBelieved != null;
+
+/** Value of one as the party believes it; undefined while it's unknown. */
+export const knownValue = (i: Valued): number | undefined => (misjudged(i) ? i.valueBelieved : valueUnknown(i) ? undefined : i.valueGp);
+
+/** The true value isn't out in the open: unknown, or misjudged. */
+export const valueSecret = (i: Valued): boolean => valueUnknown(i) || misjudged(i);
 
 /** Two inventory lines can share a stack: same name, and no unknown value gets mixed with a different one. */
 export const sameStack = (a: Valued, b: Valued): boolean =>
   a.name.toLowerCase() === b.name.toLowerCase() &&
-  valueUnknown(a) === valueUnknown(b) &&
-  (valueUnknown(a) ? (a.valueGp ?? null) === (b.valueGp ?? null) : a.valueGp == null || b.valueGp == null || a.valueGp === b.valueGp);
+  valueSecret(a) === valueSecret(b) &&
+  (valueSecret(a) ? (a.valueGp ?? null) === (b.valueGp ?? null) && (a.valueBelieved ?? null) === (b.valueBelieved ?? null) : a.valueGp == null || b.valueGp == null || a.valueGp === b.valueGp);
 
 export const priceOf = (name: string): number | undefined => {
   const n = name.toLowerCase().replace(/\s*\(.*\)$/, '').trim();
