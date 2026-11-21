@@ -1184,3 +1184,65 @@ select {
 .span-all {
   grid-column: 1 / -1;
 }
+
+/* Level of detail */
+.tier-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px;
+  margin: 8px 0;
+}
+.tier-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  text-align: left;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 8px;
+  white-space: normal;
+  font-weight: normal;
+}
+.tier-option small {
+  color: var(--muted);
+}
+.tier-option.active {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.tier-option.active b {
+  color: var(--accent);
+}
+.tier-group h3 {
+  margin: 14px 0 4px;
+  font-size: 1rem;
+}
+.tier-list li {
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+}
+.tier-list li.tier-off .toggle span {
+  color: var(--muted);
+}
+.tier-cost {
+  margin: 2px 0 0 22px;
+}
+.tier-list details {
+  margin-left: 22px;
+}
+.tier-notes h3 {
+  margin: 14px 0 4px;
+  font-size: 1rem;
+}
+.tier-group h3 span {
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: normal;
+  margin-left: 6px;
+}
+.tier-list .pill {
+  margin-left: 6px;
+}

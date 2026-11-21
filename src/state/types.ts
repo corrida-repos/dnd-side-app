@@ -720,8 +720,18 @@ export interface Settings {
   fearPerLongRest: number;
   /** Table rule: weather favors or hinders certain damage types (+1 or -1 per damage die). */
   weatherDamage: boolean;
-  /** Variant encumbrance is always used now; kept so older saves load. */
+  /** Table rule: Encumbered over 5 × Strength and Heavily Encumbered over 10 × Strength. */
   variantEncumbrance: boolean;
+  /** 2024 PHB carrying capacity: going over it slows the party. Off, weight is shown but has no effect. */
+  encumbrance: boolean;
+  /** 2024 DMG: dehydration and malnutrition are checked at midnight. */
+  foodAndWater: boolean;
+  /** 2024 DMG: hourly Constitution saves in extreme cold and extreme heat. */
+  extremeWeather: boolean;
+  /** 2024 PHB: a Con save each hour of travel past 8 hours. */
+  forcedMarch: boolean;
+  /** 2024 DMG: the navigator's Wisdom (Survival) check to avoid getting lost off the road. */
+  navigation: boolean;
   /** 2014 rule: cold weather gear means an automatic success against extreme cold. */
   coldGear2014: boolean;
   /** 2014 rule: heavy clothing gives Disadvantage on extreme heat saves. */

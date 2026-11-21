@@ -71,11 +71,11 @@ export function playerItems(s: State, c: Character): PlayerItem[] {
 
   // ---- upkeep
   const hot = s.weather.high >= 100;
-  if (c.needsFood && c.ateLbToday < foodNeedLb(c)) upkeep(s.minutes % 1440 >= 18 * 60 ? 'warn' : 'info', `Hasn’t eaten enough today (${c.ateLbToday}/${foodNeedLb(c)} lb)`, c.rationsLb > 0 ? 'Eat from their rations.' : 'Out of rations: forage, hunt or buy food.', 'camp', 'food');
+  if (s.settings.foodAndWater && c.needsFood && c.ateLbToday < foodNeedLb(c)) upkeep(s.minutes % 1440 >= 18 * 60 ? 'warn' : 'info', `Hasn’t eaten enough today (${c.ateLbToday}/${foodNeedLb(c)} lb)`, c.rationsLb > 0 ? 'Eat from their rations.' : 'Out of rations: forage, hunt or buy food.', 'camp', 'food');
   const need = waterNeedPints(c, hot, s.settings.doubleWaterInHeat);
-  if (c.needsWater && c.drankPintsToday < need) upkeep(s.minutes % 1440 >= 18 * 60 ? 'warn' : 'info', `Hasn’t drunk enough today (${c.drankPintsToday}/${need} pt)`, c.waterPints > 0 ? 'Drink from their waterskin.' : 'Empty waterskin: find or purify water.', 'camp', 'water');
-  if (c.needsFood && c.rationsLb < foodNeedLb(c) * 2) upkeep(c.rationsLb <= 0 ? 'bad' : 'warn', `Food for ${Math.floor(c.rationsLb / foodNeedLb(c))} day(s) left (${c.rationsLb} lb)`, 'Buy rations, forage or hunt.', 'camp', 'rations');
-  if (c.needsWater && c.waterPints < need / 2) upkeep(c.waterPints <= 0 ? 'bad' : 'warn', `Waterskin nearly empty (${c.waterPints}/${c.waterCapacityPints} pt)`, 'Refill at a water source.', 'camp', 'skin');
+  if (s.settings.foodAndWater && c.needsWater && c.drankPintsToday < need) upkeep(s.minutes % 1440 >= 18 * 60 ? 'warn' : 'info', `Hasn’t drunk enough today (${c.drankPintsToday}/${need} pt)`, c.waterPints > 0 ? 'Drink from their waterskin.' : 'Empty waterskin: find or purify water.', 'camp', 'water');
+  if (s.settings.foodAndWater && c.needsFood && c.rationsLb < foodNeedLb(c) * 2) upkeep(c.rationsLb <= 0 ? 'bad' : 'warn', `Food for ${Math.floor(c.rationsLb / foodNeedLb(c))} day(s) left (${c.rationsLb} lb)`, 'Buy rations, forage or hunt.', 'camp', 'rations');
+  if (s.settings.foodAndWater && c.needsWater && c.waterPints < need / 2) upkeep(c.waterPints <= 0 ? 'bad' : 'warn', `Waterskin nearly empty (${c.waterPints}/${c.waterCapacityPints} pt)`, 'Refill at a water source.', 'camp', 'skin');
   if (c.waterUnsafe) upkeep('warn', 'Carrying unsafe water', 'Boil it or cast Purify Food and Drink before drinking.', 'camp', 'unsafe');
   if (s.settings.coldNights && s.weather.low <= s.settings.coldNightF && !E.hasWarmCover(c)) upkeep('warn', `No warm cover for a cold night (low ${s.weather.low}°F)`, 'A bedroll, blanket, cold weather gear or a fire.', 'camp', 'cold');
   if (isCaster(c.className)) {

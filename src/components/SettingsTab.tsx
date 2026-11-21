@@ -7,10 +7,12 @@ import { RECOMMENDED_BESTIARIES } from '../rules/encounters';
 import { parse5eToolsItems, parse5eToolsRecipes, parse5eToolsRewards, parse5eToolsSpellClasses } from '../rules/hazards';
 import { Card, Num, Select, Toggle, Rule } from './common';
 import { log } from '../state/engine';
+import { DetailCard } from './DetailTiers';
 
 export function SettingsTab() {
   return (
     <div className="grid">
+      <DetailCard />
       <DateCard />
       <RulesCard />
       <SpellLibraryCard />
@@ -67,81 +69,20 @@ function DateCard() {
 
 function RulesCard() {
   const s = useGame();
-  const set = (k: Exclude<keyof typeof s.settings, 'rawFoodDC' | 'coldNightF' | 'fireColdLimitF' | 'encounterOn' | 'exploreEncounterOn' | 'moonOffset' | 'stressPerLongRest' | 'fearPerLongRest' | 'lifestylePeriod' | 'moneychangerFee' | 'encounterBooks' | 'facilityBooks'>, v: boolean) => edit((d) => void (d.settings[k] = v));
+  const set = (k: 'autoRollSaves' | 'noTimepiece' | 'coldGear2014' | 'heavyClothing2014' | 'extraCraftHelpers' | 'climateAdjustedPrecip', v: boolean) => edit((d) => void (d.settings[k] = v));
   return (
     <Card title="Rules options">
       <div className="stack tight">
         <Toggle checked={s.settings.autoRollSaves} onChange={(v) => set('autoRollSaves', v)} label="Roll saving throws for me" />
         <Rule>When this is off, saves wait on the Overview so players can roll their own dice.</Rule>
-        <Toggle checked={s.settings.fireWarmsCamp} onChange={(v) => set('fireWarmsCamp', v)} label="A lit campfire protects the camp from extreme cold (table rule)" />
-        {s.settings.fireWarmsCamp && (
-          <div className="form-row">
-            <Num label="Campfire protects down to" value={s.settings.fireColdLimitF ?? -20} onChange={(v) => edit((d) => void (d.settings.fireColdLimitF = Math.round(v)))} min={-60} max={0} suffix="°F" width={3} />
-          </div>
-        )}
-        <Rule>
-          Below that temperature even people beside the fire make the hourly extreme cold saves. A sheltered pit (windbreak and roof) protects 10°F lower. It covers the camp while resting or camping, not while traveling, and
-          also counts as warm cover on a cold night.
-        </Rule>
-        <Toggle checked={s.settings.fireLightingCheck} onChange={(v) => set('fireLightingCheck', v)} label="Lighting a campfire takes a Wisdom (Survival) check (table rule)" />
-        <Rule>
-          DC 10 with dry fuel, +5 when rain or snow has dampened it, +5 in strong wind or heavy rain (only possible in a sheltered pit) and +5 without a Tinderbox (10 minutes a try instead of 1). Prestidigitation, Druidcraft
-          or Fire Bolt light it with no roll. Off, the PHB applies: a Tinderbox lights it in 1 minute.
-        </Rule>
-        <Toggle checked={s.settings.coldNights} onChange={(v) => set('coldNights', v)} label="Cold nights: sleeping out without warm cover risks Exhaustion (table rule)" />
-        {s.settings.coldNights && (
-          <div className="form-row">
-            <Num label="Cold night at or below" value={s.settings.coldNightF} onChange={(v) => edit((d) => void (d.settings.coldNightF = Math.round(v)))} min={-20} max={60} suffix="°F" width={3} />
-          </div>
-        )}
-        <Rule>
-          If the temperature drops to this point during a Long Rest, anyone sleeping in the open without a Bedroll, Blanket, cold weather gear, a lit campfire (when that rule is on) or a building or cave makes a DC 10 Con save when they
-          wake, or gains 1 Exhaustion level. At 0 °F or below, the normal hourly extreme cold saves apply instead.
-        </Rule>
-        <Toggle checked={s.settings.trackComponents} onChange={(v) => set('trackComponents', v)} label="Costly spell components must be carried and are used up (2024 PHB)" />
-        <Toggle checked={s.settings.appraiseCrafts} onChange={(v) => set('appraiseCrafts', v)} label="Jeweler's Tools also value jewelry; History values art objects at DC 15 (table rule)" />
-        <Toggle checked={s.settings.appraiseByEye} onChange={(v) => set('appraiseByEye', v)} label="Anyone can judge a valuable's worth by eye at DC 20 (table rule)" />
-        <Toggle checked={s.settings.appraiseOneTry} onChange={(v) => set('appraiseOneTry', v)} label="One appraisal try per person until a rest (table rule)" />
-        <Toggle checked={s.settings.appraiseTime} onChange={(v) => set('appraiseTime', v)} label="A careful appraisal takes 10 minutes (table rule)" />
-        <Toggle checked={s.settings.appraiseMisjudge} onChange={(v) => set('appraiseMisjudge', v)} label="Secret appraisal rolls; failing by 5 or more gives a wrong value (optional table rule)" />
-        <Rule>
-          The 2024 PHB only says Jeweler&apos;s Tools discern a gem&apos;s value (Intelligence, DC 15), with Advantage if the appraiser is also proficient in a skill that applies. These switches cover everything else. A misjudged value is one
-          treasure tier off (10, 50, 100, 500, 1,000 or 5,000 GP for gems; 25, 250, 750, 2,500 or 7,500 GP for art), and the party can&apos;t tell from the log. Selling, a merchant or the DM reveals the truth, and spells always use the true value.
-        </Rule>
-        <Toggle checked={s.settings.downtimeOutcomes} onChange={(v) => set('downtimeOutcomes', v)} label="Downtime activities roll their outcomes (optional Xanathar's rules)" />
-        <Toggle checked={s.settings.lifestyleRisks} onChange={(v) => set('lifestyleRisks', v)} label="Lifestyle risks in town: theft, disease and attention once a week (table rule)" />
+        <Toggle checked={s.settings.noTimepiece} onChange={(v) => set('noTimepiece', v)} label="Nobody has a timepiece: show the time as nature's cues" />
+        <Rule>The header and the Time card show the part of the day (Dawn, Mid-morning, Dusk and so on) instead of the exact clock. The DM can peek at the exact time on the Time card.</Rule>
         <Toggle checked={(s.settings.facilityBooks ?? []).includes('FRHoF')} onChange={(v) => edit((d) => void (d.settings.facilityBooks = [...(d.settings.facilityBooks ?? []).filter((x) => x !== 'FRHoF'), ...(v ? (['FRHoF'] as const) : [])]))} label="Bastion facilities from Forgotten Realms: Heroes of Faerûn" />
         <Toggle checked={(s.settings.facilityBooks ?? []).includes('EFA')} onChange={(v) => edit((d) => void (d.settings.facilityBooks = [...(d.settings.facilityBooks ?? []).filter((x) => x !== 'EFA'), ...(v ? (['EFA'] as const) : [])]))} label="Bastion facilities from Eberron: Forge of the Artificer" />
-        <Toggle checked={s.settings.regionDailyRoll} onChange={(v) => set('regionDailyRoll', v)} label="Supernatural regions roll their table each dawn (table rule)" />
-        <Toggle checked={s.settings.runningBusiness} onChange={(v) => set('runningBusiness', v)} label="Running a business as a downtime activity (optional 2014 DMG rule)" />
-        <Toggle checked={s.settings.sleepDeprivation} onChange={(v) => set('sleepDeprivation', v)} label="Staying awake too long causes Exhaustion (optional Xanathar's rule)" />
-        <Rule>
-          Each time the party passes another 24 hours without finishing a Long Rest, everyone makes a Con save or gains 1 Exhaustion level from Sleep deprivation. The DC is 10, plus 5 for every
-          further 24 hours, and it resets after a Long Rest.
-        </Rule>
-        <Toggle checked={s.settings.chargeCosts} onChange={(v) => set('chargeCosts', v)} label="Charge costs to characters' gold (crafting, construction, lifestyle, wages, feed)" />
         <div className="form-row">
           <Num label="Stress removed per Long Rest" value={s.settings.stressPerLongRest} onChange={(v) => edit((d) => void (d.settings.stressPerLongRest = Math.max(0, Math.round(v))))} min={0} width={2} />
           <Num label="Fear removed per Long Rest" value={s.settings.fearPerLongRest} onChange={(v) => edit((d) => void (d.settings.fearPerLongRest = Math.max(0, Math.round(v))))} min={0} width={2} />
         </div>
-        <Toggle checked={s.settings.weatherDamage} onChange={(v) => set('weatherDamage', v)} label="Weather favors or hinders some damage types (table rule)" />
-        <Rule>
-          Outdoors: heavy rain favors Lightning and hinders Fire, and a thunderstorm also favors Thunder. Falling snow and extreme cold favor Cold and hinder Fire. Extreme heat favors Fire and hinders Cold. Clear
-          daylight favors Radiant, night favors Necrotic, and humid swamp air favors Poison. The Underdark favors Necrotic and hinders Radiant. Favored means +1 damage per damage die, hindered means −1 per die
-          (minimum 1).
-        </Rule>
-        <Toggle checked={s.settings.noTimepiece} onChange={(v) => set('noTimepiece', v)} label="Nobody has a timepiece: show the time as nature's cues" />
-        <Rule>The header and the Time card show the part of the day (Dawn, Mid-morning, Dusk and so on) instead of the exact clock. The DM can peek at the exact time on the Time card.</Rule>
-        <Toggle checked={s.settings.poorVisibilityNav} onChange={(v) => set('poorVisibilityNav', v)} label="Heavy rain or snow, and darkness, each make navigating harder (+5 DC, table rule)" />
-        <Toggle checked={s.settings.deathSavesResolve} onChange={(v) => set('deathSavesResolve', v)} label="Time can't pass while someone is dying: their death saves roll at once (table rule)" />
-        <Toggle checked={s.settings.carryDowned} onChange={(v) => set('carryDowned', v)} label="Carrying an Unconscious companion without a spare mount forces a Slow pace (table rule)" />
-        <Toggle checked={s.settings.fallbackNavigator} onChange={(v) => set('fallbackNavigator', v)} label="With no navigator able to act, the best Survival in the party finds the way (table rule)" />
-        <Toggle checked={s.settings.nightTravelSlow} onChange={(v) => set('nightTravelSlow', v)} label="Travelling at night without a light, if anyone lacks Darkvision, goes at a Slow pace (table rule)" />
-        <Rule>A Torch, Lantern or Candle in anyone's inventory, or an active light effect, counts as light.</Rule>
-        <Toggle checked={s.settings.stormsAtSea} onChange={(v) => set('stormsAtSea', v)} label="Storms at sea: a DC 15 Wisdom (Survival) check or half the day's sailing is lost off course (table rule)" />
-        <Toggle checked={s.settings.hirelingsEat} onChange={(v) => set('hirelingsEat', v)} label="Hirelings eat and drink from the camp stores outside settlements (table rule)" />
-        <Rule>1 lb of food and 1 gallon of water each per day. In a settlement their wages cover their keep.</Rule>
-        <Toggle checked={s.settings.coinWeight} onChange={(v) => set('coinWeight', v)} label="Coins count toward carried weight (50 per pound)" />
         <Toggle checked={s.settings.coldGear2014} onChange={(v) => set('coldGear2014', v)} label="Cold weather gear protects against extreme cold (2014 rule; 2024 only counts Cold Resistance or Immunity)" />
         <Toggle checked={s.settings.heavyClothing2014} onChange={(v) => set('heavyClothing2014', v)} label="Heavy clothing gives Disadvantage on extreme heat saves (2014 rule; 2024 only counts Medium or Heavy armor)" />
         <Toggle checked={s.settings.extraCraftHelpers} onChange={(v) => set('extraCraftHelpers', v)} label="Allow more than one helper on a crafting project (normally only one other character can help)" />
@@ -156,20 +97,8 @@ function RulesCard() {
           ]}
         />
         <Rule>Weekly and monthly bills cover only the days spent in town, and anything owed is settled on leaving.</Rule>
-        <Toggle checked={s.settings.debtDropsLifestyle} onChange={(v) => set('debtDropsLifestyle', v)} label="A character in debt drops to a cheaper lifestyle each day they can't pay (table rule)" />
         <Toggle checked={s.settings.climateAdjustedPrecip} onChange={(v) => set('climateAdjustedPrecip', v)} label="Adjust the precipitation roll for climate (deserts drier, jungles wetter)" />
-        <Rule>When this is off, the plain DMG d20 table is used everywhere.</Rule>
-        <Toggle checked={s.settings.doubleWaterInHeat} onChange={(v) => set('doubleWaterInHeat', v)} label="Double water needs on days of 100 °F or hotter (2014 rule)" />
-        <Toggle checked={s.settings.rawFoodRisk} onChange={(v) => set('rawFoodRisk', v)} label="Raw food can make you sick (table rule)" />
-        {s.settings.rawFoodRisk && (
-          <div className="form-row">
-            <Num label="Raw food save DC" value={s.settings.rawFoodDC} onChange={(v) => edit((d) => void (d.settings.rawFoodDC = Math.round(v)))} min={1} max={30} width={3} />
-          </div>
-        )}
-        <Rule>Eating raw food means a Con save, or the character is Sick: Poisoned until they finish a Long Rest. Cooking it or casting Purify Food and Drink makes it safe.</Rule>
-        <Toggle checked={s.settings.wildNeedsPurifying} onChange={(v) => set('wildNeedsPurifying', v)} label="Unpurified water can make you sick (table rule)" />
-        <Rule>Drinking unpurified water means a DC 10 Con save, or the character is Sick: Poisoned until they finish a Long Rest. Purify Food and Drink or boiling makes it safe.</Rule>
-        <Toggle checked={s.settings.sleepInArmorPenalty} onChange={(v) => set('sleepInArmorPenalty', v)} label="Sleeping in Medium or Heavy armor spoils the Long Rest (optional Xanathar's rule)" />
+        <Rule>When this is off, the plain DMG d20 table is used everywhere. The rules that make the game slower or faster are under Level of detail.</Rule>
       </div>
     </Card>
   );
