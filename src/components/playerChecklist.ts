@@ -1,9 +1,11 @@
 import * as E from '../state/engine';
+import { containerLoad } from '../state/engine';
 import type { Character, State } from '../state/types';
 import { foodNeedLb, waterNeedPints, exhaustionBreakdown } from '../rules/survival';
 import { CONTAGIONS } from '../rules/contagion';
 import { preparedCount, preparedLimit, isCaster } from '../rules/spells';
-import { ATTUNE_AWAY_MINUTES, MAX_ATTUNED } from '../rules/upkeep';
+import { ATTUNE_AWAY_MINUTES } from '../rules/upkeep';
+import { componentFor } from '../rules/components';
 import { RESURRECTION_SPELLS } from '../rules/longterm';
 import { LOAD_LABEL } from '../rules/encumbrance';
 import { fmtGp } from '../rules/money';
@@ -75,31 +77,42 @@ export function playerItems(s: State, c: Character): PlayerItem[] {
   if (c.needsFood && c.rationsLb < foodNeedLb(c) * 2) upkeep(c.rationsLb <= 0 ? 'bad' : 'warn', `Food for ${Math.floor(c.rationsLb / foodNeedLb(c))} day(s) left (${c.rationsLb} lb)`, 'Buy rations, forage or hunt.', 'camp', 'rations');
   if (c.needsWater && c.waterPints < need / 2) upkeep(c.waterPints <= 0 ? 'bad' : 'warn', `Waterskin nearly empty (${c.waterPints}/${c.waterCapacityPints} pt)`, 'Refill at a water source.', 'camp', 'skin');
   if (c.waterUnsafe) upkeep('warn', 'Carrying unsafe water', 'Boil it or cast Purify Food and Drink before drinking.', 'camp', 'unsafe');
-  if (c.armorKind !== 'none' && !c.armorWorn) upkeep('info', `${c.armorName || 'Armor'} isn’t on`, 'Don it before trouble starts (takes time).', 'camp', 'armor');
   if (s.settings.coldNights && s.weather.low <= s.settings.coldNightF && !E.hasWarmCover(c)) upkeep('warn', `No warm cover for a cold night (low ${s.weather.low}°F)`, 'A bedroll, blanket, cold weather gear or a fire.', 'camp', 'cold');
   if (isCaster(c.className)) {
     const lim = preparedLimit(c);
     const n = preparedCount(c);
     if (lim != null && n < lim) upkeep('warn', `Prepare spells: ${n}/${lim} prepared`, c.prepOpen ? 'Any prepared spell can be changed now, after the Long Rest.' : 'Prepare them on the Spells & Morning tab.', 'morning', 'unprep');
-    else if (c.prepOpen) upkeep('info', 'Can change prepared spells now (after a Long Rest)', undefined, 'morning', 'prep');
-    else if (c.swapsLeft > 0) upkeep('info', `Can swap ${c.swapsLeft} prepared spell(s)`, undefined, 'morning', 'swap');
   }
-  // Skip morning tasks the checklist already covers (spells, food and water).
-  const tasks = c.tasks.filter((t) => t.daily && !t.done && !/prepare|eat|drink/i.test(t.label));
-  if (tasks.length) upkeep('info', `Morning tasks left: ${tasks.map((t) => t.label).join(', ')}`, undefined, 'morning', 'tasks');
-  const attuned = c.items.filter((i) => i.attuned).length;
   for (const it of c.items) {
     if (it.attuned && it.awaySince != null) upkeep('bad', `Attuned ${it.name} is out of reach`, `Attunement ends in ${formatDuration(Math.max(0, ATTUNE_AWAY_MINUTES - (now - it.awaySince)))} unless it’s within 100 ft.`, 'gear', `away-${it.id}`);
-    else if (it.requiresAttunement && !it.attuned && attuned < MAX_ATTUNED) upkeep('info', `Could attune to ${it.partyName || it.name}`, 'A Short Rest focused on it.', 'gear', `att-${it.id}`);
-    if (!it.identified) upkeep('info', `Unidentified: ${it.partyName || it.name}`, 'Identify, a Short Rest handling it, or study.', 'gear', `id-${it.id}`);
   }
-  const spentRes = c.resources.filter((r) => r.max > 0 && r.current === 0 && r.recharge !== 'manual');
-  if (spentRes.length) upkeep('info', `Used up: ${spentRes.map((r) => r.name).join(', ')}`, 'Recovers on a rest or at dawn.', 'gear', 'res');
   const ammo = c.inventory.filter((i) => (i.ammo?.spent ?? 0) > 0);
   if (ammo.length) upkeep('info', `Ammunition to recover: ${ammo.map((i) => `${i.ammo!.spent} ${i.name}`).join(', ')}`, 'Half can be found with a minute’s search after the fight.', 'gear', 'ammo');
   for (const e of s.effects.filter((x) => x.targetIds.includes(c.id) && x.kind === 'gift' && x.endsAt != null && x.endsAt - now < 24 * 60 && x.endsAt > now)) upkeep('info', `${e.name} fades in ${formatDuration(e.endsAt! - now)}`, 'Use it or lose it.', 'effects', `gift-${e.id}`);
   for (const d of s.debts.filter((x) => x.debtorId === c.id)) upkeep(d.dueDay < s.dayIndex ? 'bad' : 'warn', `Owes ${d.creditor} ${fmtGp(d.owed)}${d.dueDay < s.dayIndex ? ' (overdue)' : `, due in ${d.dueDay - s.dayIndex} day(s)`}`, 'Pay on the Money & Shop tab.', 'money', `debt-${d.id}`);
-  for (const p of s.projects.filter((x) => x.charIds.includes(c.id) && (x.awaitingOutcome || !x.done))) upkeep(p.awaitingOutcome ? 'warn' : 'info', p.awaitingOutcome ? `${p.name} is done: roll the outcome` : `Working on ${p.name} (${p.daysDone}/${p.daysRequired} workdays)`, undefined, 'downtime', `proj-${p.id}`);
+  for (const p of s.projects.filter((x) => x.charIds.includes(c.id) && x.awaitingOutcome)) upkeep('warn', `${p.name} is done: roll the outcome`, undefined, 'downtime', `proj-${p.id}`);
+
+  // ---- inventory that needs dealing with
+  for (const box of c.inventory.filter((i) => i.container && i.container.capacityLb != null)) {
+    const held = containerLoad(c.inventory, box.id);
+    if (held > box.container!.capacityLb!) upkeep('warn', `${box.name} is overfilled (${held}/${box.container!.capacityLb} lb)`, 'The excess won’t fit: repack it or carry it loose.', 'gear', `box-${box.id}`);
+  }
+  for (const box of c.inventory.filter((i) => i.container?.weightless)) {
+    const parent = c.inventory.find((p2) => p2.id === box.containerId);
+    if (parent?.container?.weightless) upkeep('bad', `${box.name} is packed inside ${parent.name}`, 'Putting one extradimensional space inside another destroys both and tears a gate to the Astral Plane (DMG). Take it out.', 'gear', `nest-${box.id}`);
+  }
+  for (const it of c.inventory.filter((i) => i.ammo)) {
+    const left = it.qty - (it.ammo?.spent ?? 0);
+    if (left <= 5) upkeep(left <= 0 ? 'bad' : 'warn', left <= 0 ? `Out of ${it.name}` : `Only ${left} ${it.name} left`, 'Recover spent ammunition, buy or craft more.', 'gear', `low-${it.id}`);
+  }
+  if (c.inventory.some((i) => /^reliquary talisman \(spent\)$/i.test(i.name))) upkeep('info', 'The Reliquary talisman is spent', 'Return it to the Reliquary and give a Harvest order to recharge it.', 'bastions', 'talisman');
+  if (s.settings.trackComponents) {
+    for (const sp of c.spells.filter((x) => x.prepared || x.alwaysPrepared)) {
+      const comp = componentFor(sp.name);
+      if (comp && E.componentValue(c, comp) < comp.gp && !c.inventory.some((i) => /^reliquary talisman$/i.test(i.name) && comp.gp <= 1000)) upkeep('warn', `Can’t cast ${sp.name}: needs ${comp.what}`, `Carrying ${fmtGp(E.componentValue(c, comp))} worth. Buy it (Money & Shop) and add it with its value.`, 'money', `comp-${sp.name}`);
+    }
+  }
+  for (const it of c.items.filter((i) => i.attuned && (i.clues ?? []).some((k) => k.kind === 'curse' && !k.known))) add({ kind: 'status', tone: 'warn', text: `Attuned to a cursed ${it.name}`, fix: 'The curse isn’t known yet; attunement can’t be ended until Remove Curse.', tab: 'gear', dmOnly: true, id: `curse-${it.id}` });
 
   const rank = { bad: 0, warn: 1, info: 2 };
   return out.sort((a, b) => rank[a.tone] - rank[b.tone]);

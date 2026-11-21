@@ -37,6 +37,11 @@ export function attentionItems(s: State): AttentionItem[] {
     if (thirsty.length) add({ id: 'water', tone: 'warn', text: `Not enough water today: ${thirsty.join(', ')}`, tab: 'camp' });
   }
 
+  if (s.settings.rawFoodRisk && s.stores.foodRawLb > 0) add({ id: 'raw', tone: 'warn', text: `${s.stores.foodRawLb} lb of raw food in the camp stores`, tab: 'camp' });
+  if (s.stores.waterUnsafeGal > 0) add({ id: 'unsafe', tone: 'warn', text: `${s.stores.waterUnsafeGal} gal of unsafe water in the camp stores`, tab: 'camp' });
+  for (const st of s.stashes) {
+    if (st.capacityLb != null && E.stashLoad(st, s.settings.coinWeight) > st.capacityLb) add({ id: `stash-${st.id}`, tone: 'warn', text: `${st.name} is over capacity (${E.stashLoad(st, s.settings.coinWeight)}/${st.capacityLb} lb)`, tab: 'storage' });
+  }
   if (s.fire.lit && s.fire.fuelHours <= 1) add({ id: 'fire', tone: 'warn', text: `The campfire has ${s.fire.fuelHours} hour of fuel left`, tab: 'camp' });
   for (const e of s.effects) {
     if (e.kind === 'light' && e.endsAt != null && e.endsAt - now <= 30 && e.endsAt > now) add({ id: `light-${e.id}`, tone: 'warn', text: `${e.name} goes out in ${formatDuration(e.endsAt - now)}`, tab: 'effects' });
