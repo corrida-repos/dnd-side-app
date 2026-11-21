@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Project } from '../state/types';
 import { SpeedUp } from './SpeedUp';
+import { PATRONS } from '../rules/patrons';
 import { ACTIVITY_CHECKS, activityOf, CAROUSING_COST, CRIME_TARGETS } from '../rules/downtimeOutcomes';
 import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
@@ -161,6 +162,8 @@ function NewProject() {
   const [consumable, setConsumable] = useState(false);
   const [days, setDays] = useState(5);
   const [learn, setLearn] = useState('');
+  const [newLevel, setNewLevel] = useState(3);
+  const [returning, setReturning] = useState(false);
   const [intMod, setIntMod] = useState(0);
   const [cost, setCost] = useState(0);
   const [crafters, setCrafters] = useState<string[]>([]);
@@ -315,6 +318,32 @@ function NewProject() {
               }}
               options={[{ value: '', label: 'Custom…' }, ...ACTIVITY_PRESETS.map((a) => ({ value: a.name, label: a.name }))]}
             />
+            {name.startsWith('Change subclass') && (
+              <>
+                <Num
+                  label="New class level"
+                  value={newLevel}
+                  onChange={(v) => {
+                    const l = Math.max(1, Math.min(20, Math.round(v)));
+                    setNewLevel(l);
+                    setDays(returning ? l : 2 * l);
+                    setCost(returning ? 0 : 100 * l);
+                  }}
+                  min={1}
+                  max={20}
+                  width={2}
+                />
+                <Toggle
+                  checked={returning}
+                  onChange={(v) => {
+                    setReturning(v);
+                    setDays(v ? newLevel : 2 * newLevel);
+                    setCost(v ? 0 : 100 * newLevel);
+                  }}
+                  label="Returning to a subclass held before (half time, free)"
+                />
+              </>
+            )}
             {name.startsWith('Training') && (
               <>
                 <Text label="Language or tool" value={learn} onChange={setLearn} placeholder="e.g. Elvish, Thieves' Tools" />
@@ -324,9 +353,10 @@ function NewProject() {
                   onChange={(v) => {
                     const m = Math.round(v);
                     const weeks = Math.max(1, 10 - m);
+                    const p = s.patron ? PATRONS[s.patron.kind] : null;
                     setIntMod(m);
-                    setDays(weeks * 5);
-                    setCost(weeks * 25);
+                    setDays(Math.ceil(weeks * 5 * (p?.trainingHalfTime ? 0.5 : 1)));
+                    setCost(weeks * 25 * (p?.trainingHalfCost ? 0.5 : 1));
                   }}
                   width={3}
                 />

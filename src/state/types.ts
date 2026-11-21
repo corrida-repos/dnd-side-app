@@ -13,6 +13,8 @@ import type { ItemRef } from '../rules/hazards';
 import type { CommMethod } from '../rules/comms';
 import type { ContagionKind } from '../rules/contagion';
 import type { CreditorKind } from '../rules/debts';
+import type { PatronKind } from '../rules/patrons';
+import type { RegionKind } from '../rules/regions';
 import type { HirelingRole } from '../rules/hirelings';
 import type { ClueKind, StudyMethod } from '../rules/identify';
 import type { WeightSource } from '../rules/encumbrance';
@@ -364,6 +366,8 @@ export interface Place {
   settlement: boolean;
   /** How dangerous the area is: sets how often to check for random encounters and how tough they are. */
   danger: Danger;
+  /** A supernatural region (Tasha's), if this place is one. */
+  region?: RegionKind | null;
   /** Snow on the ground and days of mud (table rule). */
   ground?: { snowIn: number; mudDays: number };
 }
@@ -726,6 +730,8 @@ export interface Settings {
   noTimepiece: boolean;
   /** Table rule: heavy precipitation and darkness each add +5 to the navigation DC. */
   poorVisibilityNav: boolean;
+  /** Roll the supernatural region's table once each dawn while there (table rule). */
+  regionDailyRoll: boolean;
   /** Which 2025 setting books' Bastion facilities to offer. */
   facilityBooks: ('FRHoF' | 'EFA')[];
   /** Table rule: weekly risks and attention from lifestyle in town. */
@@ -837,6 +843,8 @@ export interface State {
   recipeNames: string[];
   /** Messages travelling to and from distant Bastions. */
   dispatches: Dispatch[];
+  /** The party's group patron (Tasha's). */
+  patron?: { kind: PatronKind; name: string; joinedDay: number; luxuryYear: number | null; luxuryUntilDay?: number } | null;
   /** Money owed to creditors (table rule). */
   debts: Debt[];
   /** Rivals working against the party during downtime (Xanathar's). */

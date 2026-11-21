@@ -16,6 +16,8 @@ import { ALL_IS_WELL, BARRACK_ROOM, BASTION_CHARMS, CONSTRUCTS, CREATURE_ROOM, G
 import { priceOf, saleRate } from '../rules/shop';
 import { groundDifficulty, meltInches, mudAfter, snowfallInches } from '../rules/ground';
 import { activityOf, COMPLICATIONS, resolveActivity, type ActivityOpts, type Complication } from '../rules/downtimeOutcomes';
+import { GROUP_ASSISTANCE, PATRONS, type PatronKind } from '../rules/patrons';
+import { REGIONS, regionBand, type RegionKind } from '../rules/regions';
 import { CREDITOR_LABEL, DUE_DAYS, ESCALATION, LENIENT_GP, PRISON_LABOR_GP_PER_WEEK, SERVICE_CREDIT, WEEKLY_INTEREST, type CreditorKind, type Escalation } from '../rules/debts';
 import { RIVAL_ESCALATION, RIVAL_IDEAS, RIVAL_MOVES } from '../rules/rivals';
 import { componentFor, REVIVAL_LIMIT, TARGET_SPELLS, type CostlyComponent } from '../rules/components';
@@ -29,7 +31,7 @@ import { BUTCHER_DC, BUTCHER_MINUTES, isEdible, MEAT_LB, STRANGE_TYPES, yieldsHi
 import { addCoins, COIN_GP, coinCount, coinsFor, emptyPurse, exchange, fmtPurse, purseValue, spend, type Denom, type Purse } from '../rules/coins';
 import { detectContainer } from '../rules/containers';
 import type { DdbImport } from '../rules/ddb';
-import { FEED_GP_PER_DAY, HIRELING_WAGE, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset } from '../rules/money';
+import { FEED_GP_PER_DAY, HIRELING_WAGE, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset, type Lifestyle } from '../rules/money';
 import { STABLE_WAKE_DIE, STABILIZE_DC } from '../rules/upkeep';
 import { RITUAL_EXTRA_MINUTES as RITUAL_TAG_MINUTES, spellInfo } from '../rules/rituals';
 import { maxWatchMinutes, slotTimes, watchMinutes, watchSight, type Sight } from '../rules/watch';
@@ -394,7 +396,7 @@ function dailyCosts(s: State): void {
         c.drankPintsToday = Math.max(c.drankPintsToday, waterNeedPints(c, false, false));
         fed.push(c.name);
       }
-      const cost = LIFESTYLE_GP[c.lifestyle];
+      const cost = patronLifestyleCost(s, c.lifestyle);
       const next = dateFromIndex(s.calendar, s.startYear, s.dayIndex + 1);
       const period = s.settings.lifestylePeriod;
       if (cost > 0) {
@@ -412,6 +414,7 @@ function dailyCosts(s: State): void {
 
 function endOfDay(s: State, ctx: Ctx): void {
   dailyCosts(s);
+  patronDaily(s);
   lifestyleRisks(s, ctx);
   purseDebts(s);
   if ((s.dayIndex + 1) % 7 === 0) debtsWeekly(s, ctx);
@@ -485,6 +488,7 @@ function atDawn(s: State, ctx: Ctx): void {
   }
   if (refilled.length) log(s, `Dawn breaks. Recovered: ${refilled.join(', ')}.`, 'good');
   contagionsAtDawn(s, ctx);
+  if (s.place.region && s.settings.regionDailyRoll) regionRoll(s, ctx, 'a new day in the region');
 }
 
 function checkItemsLeftBehind(s: State): void {
@@ -747,6 +751,7 @@ export const shortRest = act((d, ctx) => {
 });
 
 export const longRest = act((d, ctx, force = false) => {
+  if (regionForbidsRest(d)) return void log(d, 'The region won’t allow rest right now (Infested: a swarming migration).', 'warn');
   const check = canLongRest(d);
   if (!check.ok && !force) {
     log(d, check.reason ?? 'Cannot Long Rest yet.', 'warn');
@@ -2079,6 +2084,134 @@ export const addRival = act((d, ctx, name: string, idea: string) => {
 
 export const advanceRival = act((d, ctx) => rivalAdvances(d, ctx));
 
+// ---------------------------------------------------------------- group patrons and supernatural regions (Tasha's)
+
+export const setPatron = act((d, _ctx, kind: PatronKind | null, name: string) => {
+  if (!kind) {
+    if (d.patron) log(d, `The party parts ways with ${d.patron.name}.`);
+    d.patron = null;
+    for (const c of d.characters) c.resources = c.resources.filter((r) => r.name !== GROUP_ASSISTANCE);
+    return;
+  }
+  d.patron = { kind, name: name || PATRONS[kind].label, joinedDay: d.dayIndex, luxuryYear: null };
+  for (const c of adventurers(d)) {
+    if (!c.resources.some((r) => r.name === GROUP_ASSISTANCE)) c.resources.push({ id: uid(), name: GROUP_ASSISTANCE, max: 1, current: 1, recharge: 'long' });
+  }
+  log(d, `The party now serves ${d.patron.name} (${PATRONS[kind].label}). Each member can grant an ally Advantage once per Long Rest (Group Assistance).`, 'good');
+});
+
+/** Daily: patron salary. Lodging discounts are applied where lifestyle is charged. */
+function patronDaily(s: State): void {
+  const p = s.patron;
+  if (!p) return;
+  const info = PATRONS[p.kind];
+  if (info.salaryGp) {
+    const pcs = adventurers(s);
+    for (const c of pcs) gainWealth(c, info.salaryGp);
+    if (pcs.length) log(s, `${p.name} pays each member ${fmtGp(info.salaryGp)}.`);
+  }
+}
+
+/** What a day of this lifestyle costs under the patron's lodging perks. */
+export function patronLifestyleCost(s: State, lifestyle: Lifestyle): number {
+  const base = LIFESTYLE_GP[lifestyle];
+  const p = s.patron;
+  if (!p) return base;
+  const info = PATRONS[p.kind];
+  if (p.luxuryUntilDay != null && s.dayIndex < p.luxuryUntilDay) return 0;
+  const order: Lifestyle[] = ['wretched', 'squalid', 'poor', 'modest', 'comfortable', 'wealthy', 'aristocratic'];
+  if (info.freeLifestyle && order.indexOf(lifestyle) <= order.indexOf(info.freeLifestyle)) return 0;
+  if (info.comfortableAt != null && lifestyle === 'comfortable') return info.comfortableAt;
+  return base;
+}
+
+/** Aristocrat: up to two weeks a year of aristocratic hospitality for free. */
+export const patronLuxury = act((d, _ctx) => {
+  const p = d.patron;
+  if (!p || !PATRONS[p.kind].luxuryWeeks) return;
+  const year = Math.floor(d.dayIndex / 365);
+  if (p.luxuryYear === year) return void log(d, `${p.name}'s hospitality has already been enjoyed this year.`, 'warn');
+  p.luxuryYear = year;
+  p.luxuryUntilDay = d.dayIndex + 14;
+  log(d, `${p.name} hosts the party in luxury for two weeks: lifestyle costs nothing until then.`, 'good');
+});
+
+/** Criminal syndicate: an assignment's client fee, of which the party gets 85%. */
+export const patronAssignment = act((d, _ctx, feeGp: number) => {
+  const p = d.patron;
+  if (!p) return;
+  const share = PATRONS[p.kind].assignmentShare ?? 1;
+  const pcs = adventurers(d);
+  const each = Math.round(((feeGp * share) / Math.max(1, pcs.length)) * 100) / 100;
+  for (const c of pcs) gainWealth(c, each);
+  log(d, `${p.name} pays out for the assignment: ${fmtGp(feeGp * share)}${share < 1 ? ` (${Math.round(share * 100)}% of the ${fmtGp(feeGp)} fee)` : ''}, ${fmtGp(each)} each.`, 'good');
+});
+
+/** Ancient being: a Common magic item from the patron's network for 2d4 × 10 GP (half for consumables). */
+export const patronCommonItem = act((d, ctx, charId: string, name: string, consumable: boolean) => {
+  const c = charById(d, charId);
+  if (!c || d.patron?.kind !== 'ancient') return;
+  const gp = (rollDice(2, 4, ctx.rng) * 10) / (consumable ? 2 : 1);
+  if (c.gp < gp) return void log(d, `${c.name} can't afford ${name} (${fmtGp(gp)}).`, 'warn');
+  spendWealth(c, gp);
+  c.inventory.push({ id: uid(), name, qty: 1, weight: 1, source: 'manual', valueGp: gp, container: null, ammo: null });
+  log(d, `${c.name} obtains ${name} through ${d.patron.name}'s network for ${fmtGp(gp)}.`, 'good');
+});
+
+export const setRegion = act((d, _ctx, kind: RegionKind | null) => {
+  d.place.region = kind;
+  log(d, kind ? `${d.place.name} is a supernatural region: ${REGIONS[kind].name}.` : `${d.place.name} is no longer treated as a supernatural region.`);
+});
+
+/** Rolls the region's effect table and applies the effects that run over time. */
+export const rollRegionEffect = act((d, ctx, why: string) => regionRoll(d, ctx, why));
+
+function regionRoll(d: State, ctx: Ctx, why: string): void {
+  const kind = d.place.region;
+  if (!kind) return;
+  const info = REGIONS[kind];
+  const roll = die(100, ctx.rng);
+  const band = regionBand(kind, roll);
+  const pcs = d.characters.filter((c) => alive(c));
+  const one = pcs.length ? pcs[die(pcs.length, ctx.rng) - 1] : undefined;
+  const targets = band.target === 'one' && one ? [one] : band.target === 'all' ? pcs : [];
+  log(d, `${info.name} (${why}): d100 = ${roll}. ${band.label}${targets.length === 1 ? ` (${targets[0].name})` : ''}. See Tasha's for the full effect.`, 'warn');
+  if (band.minutes) d.effects.push({ id: uid(), name: `${info.name}: ${band.label}`, kind: 'other', targetIds: targets.map((c) => c.id), casterId: null, concentration: false, shelter: false, startedAt: absNow(d), endsAt: absNow(d) + band.minutes, notes: band.auto === 'noRest' ? 'No Short or Long Rest is possible.' : band.auto === 'restSave' ? 'Resting requires a save or gives no benefit.' : '' });
+  switch (band.auto) {
+    case 'heal3d6':
+      for (const c of pcs.filter((x) => x.diedAt == null)) Object.assign(d, changeHp(d, ctx, c.id, rollDice(3, 6, ctx.rng)));
+      break;
+    case 'lostHours': {
+      const hours = rollDice(2, 10, ctx.rng);
+      log(d, `The party walks in circles: ${hours} hours pass with no progress.`, 'bad');
+      advanceMut(d, ctx, hours * 60, 'travel');
+      break;
+    }
+    case 'hourlyExhaustion': {
+      const hours = die(6, ctx.rng);
+      for (let h = 0; h < hours; h++) for (const c of d.characters.filter((x) => alive(x))) if (!rollSave(c, 10, 'normal', ctx.rng).passed) gainExhaustion(d, c, 1, 'biting swarms', 'other');
+      log(d, `The swarms last ${hours} hour(s).`, 'warn');
+      break;
+    }
+    case 'storm':
+      d.weather = { ...d.weather, precip: 'heavy', wind: 'strong', edited: true };
+      log(d, 'A violent thunderstorm settles over the region and won’t lift until the party leaves.', 'warn');
+      break;
+    case 'sightRot':
+      if (one) Object.assign(d, exposeContagion(d, ctx, one.id, 'sightRot', true));
+      break;
+    case 'coldDay':
+      log(d, 'Extreme cold grips the region for a day: Con saves each hour without protection (DMG).', 'warn');
+      break;
+  }
+}
+
+/** True if a region effect forbids resting right now. */
+function regionForbidsRest(s: State): boolean {
+  const now = absNow(s);
+  return s.effects.some((e) => e.notes === 'No Short or Long Rest is possible.' && (e.endsAt == null || e.endsAt > now));
+}
+
 // ---------------------------------------------------------------- debts (table rule)
 
 function addDebtMut(d: State, debtorId: string, creditor: string, kind: CreditorKind, amount: number, rate: number = WEEKLY_INTEREST[kind], dueInDays: number = DUE_DAYS[kind]): Debt | undefined {
@@ -2263,7 +2396,8 @@ export const sellItem = act((d, _ctx, charId: string, itemId: string, qty: numbe
   const n = Math.max(1, Math.min(it.qty, Math.round(qty)));
   const unit = it.valueGp ?? priceOf(it.name);
   if (unit == null) return void log(d, `Nobody will name a price for the ${it.name} until its value is known. Set a value on the item first.`, 'warn');
-  const rate = saleRate(it.name);
+  const bonus = d.patron && saleRate(it.name) < 1 ? (PATRONS[d.patron.kind].saleBonus ?? 0) : 0;
+  const rate = saleRate(it.name) * (1 + bonus);
   const gp = Math.round(unit * n * rate * 100) / 100;
   it.qty -= n;
   c.inventory = c.inventory.filter((i) => i.qty > 0);

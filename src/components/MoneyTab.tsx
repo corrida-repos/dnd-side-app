@@ -9,6 +9,7 @@ import { HIRELING_ROLES, MESSENGER_GP_PER_MILE, type HirelingRole } from '../rul
 import { coinCount, DENOMS, purseValue, type Denom } from '../rules/coins';
 import type { Hireling } from '../state/types';
 import { TARGET_SPELLS } from '../rules/components';
+import { PATRONS } from '../rules/patrons';
 import { CREDITOR_LABEL, DUE_DAYS, ESCALATION, LENIENT_GP, WEEKLY_INTEREST, type CreditorKind } from '../rules/debts';
 import { ITEM_PRICES } from '../rules/itemPrices';
 import { inStock, priceOf, RENOWN_DISCOUNT, saleRate, STOCK_LIMIT } from '../rules/shop';
@@ -300,7 +301,8 @@ function ServicesCard() {
   const level = req ? req.level : custom;
   const tier = [...SPELL_SERVICES].reverse().find((t) => level >= t.minLevel)!;
   const available = spellServiceAvailable(tier.where, here);
-  const spellGp = tier.gp + (req?.componentGp ?? 0);
+  const freeByPatron = !!s.patron && level <= (PATRONS[s.patron.kind].freeSpellLevel ?? -1);
+  const spellGp = freeByPatron ? 0 : tier.gp + (req?.componentGp ?? 0);
   return (
     <Card title="Services: passage and spellcasting">
       <Select label="Who pays" value={payer} onChange={setPayer} options={[{ value: 'party', label: 'Split across the party' }, ...pcs.map((c) => ({ value: c.id, label: c.name }))]} />
@@ -323,6 +325,7 @@ function ServicesCard() {
         {tier.level}: {fmtGp(tier.gp)}
         {req?.componentGp ? ` + ${fmtGp(req.componentGp)} components` : ''}. {available ? 'A caster can be found here.' : `Only found in a ${tier.where === 'city' ? 'city' : 'town or city'}.`}
         {req && <span className="muted"> {req.note}</span>}
+        {freeByPatron && <span className="good-text"> Free through {s.patron!.name} (components included), if the cause serves the faith.</span>}
       </p>
       {req && TARGET_SPELLS[req.name] && (
         <Select label="Cast on" value={target} onChange={setTarget} options={[{ value: '', label: 'Choose…' }, ...s.characters.map((c) => ({ value: c.id, label: `${c.name}${c.diedAt != null ? ' (dead)' : ''}` }))]} />
@@ -368,7 +371,12 @@ function ShopCard() {
   const list = ITEM_PRICES.filter((p) => p.group === group);
   const pick = list.find((p) => p.name === item) ?? list[0];
   const friends = s.factions.filter((f) => f.renown >= 3);
-  const discount = friends.some((f) => f.id === faction) && pick && pick.group !== 'Vehicles' && pick.group !== 'Mounts' ? RENOWN_DISCOUNT : 0;
+  const patron = s.patron ? PATRONS[s.patron.kind] : null;
+  const discount = Math.max(
+    friends.some((f) => f.id === faction) && pick && pick.group !== 'Vehicles' && pick.group !== 'Mounts' ? RENOWN_DISCOUNT : 0,
+    patron?.discountAll ?? 0,
+    pick && (pick.group === 'Weapons' || pick.group === 'Armor') ? (patron?.discountArms ?? 0) : 0,
+  );
   const stocked = pick ? inStock(pick.gp, here) : false;
   const sellable = buyer?.inventory ?? [];
   const sell = sellable.find((i) => i.id === sellId) ?? sellable[0];

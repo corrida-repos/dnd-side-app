@@ -103,6 +103,7 @@ function RulesCard() {
         <Toggle checked={s.settings.lifestyleRisks} onChange={(v) => set('lifestyleRisks', v)} label="Lifestyle risks in town: theft, disease and attention once a week (table rule)" />
         <Toggle checked={(s.settings.facilityBooks ?? []).includes('FRHoF')} onChange={(v) => edit((d) => void (d.settings.facilityBooks = [...(d.settings.facilityBooks ?? []).filter((x) => x !== 'FRHoF'), ...(v ? (['FRHoF'] as const) : [])]))} label="Bastion facilities from Forgotten Realms: Heroes of Faerûn" />
         <Toggle checked={(s.settings.facilityBooks ?? []).includes('EFA')} onChange={(v) => edit((d) => void (d.settings.facilityBooks = [...(d.settings.facilityBooks ?? []).filter((x) => x !== 'EFA'), ...(v ? (['EFA'] as const) : [])]))} label="Bastion facilities from Eberron: Forge of the Artificer" />
+        <Toggle checked={s.settings.regionDailyRoll} onChange={(v) => set('regionDailyRoll', v)} label="Supernatural regions roll their table each dawn (table rule)" />
         <Toggle checked={s.settings.runningBusiness} onChange={(v) => set('runningBusiness', v)} label="Running a business as a downtime activity (optional 2014 DMG rule)" />
         <Toggle checked={s.settings.sleepDeprivation} onChange={(v) => set('sleepDeprivation', v)} label="Staying awake too long causes Exhaustion (optional Xanathar's rule)" />
         <Rule>

@@ -5,8 +5,10 @@ import { uid } from '../state/defaults';
 import { dateFromIndex, formatDuration } from '../rules/calendar';
 import { GIFT_TYPES, type GiftType } from '../rules/hazards';
 import { DIVINATION_SPELLS, divinationFailChance, moonPhase, RESURRECTION_SPELLS, RITUAL_PRESETS } from '../rules/longterm';
-import { Card, Meter, Num, Pill, Select, Text, Rule } from './common';
+import { Card, Meter, Num, Pill, Select, Text, Toggle, Rule } from './common';
 import { RIVAL_IDEAS, RIVAL_ESCALATION } from '../rules/rivals';
+import { PATRONS, type PatronKind } from '../rules/patrons';
+import { REGIONS, type RegionKind } from '../rules/regions';
 import { WaysAround } from './WaysAround';
 
 export function WorldTab() {
@@ -15,6 +17,8 @@ export function WorldTab() {
       <SkyCard />
       <FactionsCard />
       <RivalsCard />
+      <PatronCard />
+      <RegionCard />
       <RitualsCard />
       <DeathCard />
       <DivinationCard />
@@ -375,6 +379,109 @@ function RivalsCard() {
       </div>
       <Rule>
         Xanathar&apos;s: rivals work against the party between adventures. Each time downtime is resolved, a rival advances one of its plans (yours, or a generic move: rumors cost renown, sabotage hurts a business or Bastion facility, bribes make the next crime harder, toughs take coin, complaints become fines). Complications marked as rival-friendly name the rival. Pressure {Object.keys(RIVAL_ESCALATION).join(', ')} calls for the rival to act in person (table rule).
+      </Rule>
+    </Card>
+  );
+}
+
+function PatronCard() {
+  const s = useGame();
+  const p = s.patron;
+  const [kind, setKind] = useState<PatronKind>('guild');
+  const [name, setName] = useState('');
+  const [fee, setFee] = useState(500);
+  const [item, setItem] = useState('Potion of Climbing');
+  const [consumable, setConsumable] = useState(true);
+  const [who, setWho] = useState('');
+  const pcs = s.characters.filter((c) => c.kind !== 'mount');
+  const whoId = pcs.find((c) => c.id === who)?.id ?? pcs[0]?.id ?? '';
+  const info = p ? PATRONS[p.kind] : PATRONS[kind];
+  return (
+    <Card title="Group patron">
+      {p ? (
+        <>
+          <p>
+            <b>{p.name}</b> <Pill tone="info">{info.label}</Pill>
+          </p>
+          <div className="btn-row tight">
+            {info.assignmentShare && (
+              <>
+                <Num label="Client fee" value={fee} onChange={(v) => setFee(Math.max(0, v))} min={0} suffix="GP" width={6} />
+                <button className="small" onClick={() => dispatch((st, cx) => E.patronAssignment(st, cx, fee))}>
+                  Assignment paid ({Math.round(info.assignmentShare * 100)}%)
+                </button>
+              </>
+            )}
+            {info.luxuryWeeks && (
+              <button className="small" onClick={() => dispatch((st, cx) => E.patronLuxury(st, cx))}>
+                Two weeks of luxury{p.luxuryUntilDay != null && s.dayIndex < p.luxuryUntilDay ? ` (${p.luxuryUntilDay - s.dayIndex} days left)` : ''}
+              </button>
+            )}
+            {info.commonItems && (
+              <>
+                <Select value={whoId} onChange={setWho} options={pcs.map((c) => ({ value: c.id, label: c.name }))} />
+                <Text value={item} onChange={setItem} placeholder="Common magic item" />
+                <Toggle checked={consumable} onChange={setConsumable} label="Consumable" />
+                <button className="small" onClick={() => dispatch((st, cx) => E.patronCommonItem(st, cx, whoId, item, consumable))}>
+                  Buy (2d4 × 10 GP{consumable ? ', halved' : ''})
+                </button>
+              </>
+            )}
+            <button className="small ghost" onClick={() => dispatch((st, cx) => E.setPatron(st, cx, null, ''))}>
+              Leave patron
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="form-row">
+            <Select label="Patron type" value={kind} onChange={setKind} options={(Object.keys(PATRONS) as PatronKind[]).map((k) => ({ value: k, label: PATRONS[k].label }))} />
+            <Text label="Name" value={name} onChange={setName} placeholder="e.g. The Gilded Quill Guild" />
+          </div>
+          <button className="small" onClick={() => dispatch((st, cx) => E.setPatron(st, cx, kind, name.trim()))}>
+            Take service
+          </button>
+        </>
+      )}
+      <ul className="small">
+        {info.perks.map((x) => (
+          <li key={x}>{x}</li>
+        ))}
+      </ul>
+      <Rule>
+        Tasha&apos;s group patrons. Automated here: daily pay, free or cheap lodging (applied to lifestyle costs), shop discounts and better sale prices, cheaper or faster training, free spellcasting from a religious order, syndicate assignment shares, an aristocrat&apos;s fortnight of luxury, an ancient being&apos;s Common items, and Group Assistance (each member can grant an ally Advantage once per Long Rest).
+      </Rule>
+    </Card>
+  );
+}
+
+function RegionCard() {
+  const s = useGame();
+  const region = s.place.region ?? null;
+  const [why, setWhy] = useState('');
+  return (
+    <Card title="Supernatural region">
+      <Select
+        label={`Is ${s.place.name} a supernatural region?`}
+        value={region ?? ''}
+        onChange={(v) => dispatch((st, cx) => E.setRegion(st, cx, (v || null) as RegionKind | null))}
+        options={[{ value: '', label: 'No' }, ...(Object.keys(REGIONS) as RegionKind[]).map((k) => ({ value: k, label: REGIONS[k].name }))]}
+      />
+      {region && (
+        <>
+          <p className="small">
+            <b>Roll when:</b> {REGIONS[region].triggers.join('; ')}.
+          </p>
+          <div className="btn-row tight">
+            <Text value={why} onChange={setWhy} placeholder="What triggered it" />
+            <button className="small" onClick={() => dispatch((st, cx) => E.rollRegionEffect(st, cx, why || 'a trigger'))}>
+              Roll the region&apos;s effect
+            </button>
+          </div>
+        </>
+      )}
+      <Rule>
+        Tasha&apos;s supernatural regions: Blessed Radiance, Far Realm, Haunted, Infested, Mirror Zone, Psychic Resonance and Unraveling Magic. The tracker shows a short summary of each result and applies those that last (timed effects, no rest, lost hours, hourly Exhaustion, storms, disease); read Tasha&apos;s for the full text. Table rule: it also rolls once each dawn while you&apos;re there (Settings).
       </Rule>
     </Card>
   );
