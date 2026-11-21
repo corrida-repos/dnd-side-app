@@ -9,6 +9,7 @@ import { Card, Meter, Num, Pill, Select, Text, Toggle, Rule } from './common';
 import type { Character, InventoryItem, MagicItem, Resource } from '../state/types';
 import { LOAD_LABEL, RATION_WEIGHT } from '../rules/encumbrance';
 import { fmtGp } from '../rules/money';
+import { APPRAISE_DC, GEM, valueUnknown } from '../rules/shop';
 import { PartyKnowledgeCard, PlayerItemView } from './ItemKnowledge';
 import { ARCANA_DC, CLUE_KIND_LABEL, SCHOOLS_OF_MAGIC, STUDY_LABEL, STUDY_MINUTES, type ClueKind } from '../rules/identify';
 import { RARITY_LABEL, type Rarity } from '../rules/crafting';
@@ -262,7 +263,13 @@ function InventoryBlock({ c }: { c: Character }) {
                       {i.container.capacityLb ? `: ${E.containerLoad(c.inventory, i.id)}/${i.container.capacityLb} lb` : ''}
                     </Pill>
                   )}
-                  {i.valueGp ? <span className="muted"> {fmtGp(i.valueGp * i.qty)}</span> : null}
+                  {valueUnknown(i) ? (
+                    <Pill tone="warn" title={`Nobody in the party knows what ${i.qty > 1 ? 'these are' : 'it is'} worth yet.${i.valueGp != null ? ` DM: ${fmtGp(i.valueGp)} each.` : ' No value set.'}`}>
+                      value unknown
+                    </Pill>
+                  ) : i.valueGp ? (
+                    <span className="muted"> {fmtGp(i.valueGp * i.qty)}</span>
+                  ) : null}
                   <Pill tone={i.source === 'guess' ? 'warn' : 'muted'} title={i.source === 'book' ? 'From the PHB equipment list' : i.source === 'pasted' ? 'Weight from the pasted text' : i.source === 'guess' ? 'Guessed from the name' : 'Set by hand'}>
                     {i.source === 'book' ? 'PHB' : i.source}
                   </Pill>
@@ -289,6 +296,7 @@ function InventoryBlock({ c }: { c: Character }) {
           </button>
         </details>
       )}
+      <AppraiseBlock c={c} />
       <textarea rows={3} value={text} onChange={(e) => setText(e.target.value)} placeholder={'Paste from D&D Beyond or type one item per line, e.g.\n2 Torches\nLongsword\nRope, hempen (50 feet)'} />
       <div className="btn-row tight">
         <button className="small" disabled={!text.trim()} onClick={() => (dispatch((st, cx) => E.addInventory(st, cx, c.id, text)), setText(''))}>
@@ -297,10 +305,83 @@ function InventoryBlock({ c }: { c: Character }) {
       </div>
       <Rule>
         No weights needed: each item is looked up in the 2024 PHB equipment list, guessed from its name, or set to 1 lb. A weight in the pasted text is used as is, and you can correct any line. Rations, water and
-        coins (50 to a pound) are added from the tracker.
+        coins (50 to a pound) are added from the tracker. Add &quot;value unknown&quot; to a line (e.g. &quot;Diamond (300 GP, value unknown)&quot;) to keep its value from the party until it&apos;s appraised.
       </Rule>
     </>
   );
+}
+
+/** Items whose value the party doesn't know, and ways to find out. */
+function AppraiseBlock({ c }: { c: Character }) {
+  const s = useGame();
+  const unknown = c.inventory.filter(valueUnknown);
+  const hideable = c.inventory.filter((i) => !valueUnknown(i) && i.valueGp != null);
+  const pcs = s.characters.filter((x) => x.kind !== 'mount');
+  const [itemId, setItemId] = useState('');
+  const [who, setWho] = useState('');
+  const [bonus, setBonus] = useState(0);
+  const [trueGp, setTrueGp] = useState(0);
+  const [hideId, setHideId] = useState('');
+  const it = unknown.find((i) => i.id === itemId) ?? unknown[0];
+  const appraiser = pcs.find((x) => x.id === who) ?? pcs.find((x) => x.inventory.some((i) => /jeweler'?s tools/i.test(i.name))) ?? c;
+  const hasTools = appraiser.inventory.some((i) => /jeweler'?s tools/i.test(i.name));
+  const go = (m: E.AppraiseMethod) => dispatch((st, cx) => E.appraiseItem(st, cx, c.id, it!.id, m, appraiser.id, bonus, it!.valueGp == null && trueGp > 0 ? trueGp : undefined));
+  if (!unknown.length && !hideable.length) return null;
+  return (
+    <>
+      {unknown.length > 0 && (
+        <>
+          <h3>
+            Value unknown <Pill tone="warn">{unknown.length}</Pill>
+          </h3>
+          <p className="small muted">{unknown.map((i) => `${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}`).join(', ')}</p>
+          <div className="btn-row tight">
+            <Select value={it?.id ?? ''} onChange={setItemId} options={unknown.map((i) => ({ value: i.id, label: i.name }))} />
+            {it && it.valueGp == null && <Num label="True value (DM)" value={trueGp} onChange={(v) => setTrueGp(Math.max(0, v))} min={0} suffix="GP" width={5} />}
+          </div>
+          {it && (
+            <div className="btn-row tight">
+              {GEM.test(it.name) && (
+                <>
+                  <Select value={appraiser.id} onChange={setWho} options={pcs.map((x) => ({ value: x.id, label: `${x.name}${x.inventory.some((i) => /jeweler'?s tools/i.test(i.name)) ? ' (Jeweler’s Tools)' : ''}` }))} />
+                  <Num label="Int bonus" value={bonus} onChange={(v) => setBonus(Math.round(v))} width={2} />
+                  <button className="small" disabled={!hasTools} title={hasTools ? undefined : `${appraiser.name} carries no Jeweler's Tools`} onClick={() => go('tools')}>
+                    Jeweler&apos;s Tools (DC {APPRAISE_DC})
+                  </button>
+                </>
+              )}
+              <button className="small ghost" disabled={!s.place.settlement} title={s.place.settlement ? undefined : 'Only in a town or city'} onClick={() => go('merchant')}>
+                Ask a merchant
+              </button>
+              <button className="small ghost" onClick={() => go('dm')}>
+                DM reveals
+              </button>
+            </div>
+          )}
+        </>
+      )}
+      {hideable.length > 0 && (
+        <div className="btn-row tight">
+          <Select value={hideId || hideable[0].id} onChange={setHideId} options={hideable.map((i) => ({ value: i.id, label: `${i.name} (${fmtGp(i.valueGp!)})` }))} />
+          <button className="small ghost" onClick={() => set(hideId || hideable[0].id)}>
+            Hide its value from the party
+          </button>
+        </div>
+      )}
+      <Rule>
+        Jeweler&apos;s Tools: Discern a gem&apos;s value with an Intelligence check, DC 15; add your Proficiency Bonus if proficient (2024 PHB). Table rule: a merchant in a town or city will value anything, and selling reveals the price. A
+        spell&apos;s costly component works if the item is truly worth enough, whether or not anyone knows it.
+      </Rule>
+    </>
+  );
+
+  function set(iid: string) {
+    setChar(c.id, (x) => {
+      const i = x.inventory.find((y) => y.id === iid);
+      if (i) i.valueHidden = true;
+    });
+    setHideId('');
+  }
 }
 
 function HpBlock({ c }: { c: Character }) {

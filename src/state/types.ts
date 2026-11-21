@@ -115,6 +115,8 @@ export interface InventoryItem {
   source: WeightSource;
   /** Value of one in GP, if known (gems, art, trade goods, or a price in the pasted text). */
   valueGp?: number;
+  /** The party doesn't know its value yet; valueGp, if set, is the DM's secret true value. Appraising reveals it. */
+  valueHidden?: boolean;
   /** The inventory item this is packed inside, if any. */
   containerId?: string | null;
   /** Set when this item is itself a container. */

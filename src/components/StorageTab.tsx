@@ -4,6 +4,7 @@ import * as E from '../state/engine';
 import { VEHICLES } from '../rules/containers';
 import { DENOMS, fmtPurse, type Denom } from '../rules/coins';
 import { fmtGp } from '../rules/money';
+import { valueUnknown } from '../rules/shop';
 import { Card, Meter, Num, Pill, Select, Text, Rule } from './common';
 import type { Stash } from '../state/types';
 import { WaysAround } from './WaysAround';
@@ -110,7 +111,7 @@ function StashCard({ st }: { st: Stash }) {
           <li key={i.id} className="armor-row">
             <span>
               {i.name} {i.qty > 1 && <span className="muted">×{i.qty}</span>} <span className="muted">{Math.round(i.weight * i.qty * 10) / 10} lb</span>
-              {i.valueGp ? <span className="muted"> · {fmtGp(i.valueGp * i.qty)}</span> : null}
+              {valueUnknown(i) ? <Pill tone="warn" title="Nobody in the party knows what it's worth yet.">value unknown</Pill> : i.valueGp ? <span className="muted"> · {fmtGp(i.valueGp * i.qty)}</span> : null}
             </span>
             <span className="btn-row tight">
               <Select value={who} onChange={setWho} options={pcs.map((c) => ({ value: c.id, label: `to ${c.name}` }))} />

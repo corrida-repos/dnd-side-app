@@ -109,7 +109,10 @@ export function playerItems(s: State, c: Character): PlayerItem[] {
   if (s.settings.trackComponents) {
     for (const sp of c.spells.filter((x) => x.prepared || x.alwaysPrepared)) {
       const comp = componentFor(sp.name);
-      if (comp && E.componentValue(c, comp) < comp.gp && !c.inventory.some((i) => /^reliquary talisman$/i.test(i.name) && comp.gp <= 1000)) upkeep('warn', `Can’t cast ${sp.name}: needs ${comp.what}`, `Carrying ${fmtGp(E.componentValue(c, comp))} worth. Buy it (Money & Shop) and add it with its value.`, 'money', `comp-${sp.name}`);
+      if (!comp || E.componentKnownValue(c, comp) >= comp.gp || c.inventory.some((i) => /^reliquary talisman$/i.test(i.name) && comp.gp <= 1000)) continue;
+      const unsure = E.componentUnknown(c, comp);
+      if (unsure.length) upkeep('info', `Not sure the ${unsure[0].name} is enough for ${sp.name}`, `Its value isn’t known and ${sp.name} needs ${comp.what}. Appraise it: Jeweler’s Tools (Intelligence, DC 15) or a merchant.`, 'gear', `comp-${sp.name}`);
+      else upkeep('warn', `Can’t cast ${sp.name}: needs ${comp.what}`, `Carrying ${fmtGp(E.componentKnownValue(c, comp))} worth. Buy it (Money & Shop) and add it with its value.`, 'money', `comp-${sp.name}`);
     }
   }
   for (const it of c.items.filter((i) => i.attuned && (i.clues ?? []).some((k) => k.kind === 'curse' && !k.known))) add({ kind: 'status', tone: 'warn', text: `Attuned to a cursed ${it.name}`, fix: 'The curse isn’t known yet; attunement can’t be ended until Remove Curse.', tab: 'gear', dmOnly: true, id: `curse-${it.id}` });

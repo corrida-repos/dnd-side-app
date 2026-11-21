@@ -11,6 +11,8 @@ export interface ParsedItem {
   source: WeightSource;
   /** Value of one, from a price in the pasted text. */
   valueGp?: number;
+  /** Marked "value unknown" or "unappraised": the party doesn't know the value (any price given is the DM's secret). */
+  valueHidden?: boolean;
 }
 
 /** Carrying capacity multiplier by size: Strength × 15 lb for Small or Medium (PHB). */
@@ -115,6 +117,9 @@ export function parseInventoryLine(line: string): ParsedItem | null {
     weight = Number(lb[1]);
     text = text.replace(lb[0], ' ');
   }
+  const unknown = /[,;]?\s*\b(?:value unknown|unknown value|unappraised)\b/i;
+  const valueHidden = unknown.test(text);
+  if (valueHidden) text = text.replace(unknown, ' ');
   let valueGp: number | undefined;
   const price = text.match(/\b(\d[\d,]*(?:\.\d+)?)\s*(gp|sp|cp|pp|ep)\b/i);
   if (price) {
@@ -122,7 +127,7 @@ export function parseInventoryLine(line: string): ParsedItem | null {
     valueGp = Number(price[1].replace(/,/g, '')) * rate[price[2].toLowerCase()];
     text = text.replace(price[0], ' ');
   }
-  text = text.replace(/\s+/g, ' ').trim();
+  text = text.replace(/\(\s*[,;]?\s*\)/g, ' ').replace(/\s+/g, ' ').trim();
   const lead = text.match(/^(\d+)\s*[x×]?\s+(.+)$/i);
   // "x3", "(3)", or a bare count left over from a D&D Beyond row (name, weight, quantity, cost).
   const trail = text.match(/^(.+?)\s*(?:[x×]\s*(\d+)|\((\d+)\)|\s(\d+))\s*$/i);
@@ -135,7 +140,7 @@ export function parseInventoryLine(line: string): ParsedItem | null {
   }
   const name = text.replace(/\s+/g, ' ').replace(/[,;:\-–]\s*$/, '').trim();
   if (!name || /^(name|item|weight|qty|quantity|cost|equipment|inventory)$/i.test(name)) return null;
-  const value = valueGp != null ? { valueGp } : {};
+  const value = { ...(valueGp != null ? { valueGp } : {}), ...(valueHidden ? { valueHidden } : {}) };
   if (weight != null) return { name, qty: Math.max(1, qty), weight: qty > 1 && /total/i.test(line) ? weight / qty : weight, source: 'pasted', ...value };
   const est = estimateWeight(name);
   return { name, qty: Math.max(1, qty), weight: est.weight, source: est.source, ...value };

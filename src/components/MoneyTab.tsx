@@ -12,7 +12,7 @@ import { TARGET_SPELLS } from '../rules/components';
 import { PATRONS } from '../rules/patrons';
 import { CREDITOR_LABEL, DUE_DAYS, ESCALATION, LENIENT_GP, WEEKLY_INTEREST, type CreditorKind } from '../rules/debts';
 import { ITEM_PRICES } from '../rules/itemPrices';
-import { inStock, priceOf, RENOWN_DISCOUNT, saleRate, STOCK_LIMIT } from '../rules/shop';
+import { valueUnknown, inStock, priceOf, RENOWN_DISCOUNT, saleRate, STOCK_LIMIT } from '../rules/shop';
 import { COMMON_SPELL_REQUESTS, PASSAGE, SPELL_SERVICES, spellServiceAvailable, type Settlement } from '../rules/services';
 import { WaysAround } from './WaysAround';
 
@@ -405,11 +405,11 @@ function ShopCard() {
       ) : (
         <>
           <div className="form-row">
-            <Select label="Item" value={sell?.id ?? ''} onChange={setSellId} options={sellable.map((i) => ({ value: i.id, label: `${i.name} ×${i.qty}` }))} />
+            <Select label="Item" value={sell?.id ?? ''} onChange={setSellId} options={sellable.map((i) => ({ value: i.id, label: `${i.name} ×${i.qty}${valueUnknown(i) ? ' (value unknown)' : ''}` }))} />
             <Num label="Qty" value={sellQty} onChange={(v) => setSellQty(Math.max(1, Math.round(v)))} min={1} width={3} />
           </div>
           <button className="small" disabled={sellUnit == null} onClick={() => dispatch((st, cx) => E.sellItem(st, cx, whoId, sell!.id, sellQty))}>
-            {sellUnit == null ? 'Value unknown' : `Sell for ${fmtGp(Math.round(sellUnit * Math.min(sellQty, sell!.qty) * saleRate(sell!.name) * 100) / 100)}`}
+            {sellUnit == null ? 'Value unknown' : valueUnknown(sell!) ? 'Sell (value unknown: the buyer names a price)' : `Sell for ${fmtGp(Math.round(sellUnit * Math.min(sellQty, sell!.qty) * saleRate(sell!.name) * 100) / 100)}`}
           </button>
         </>
       )}

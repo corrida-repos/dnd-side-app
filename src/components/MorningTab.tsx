@@ -134,7 +134,8 @@ function CastPanel({ c }: { c: Character }) {
       {componentFor(pick.sp.name) && (
         <p className="small muted">
           Needs {componentFor(pick.sp.name)!.what}
-          {componentFor(pick.sp.name)!.consumed ? ', used up' : ''}. {c.name} carries {fmtGp(E.componentValue(c, componentFor(pick.sp.name)!))} worth.
+          {componentFor(pick.sp.name)!.consumed ? ', used up' : ''}. {c.name} carries {fmtGp(E.componentKnownValue(c, componentFor(pick.sp.name)!))} worth
+          {E.componentUnknown(c, componentFor(pick.sp.name)!).length ? `, plus ${E.componentUnknown(c, componentFor(pick.sp.name)!).map((i) => i.name).join(', ')} of unknown value` : ''}.
         </p>
       )}
       <p className="small muted">

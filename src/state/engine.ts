@@ -13,7 +13,7 @@ import { CONTAGIONS, RECUPERATE_DAYS, RECUPERATE_DC, SIGHT_ROT_CURE_HOURS, type 
 import { neglectLimit } from '../rules/bastion';
 import { magicItemCrafting, nonmagicalCrafting, SCROLL_CRAFTING, type Rarity } from '../rules/crafting';
 import { ALL_IS_WELL, BARRACK_ROOM, BASTION_CHARMS, CONSTRUCTS, CREATURE_ROOM, GROVE_ROOM, GROVE_UNITS, MUSEUM_ORIGINS, NECROPOLIS_ROOM, EVENT_PREFERENCE, FACILITY_OPTIONS, GARDEN_PRODUCTS, GUILDS, MENAGERIE_CREATURES, MENAGERIE_ROOM, SHIPS, TRAINERS, TREASURE_TABLE, facilityHirelings, stableMarkup, storehouseLimit, storehouseMarkup, type GardenType } from '../rules/bastionOrders';
-import { priceOf, saleRate } from '../rules/shop';
+import { APPRAISE_DC, GEM, knownValue, priceOf, saleRate, sameStack, valueUnknown } from '../rules/shop';
 import { groundDifficulty, meltInches, mudAfter, snowfallInches } from '../rules/ground';
 import { activityOf, COMPLICATIONS, resolveActivity, type ActivityOpts, type Complication } from '../rules/downtimeOutcomes';
 import { GROUP_ASSISTANCE, PATRONS, type PatronKind } from '../rules/patrons';
@@ -2379,7 +2379,7 @@ export const buyItem = act((d, _ctx, charId: string, name: string, qty: number, 
   const cost = Math.round(unitGp * qty * (1 - discount) * 100) / 100;
   if (c.gp < cost) return void log(d, `${c.name} can't afford ${qty} × ${name} (${fmtGp(cost)}; has ${fmtGp(c.gp)}).`, 'warn');
   spendWealth(c, cost);
-  const same = c.inventory.find((i) => i.name.toLowerCase() === name.toLowerCase() && !i.containerId);
+  const same = c.inventory.find((i) => sameStack(i, { name, valueGp: unitGp }) && !i.containerId);
   if (same) same.qty += qty;
   else {
     const est = estimateWeight(name);
@@ -2396,13 +2396,14 @@ export const sellItem = act((d, _ctx, charId: string, itemId: string, qty: numbe
   const n = Math.max(1, Math.min(it.qty, Math.round(qty)));
   const unit = it.valueGp ?? priceOf(it.name);
   if (unit == null) return void log(d, `Nobody will name a price for the ${it.name} until its value is known. Set a value on the item first.`, 'warn');
+  const named = valueUnknown(it) ? ` The buyer looks it over and values it at ${fmtGp(unit)} each.` : '';
   const bonus = d.patron && saleRate(it.name) < 1 ? (PATRONS[d.patron.kind].saleBonus ?? 0) : 0;
   const rate = saleRate(it.name) * (1 + bonus);
   const gp = Math.round(unit * n * rate * 100) / 100;
   it.qty -= n;
   c.inventory = c.inventory.filter((i) => i.qty > 0);
   gainWealth(c, gp);
-  log(d, `${c.name} sells ${n} × ${it.name} for ${fmtGp(gp)} (${rate === 1 ? 'full value' : 'half price'}).`, 'good');
+  log(d, `${c.name} sells ${n} × ${it.name} for ${fmtGp(gp)} (${rate === 1 ? 'full value' : 'half price'}).${named}`, 'good');
 });
 
 /** Splits coin among the party evenly; leftover copper goes to the first named. */
@@ -2418,10 +2419,18 @@ export const splitLoot = act((d, _ctx, gp: number, charIds: string[], what: stri
 
 // ---------------------------------------------------------------- costly components and spell effects
 
-/** Value of matching component items a character carries. */
+/** True value of matching component items a character carries. The spell cares what they're worth, not what the caster knows. */
 export function componentValue(c: Character, comp: CostlyComponent): number {
   return c.inventory.filter((i) => i.name.toLowerCase().includes(comp.match)).reduce((a, i) => a + (i.valueGp ?? 0) * i.qty, 0);
 }
+
+/** Value of matching component items as the party knows it, leaving out any of unknown value. */
+export function componentKnownValue(c: Character, comp: CostlyComponent): number {
+  return c.inventory.filter((i) => i.name.toLowerCase().includes(comp.match)).reduce((a, i) => a + (knownValue(i) ?? 0) * i.qty, 0);
+}
+
+/** Matching component items whose value the party doesn't know yet. */
+export const componentUnknown = (c: Character, comp: CostlyComponent): InventoryItem[] => c.inventory.filter((i) => i.name.toLowerCase().includes(comp.match) && valueUnknown(i));
 
 /** Checks and spends a spell's costly component. Returns false (and logs why) if it's missing. */
 function useComponent(s: State, c: Character, spell: string): boolean {
@@ -2434,9 +2443,13 @@ function useComponent(s: State, c: Character, spell: string): boolean {
       log(s, `${c.name} uses the Reliquary talisman in place of ${comp.what}. It must go back to the Reliquary to recharge.`, 'good');
       return true;
     }
-    log(s, `${c.name} needs ${comp.what} to cast ${spell} and doesn't carry it. Add it to the inventory with its value (e.g. "Diamond (300 GP)").`, 'warn');
+    const blank = c.inventory.find((i) => i.name.toLowerCase().includes(comp.match) && i.valueGp == null);
+    log(s, blank
+      ? `${c.name} needs ${comp.what} to cast ${spell}. Nobody knows what the ${blank.name} is worth yet: appraise it or set its value.`
+      : `${c.name} needs ${comp.what} to cast ${spell} and doesn't carry it. Add it to the inventory with its value (e.g. "Diamond (300 GP)").`, 'warn');
     return false;
   }
+  const guessed = componentUnknown(c, comp);
   if (!comp.consumed) return true;
   let left = comp.gp;
   for (const it of c.inventory.filter((i) => i.name.toLowerCase().includes(comp.match)).sort((a, b) => (a.valueGp ?? 0) - (b.valueGp ?? 0))) {
@@ -2454,7 +2467,7 @@ function useComponent(s: State, c: Character, spell: string): boolean {
     if (left <= 0) break;
   }
   c.inventory = c.inventory.filter((i) => i.qty > 0);
-  log(s, `${spell} consumes ${comp.what}.`);
+  log(s, `${spell} consumes ${comp.what}.${guessed.length && componentKnownValue(c, comp) < comp.gp ? ` The ${guessed[0].name} of unknown value was worth enough after all.` : ''}`);
   return true;
 }
 
@@ -4798,7 +4811,7 @@ export const addInventory = act((d, _ctx, charId: string, text: string) => {
   if (!c) return;
   const parsed = parseInventory(text);
   for (const p of parsed) {
-    const same = c.inventory.find((i) => i.name.toLowerCase() === p.name.toLowerCase() && !i.containerId);
+    const same = c.inventory.find((i) => sameStack(i, p) && !i.containerId);
     if (same) same.qty += p.qty;
     else c.inventory.push({ id: uid(), ...p, container: detectContainer(p.name), ammo: isAmmo(p.name) ? { spent: 0 } : null });
   }
@@ -4883,7 +4896,7 @@ export const moveItem = act((d, _ctx, from: Holder, to: Holder, itemId: string, 
     }
   } else {
     it.qty -= n;
-    const same = b.items.find((i) => i.name.toLowerCase() === it.name.toLowerCase() && !i.containerId);
+    const same = b.items.find((i) => sameStack(i, it) && !i.containerId);
     if (same) same.qty += n;
     else b.items.push({ ...it, id: uid(), qty: n, containerId: null, ammo: it.ammo ? { spent: 0 } : null });
   }
@@ -4921,7 +4934,46 @@ export function containerLoad(items: InventoryItem[], containerId: string): numb
   return Math.round(items.filter((i) => i.containerId === containerId).reduce((a, i) => a + i.weight * i.qty, 0) * 10) / 10;
 }
 
-export const holderValue = (items: InventoryItem[], purse: Purse): number => Math.round((purseValue(purse) + items.reduce((a, i) => a + (i.valueGp ?? 0) * i.qty, 0)) * 100) / 100;
+/** What the coins and items are worth as far as the party knows (items of unknown value count as nothing). */
+export const holderValue = (items: InventoryItem[], purse: Purse): number => Math.round((purseValue(purse) + items.reduce((a, i) => a + (knownValue(i) ?? 0) * i.qty, 0)) * 100) / 100;
+
+// ---------------------------------------------------------------- appraisal
+
+export type AppraiseMethod = 'tools' | 'merchant' | 'dm';
+
+/**
+ * Learning what an item of unknown value is worth. Jeweler's Tools discern a gem's value
+ * (Intelligence check, DC 15, 2024 PHB); a merchant in a settlement values anything (table rule);
+ * or the DM simply says. `trueGp` records the DM's value first if none was set.
+ */
+export const appraiseItem = act((d, ctx, ownerId: string, itemId: string, method: AppraiseMethod, appraiserId: string | null, bonus: number, trueGp?: number) => {
+  const c = charById(d, ownerId);
+  const it = c?.inventory.find((i) => i.id === itemId);
+  if (!c || !it || !valueUnknown(it)) return;
+  if (trueGp != null && trueGp > 0 && it.valueGp == null) {
+    it.valueGp = trueGp;
+    it.valueHidden = true;
+  }
+  const reveal = (how: string) => {
+    if (it.valueGp == null) return void log(d, `${how}, but no value has been set for the ${it.name}. DM: enter what it's worth.`, 'warn');
+    delete it.valueHidden;
+    log(d, `${how}: the ${it.name} is worth ${fmtGp(it.valueGp)}${it.qty > 1 ? ' each' : ''}.`, 'good');
+  };
+  if (method === 'dm') return reveal('The DM reveals it');
+  if (method === 'merchant') {
+    if (!d.place.settlement) return void log(d, `There's no merchant out here to value the ${it.name}. Find a town or city.`, 'warn');
+    return reveal('A merchant turns it over and names a price');
+  }
+  if (!GEM.test(it.name)) return void log(d, `Jeweler's Tools discern a gem's value. For the ${it.name}, ask a merchant or the DM.`, 'warn');
+  const who = appraiserId ? charById(d, appraiserId) : undefined;
+  if (!who) return;
+  if (!who.inventory.some((i) => /jeweler'?s tools/i.test(i.name))) return void log(d, `${who.name} needs Jeweler's Tools to appraise the ${it.name}.`, 'warn');
+  const r = d20('normal', ctx.rng);
+  const total = r.value + bonus - 2 * (who.exhaustion ?? 0);
+  const roll = `Intelligence check ${r.value} ${signed(bonus)}${who.exhaustion ? ` −${2 * who.exhaustion} Exhaustion` : ''} = ${total} against DC ${APPRAISE_DC}`;
+  if (total < APPRAISE_DC) return void log(d, `${who.name} studies the ${it.name} through a loupe (${roll}) and can't tell a fine stone from a flawed one.`, 'warn');
+  reveal(`${who.name} studies the ${it.name} through a loupe (${roll}) and judges its cut and clarity`);
+});
 
 
 // ---------------------------------------------------------------- ammunition and crafted goods
