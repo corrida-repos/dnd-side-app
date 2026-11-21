@@ -24,6 +24,7 @@ import { RIVAL_ESCALATION, RIVAL_IDEAS, RIVAL_MOVES } from '../rules/rivals';
 import { componentFor, REVIVAL_LIMIT, TARGET_SPELLS, type CostlyComponent } from '../rules/components';
 import { POISONS, poisonByName, poisonItemName, type PoisonInfo } from '../rules/poisons';
 import { POISON_HARVEST_DC, POTION_MISCIBILITY } from '../rules/potions';
+import { ALCHEMIST, ALCHEMIST_FIRE_DC, IMPROVISED_COOK_DC, IMPROVISED_HARVEST_DC, IMPROVISED_OINTMENT_DC, IMPROVISED_TESTS, IMPROVISED_TIME, TEST_KIND_LABEL, TOOL_TESTS, type TestKind } from '../rules/tools';
 import { AWAY_PROGRESS, BUILD_SPELLS, BUSINESS_DEBT_PENALTY, BUSINESS_MAX_DAYS, CREW_COST_SHARE, MAX_EXTRA_CREWS, buildPace, rollBusiness } from '../rules/business';
 import { HAZARDS, type GiftType, type HazardId } from '../rules/hazards';
 import { ARCANA_DC, STUDY_MINUTES, type StudyMethod } from '../rules/identify';
@@ -37,7 +38,7 @@ import { STABLE_WAKE_DIE, STABILIZE_DC } from '../rules/upkeep';
 import { RITUAL_EXTRA_MINUTES as RITUAL_TAG_MINUTES, spellInfo } from '../rules/rituals';
 import { maxWatchMinutes, slotTimes, watchMinutes, watchSight, type Sight } from '../rules/watch';
 import { abilityMod, ATTUNE_AWAY_MINUTES, IDENTIFY_MINUTES, MAX_ATTUNED, RITUAL_EXTRA_MINUTES } from '../rules/upkeep';
-import { COOK_RAW_MINUTES, DEFAULT_FIRE_COLD_LIMIT_F, FIRE_METHODS, FIRE_SPELLS, fireColdLimit, fireKeepsWarm, fireLighting, type FireMethod } from '../rules/campfire';
+import { COOK_RAW_MINUTES, DEFAULT_FIRE_COLD_LIMIT_F, FIRE_LIGHT_DC, FIRE_METHODS, FIRE_SPELLS, fireColdLimit, fireKeepsWarm, fireLighting, type FireMethod } from '../rules/campfire';
 import { fireThreat, rollWeather, temperatureAt, CLIMATES, weatherDamageAffinities, type Affinity } from '../rules/weather';
 import {
   exhaustionSummary,
@@ -1244,6 +1245,13 @@ export function fireSpellCasters(s: State): { c: Character; spell: string }[] {
 }
 
 /** Does anyone in the party carry a Tinderbox? Null when nobody has an inventory recorded, so it can't be told. */
+/** Whether anyone carries Cook's Utensils; null when nobody's inventory is listed. */
+export function partyHasCooksUtensils(s: State): boolean | null {
+  const pcs = s.characters.filter((c) => c.kind === 'pc');
+  if (!pcs.some((c) => c.inventory.length)) return null;
+  return pcs.some((c) => c.inventory.some((i) => /cook'?s utensils/i.test(i.name)));
+}
+
 export function partyHasTinderbox(s: State): boolean | null {
   const pcs = s.characters.filter((c) => c.kind === 'pc');
   if (!pcs.some((c) => c.inventory.length)) return null;
@@ -1255,7 +1263,7 @@ export function partyHasTinderbox(s: State): boolean | null {
  * the fuel is damp, +5 in strong wind or heavy rain (only possible in a sheltered pit), and +5 without a Tinderbox. Each
  * try takes 1 minute with a Tinderbox or 10 without. A spell that lights fires works at once.
  */
-export const lightFire = act((d, ctx, lighterId?: string, method: FireMethod = 'tinderbox') => {
+export const lightFire = act((d, ctx, lighterId?: string, method: FireMethod = 'tinderbox', intBonus: number = 0) => {
   if (d.fire.lit) return;
   if (d.fire.fuelHours <= 0) {
     log(d, 'There is no fuel to light a fire. Gather wood first.', 'warn');
@@ -1279,6 +1287,22 @@ export const lightFire = act((d, ctx, lighterId?: string, method: FireMethod = '
     return;
   }
   const m = FIRE_METHODS[method];
+  if (method === 'alchemist') {
+    if (!lighter) return;
+    if (!lighter.inventory.some((i) => ALCHEMIST.test(i.name))) return void log(d, `${lighter.name} has no Alchemist's Supplies.`, 'warn');
+    advanceMut(d, ctx, m.minutes, 'camp');
+    // The tool's DC 15 always applies (2024 PHB); the weather adds to it only under the lighting-check table rule.
+    const extra = d.settings.fireLightingCheck ? how.dc - FIRE_LIGHT_DC : 0;
+    const dc = ALCHEMIST_FIRE_DC + extra;
+    const r = d20('normal', ctx.rng);
+    const total = r.value + intBonus - 2 * lighter.exhaustion;
+    const roll = `Intelligence with Alchemist's Supplies ${r.value} ${signed(intBonus - 2 * lighter.exhaustion)} = ${total} against DC ${dc}${extra ? ` (${how.why.join(', ')})` : ''}`;
+    if (total >= dc) {
+      d.fire.lit = true;
+      return void log(d, `${lighter.name} sprinkles a reagent on the kindling and it flares alight: ${roll}.`, 'good');
+    }
+    return void log(d, `${lighter.name}'s reagent fizzles and smokes without catching: ${roll}. ${m.minutes} min spent; try again.`, 'warn');
+  }
   advanceMut(d, ctx, m.minutes, 'camp');
   if (!d.settings.fireLightingCheck || !lighter) {
     d.fire.lit = true;
@@ -1518,11 +1542,21 @@ export const cookMeal = act((d, ctx, cookId: string | null) => {
     if (got.amount > 0) eaters.push(c.name);
   }
   let flavor = '';
-  if (cook) {
-    const bonus = cook.wisMod + (cook.cooksUtensils ? proficiencyBonus(cook.level) : 0) - 2 * cook.exhaustion;
+  const hiredCook = !!cookId?.startsWith('h:');
+  if (cook && (cook.cooksUtensils || hiredCook || partyHasCooksUtensils(d) !== false)) {
+    // 2024 PHB Cook's Utensils: improve food's flavor, Wisdom DC 10, plus Proficiency Bonus if proficient. A hired cook brings utensils and their own bonus.
+    const bonus = hiredCook ? cook.wisMod : cook.wisMod + (cook.cooksUtensils ? proficiencyBonus(cook.level) : 0) - 2 * cook.exhaustion;
     const r = d20('normal', ctx.rng);
     const ok = r.value + bonus >= 10;
     flavor = ` ${cook.name} cooks: Wisdom with Cook's Utensils ${r.value} ${signed(bonus)} = ${r.value + bonus} against DC 10, ${ok ? 'a delicious meal' : 'edible, at least'}.`;
+  } else if (cook && d.settings.improvised) {
+    // Table rule: no utensils, so a pot, a spit and Wisdom (Survival) at DC +5.
+    const bonus = cook.survival - 2 * cook.exhaustion;
+    const r = d20('normal', ctx.rng);
+    const ok = r.value + bonus >= IMPROVISED_COOK_DC;
+    flavor = ` ${cook.name} cooks without proper utensils: Wisdom (Survival) ${r.value} ${signed(bonus)} = ${r.value + bonus} against DC ${IMPROVISED_COOK_DC}, ${ok ? 'surprisingly tasty' : 'edible, at least'}.`;
+  } else if (cook) {
+    flavor = ` ${cook.name} has no Cook's Utensils: plain fare, filling but nothing more.`;
   }
   const dish = d.recipeNames.length ? ` On the menu: ${d.recipeNames[absNow(d) % d.recipeNames.length]}.` : '';
   const purified = cookedUnsafe > 0 ? ` Cooking makes the ${fmtLb(round2(cookedUnsafe))} of raw food safe to eat.` : '';
@@ -1774,24 +1808,59 @@ export const mixPotions = act((d, ctx, what: string) => {
 });
 
 /** 2024 DMG: harvest one dose from a dead or Incapacitated venomous creature. 1d6 minutes, DC 20 Int (Nature) with a Poisoner's Kit. */
-export const harvestPoison = act((d, ctx, charId: string, bonus: number, creature: string) => {
+export const harvestPoison = act((d, ctx, charId: string, bonus: number, creature: string, hasKit: boolean = true) => {
   const c = charById(d, charId);
   if (!c || !alive(c)) return;
-  const mins = die(6, ctx.rng);
+  if (!hasKit && !d.settings.improvised) return void log(d, `${c.name} needs a Poisoner's Kit to harvest poison.`, 'warn');
+  // Table rule: without the kit, a knife and a vial at DC +5 and twice the time.
+  const dc = hasKit ? POISON_HARVEST_DC : IMPROVISED_HARVEST_DC;
+  const mins = die(6, ctx.rng) * (hasKit ? 1 : IMPROVISED_TIME);
+  const tool = hasKit ? "with a Poisoner's Kit" : 'with only a knife and a vial';
   advanceMut(d, ctx, mins, 'camp');
   const r = d20('normal', ctx.rng);
   const total = r.value + bonus - 2 * c.exhaustion;
   const name = creature || 'the creature';
   const me = charById(d, charId)!;
-  if (total >= POISON_HARVEST_DC) {
+  if (total >= dc) {
     me.inventory.push({ id: uid(), name: `Poison dose (${name})`, qty: 1, weight: 0, source: 'manual', valueGp: 0, container: null, ammo: null });
-    log(d, `${me.name} works over ${name} for ${mins} min with a Poisoner's Kit: Int (Nature) ${r.value} ${signed(bonus - 2 * c.exhaustion)} = ${total} vs DC ${POISON_HARVEST_DC}. One dose harvested; nothing more can be taken from it.`, 'good');
-  } else if (total <= POISON_HARVEST_DC - 5) {
-    log(d, `${me.name} botches the harvest from ${name} (${total} vs DC ${POISON_HARVEST_DC}, failed by 5 or more) and is exposed to its poison. Apply the creature's poison effect.`, 'bad');
+    log(d, `${me.name} works over ${name} for ${mins} min ${tool}: Int (Nature) ${r.value} ${signed(bonus - 2 * c.exhaustion)} = ${total} vs DC ${dc}. One dose harvested; nothing more can be taken from it.`, 'good');
+  } else if (total <= dc - 5) {
+    log(d, `${me.name} botches the harvest from ${name} ${tool} (${total} vs DC ${dc}, failed by 5 or more) and is exposed to its poison. Apply the creature's poison effect.`, 'bad');
   } else {
-    log(d, `${me.name} spends ${mins} min on ${name} but can't extract any poison (${total} vs DC ${POISON_HARVEST_DC}).`, 'warn');
+    log(d, `${me.name} spends ${mins} min on ${name} ${tool} but can't extract any poison (${total} vs DC ${dc}).`, 'warn');
   }
 });
+
+/**
+ * Testing food, drink, an object, a container or a plant. The DM says whether it's tainted; the tester learns it
+ * only on a success. Tool checks are the 2024 PHB Utilize entries; without a tool, an improvised check at DC +5 (table rule).
+ * Advantage when also proficient in a skill that applies (2024 PHB).
+ */
+export const testSubstance = act((d, ctx, testerId: string, kind: TestKind, method: string, bonus: number, tainted: boolean, what: string, advantage: boolean = false) => {
+  const c = actorById(d, testerId);
+  if (!c) return;
+  const thing = what.trim() || ({ food: 'the food', drink: 'the drink', object: 'it', container: 'the container', plant: 'the plant' } as const)[kind];
+  const tool = TOOL_TESTS.find((t) => t.id === method && t.kinds.includes(kind));
+  if (!tool && !d.settings.improvised) return void log(d, `Without the right tool, ${c.name} can't test ${thing} (improvised attempts are off in Settings).`, 'warn');
+  if (tool && !c.inventory.some((i) => tool.match.test(i.name))) return void log(d, `${c.name} has no ${tool.tool}.`, 'warn');
+  const imp = IMPROVISED_TESTS[kind];
+  const dc = tool ? tool.dc : imp.dc;
+  const r = d20(advantage && tool ? 'advantage' : 'normal', ctx.rng);
+  const total = r.value + bonus - 2 * c.exhaustion;
+  const check = tool ? `${tool.ability} with ${tool.tool}` : imp.check;
+  const roll = `${check} ${r.rolls.join('/')} ${signed(bonus - 2 * c.exhaustion)} = ${total} against DC ${dc}`;
+  const verb = tool ? `tests ${thing} with ${tool.tool}` : `${imp.how} ${thing}`;
+  if (total < dc) return void log(d, `${c.name} ${verb} (${roll}) and can't tell either way.`, 'warn');
+  const found: Record<TestKind, [string, string]> = {
+    food: ['catches a sour, wrong note: it has spoiled or been tampered with', 'finds nothing wrong: it is safe to eat'],
+    drink: ['notices a faint bitterness that shouldn’t be there: it has been poisoned', 'finds nothing wrong: it is safe to drink'],
+    object: ['spots a telltale residue: it has been poisoned', 'finds no trace of poison'],
+    container: ['can tell it recently held something foul or poisonous', 'can tell it held nothing harmful in the past day'],
+    plant: ['recognizes it: poisonous, not to be eaten', 'recognizes it: safe to eat'],
+  };
+  log(d, `${c.name} ${verb} (${roll}) and ${found[kind][tainted ? 0 : 1]}.`, tainted ? 'bad' : 'good');
+});
+export { TEST_KIND_LABEL };
 
 // ---------------------------------------------------------------- mixed potions, lifestyle risks, renown
 
@@ -2790,19 +2859,28 @@ function cackleSaveAfterRest(s: State, ctx: Ctx, c: Character): void {
 }
 
 /** Herbalism Kit ointment (1 hour to make): suppresses Sight Rot for 24 hours. */
-export const applySightRotOintment = act((d, ctx, charId: string, makerId: string) => {
+export const applySightRotOintment = act((d, ctx, charId: string, makerId: string, hasKit: boolean = true, bonus: number = 0) => {
   const c = charById(d, charId);
   const maker = charById(d, makerId);
   const x = c?.contagions.find((k) => k.kind === 'sightRot');
   if (!c || !x || !maker) return;
-  advanceMut(d, ctx, 60, 'camp');
+  if (!hasKit) {
+    if (!d.settings.improvised) return void log(d, `${maker.name} needs an Herbalism Kit to make the ointment.`, 'warn');
+    // Table rule: foraged herbs and a mortar of stones, twice the time and an Intelligence (Nature or Medicine) check.
+    advanceMut(d, ctx, 60 * IMPROVISED_TIME, 'camp');
+    const r = d20('normal', ctx.rng);
+    const total = r.value + bonus - 2 * maker.exhaustion;
+    const roll = `Intelligence (Nature or Medicine) ${r.value} ${signed(bonus - 2 * maker.exhaustion)} = ${total} against DC ${IMPROVISED_OINTMENT_DC}`;
+    if (total < IMPROVISED_OINTMENT_DC) return void log(d, `${maker.name} spends two hours grinding foraged herbs without an Herbalism Kit, but the paste is useless (${roll}).`, 'warn');
+    log(d, `${maker.name} grinds foraged herbs into a rough paste without an Herbalism Kit (${roll}).`);
+  } else advanceMut(d, ctx, 60, 'camp');
   const nx = charById(d, charId)!.contagions.find((k) => k.id === x.id);
   if (!nx) return;
   const now = absNow(d);
   // Reapplying early: credit the hours the last dose has already covered.
   if (nx.suppressedUntil) nx.suppressedHours = (nx.suppressedHours ?? 0) + Math.floor((now - (nx.suppressedUntil - 24 * 60)) / 60);
   nx.suppressedUntil = now + 24 * 60;
-  log(d, `${maker.name} spends an hour with an Herbalism Kit and applies the ointment to ${c.name}'s eyes. Sight returns for 24 hours (${nx.suppressedHours ?? 0}/72 hours treated so far).`, 'good');
+  log(d, `${maker.name} ${hasKit ? 'spends an hour with an Herbalism Kit and applies' : 'applies'} the ointment to ${c.name}'s eyes. Sight returns for 24 hours (${nx.suppressedHours ?? 0}/72 hours treated so far).`, 'good');
 });
 
 /** Magic or the DM ends a contagion (Heal or Lesser Restoration for Sight Rot). */

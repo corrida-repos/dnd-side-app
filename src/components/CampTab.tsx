@@ -10,6 +10,7 @@ import { TERRAIN } from '../rules/terrain';
 import { foodNeedLb, fmtLb, fmtWater, proficiencyBonus, ARMOR_LABEL, armorTime, BOIL_MINUTES, PURIFY_SPELL, TAINTED_DC } from '../rules/survival';
 import { Card, Num, Pill, Select, Text, Toggle, Rule } from './common';
 import { POISON_HARVEST_DC } from '../rules/potions';
+import { ALCHEMIST, ALCHEMIST_FIRE_DC, IMPROVISED_COOK_DC, IMPROVISED_HARVEST_DC, IMPROVISED_TESTS, TEST_KIND_LABEL, toolTestsFor, type TestKind } from '../rules/tools';
 import { WaysAround } from './WaysAround';
 
 export function CampTab() {
@@ -24,6 +25,7 @@ export function CampTab() {
       <ForageCard />
       <HuntCard />
       <PoisonHarvestCard />
+      <TestCard />
       <RulesCard />
     </div>
   );
@@ -43,14 +45,21 @@ function FireCard() {
   const tinderbox = E.partyHasTinderbox(s);
   const [lighter, setLighter] = useState('');
   const [method, setMethod] = useState<FireMethod | ''>('');
+  const [intBonus, setIntBonus] = useState(0);
+  const alchemists = pcs.filter((c) => c.inventory.some((i) => ALCHEMIST.test(i.name)));
   const temp = E.tempNow(s);
   const indoors = s.place.shelter === 'building' || s.place.shelter === 'cave';
   const threat = fireThreat(s.weather, temp);
   const how = fireLighting(s.weather, temp, s.fire.sheltered, indoors);
   const m: FireMethod = method || (casters.length ? 'spell' : tinderbox === false ? 'friction' : 'tinderbox');
   const best = [...pcs].sort((a, b) => b.survival - 2 * b.exhaustion - (a.survival - 2 * a.exhaustion))[0];
-  const lighterId = m === 'spell' ? (casters.find((x) => x.c.id === lighter)?.c.id ?? casters[0]?.c.id ?? '') : (pcs.find((c) => c.id === lighter)?.id ?? best?.id ?? '');
-  const dc = how.dc + FIRE_METHODS[m].dcMod;
+  const lighterId =
+    m === 'spell'
+      ? (casters.find((x) => x.c.id === lighter)?.c.id ?? casters[0]?.c.id ?? '')
+      : m === 'alchemist'
+        ? (alchemists.find((c) => c.id === lighter)?.id ?? alchemists[0]?.id ?? '')
+        : (pcs.find((c) => c.id === lighter)?.id ?? best?.id ?? '');
+  const dc = m === 'alchemist' ? ALCHEMIST_FIRE_DC + (s.settings.fireLightingCheck ? how.dc - FIRE_LIGHT_DC : 0) : how.dc + FIRE_METHODS[m].dcMod;
   const limit = fireColdLimit(s.settings.fireColdLimitF ?? DEFAULT_FIRE_COLD_LIMIT_F, s.fire.sheltered);
   const warms = E.campfireWarms(s, temp);
   const night = lightAt(s.minutes % 1440, E.seasonOf(s)).phase === 'Night';
@@ -60,6 +69,7 @@ function FireCard() {
     ...(casters.length ? [{ value: 'spell' as const, label: `A spell (${casters.map((x) => `${x.c.name}: ${x.spell}`).join(', ')})` }] : []),
     { value: 'tinderbox' as const, label: `Tinderbox (1 min a try)${tinderbox === false ? ' — nobody carries one' : ''}` },
     { value: 'friction' as const, label: 'No tinderbox (10 min a try, DC +5)' },
+    ...(alchemists.length ? [{ value: 'alchemist' as const, label: `Alchemist's Supplies (Int, DC ${ALCHEMIST_FIRE_DC})` }] : []),
   ];
   return (
     <Card title={<span>Campfire {s.fire.lit ? <Pill tone="good">Burning</Pill> : <Pill tone="muted">Out</Pill>}</span>} className="span-2 fire-card">
@@ -141,19 +151,24 @@ function FireCard() {
                 <Select label="Method" value={m} onChange={(v) => setMethod(v as FireMethod)} options={methodOpts} />
                 {m === 'spell' ? (
                   <Select label="Caster" value={lighterId} onChange={setLighter} options={casters.map((x) => ({ value: x.c.id, label: `${x.c.name} (${x.spell})` }))} />
+                ) : m === 'alchemist' ? (
+                  <>
+                    <Select label="Who" value={lighterId} onChange={setLighter} options={alchemists.map((c) => ({ value: c.id, label: c.name }))} />
+                    <Num label="Int bonus" value={intBonus} onChange={(v) => setIntBonus(Math.round(v))} width={2} />
+                  </>
                 ) : (
                   <Select label="Who" value={lighterId} onChange={setLighter} options={pcs.map((c) => ({ value: c.id, label: `${c.name} (Survival ${c.survival - 2 * c.exhaustion >= 0 ? '+' : ''}${c.survival - 2 * c.exhaustion})` }))} />
                 )}
               </div>
               <div className="btn-row">
-                <button className="primary" disabled={s.fire.fuelHours <= 0} title={s.fire.fuelHours <= 0 ? 'Gather firewood first' : ''} onClick={() => dispatch((st, c) => E.lightFire(st, c, lighterId || undefined, m))}>
-                  {m === 'spell' ? 'Light it with the spell' : s.settings.fireLightingCheck ? `Try to light it (DC ${dc}, ${FIRE_METHODS[m].minutes} min)` : `Light it (${FIRE_METHODS[m].minutes} min)`}
+                <button className="primary" disabled={s.fire.fuelHours <= 0} title={s.fire.fuelHours <= 0 ? 'Gather firewood first' : ''} onClick={() => dispatch((st, c) => E.lightFire(st, c, lighterId || undefined, m, intBonus))}>
+                  {m === 'spell' ? 'Light it with the spell' : m === 'alchemist' || s.settings.fireLightingCheck ? `Try to light it (DC ${dc}, ${FIRE_METHODS[m].minutes} min)` : `Light it (${FIRE_METHODS[m].minutes} min)`}
                 </button>
                 {s.fire.fuelHours <= 0 && <span className="warn-text small">No fuel: gather firewood below.</span>}
               </div>
               <Rule>
-                {m === 'spell'
-                  ? FIRE_METHODS.spell.note
+                {m === 'spell' || m === 'alchemist'
+                  ? `${FIRE_METHODS[m].note}${m === 'alchemist' && s.settings.fireLightingCheck && how.why.length ? ` Table rule: raised because ${how.why.join(' and ')}.` : ''}`
                   : s.settings.fireLightingCheck
                     ? `Table rule: a Wisdom (Survival) check, DC ${FIRE_LIGHT_DC}${how.why.length ? `, raised because ${how.why.join(' and ')}` : ' with dry fuel'}. ${FIRE_METHODS[m].note} A failed try costs the time; try again.`
                     : `${FIRE_METHODS[m].note} The lighting check is off in Settings, so it always catches.`}
@@ -506,6 +521,11 @@ function MealsCard() {
         <button className="primary" disabled={!s.fire.lit} onClick={() => dispatch((st, c) => E.cookMeal(st, c, cook || null))} title={s.fire.lit ? '' : 'Light the fire first'}>
           Cook a hot meal (1 h)
         </button>
+        {cook && !cook.startsWith('h:') && !s.characters.find((x) => x.id === cook)?.cooksUtensils && E.partyHasCooksUtensils(s) === false && (
+          <span className="small muted">
+            {s.settings.improvised ? `No Cook's Utensils: Wisdom (Survival) at DC ${IMPROVISED_COOK_DC} for a tasty meal (table rule).` : "No Cook's Utensils: plain fare, no check."}
+          </span>
+        )}
         <button onClick={() => dispatch((st, c) => E.partyEat(st, c, 'meal'))}>Cold meal for everyone</button>
         <button onClick={() => dispatch((st, c) => E.partyDrink(st, c, 'meal'))}>Everyone drinks</button>
       </div>
@@ -553,12 +573,13 @@ function MealsCard() {
         </table>
       </div>
       <Rule>
-        Cooking uses Cook&apos;s Utensils with Wisdom. A DC 10 check makes the food taste better, which is flavor only. A Chef with Cook&apos;s Utensils adds their Proficiency Bonus (
+        Cooking uses Cook&apos;s Utensils with Wisdom: a DC 10 check improves the food&apos;s flavor, which is flavor only (2024 PHB). Anyone in the party&apos;s utensils will do; proficiency adds the Proficiency Bonus.{' '}
+        {s.settings.improvised ? `Table rule: with no utensils at all, Wisdom (Survival) at DC ${IMPROVISED_COOK_DC}. ` : ''}Chefs:{' '}
         {s.characters
           .filter((c) => c.chef)
           .map((c) => `${c.name} +${proficiencyBonus(c.level)}`)
-          .join(', ') || 'no Chefs in the party'}
-        ).
+          .join(', ') || 'none in the party'}
+        .
       </Rule>
     </Card>
   );
@@ -645,6 +666,56 @@ function HuntCard() {
   );
 }
 
+/** Testing food, drink, objects, containers and plants with the 2024 PHB tools, or improvised at DC +5. */
+function TestCard() {
+  const s = useGame();
+  const people = s.characters.filter((c) => c.kind !== 'mount' && E.alive(c));
+  const [who, setWho] = useState('');
+  const [kind, setKind] = useState<TestKind>('food');
+  const [method, setMethod] = useState('');
+  const [bonus, setBonus] = useState(0);
+  const [adv, setAdv] = useState(false);
+  const [tainted, setTainted] = useState(false);
+  const [what, setWhat] = useState('');
+  const whoId = people.find((c) => c.id === who)?.id ?? people[0]?.id ?? '';
+  const tester = people.find((c) => c.id === whoId);
+  const tools = toolTestsFor(kind).filter((t) => tester?.inventory.some((i) => t.match.test(i.name)));
+  const opts = [...tools.map((t) => ({ value: t.id, label: `${t.tool}: ${t.ability}, DC ${t.dc}` })), ...(s.settings.improvised ? [{ value: 'improvised', label: `No tool: ${IMPROVISED_TESTS[kind].check}, DC ${IMPROVISED_TESTS[kind].dc}` }] : [])];
+  const pick = opts.find((o) => o.value === method)?.value ?? opts[0]?.value ?? '';
+  return (
+    <Card title="Is it safe? Testing food, drink and plants">
+      <div className="form-row">
+        <Select label="Tester" value={whoId} onChange={setWho} options={people.map((c) => ({ value: c.id, label: c.name }))} />
+        <Select label="What" value={kind} onChange={(v) => (setKind(v as TestKind), setMethod(''))} options={(Object.keys(TEST_KIND_LABEL) as TestKind[]).map((k) => ({ value: k, label: TEST_KIND_LABEL[k] }))} />
+        <Text label="Name it" value={what} onChange={setWhat} placeholder="e.g. the innkeeper's stew" />
+      </div>
+      {opts.length === 0 ? (
+        <p className="small muted">{tester?.name ?? 'They'} carries no tool for this, and improvised attempts are off in Settings.</p>
+      ) : (
+        <>
+          <div className="form-row">
+            <Select label="How" value={pick} onChange={setMethod} options={opts} />
+            <Num label="Bonus" value={bonus} onChange={(v) => setBonus(Math.round(v))} width={2} />
+          </div>
+          <div className="btn-row tight">
+            {pick !== 'improvised' && <Toggle checked={adv} onChange={setAdv} label="Also proficient in a skill that applies (Advantage)" />}
+            <Toggle checked={tainted} onChange={setTainted} label={kind === 'plant' ? 'DM: it is poisonous' : kind === 'container' ? 'DM: it held something harmful' : 'DM: it is spoiled or poisoned'} />
+          </div>
+          <button className="small" disabled={!whoId} onClick={() => dispatch((st, cx) => E.testSubstance(st, cx, whoId, kind, pick, bonus, tainted, what, adv))}>
+            Test it
+          </button>
+        </>
+      )}
+      <Rule>
+        2024 PHB tools: Cook&apos;s Utensils detect spoiled or poisoned food (Wis, DC 15); Brewer&apos;s Supplies detect poisoned drink (Int, DC 15); a Poisoner&apos;s Kit detects a poisoned object (Int, DC 10); Alchemist&apos;s
+        Supplies identify a substance (Int, DC 15); Glassblower&apos;s or Potter&apos;s Tools discern what a container held in the past 24 hours (Int, DC 15); an Herbalism Kit identifies a plant (Int, DC 10). Proficiency with the
+        tool adds your Proficiency Bonus, and Advantage if a skill also applies. {s.settings.improvised ? 'Table rule: without a tool, anyone can try at DC +5 by smell, taste and sight. ' : ''}The tester learns the truth only on a
+        success; a failure tells them nothing.
+      </Rule>
+    </Card>
+  );
+}
+
 function RulesCard() {
   return (
     <Card title="Survival rules at a glance" className="span-2">
@@ -677,6 +748,10 @@ function PoisonHarvestCard() {
   const [bonus, setBonus] = useState(0);
   const [creature, setCreature] = useState('');
   const whoId = people.find((c) => c.id === who)?.id ?? people[0]?.id ?? '';
+  const carries = !!people.find((c) => c.id === whoId)?.inventory.some((i) => /poisoner'?s kit/i.test(i.name));
+  const [kit, setKit] = useState<boolean | null>(null);
+  const hasKit = kit ?? carries;
+  const dc = hasKit ? POISON_HARVEST_DC : IMPROVISED_HARVEST_DC;
   return (
     <Card title="Harvesting poison">
       <div className="form-row">
@@ -684,9 +759,11 @@ function PoisonHarvestCard() {
         <Num label="Int (Nature) bonus" value={bonus} onChange={setBonus} width={3} />
         <Text label="Creature" value={creature} onChange={setCreature} placeholder="e.g. Giant Spider" />
       </div>
-      <button className="small" disabled={!whoId} onClick={() => dispatch((st, cx) => E.harvestPoison(st, cx, whoId, bonus, creature))}>
-        Harvest (1d6 min, DC {POISON_HARVEST_DC})
+      <Toggle checked={hasKit} onChange={setKit} label="Has a Poisoner's Kit" />
+      <button className="small" disabled={!whoId || (!hasKit && !s.settings.improvised)} onClick={() => dispatch((st, cx) => E.harvestPoison(st, cx, whoId, bonus, creature, hasKit))}>
+        Harvest ({hasKit ? '1d6' : '2d6'} min, DC {dc})
       </button>
+      {!hasKit && <span className="small muted"> {s.settings.improvised ? 'Without the kit: DC +5 and twice as long (table rule).' : 'Needs a Poisoner’s Kit.'}</span>}
       <Rule>
         2024 DMG: from a venomous creature that is dead or Incapacitated, using a Poisoner&apos;s Kit. Success yields one dose, and nothing more can be taken from that creature. Failing by 5 or more exposes the harvester to the poison. Buying poison is often illegal: it means criminal contacts, inquiries and bribes.
       </Rule>

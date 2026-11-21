@@ -99,6 +99,11 @@ function RulesCard() {
           wake, or gains 1 Exhaustion level. At 0 °F or below, the normal hourly extreme cold saves apply instead.
         </Rule>
         <Toggle checked={s.settings.trackComponents} onChange={(v) => set('trackComponents', v)} label="Costly spell components must be carried and are used up (2024 PHB)" />
+        <Toggle checked={s.settings.improvised} onChange={(v) => set('improvised', v)} label="Improvised attempts without the right tool: DC +5, twice as long (table rule)" />
+        <Rule>
+          Covers testing food, drink and plants without a tool, cooking without Cook&apos;s Utensils (Wisdom (Survival), DC 15), harvesting poison without a Poisoner&apos;s Kit (DC 25) and Sight Rot ointment without an Herbalism Kit
+          (2 hours, DC 15). Lighting a fire without a Tinderbox and judging value by eye have their own switches and follow the same +5 step.
+        </Rule>
         <Toggle checked={s.settings.appraiseCrafts} onChange={(v) => set('appraiseCrafts', v)} label="Jeweler's Tools also value jewelry; History values art objects at DC 15 (table rule)" />
         <Toggle checked={s.settings.appraiseByEye} onChange={(v) => set('appraiseByEye', v)} label="Anyone can judge a valuable's worth by eye at DC 20 (table rule)" />
         <Toggle checked={s.settings.appraiseOneTry} onChange={(v) => set('appraiseOneTry', v)} label="One appraisal try per person until a rest (table rule)" />

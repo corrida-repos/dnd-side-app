@@ -48,7 +48,7 @@ export const INEDIBLE_TYPES = ['construct', 'elemental', 'ooze', 'undead'];
 /** Creature types whose meat is risky: still raw food, but the DM may add extra effects. */
 export const STRANGE_TYPES = ['aberration', 'celestial', 'fiend', 'fey', 'plant'];
 
-/** Survival check (Wisdom) to butcher cleanly. A failure wastes half the meat. */
+/** Table rule (not in the 2024 books): a Wisdom (Survival) check to butcher cleanly. A failure wastes half the meat. */
 export const BUTCHER_DC = 10;
 
 export const isEdible = (c: Creature): boolean => !INEDIBLE_TYPES.includes(c.type.toLowerCase());

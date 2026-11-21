@@ -756,6 +756,8 @@ export interface Settings {
   appraiseTime: boolean;
   /** Optional table rule: failing an appraisal by 5 or more gives a confident wrong value, and appraisal rolls are secret. */
   appraiseMisjudge: boolean;
+  /** Table rule: without the right tool, try anyway at DC +5, taking twice as long where time matters. */
+  improvised: boolean;
   /** Optional 2014 DMG rule: running a business as a downtime activity. */
   runningBusiness: boolean;
   /** Roll random encounter checks automatically by the location's danger while travelling, camping, resting and exploring. */
