@@ -17,6 +17,7 @@ import { readSky, rangeLabel } from '../rules/skyclock';
 import { DEEP_SNOW_IN, groundDifficulty, OBSTACLES } from '../rules/ground';
 import { WaysAround } from './WaysAround';
 import type { TopicId } from '../rules/shortcuts';
+import { CARTOGRAPHER, IMPROVISED_MAP_DC, IMPROVISED_STARGAZE_DC, MAP_DC, NAVIGATOR, STARGAZE_DC, mapName } from '../rules/tools';
 
 /** The DM's dashboard: what needs attention, the clock, the party, the conditions and what just happened. */
 export function Overview() {
@@ -540,6 +541,11 @@ function TravelCard() {
   const [vesselId, setVesselId] = useState('');
   const [seeker, setSeeker] = useState(s.characters[0]?.id ?? '');
   const [seekBonus, setSeekBonus] = useState(0);
+  const [starBonus, setStarBonus] = useState(0);
+  const navChar = s.characters.find((c) => c.id === navigator);
+  const navHasTools = !!navChar?.inventory.some((i) => NAVIGATOR.test(i.name));
+  const hasMap = E.partyHasMapHere(s);
+  const stars = E.starsVisible(s);
   const p = PACES[pace];
   const miles = hours * p.mph * (difficult ? 0.5 : 1);
   const counted = s.travel.hoursToday + hours * (s.place.altitudeFt >= 10000 ? 2 : 1);
@@ -608,13 +614,42 @@ function TravelCard() {
           )}
         </span>
       </div>
+      {(navHasTools || hasMap) && nav.dc != null && (
+        <div className="btn-row tight">
+          {navHasTools && <Toggle checked={!!s.travel.navTools} onChange={(v) => edit((d) => void (d.travel.navTools = v))} label="Navigator uses Navigator's Tools (Advantage if proficient in Survival and the tools)" />}
+          {hasMap && <span className="small good-text">The party has a {mapName(s.place.name)}: Advantage on navigation here (table rule).</span>}
+        </div>
+      )}
       {s.travel.lost && (
-        <p className="small bad-text">
-          The party is lost: {+s.travel.milesOffCourse.toFixed(1)} miles off course so far. The navigator can try again in {Math.max(0, s.travel.lostRecheckIn)} travel hour(s).{' '}
-          <button className="ghost small" onClick={() => dispatch(E.foundTheWay)}>
-            Found the way
-          </button>
-        </p>
+        <>
+          <p className="small bad-text">
+            The party is lost: {+s.travel.milesOffCourse.toFixed(1)} miles off course so far. The navigator can try again in {Math.max(0, s.travel.lostRecheckIn)} travel hour(s).{' '}
+            <button className="ghost small" onClick={() => dispatch(E.foundTheWay)}>
+              Found the way
+            </button>
+          </p>
+          <div className="btn-row tight">
+            {stars ? (
+              <>
+                {navHasTools && (
+                  <>
+                    <Num label="Wis + tools bonus" value={starBonus} onChange={(v) => setStarBonus(Math.round(v))} width={2} />
+                    <button className="small" onClick={() => dispatch((st, cx) => E.stargaze(st, cx, navigator, true, starBonus))}>
+                      Stargaze with Navigator&apos;s Tools (DC {STARGAZE_DC}, 10 min)
+                    </button>
+                  </>
+                )}
+                {s.settings.improvised && (
+                  <button className="small ghost" onClick={() => dispatch((st, cx) => E.stargaze(st, cx, navigator, false, 0))}>
+                    Read the stars by eye (Survival DC {IMPROVISED_STARGAZE_DC}, 20 min)
+                  </button>
+                )}
+              </>
+            ) : (
+              <span className="small muted">A clear night above ground would let the navigator fix the party&apos;s position by the stars.</span>
+            )}
+          </div>
+        </>
       )}
       <div className="field">
         <span className="field-label">Forage along the way (Wisdom (Survival), DC {TERRAIN[s.place.terrain].forageDC}; finds food and water for each day of the trip)</span>
@@ -746,6 +781,27 @@ function JourneyCard() {
   );
 }
 
+function MapLine() {
+  const s = useGame();
+  const pcs = s.characters.filter((c) => c.kind !== 'mount' && E.alive(c));
+  const [who, setWho] = useState('');
+  const [bonus, setBonus] = useState(0);
+  const tooled = pcs.filter((c) => c.inventory.some((i) => CARTOGRAPHER.test(i.name)));
+  const whoId = pcs.find((c) => c.id === who)?.id ?? tooled[0]?.id ?? pcs[0]?.id ?? '';
+  const hasTools = tooled.some((c) => c.id === whoId);
+  if (E.partyHasMapHere(s)) return <p className="small good-text">The party carries a {mapName(s.place.name)}: Advantage on navigation here (table rule).</p>;
+  if (!hasTools && !s.settings.improvised) return null;
+  return (
+    <div className="btn-row tight">
+      <Select label="Map maker" value={whoId} onChange={setWho} options={pcs.map((c) => ({ value: c.id, label: `${c.name}${tooled.includes(c) ? " (Cartographer's Tools)" : ''}` }))} />
+      <Num label="Wis bonus" value={bonus} onChange={(v) => setBonus(Math.round(v))} width={2} />
+      <button className="small" onClick={() => dispatch((st, cx) => E.draftMap(st, cx, whoId, hasTools, bonus))}>
+        Draft a {mapName(s.place.name)} ({hasTools ? `Cartographer's Tools, DC ${MAP_DC}, 1 h` : `paper and charcoal, DC ${IMPROVISED_MAP_DC}, 2 h`})
+      </button>
+    </div>
+  );
+}
+
 function PlaceCard() {
   const s = useGame();
   const set = (patch: Partial<typeof s.place>) => edit((d) => void (d.place = { ...d.place, ...patch }));
@@ -772,6 +828,7 @@ function PlaceCard() {
         {TERRAIN[s.place.terrain].label}: fastest pace {maxPaceFor(s.place.terrain, s.place.goodRoad)}, foraging DC {TERRAIN[s.place.terrain].forageDC}, navigation DC {TERRAIN[s.place.terrain].navigationDC}, search DC{' '}
         {TERRAIN[s.place.terrain].searchDC}, encounters at {TERRAIN[s.place.terrain].encounterDistance}. {DANGER[s.place.danger].label} danger: random encounter check every {DANGER[s.place.danger].everyHours} h on {DANGER[s.place.danger].on}+ (see the Encounters tab).
       </p>
+      <MapLine />
       <div className="form-row">
         <Select
           label="Climate"

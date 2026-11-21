@@ -63,3 +63,38 @@ export const IMPROVISED_COOK_DC = 10 + IMPROVISED_DC;
 export const IMPROVISED_HARVEST_DC = 20 + IMPROVISED_DC;
 /** Table rule: Sight Rot ointment from foraged herbs without an Herbalism Kit, Intelligence (Nature or Medicine). */
 export const IMPROVISED_OINTMENT_DC = 15;
+
+// ---------------------------------------------------------------- navigation and maps
+
+/** 2024 PHB Navigator's Tools: plot a course (DC 10), or determine position by stargazing (DC 15), Wisdom. */
+export const NAVIGATOR = /navigator'?s tools/i;
+export const STARGAZE_DC = 15;
+export const IMPROVISED_STARGAZE_DC = STARGAZE_DC + IMPROVISED_DC;
+/** Table rule: minutes spent taking star sightings. */
+export const STARGAZE_MINUTES = 10;
+
+/** 2024 PHB Cartographer's Tools: draft a map of a small area, Wisdom DC 15. */
+export const CARTOGRAPHER = /cartographer'?s tools/i;
+export const MAP_DC = 15;
+export const IMPROVISED_MAP_DC = MAP_DC + IMPROVISED_DC;
+/** Table rule: an hour to survey and draw a small area. */
+export const MAP_MINUTES = 60;
+export const mapName = (place: string): string => `Map of ${place.trim() || 'this area'}`;
+/** The inventory name of a map of this place. */
+export const isMapOf = (itemName: string, place: string): boolean => itemName.trim().toLowerCase() === mapName(place).toLowerCase();
+
+// ---------------------------------------------------------------- mending
+
+/** 2024 PHB Weaver's Tools: mend a tear in clothing, Dexterity DC 10. Cloth goods it crafts or mends. */
+export const WEAVER = /weaver'?s tools/i;
+export const CLOTH = /\b(cloth(es|ing)?|robes?|cloaks?|capes?|tents?|bedrolls?|blankets?|ropes?|sacks?|nets?|baskets?|padded armor|string|tunics?|dress|gowns?|vestments?|costumes?|garb)\b/i;
+export const MEND_DC = 10;
+export const IMPROVISED_MEND_DC = MEND_DC + IMPROVISED_DC;
+/** Table rule: minutes to mend a tear. */
+export const MEND_MINUTES = 10;
+
+// ---------------------------------------------------------------- languages
+
+/** Table rule: the gist of a short text in an unknown language, Intelligence (Investigation). */
+export const DECIPHER_DC = 20;
+export const DECIPHER_MINUTES = 10;

@@ -15,6 +15,7 @@ interface Valued {
   valueGp?: number;
   valueHidden?: boolean;
   valueBelieved?: number;
+  damaged?: boolean;
 }
 
 /**
@@ -35,6 +36,7 @@ export const valueSecret = (i: Valued): boolean => valueUnknown(i) || misjudged(
 /** Two inventory lines can share a stack: same name, and no unknown value gets mixed with a different one. */
 export const sameStack = (a: Valued, b: Valued): boolean =>
   a.name.toLowerCase() === b.name.toLowerCase() &&
+  !!a.damaged === !!b.damaged &&
   valueSecret(a) === valueSecret(b) &&
   (valueSecret(a) ? (a.valueGp ?? null) === (b.valueGp ?? null) && (a.valueBelieved ?? null) === (b.valueBelieved ?? null) : a.valueGp == null || b.valueGp == null || a.valueGp === b.valueGp);
 

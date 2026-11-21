@@ -111,3 +111,67 @@ describe('improvised attempts elsewhere', () => {
     expect(s.characters[0].contagions[0].suppressedUntil).toBeGreaterThan(E.absNow(s));
   });
 });
+
+describe('navigation aids, maps, mending and languages', () => {
+  const lost = () => {
+    const s = camp();
+    s.travel.lost = true;
+    s.travel.milesOffCourse = 3;
+    s.minutes = 23 * 60;
+    s.weather = { ...s.weather, precip: 'none' };
+    return s;
+  };
+
+  it("stargazing fixes the position: Navigator's Tools DC 15, by eye DC 20, only on a clear night", () => {
+    let s = lost();
+    s.characters[0].inventory.push(tool("Navigator's Tools"));
+    s = E.stargaze(s, ctx(0.7), s.characters[0].id, true, 0); // 15
+    expect(s.travel.lost).toBe(false);
+    s = lost();
+    s = E.stargaze(s, ctx(0.9), s.characters[1].id, false, 0); // 19 vs 20
+    expect(s.travel.lost).toBe(true);
+    s = E.stargaze(s, HIGH, s.characters[1].id, false, 0);
+    expect(s.travel.lost).toBe(false);
+    s = lost();
+    s.weather = { ...s.weather, precip: 'light' };
+    s = E.stargaze(s, HIGH, s.characters[1].id, false, 0);
+    expect(s.travel.lost).toBe(true);
+  });
+
+  it('a drafted map lands in the inventory and counts for this place only', () => {
+    let s = camp();
+    s.place.name = 'Greyhollow';
+    s.characters[0].inventory.push(tool("Cartographer's Tools"));
+    s = E.draftMap(s, ctx(0.7), s.characters[0].id, true, 0); // 15
+    expect(s.characters[0].inventory.some((i) => i.name === 'Map of Greyhollow')).toBe(true);
+    expect(E.partyHasMapHere(s)).toBe(true);
+    s.place.name = 'Elsewhere';
+    expect(E.partyHasMapHere(s)).toBe(false);
+    s = camp();
+    s = E.draftMap(s, ctx(0.9), s.characters[1].id, false, 0); // 19 vs 20, 2 hours
+    expect(E.partyHasMapHere(s)).toBe(false);
+  });
+
+  it('mending: Weaver’s Tools fix cloth at DC 10, the spell fixes anything, non-cloth needs the spell', () => {
+    let s = camp();
+    s.characters[1].inventory = [tool("Weaver's Tools"), { ...tool('Cloak'), damaged: true }, { ...tool('Shield'), damaged: true }];
+    const b = s.characters[1].id;
+    s = E.mendItem(s, ctx(0.45), b, 'Cloak', b, 'tools', 0); // 10
+    expect(s.characters[1].inventory.find((i) => i.id === 'Cloak')?.damaged).toBeUndefined();
+    s = E.mendItem(s, HIGH, b, 'Shield', b, 'improvised', 5);
+    expect(s.characters[1].inventory.find((i) => i.id === 'Shield')?.damaged).toBe(true);
+    s.characters[1].spells = [{ name: 'Mending', level: 0, prepared: true, alwaysPrepared: false }];
+    s = E.mendItem(s, ctx(), b, 'Shield', b, 'mending', 0);
+    expect(s.characters[1].inventory.find((i) => i.id === 'Shield')?.damaged).toBeUndefined();
+  });
+
+  it('the gist of an unknown language at DC 20, never with improvised attempts off', () => {
+    let s = camp();
+    s = E.decipherText(s, HIGH, s.characters[0].id, 0, 'Giant', 'the bridge is cursed');
+    expect(said(s, 'the bridge is cursed')).toBe(true);
+    s = camp();
+    s.settings.improvised = false;
+    s = E.decipherText(s, HIGH, s.characters[0].id, 10, 'Giant', 'secret');
+    expect(said(s, 'secret')).toBe(false);
+  });
+});

@@ -111,7 +111,7 @@ function StashCard({ st }: { st: Stash }) {
           <li key={i.id} className="armor-row">
             <span>
               {i.name} {i.qty > 1 && <span className="muted">×{i.qty}</span>} <span className="muted">{Math.round(i.weight * i.qty * 10) / 10} lb</span>
-              {valueUnknown(i) ? <Pill tone="warn" title="Nobody in the party knows what it's worth yet.">value unknown</Pill> : misjudged(i) ? <span className="muted" title={`DM: misjudged. Really ${fmtGp(i.valueGp ?? 0)} each.`}> · {fmtGp(i.valueBelieved! * i.qty)}</span> : i.valueGp ? <span className="muted"> · {fmtGp(i.valueGp * i.qty)}</span> : null}
+              {i.damaged && <Pill tone="bad">damaged</Pill>} {valueUnknown(i) ? <Pill tone="warn" title="Nobody in the party knows what it's worth yet.">value unknown</Pill> : misjudged(i) ? <span className="muted" title={`DM: misjudged. Really ${fmtGp(i.valueGp ?? 0)} each.`}> · {fmtGp(i.valueBelieved! * i.qty)}</span> : i.valueGp ? <span className="muted"> · {fmtGp(i.valueGp * i.qty)}</span> : null}
             </span>
             <span className="btn-row tight">
               <Select value={who} onChange={setWho} options={pcs.map((c) => ({ value: c.id, label: `to ${c.name}` }))} />

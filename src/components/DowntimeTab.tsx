@@ -173,6 +173,7 @@ function NewProject() {
   const [spellLevel, setSpellLevel] = useState(1);
   const pcs = s.characters.filter((c) => c.kind !== 'mount');
   const [useMats, setUseMats] = useState<Record<string, number>>({});
+  const [untrained, setUntrained] = useState(false);
 
   let calc: { days: number; gp: number; label: string; note: string };
   switch (kind) {
@@ -240,6 +241,9 @@ function NewProject() {
         })(),
       };
   }
+  // Table rule: crafting a nonmagical item or a potion without proficiency, with the tool on hand, takes twice the workdays.
+  const canUntrained = s.settings.improvised && (kind === 'nonmagical' || kind === 'potion');
+  if (canUntrained && untrained) calc = { ...calc, days: calc.days * 2, note: `${calc.note} Not proficient: twice the workdays (table rule; the 2024 PHB needs proficiency with the tool).` };
   const cal = calendarDays(calc.days, crafters.length, s.settings.extraCraftHelpers);
   const productFor = (): { name: string; qty: number; magic?: boolean; valueGp?: number } | undefined => {
     if (kind === 'nonmagical') {
@@ -397,6 +401,7 @@ function NewProject() {
           return v > 0 ? ` (${fmtGp(v)} covered by materials, ${fmtGp(Math.max(0, calc.gp - v))} in gold)` : '';
         })()} · {cal} calendar day(s) with {Math.max(1, crafters.length)} crafter(s)
       </p>
+      {canUntrained && <Toggle checked={untrained} onChange={setUntrained} label="Not proficient with the tool: improvised, twice the workdays (table rule)" />}
       <Rule>{calc.note}</Rule>
       <button
         className="primary"

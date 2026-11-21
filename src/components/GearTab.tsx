@@ -11,6 +11,7 @@ import { LOAD_LABEL, RATION_WEIGHT } from '../rules/encumbrance';
 import { fmtGp, MAGIC_ITEM_VALUE } from '../rules/money';
 import { misjudged, valueSecret, valueUnknown } from '../rules/shop';
 import { APPRAISE_EYE_DC, APPRAISE_MINUTES, JEWELER_TOOLS, appraiseCheck } from '../rules/appraise';
+import { CLOTH, IMPROVISED_MEND_DC, MEND_DC, WEAVER } from '../rules/tools';
 import { PartyKnowledgeCard, PlayerItemView } from './ItemKnowledge';
 import { ARCANA_DC, CLUE_KIND_LABEL, SCHOOLS_OF_MAGIC, STUDY_LABEL, STUDY_MINUTES, type ClueKind } from '../rules/identify';
 import { RARITY_LABEL, type Rarity } from '../rules/crafting';
@@ -264,6 +265,7 @@ function InventoryBlock({ c }: { c: Character }) {
                       {i.container.capacityLb ? `: ${E.containerLoad(c.inventory, i.id)}/${i.container.capacityLb} lb` : ''}
                     </Pill>
                   )}
+                  {i.damaged && <Pill tone="bad" title="Torn, cracked or broken: see Damaged gear below">damaged</Pill>}{' '}
                   {valueUnknown(i) ? (
                     <Pill tone="warn" title={`Nobody in the party knows what ${i.qty > 1 ? 'these are' : 'it is'} worth yet.${i.valueGp != null ? ` DM: ${fmtGp(i.valueGp)} each.` : ' No value set.'}`}>
                       value unknown
@@ -300,6 +302,7 @@ function InventoryBlock({ c }: { c: Character }) {
         </details>
       )}
       <AppraiseBlock c={c} />
+      <DamageBlock c={c} />
       <textarea rows={3} value={text} onChange={(e) => setText(e.target.value)} placeholder={'Paste from D&D Beyond or type one item per line, e.g.\n2 Torches\nLongsword\nRope, hempen (50 feet)'} />
       <div className="btn-row tight">
         <button className="small" disabled={!text.trim()} onClick={() => (dispatch((st, cx) => E.addInventory(st, cx, c.id, text)), setText(''))}>
@@ -311,6 +314,72 @@ function InventoryBlock({ c }: { c: Character }) {
         coins (50 to a pound) are added from the tracker. Add &quot;value unknown&quot; to a line (e.g. &quot;Diamond (300 GP, value unknown)&quot;) to keep its value from the party until it&apos;s appraised.
       </Rule>
     </>
+  );
+}
+
+/** Damaged gear and ways to repair it: Mending, Weaver's Tools for cloth, or improvised sewing. */
+function DamageBlock({ c }: { c: Character }) {
+  const s = useGame();
+  const damaged = c.inventory.filter((i) => i.damaged);
+  const sound = c.inventory.filter((i) => !i.damaged);
+  const pcs = s.characters.filter((x) => x.kind !== 'mount' && E.alive(x));
+  const [markId, setMarkId] = useState('');
+  const [itemId, setItemId] = useState('');
+  const [who, setWho] = useState('');
+  const [bonus, setBonus] = useState(0);
+  const it = damaged.find((i) => i.id === itemId) ?? damaged[0];
+  const menders = pcs.filter((x) => x.spells.some((sp) => sp.name.toLowerCase() === 'mending'));
+  const weavers = pcs.filter((x) => x.inventory.some((i) => WEAVER.test(i.name)));
+  const whoId = pcs.find((x) => x.id === who)?.id ?? menders[0]?.id ?? weavers[0]?.id ?? c.id;
+  const mender = pcs.find((x) => x.id === whoId);
+  const cloth = !!it && CLOTH.test(it.name);
+  const go = (m: 'mending' | 'tools' | 'improvised') => dispatch((st, cx) => E.mendItem(st, cx, c.id, it!.id, whoId, m, bonus));
+  if (!c.inventory.length) return null;
+  return (
+    <details open={damaged.length > 0}>
+      <summary>
+        Damaged gear {damaged.length > 0 && <Pill tone="bad">{damaged.length}</Pill>}
+      </summary>
+      {damaged.length > 0 && it && (
+        <>
+          <p className="small muted">{damaged.map((i) => i.name).join(', ')}</p>
+          <div className="btn-row tight">
+            <Select value={it.id} onChange={setItemId} options={damaged.map((i) => ({ value: i.id, label: i.name }))} />
+            <Select value={whoId} onChange={setWho} options={pcs.map((x) => ({ value: x.id, label: `${x.name}${menders.includes(x) ? ' (Mending)' : weavers.includes(x) ? ' (Weaver’s Tools)' : ''}` }))} />
+            {cloth && <Num label="Dex bonus" value={bonus} onChange={(v) => setBonus(Math.round(v))} width={2} />}
+          </div>
+          <div className="btn-row tight">
+            <button className="small" disabled={!mender || !menders.includes(mender)} title={mender && menders.includes(mender) ? undefined : "Needs someone who knows Mending"} onClick={() => go('mending')}>
+              Mending (1 min, no roll)
+            </button>
+            {cloth && (
+              <button className="small" disabled={!mender || !weavers.includes(mender)} title={mender && weavers.includes(mender) ? undefined : "Needs Weaver's Tools"} onClick={() => go('tools')}>
+                Weaver&apos;s Tools (DC {MEND_DC}, 10 min)
+              </button>
+            )}
+            {cloth && s.settings.improvised && (
+              <button className="small ghost" onClick={() => go('improvised')}>
+                Needle and thread (DC {IMPROVISED_MEND_DC}, 20 min)
+              </button>
+            )}
+            <button className="small ghost" onClick={() => dispatch((st, cx) => E.setDamaged(st, cx, c.id, it.id, false))}>
+              Repaired elsewhere
+            </button>
+          </div>
+          {!cloth && <p className="small muted">Not cloth: Mending fixes it, or a smith or other crafter in town.</p>}
+        </>
+      )}
+      <div className="btn-row tight">
+        <Select value={markId || sound[0]?.id || ''} onChange={setMarkId} options={sound.map((i) => ({ value: i.id, label: i.name }))} />
+        <button className="small ghost" disabled={!sound.length} onClick={() => (dispatch((st, cx) => E.setDamaged(st, cx, c.id, markId || sound[0].id, true)), setMarkId(''))}>
+          Mark damaged
+        </button>
+      </div>
+      <Rule>
+        Mending repairs a single break or tear up to 1 foot, with no roll. Weaver&apos;s Tools mend a tear in cloth with a Dexterity check, DC 10 (2024 PHB).{' '}
+        {s.settings.improvised ? 'Table rule: needle and thread at DC 15 and twice the time. ' : ''}Damage has no game effect on its own; the DM decides what a torn tent or cracked shield means.
+      </Rule>
+    </details>
   );
 }
 

@@ -24,7 +24,7 @@ import { RIVAL_ESCALATION, RIVAL_IDEAS, RIVAL_MOVES } from '../rules/rivals';
 import { componentFor, REVIVAL_LIMIT, TARGET_SPELLS, type CostlyComponent } from '../rules/components';
 import { POISONS, poisonByName, poisonItemName, type PoisonInfo } from '../rules/poisons';
 import { POISON_HARVEST_DC, POTION_MISCIBILITY } from '../rules/potions';
-import { ALCHEMIST, ALCHEMIST_FIRE_DC, IMPROVISED_COOK_DC, IMPROVISED_HARVEST_DC, IMPROVISED_OINTMENT_DC, IMPROVISED_TESTS, IMPROVISED_TIME, TEST_KIND_LABEL, TOOL_TESTS, type TestKind } from '../rules/tools';
+import { ALCHEMIST, ALCHEMIST_FIRE_DC, IMPROVISED_COOK_DC, IMPROVISED_HARVEST_DC, IMPROVISED_OINTMENT_DC, IMPROVISED_TESTS, IMPROVISED_TIME, TEST_KIND_LABEL, TOOL_TESTS, type TestKind, NAVIGATOR, STARGAZE_DC, IMPROVISED_STARGAZE_DC, STARGAZE_MINUTES, CARTOGRAPHER, MAP_DC, IMPROVISED_MAP_DC, MAP_MINUTES, mapName, isMapOf, WEAVER, CLOTH, MEND_DC, IMPROVISED_MEND_DC, MEND_MINUTES, DECIPHER_DC, DECIPHER_MINUTES } from '../rules/tools';
 import { AWAY_PROGRESS, BUILD_SPELLS, BUSINESS_DEBT_PENALTY, BUSINESS_MAX_DAYS, CREW_COST_SHARE, MAX_EXTRA_CREWS, buildPace, rollBusiness } from '../rules/business';
 import { HAZARDS, type GiftType, type HazardId } from '../rules/hazards';
 import { ARCANA_DC, STUDY_MINUTES, type StudyMethod } from '../rules/identify';
@@ -1114,11 +1114,17 @@ export function currentNavigationDC(s: State) {
 function navigate(s: State, ctx: Ctx, nav: Character, pace: Pace): boolean | null {
   const { dc, reasons } = currentNavigationDC(s);
   if (dc == null) return null;
-  const mode = combineModes(combineModes(pace === 'slow' ? 'advantage' : 'normal', pace === 'fast' ? 'disadvantage' : 'normal'), s.travel.reconAdvantage ? 'advantage' : 'normal');
+  const tools = !!s.travel.navTools && nav.inventory.some((i) => NAVIGATOR.test(i.name));
+  const map = partyHasMapHere(s);
+  let mode = combineModes(combineModes(pace === 'slow' ? 'advantage' : 'normal', pace === 'fast' ? 'disadvantage' : 'normal'), s.travel.reconAdvantage ? 'advantage' : 'normal');
+  // 2024 PHB: proficiency in a skill and a tool that both apply gives Advantage. Table rule: a map of the area does too.
+  if (tools) mode = combineModes(mode, 'advantage');
+  if (map) mode = combineModes(mode, 'advantage');
   const r = d20(mode, ctx.rng);
   const mod = nav.survival - 2 * nav.exhaustion;
   const ok = r.value + mod >= dc;
-  log(s, `${nav.name} navigates: Wisdom (Survival) ${r.rolls.join('/')} ${signed(mod)} = ${r.value + mod} against DC ${dc} (${reasons.join(', ')}). ${ok ? 'On course.' : 'The party strays off course without realising it.'}`, ok ? 'good' : 'warn');
+  const aids = [...(tools ? ["with Navigator's Tools"] : []), ...(map ? [`using the ${mapName(s.place.name)}`] : [])];
+  log(s, `${nav.name} navigates${aids.length ? ` ${aids.join(' and ')}` : ''}: Wisdom (Survival) ${r.rolls.join('/')} ${signed(mod)} = ${r.value + mod} against DC ${dc} (${reasons.join(', ')}). ${ok ? 'On course.' : 'The party strays off course without realising it.'}`, ok ? 'good' : 'warn');
   return ok;
 }
 
@@ -4745,6 +4751,120 @@ export function currentAffinities(s: State): Affinity[] {
 }
 
 // ---------------------------------------------------------------- navigation helpers and reading the sky
+
+/** Someone in the party carries a map of the current place (table rule: Advantage on navigation here). */
+export function partyHasMapHere(s: State): boolean {
+  return s.characters.some((c) => c.inventory.some((i) => isMapOf(i.name, s.place.name)));
+}
+
+/** Whether the stars can be seen right now: night, no precipitation, not underground. */
+export function starsVisible(s: State): boolean {
+  if (CLIMATES[s.weather.climate].noWeather) return false;
+  return lightAt(s.minutes % MIN_PER_DAY, seasonOf(s)).phase === 'Night' && s.weather.precip === 'none';
+}
+
+/**
+ * Lost: finding the party's position from the stars. Navigator's Tools, Wisdom DC 15 (2024 PHB);
+ * without them, Wisdom (Survival) at DC 20 and twice as long (table rule). Needs a clear night.
+ */
+export const stargaze = act((d, ctx, charId: string, useTools: boolean, bonus: number) => {
+  const c = actorById(d, charId);
+  if (!c || !d.travel.lost) return;
+  if (!starsVisible(d)) return void log(d, `${c.name} can't see the stars: it takes a clear night above ground.`, 'warn');
+  if (useTools && !c.inventory.some((i) => NAVIGATOR.test(i.name))) return void log(d, `${c.name} has no Navigator's Tools.`, 'warn');
+  if (!useTools && !d.settings.improvised) return void log(d, `${c.name} needs Navigator's Tools to fix a position by the stars (improvised attempts are off).`, 'warn');
+  advanceMut(d, ctx, STARGAZE_MINUTES * (useTools ? 1 : IMPROVISED_TIME), 'camp');
+  const dc = useTools ? STARGAZE_DC : IMPROVISED_STARGAZE_DC;
+  const mod = (useTools ? bonus : c.survival) - 2 * c.exhaustion;
+  const r = d20('normal', ctx.rng);
+  const roll = `${useTools ? "Wisdom with Navigator's Tools" : 'Wisdom (Survival), by eye'} ${r.value} ${signed(mod)} = ${r.value + mod} against DC ${dc}`;
+  if (r.value + mod < dc) return void log(d, `${c.name} studies the night sky (${roll}) but can't fix the party's position.`, 'warn');
+  log(d, `${c.name} takes sightings on the stars (${roll}) and works out where the party is, ${+d.travel.milesOffCourse.toFixed(1)} miles off course.`, 'good');
+  d.travel.lost = false;
+  d.travel.milesOffCourse = 0;
+  d.travel.lostRecheckIn = 0;
+});
+
+/**
+ * Drafting a map of the current small area. Cartographer's Tools, Wisdom DC 15 (2024 PHB), an hour (table rule);
+ * without them, paper and charcoal at DC 20 and two hours (table rule). The map gives Advantage on navigation here (table rule).
+ */
+export const draftMap = act((d, ctx, charId: string, useTools: boolean, bonus: number) => {
+  const c = charById(d, charId);
+  if (!c) return;
+  if (useTools && !c.inventory.some((i) => CARTOGRAPHER.test(i.name))) return void log(d, `${c.name} has no Cartographer's Tools.`, 'warn');
+  if (!useTools && !d.settings.improvised) return void log(d, `${c.name} needs Cartographer's Tools to draft a map (improvised attempts are off).`, 'warn');
+  const name = mapName(d.place.name);
+  if (partyHasMapHere(d)) return void log(d, `The party already has a ${name}.`);
+  advanceMut(d, ctx, MAP_MINUTES * (useTools ? 1 : IMPROVISED_TIME), 'camp');
+  const dc = useTools ? MAP_DC : IMPROVISED_MAP_DC;
+  const mod = bonus - 2 * c.exhaustion;
+  const r = d20('normal', ctx.rng);
+  const roll = `${useTools ? "Wisdom with Cartographer's Tools" : 'Wisdom, with paper and charcoal'} ${r.value} ${signed(mod)} = ${r.value + mod} against DC ${dc}`;
+  if (r.value + mod < dc) return void log(d, `${c.name} sketches the lay of the land (${roll}), but the result is too muddled to steer by.`, 'warn');
+  const me = charById(d, charId)!;
+  me.inventory.push({ id: uid(), name, qty: 1, weight: 0, source: 'manual', valueGp: 1, container: null, ammo: null });
+  log(d, `${me.name} drafts a ${name} (${roll}). Navigating here now has Advantage (table rule).`, 'good');
+});
+
+/**
+ * Repairing a damaged item. Mending fixes any single break or tear up to 1 foot (no roll, 1 minute).
+ * Weaver's Tools mend a tear in cloth, Dexterity DC 10 (2024 PHB); improvised sewing at DC 15, twice as long (table rule).
+ */
+export const mendItem = act((d, ctx, ownerId: string, itemId: string, menderId: string, method: 'mending' | 'tools' | 'improvised', bonus: number) => {
+  const owner = charById(d, ownerId);
+  const it = owner?.inventory.find((i) => i.id === itemId);
+  const m = charById(d, menderId);
+  if (!owner || !it || !m || !it.damaged) return;
+  const fixed = () => {
+    const x = charById(d, ownerId)!.inventory.find((i) => i.id === itemId);
+    if (x) delete x.damaged;
+  };
+  if (method === 'mending') {
+    if (!m.spells.some((sp) => sp.name.toLowerCase() === 'mending')) return void log(d, `${m.name} doesn't know Mending.`, 'warn');
+    advanceMut(d, ctx, 1, 'camp');
+    fixed();
+    return void log(d, `${m.name} casts Mending and the ${it.name} knits itself whole, leaving no trace of the damage.`, 'good');
+  }
+  if (!CLOTH.test(it.name)) return void log(d, `The ${it.name} isn't cloth: it needs Mending, or a smith or other crafter in town.`, 'warn');
+  if (method === 'tools' && !m.inventory.some((i) => WEAVER.test(i.name))) return void log(d, `${m.name} has no Weaver's Tools.`, 'warn');
+  if (method === 'improvised' && !d.settings.improvised) return void log(d, `${m.name} needs Weaver's Tools (improvised attempts are off).`, 'warn');
+  const tools = method === 'tools';
+  advanceMut(d, ctx, MEND_MINUTES * (tools ? 1 : IMPROVISED_TIME), 'camp');
+  const dc = tools ? MEND_DC : IMPROVISED_MEND_DC;
+  const mod = bonus - 2 * m.exhaustion;
+  const r = d20('normal', ctx.rng);
+  const roll = `${tools ? "Dexterity with Weaver's Tools" : 'Dexterity, with needle and thread'} ${r.value} ${signed(mod)} = ${r.value + mod} against DC ${dc}`;
+  if (r.value + mod < dc) return void log(d, `${m.name} works at the tear in the ${it.name} (${roll}), but the stitching won't hold.`, 'warn');
+  fixed();
+  log(d, `${m.name} mends the ${it.name} (${roll}): the tear is closed${tools ? ' neatly' : ', a little lumpy but sound'}.`, 'good');
+});
+
+/** Marks an inventory item damaged or sound. */
+export const setDamaged = act((d, _ctx, ownerId: string, itemId: string, damaged: boolean) => {
+  const it = charById(d, ownerId)?.inventory.find((i) => i.id === itemId);
+  if (!it) return;
+  if (damaged) it.damaged = true;
+  else delete it.damaged;
+  log(d, damaged ? `The ${it.name} is damaged: torn, cracked or broken.` : `The ${it.name} is sound again.`, damaged ? 'warn' : 'good');
+});
+
+/**
+ * Making out a short text in a language nobody reads: Intelligence (Investigation) at DC 20 for the gist (table rule).
+ * Knowing the language, an interpreter or Comprehend Languages reads it properly with no roll.
+ */
+export const decipherText = act((d, ctx, charId: string, bonus: number, language: string, gist: string) => {
+  const c = charById(d, charId);
+  if (!c) return;
+  if (!d.settings.improvised) return void log(d, `Nobody can make sense of the ${language || 'unknown'} text without knowing the language (improvised attempts are off).`, 'warn');
+  advanceMut(d, ctx, DECIPHER_MINUTES, 'camp');
+  const mod = bonus - 2 * c.exhaustion;
+  const r = d20('normal', ctx.rng);
+  const roll = `Intelligence (Investigation) ${r.value} ${signed(mod)} = ${r.value + mod} against DC ${DECIPHER_DC}`;
+  const lang = language.trim() || 'an unknown language';
+  if (r.value + mod < DECIPHER_DC) return void log(d, `${c.name} pores over the text in ${lang} (${roll}) and can't make it out.`, 'warn');
+  log(d, `${c.name} pieces together the gist of the text in ${lang} from shared roots, numbers and pictures (${roll})${gist.trim() ? `: ${gist.trim()}` : ''}. The details stay unclear.`, 'good');
+});
 
 export const foundTheWay = act((d) => {
   if (!d.travel.lost) return;

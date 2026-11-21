@@ -119,6 +119,8 @@ export interface InventoryItem {
   valueHidden?: boolean;
   /** A misjudged appraisal: what the party wrongly believes one is worth (optional table rule). */
   valueBelieved?: number;
+  /** Torn, cracked or broken: needs mending (Mending, Weaver's Tools for cloth, or improvised sewing). */
+  damaged?: boolean;
   /** Who has already tried and failed to appraise it since the last rest (optional table rule). */
   appraiseTried?: string[];
   /** The inventory item this is packed inside, if any. */
@@ -786,6 +788,8 @@ export interface Settings {
 
 export interface Travel {
   pace: Pace;
+  /** The navigator uses Navigator's Tools with Survival: Advantage (2024 PHB skill-and-tool rule). */
+  navTools?: boolean;
   /** Zhentarim reconnaissance: Advantage on Survival to forage and navigate until the journey ends. */
   reconAdvantage?: boolean;
   /** A Long Rest at a Zhentarim Travel Station raises the maximum pace one step until the next Long Rest elsewhere. */

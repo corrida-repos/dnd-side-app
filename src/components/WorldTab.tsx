@@ -10,6 +10,7 @@ import { RIVAL_IDEAS, RIVAL_ESCALATION } from '../rules/rivals';
 import { PATRONS, type PatronKind } from '../rules/patrons';
 import { REGIONS, type RegionKind } from '../rules/regions';
 import { WaysAround } from './WaysAround';
+import { DECIPHER_DC } from '../rules/tools';
 
 export function WorldTab() {
   return (
@@ -23,6 +24,7 @@ export function WorldTab() {
       <DeathCard />
       <DivinationCard />
       <GiftsCard />
+      <LanguageCard />
     </div>
   );
 }
@@ -482,6 +484,48 @@ function RegionCard() {
       )}
       <Rule>
         Tasha&apos;s supernatural regions: Blessed Radiance, Far Realm, Haunted, Infested, Mirror Zone, Psychic Resonance and Unraveling Magic. The tracker shows a short summary of each result and applies those that last (timed effects, no rest, lost hours, hourly Exhaustion, storms, disease); read Tasha&apos;s for the full text. Table rule: it also rolls once each dawn while you&apos;re there (Settings).
+      </Rule>
+    </Card>
+  );
+}
+
+/** Reading a text in a language nobody in the party knows. */
+function LanguageCard() {
+  const s = useGame();
+  const pcs = s.characters.filter((c) => c.kind !== 'mount' && E.alive(c));
+  const [who, setWho] = useState('');
+  const [bonus, setBonus] = useState(0);
+  const [language, setLanguage] = useState('');
+  const [gist, setGist] = useState('');
+  const whoId = pcs.find((c) => c.id === who)?.id ?? pcs[0]?.id ?? '';
+  const interpreters = s.hirelings.filter((h) => h.active && h.role === 'interpreter');
+  const comprehend = pcs.filter((c) => c.spells.some((sp) => sp.name.toLowerCase() === 'comprehend languages'));
+  return (
+    <Card title="An unknown language">
+      <p className="small">
+        Reads it properly:{' '}
+        {[...comprehend.map((c) => `${c.name} (Comprehend Languages, a ritual)`), ...interpreters.map((h) => `${h.name} (interpreter)`)].join(', ') || 'anyone who knows the language, an interpreter hireling, or Comprehend Languages'}.
+      </p>
+      {s.settings.improvised ? (
+        <>
+          <div className="form-row">
+            <Select label="Who tries" value={whoId} onChange={setWho} options={pcs.map((c) => ({ value: c.id, label: c.name }))} />
+            <Num label="Int (Investigation)" value={bonus} onChange={(v) => setBonus(Math.round(v))} width={2} />
+            <Text label="Language" value={language} onChange={setLanguage} placeholder="e.g. Giant" />
+          </div>
+          <div className="form-row">
+            <Text label="The gist (DM)" value={gist} onChange={setGist} placeholder="e.g. a warning: the bridge ahead is cursed" wide />
+          </div>
+          <button className="small" disabled={!whoId} onClick={() => dispatch((st, cx) => E.decipherText(st, cx, whoId, bonus, language, gist))}>
+            Puzzle out the gist (DC {DECIPHER_DC}, 10 min)
+          </button>
+        </>
+      ) : (
+        <p className="small muted">Improvised attempts are off in Settings, so nobody else can make sense of it.</p>
+      )}
+      <Rule>
+        The 2024 rules have no check for reading an unknown language. Table rule: anyone can puzzle out the gist of a short text from shared roots, numbers and pictures with Intelligence (Investigation) at DC {DECIPHER_DC}. A success gives
+        the gist only, never exact wording; a failure gives nothing.
       </Rule>
     </Card>
   );
