@@ -1,4 +1,4 @@
-import type { ActiveEffect, Activity, CharacterSpell, InventoryItem, LogEntry, Ritual, Stash, Bastion, Business, Character, FacilityWork, Obstacle, ExhaustionCause, Facility, MagicItem, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
+import type { ActiveEffect, Activity, CharacterSpell, InventoryItem, LogEntry, Ritual, Stash, Bastion, Business, Character, FacilityWork, Obstacle, Rival, Debt, ExhaustionCause, Facility, MagicItem, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
 import { BASIC_BUILD, BASTION_TURN_DAYS, defaultSize, ENLARGE, rollBastionEvent, SIZE_LABEL, SPECIAL_FACILITIES, type FacilitySize } from '../rules/bastion';
 import { d20, die, combineModes, rollDice, rollExpr, signed, type Rng, type RollMode } from '../rules/dice';
 import { dateFromIndex, formatClock, formatDate, formatDuration, lightAt, sunriseMinutes } from '../rules/calendar';
@@ -15,7 +15,9 @@ import { magicItemCrafting, nonmagicalCrafting, SCROLL_CRAFTING, type Rarity } f
 import { ALL_IS_WELL, BARRACK_ROOM, BASTION_CHARMS, CONSTRUCTS, CREATURE_ROOM, GROVE_ROOM, GROVE_UNITS, MUSEUM_ORIGINS, NECROPOLIS_ROOM, EVENT_PREFERENCE, FACILITY_OPTIONS, GARDEN_PRODUCTS, GUILDS, MENAGERIE_CREATURES, MENAGERIE_ROOM, SHIPS, TRAINERS, TREASURE_TABLE, facilityHirelings, stableMarkup, storehouseLimit, storehouseMarkup, type GardenType } from '../rules/bastionOrders';
 import { priceOf, saleRate } from '../rules/shop';
 import { groundDifficulty, meltInches, mudAfter, snowfallInches } from '../rules/ground';
-import { activityOf, resolveActivity, type ActivityOpts } from '../rules/downtimeOutcomes';
+import { activityOf, COMPLICATIONS, resolveActivity, type ActivityOpts, type Complication } from '../rules/downtimeOutcomes';
+import { CREDITOR_LABEL, DUE_DAYS, ESCALATION, LENIENT_GP, PRISON_LABOR_GP_PER_WEEK, SERVICE_CREDIT, WEEKLY_INTEREST, type CreditorKind, type Escalation } from '../rules/debts';
+import { RIVAL_ESCALATION, RIVAL_IDEAS, RIVAL_MOVES } from '../rules/rivals';
 import { componentFor, REVIVAL_LIMIT, TARGET_SPELLS, type CostlyComponent } from '../rules/components';
 import { POISONS, poisonByName, poisonItemName, type PoisonInfo } from '../rules/poisons';
 import { POISON_HARVEST_DC, POTION_MISCIBILITY } from '../rules/potions';
@@ -401,6 +403,8 @@ function dailyCosts(s: State): void {
 function endOfDay(s: State, ctx: Ctx): void {
   dailyCosts(s);
   lifestyleRisks(s, ctx);
+  purseDebts(s);
+  if ((s.dayIndex + 1) % 7 === 0) debtsWeekly(s, ctx);
   groomTheMounts(s);
   checkRituals(s);
   const hotDay = s.weather.high >= 100;
@@ -1642,13 +1646,13 @@ export const workOnProjects = act((d, ctx, projectIds: string[]) => {
   const projects = d.projects.filter((p) => projectIds.includes(p.id) && !p.done);
   if (!projects.length) return;
   advanceMut(d, ctx, 8 * 60, 'work');
-  for (const p of projects) progress(d, p);
+  for (const p of projects) progress(d, p, ctx);
 });
 
 /** Project kinds that are hands-on work hired artisans can help with. */
 export const ARTISAN_KINDS: Project['kind'][] = ['nonmagical', 'potion'];
 
-function progress(s: State, p: Project): void {
+function progress(s: State, p: Project, ctx?: Ctx): void {
   const hired = ARTISAN_KINDS.includes(p.kind) ? (p.hiredArtisans ?? 0) : 0;
   const crafters =
     p.charIds.filter((id) => {
@@ -1659,11 +1663,11 @@ function progress(s: State, p: Project): void {
   // Normally only one other character can help (the DM can allow more).
   const amount = Math.max(1, s.settings.extraCraftHelpers ? crafters : Math.min(2, crafters));
   p.daysDone = Math.min(p.daysRequired, p.daysDone + amount);
-  if (p.daysDone >= p.daysRequired) progressFinish(s, p);
+  if (p.daysDone >= p.daysRequired) progressFinish(s, p, ctx);
   else log(s, `A day's work on ${p.name}: ${p.daysDone}/${p.daysRequired} workdays.`);
 }
 
-function progressFinish(s: State, p: Project): void {
+function progressFinish(s: State, p: Project, ctx?: Ctx): void {
   {
     p.done = true;
     log(s, `Downtime project complete: ${p.name}.`, 'good');
@@ -1676,6 +1680,11 @@ function progressFinish(s: State, p: Project): void {
           if (!c || !learn) continue;
           c.trainedProficiencies = [...new Set([...(c.trainedProficiencies ?? []), learn])];
           log(s, `${c.name} has learned ${learn} and is now proficient.`, 'good');
+        }
+        if (ctx && Math.floor(p.daysRequired / 50) > 0 && die(10, ctx.rng) === 1) {
+          const comp = COMPLICATIONS.Training[die(COMPLICATIONS.Training.length, ctx.rng) - 1];
+          const c = charById(s, p.charIds[0]);
+          if (c) applyComplication(s, ctx, c, comp);
         }
         if (!learn) log(s, `${p.name} is done. Name the language or tool on the character sheet.`);
       } else if (act === 'Relaxation') {
@@ -1700,6 +1709,7 @@ function progressFinish(s: State, p: Project): void {
       }
     }
   }
+  if (ctx && !p.awaitingOutcome) rivalAdvances(s, ctx);
 }
 
 /**
@@ -1720,14 +1730,14 @@ export const fabricateProject = act((d, ctx, projectId: string, casterId: string
   log(d, `${caster.name} casts Fabricate, and the raw materials reshape into ${np.name} in ten minutes.`, 'good');
   np.daysDone = np.daysRequired;
   np.hiredArtisans = 0;
-  progressFinish(d, np);
+  progressFinish(d, np, ctx);
 });
 
 /** One full downtime day: work 8 hours, eat and drink, then Long Rest from 23:00. */
 export const downtimeDay = act((d, ctx, projectIds: string[]) => {
   const projects = d.projects.filter((p) => projectIds.includes(p.id) && !p.done);
   advanceMut(d, ctx, 8 * 60, 'work');
-  for (const p of projects) progress(d, p);
+  for (const p of projects) progress(d, p, ctx);
   const eatAll = partyEat(d, ctx, 'topup');
   const drinkAll = partyDrink(eatAll, ctx, 'topup');
   Object.assign(d, drinkAll);
@@ -1952,17 +1962,270 @@ export const resolveActivityProject = act((d, ctx, projectId: string, o: Activit
   const id = p ? activityOf(p.name) : null;
   const c = p ? charById(d, p.charIds[0]) : undefined;
   if (!p || !id || !c) return;
-  const r = resolveActivity(id, o, ctx.rng);
+  const heat = id === 'Crime' && d.rivalHeat;
+  if (heat) d.rivalHeat = false;
+  const r = resolveActivity(id, heat ? { ...o, dc: Math.min(25, (o.dc ?? 10) + 5) } : o, ctx.rng);
+  if (heat) log(d, 'Bribed officials are watching: the job is harder (+5 DC).', 'warn');
   p.awaitingOutcome = false;
   p.outcome = r.text;
   log(d, `${c.name}'s ${p.name}: ${r.text}.`, r.gp < 0 || r.jailDays ? 'bad' : r.gp > 0 || r.notes.length ? 'good' : 'info');
   if (r.gp > 0) gainWealth(c, r.gp);
   if (r.gp < 0) spendWealth(c, -r.gp);
-  if (r.debt) spendWealth(c, r.debt);
+  if (r.debt) addDebtMut(d, c.id, 'The gambling house', 'criminal', r.debt);
   if (r.notes.length) c.notes = [c.notes, ...r.notes.map((n) => `${n} (${stamp(d)})`)].filter(Boolean).join('\n');
   if (r.jailDays) d.effects.push({ id: uid(), name: 'In jail', kind: 'other', targetIds: [c.id], casterId: null, concentration: false, shelter: false, startedAt: absNow(d), endsAt: absNow(d) + r.jailDays * MIN_PER_DAY, notes: 'Serving time for a crime.' });
-  if (r.complication) log(d, `Complication: ${r.complication}.`, 'warn');
+  if (r.complication) applyComplication(d, ctx, c, r.complication);
+  rivalAdvances(d, ctx);
 });
+
+/** A complication's text, its rival (if any) and its mechanical effects. */
+function applyComplication(d: State, ctx: Ctx, c: Character, comp: Complication): void {
+  const rival = comp.rival ? pickRival(d, ctx) : undefined;
+  log(d, `Complication for ${c.name}: ${comp.text}${rival ? ` (${rival.name} is behind it)` : ''}.`, 'warn');
+  if (rival) rival.pressure += 1;
+  if (comp.loseGp) {
+    const [n, m] = comp.loseGp.split('*');
+    const amt = Math.min(Math.max(0, c.gp), (rollExpr(n, ctx.rng) ?? Number(n)) * Number(m ?? 1));
+    if (amt > 0) spendWealth(c, amt);
+    log(d, `${c.name} is out ${fmtGp(amt)}.`, 'warn');
+  }
+  if (comp.debt) {
+    const amt = (rollExpr(comp.debt.split('*')[0], ctx.rng) ?? 1) * Number(comp.debt.split('*')[1] ?? 1);
+    addDebtMut(d, c.id, 'A noble whose debts you took on', 'noble', amt);
+  }
+  if (comp.jailDays) d.effects.push({ id: uid(), name: 'In jail', kind: 'other', targetIds: [c.id], casterId: null, concentration: false, shelter: false, startedAt: absNow(d), endsAt: absNow(d) + comp.jailDays * MIN_PER_DAY, notes: comp.text });
+}
+
+function pickRival(d: State, ctx: Ctx): Rival | undefined {
+  const act = d.rivals.filter((r) => r.active);
+  return act.length ? act[die(act.length, ctx.rng) - 1] : undefined;
+}
+
+/** Xanathar's: each time downtime is resolved, a rival advances one of its plans (effects are table rules). */
+function rivalAdvances(d: State, ctx: Ctx): void {
+  const rival = pickRival(d, ctx);
+  if (!rival) return;
+  rival.pressure += 1;
+  const own = rival.plans.filter((p) => p.trim());
+  if (own.length && die(2, ctx.rng) === 1) {
+    log(d, `Rival: ${rival.name} advances a plan: ${own[die(own.length, ctx.rng) - 1]}.`, 'warn');
+  } else {
+    const move = RIVAL_MOVES[die(RIVAL_MOVES.length, ctx.rng) - 1];
+    log(d, `Rival: ${rival.name} ${move.text}.`, 'warn');
+    switch (move.effect) {
+      case 'rumor': {
+        const f = d.factions.filter((x) => x.renown > 0);
+        if (f.length) {
+          const t = f[die(f.length, ctx.rng) - 1];
+          t.renown -= 1;
+          log(d, `The rumors cost the party standing with ${t.name} (renown ${t.renown}).`, 'warn');
+        }
+        break;
+      }
+      case 'sabotage': {
+        const biz = d.businesses.filter((b) => !b.building);
+        if (biz.length) {
+          biz[die(biz.length, ctx.rng) - 1].sabotaged = true;
+          log(d, `${biz[0].name}'s next roll takes −10 from the sabotage.`, 'warn');
+        } else {
+          const fac = d.bastions.flatMap((b) => b.facilities.filter((f) => f.kind === 'special' && f.built));
+          if (fac.length) {
+            fac[die(fac.length, ctx.rng) - 1].shutTurns = 1;
+            log(d, 'A Bastion facility is put out of action for a turn.', 'warn');
+          }
+        }
+        break;
+      }
+      case 'bribe':
+        d.rivalHeat = true;
+        log(d, 'The next crime the party attempts is +5 DC.', 'warn');
+        break;
+      case 'thugs': {
+        const pcs = adventurers(d);
+        if (pcs.length) {
+          const v = pcs[die(pcs.length, ctx.rng) - 1];
+          const gp = Math.min(v.gp, die(10, ctx.rng) * 5);
+          if (gp > 0) spendWealth(v, gp);
+          log(d, `${v.name} is roughed up and loses ${fmtGp(gp)}.`, 'warn');
+        }
+        break;
+      }
+      case 'legal': {
+        const pcs = adventurers(d);
+        if (pcs.length) addDebtMut(d, pcs[0].id, 'The magistrate (a fine)', 'lawful', die(6, ctx.rng) * 10, 0);
+        break;
+      }
+    }
+  }
+  const esc = RIVAL_ESCALATION[rival.pressure];
+  if (esc) log(d, `${rival.name} ${esc}.`, 'bad');
+}
+
+export const addRival = act((d, ctx, name: string, idea: string) => {
+  const i = idea || RIVAL_IDEAS[die(RIVAL_IDEAS.length, ctx.rng) - 1];
+  d.rivals.push({ id: uid(), name: name || i.split(' ').slice(1, 3).join(' '), idea: i, goal: '', assets: '', plans: [], pressure: 0, active: true });
+  log(d, `A rival emerges: ${name || i}.`, 'warn');
+});
+
+export const advanceRival = act((d, ctx) => rivalAdvances(d, ctx));
+
+// ---------------------------------------------------------------- debts (table rule)
+
+function addDebtMut(d: State, debtorId: string, creditor: string, kind: CreditorKind, amount: number, rate: number = WEEKLY_INTEREST[kind], dueInDays: number = DUE_DAYS[kind]): Debt | undefined {
+  if (amount <= 0) return;
+  const c = charById(d, debtorId);
+  const same = d.debts.find((x) => x.debtorId === debtorId && x.creditor === creditor && x.owed > 0);
+  if (same) {
+    same.owed = Math.round((same.owed + amount) * 100) / 100;
+    same.principal += amount;
+    log(d, `${c?.name ?? 'Someone'} now owes ${creditor} ${fmtGp(same.owed)}.`, 'warn');
+    return same;
+  }
+  const debt: Debt = { id: uid(), debtorId, creditor, kind, principal: amount, owed: amount, rate, startedDay: d.dayIndex, dueDay: d.dayIndex + dueInDays, steps: [] };
+  d.debts.push(debt);
+  log(d, `${c?.name ?? 'Someone'} owes ${creditor} ${fmtGp(amount)}${rate ? ` at ${Math.round(rate * 100)}% a week` : ''}, due in ${dueInDays} days.`, 'warn');
+  return debt;
+}
+
+/** Borrows money: the coin arrives now and the debt starts. */
+export const borrow = act((d, _ctx, debtorId: string, creditor: string, kind: CreditorKind, amount: number, rate: number, dueInDays: number) => {
+  const c = charById(d, debtorId);
+  if (!c || amount <= 0) return;
+  gainWealth(c, amount);
+  addDebtMut(d, debtorId, creditor || CREDITOR_LABEL[kind].split(' (')[0], kind, amount, rate, dueInDays);
+});
+
+export const addDebt = act((d, _ctx, debtorId: string, creditor: string, kind: CreditorKind, amount: number) => void addDebtMut(d, debtorId, creditor, kind, amount));
+
+export const payDebt = act((d, _ctx, debtId: string, amount: number) => {
+  const debt = d.debts.find((x) => x.id === debtId);
+  const c = debt ? charById(d, debt.debtorId) : undefined;
+  if (!debt || !c) return;
+  const pay = Math.min(debt.owed, amount, Math.max(0, c.gp));
+  if (pay <= 0) return void log(d, `${c.name} has nothing to pay with.`, 'warn');
+  spendWealth(c, pay);
+  debt.owed = Math.round((debt.owed - pay) * 100) / 100;
+  log(d, `${c.name} pays ${debt.creditor} ${fmtGp(pay)}. ${debt.owed > 0 ? `${fmtGp(debt.owed)} still owed.` : 'The debt is cleared.'}`, 'good');
+  if (debt.owed <= 0) settleDebt(d, debt);
+});
+
+function settleDebt(d: State, debt: Debt): void {
+  if (debt.imprisoned) {
+    d.effects = d.effects.filter((e) => !(e.name === "In debtors' prison" && e.targetIds.includes(debt.debtorId)));
+    log(d, `${charById(d, debt.debtorId)?.name} walks free of debtors' prison.`, 'good');
+  }
+  d.debts = d.debts.filter((x) => x.id !== debt.id);
+}
+
+/** Forced service for a criminal creditor: an unpaid job that cuts the debt. */
+export const serveCreditor = act((d, ctx, debtId: string) => {
+  const debt = d.debts.find((x) => x.id === debtId);
+  if (!debt) return;
+  const cut = Math.round(debt.owed * SERVICE_CREDIT * 100) / 100;
+  debt.owed = Math.round((debt.owed - cut) * 100) / 100;
+  debt.dueDay = d.dayIndex + 7;
+  debt.steps = debt.steps.filter((x) => x !== 'Forced service');
+  log(d, `${charById(d, debt.debtorId)?.name} does a job for ${debt.creditor}: ${fmtGp(cut)} comes off the debt, and they get another week. The job itself is the DM's to play out.`, 'warn');
+  if (die(4, ctx.rng) === 1) log(d, 'Word of the job gets around: the watch is interested.', 'warn');
+  if (debt.owed <= 0) settleDebt(d, debt);
+});
+
+/** Weekly: interest, and escalation for overdue debts. Prisoners work off their debt. */
+function debtsWeekly(d: State, ctx: Ctx): void {
+  for (const debt of [...d.debts]) {
+    const c = charById(d, debt.debtorId);
+    if (!c) continue;
+    if (debt.rate > 0) debt.owed = Math.round(debt.owed * (1 + debt.rate) * 100) / 100;
+    if (debt.imprisoned) {
+      debt.owed = Math.round(Math.max(0, debt.owed - PRISON_LABOR_GP_PER_WEEK) * 100) / 100;
+      if (debt.owed <= 0) settleDebt(d, debt);
+      continue;
+    }
+    if (d.dayIndex < debt.dueDay) continue;
+    const weeks = Math.floor((d.dayIndex - debt.dueDay) / 7) + 1;
+    const small = debt.owed < LENIENT_GP;
+    for (const step of ESCALATION[debt.kind]) {
+      if (weeks < step.week || debt.steps.includes(step.label)) continue;
+      if (small && step.action !== 'warn') continue;
+      debt.steps.push(step.label);
+      log(d, `${debt.creditor} (${fmtGp(debt.owed)} owed by ${c.name}, ${weeks} week(s) overdue): ${step.text}.`, step.action === 'warn' ? 'warn' : 'bad');
+      collect(d, ctx, debt, c, step);
+      if (!d.debts.includes(debt)) break;
+    }
+  }
+}
+
+function collect(d: State, ctx: Ctx, debt: Debt, c: Character, step: Escalation): void {
+  const take = (gp: number) => {
+    const amt = Math.min(gp, Math.max(0, c.gp), debt.owed);
+    if (amt > 0) {
+      spendWealth(c, amt);
+      debt.owed = Math.round((debt.owed - amt) * 100) / 100;
+    }
+    return amt;
+  };
+  switch (step.action) {
+    case 'seize': {
+      let got = take(debt.owed);
+      // Then goods, at half value, most valuable first.
+      for (const it of [...c.inventory].sort((a, b) => (b.valueGp ?? 0) - (a.valueGp ?? 0))) {
+        if (debt.owed <= 0) break;
+        const v = (it.valueGp ?? priceOf(it.name) ?? 0) * 0.5;
+        if (v <= 0) continue;
+        while (it.qty > 0 && debt.owed > 0) {
+          it.qty -= 1;
+          debt.owed = Math.round(Math.max(0, debt.owed - v) * 100) / 100;
+          got += v;
+          log(d, `Seized from ${c.name}: ${it.name} (credited ${fmtGp(v)}).`, 'bad');
+        }
+      }
+      c.inventory = c.inventory.filter((i) => i.qty > 0);
+      log(d, `Collection takes ${fmtGp(got)} in coin and goods. ${debt.owed > 0 ? `${fmtGp(debt.owed)} remains.` : 'The debt is settled.'}`, 'bad');
+      break;
+    }
+    case 'prison':
+      if (!d.place.settlement) {
+        log(d, `${c.name} is out of reach of the courts for now; they'll be arrested on returning to town.`, 'warn');
+        debt.steps = debt.steps.filter((x) => x !== step.label);
+        break;
+      }
+      debt.imprisoned = true;
+      d.effects.push({ id: uid(), name: "In debtors' prison", kind: 'other', targetIds: [c.id], casterId: null, concentration: false, shelter: false, startedAt: absNow(d), endsAt: null, notes: `Works off ${fmtGp(PRISON_LABOR_GP_PER_WEEK)} a week; free when the debt is paid.` });
+      break;
+    case 'beating': {
+      const got = take(rollDice(2, 10, ctx.rng) * 5);
+      Object.assign(d, changeHp(d, ctx, c.id, -rollDice(2, 6, ctx.rng)));
+      log(d, `The enforcers take ${fmtGp(got)} and leave ${c.name} bruised.`, 'bad');
+      break;
+    }
+    case 'service':
+      log(d, `${c.name} can do the job for ${debt.creditor} (Debts card) to cut a quarter off the debt, or refuse and face worse.`, 'warn');
+      break;
+    case 'violence': {
+      Object.assign(d, changeHp(d, ctx, c.id, -rollDice(4, 6, ctx.rng)));
+      if (!d.rivals.some((r) => r.name === debt.creditor)) d.rivals.push({ id: uid(), name: debt.creditor, idea: 'A creditor making an example of the party', goal: `Collect ${fmtGp(debt.owed)} or make an example`, assets: 'Enforcers, informants', plans: [], pressure: 3, active: true });
+      break;
+    }
+    case 'renown':
+      for (const f of d.factions) f.renown = Math.max(0, f.renown - 1);
+      break;
+    case 'quest':
+      log(d, `${debt.creditor} will forgive the debt for a quest or labor in its service; the DM sets the task.`, 'warn');
+      break;
+  }
+  if (debt.owed <= 0) settleDebt(d, debt);
+}
+
+/** Running a negative purse turns into a lawful debt at the end of the day. */
+function purseDebts(d: State): void {
+  for (const c of d.characters) {
+    if (c.gp < -0.001) {
+      const amt = Math.round(-c.gp * 100) / 100;
+      gainWealth(c, amt);
+      addDebtMut(d, c.id, d.place.settlement ? `Creditors in ${d.place.name}` : 'Unpaid bills', 'lawful', amt);
+    }
+  }
+}
 
 // ---------------------------------------------------------------- shop and loot
 
@@ -2569,7 +2832,11 @@ export const settleBusiness = act((d, ctx, businessId: string) => {
   if (!b || b.daysWorked < 1 || b.building) return;
   const owner = charById(d, b.ownerId);
   const days = Math.min(BUSINESS_MAX_DAYS, b.daysWorked);
-  const r = rollBusiness(ctx.rng, days, b.gpPerDay, b.debts);
+  const r = rollBusiness(ctx.rng, days, b.gpPerDay, b.debts + (b.sabotaged ? 1 : 0));
+  if (b.sabotaged) {
+    log(d, `${b.name} suffers from a rival's sabotage: −10 on this roll.`, 'warn');
+    b.sabotaged = false;
+  }
   const penalty = b.debts ? ` − ${b.debts * BUSINESS_DEBT_PENALTY} for unpaid debts` : '';
   log(d, `${b.name}: d100 ${r.roll} + ${days} days${penalty} = ${r.total}. ${r.text}.`, r.payGp > 0 ? 'warn' : r.profitGp > 0 ? 'good' : 'info');
   b.lastResult = `${r.text} (${r.total})`;

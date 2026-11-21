@@ -25,7 +25,7 @@ describe('downtime activity outcomes', () => {
     expect(s.characters[0].gp).toBe(300);
     s.projects = [project({ id: 'g', name: 'Gambling', charIds: [s.characters[0].id], done: true, awaitingOutcome: true })];
     s = E.resolveActivityProject(s, ctx(0.01), 'g', { bonuses: [0, 0, 0], gp: 50 });
-    expect(s.characters[0].gp).toBe(200);
-    expect(s.characters[0].notes).toMatch(/Gambling debt: 50 GP/);
+    expect(s.characters[0].gp).toBe(250);
+    expect(s.debts[0]).toMatchObject({ creditor: 'The gambling house', kind: 'criminal', owed: 50 });
   });
 });

@@ -12,6 +12,7 @@ import type { TerrainType } from '../rules/terrain';
 import type { ItemRef } from '../rules/hazards';
 import type { CommMethod } from '../rules/comms';
 import type { ContagionKind } from '../rules/contagion';
+import type { CreditorKind } from '../rules/debts';
 import type { HirelingRole } from '../rules/hirelings';
 import type { ClueKind, StudyMethod } from '../rules/identify';
 import type { WeightSource } from '../rules/encumbrance';
@@ -516,6 +517,8 @@ export interface Business {
   gpPerDay: number;
   /** Downtime days spent running it since the last roll (only 30 count). */
   daysWorked: number;
+  /** A rival sabotaged it: −10 on the next roll. */
+  sabotaged?: boolean;
   /** Unpaid costs: each gives −10 to later rolls until paid. */
   debts: number;
   unpaidGp: number;
@@ -545,6 +548,37 @@ export interface Contagion {
   /** Sight Rot: ointment keeps it suppressed until this minute, and the total hours suppressed so far. */
   suppressedUntil?: number;
   suppressedHours?: number;
+}
+
+export interface Debt {
+  id: string;
+  debtorId: string;
+  creditor: string;
+  kind: CreditorKind;
+  principal: number;
+  owed: number;
+  /** Weekly interest as a fraction (0.1 = 10%). */
+  rate: number;
+  startedDay: number;
+  dueDay: number;
+  /** Escalation steps already taken. */
+  steps: string[];
+  /** In debtors' prison, working it off. */
+  imprisoned?: boolean;
+}
+
+export interface Rival {
+  id: string;
+  name: string;
+  /** Who they are (idea), what they want, and what they can bring to bear. */
+  idea: string;
+  goal: string;
+  assets: string;
+  /** Plans the DM has written; each downtime advances one (otherwise a generic move). */
+  plans: string[];
+  /** Grows each time the rival acts; thresholds call for direct action. */
+  pressure: number;
+  active: boolean;
 }
 
 export interface Dispatch {
@@ -801,6 +835,12 @@ export interface State {
   recipeNames: string[];
   /** Messages travelling to and from distant Bastions. */
   dispatches: Dispatch[];
+  /** Money owed to creditors (table rule). */
+  debts: Debt[];
+  /** Rivals working against the party during downtime (Xanathar's). */
+  rivals: Rival[];
+  /** A rival's bribed officials make the next crime harder (+5 DC). */
+  rivalHeat?: boolean;
   /** Businesses the characters own (optional Running a Business rule). */
   businesses: Business[];
   /** Minutes of overland time since the last automatic random encounter check. */

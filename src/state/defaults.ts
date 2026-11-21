@@ -175,6 +175,8 @@ export function createDefaultState(rng: Rng): State {
     recipeNames: [],
     dispatches: [],
     businesses: [],
+    rivals: [],
+    debts: [],
     encounterClock: 0,
     exploreTurns: 0,
     encounterExclude: [],

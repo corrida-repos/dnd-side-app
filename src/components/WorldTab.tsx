@@ -6,6 +6,7 @@ import { dateFromIndex, formatDuration } from '../rules/calendar';
 import { GIFT_TYPES, type GiftType } from '../rules/hazards';
 import { DIVINATION_SPELLS, divinationFailChance, moonPhase, RESURRECTION_SPELLS, RITUAL_PRESETS } from '../rules/longterm';
 import { Card, Meter, Num, Pill, Select, Text, Rule } from './common';
+import { RIVAL_IDEAS, RIVAL_ESCALATION } from '../rules/rivals';
 import { WaysAround } from './WaysAround';
 
 export function WorldTab() {
@@ -13,6 +14,7 @@ export function WorldTab() {
     <div className="grid">
       <SkyCard />
       <FactionsCard />
+      <RivalsCard />
       <RitualsCard />
       <DeathCard />
       <DivinationCard />
@@ -316,4 +318,64 @@ function renownPerk(r: number): string {
   if (r >= 10) return 'Potions and scrolls, favors, backup';
   if (r >= 3) return 'Respected: Friendly members, shelter in need';
   return '';
+}
+
+function RivalsCard() {
+  const s = useGame();
+  const [name, setName] = useState('');
+  const [idea, setIdea] = useState('');
+  const set = (id: string, patch: Partial<(typeof s.rivals)[number]>) => edit((d) => void Object.assign(d.rivals.find((x) => x.id === id)!, patch));
+  const active = s.rivals.filter((r) => r.active);
+  return (
+    <Card title="Rivals">
+      {active.length === 0 && <p className="muted small">No active rivals. Xanathar's suggests two or three, at least one a villain.</p>}
+      <ul className="plain">
+        {s.rivals.map((r) => (
+          <li key={r.id} className="facility">
+            <div className="armor-row">
+              <span>
+                <b>{r.name}</b> <span className="small muted">{r.idea}</span>{' '}
+                <Pill tone={r.pressure >= 6 ? 'bad' : r.pressure >= 3 ? 'warn' : 'muted'}>Pressure {r.pressure}</Pill> {!r.active && <Pill tone="good">Resolved</Pill>}
+              </span>
+              <span className="btn-row tight">
+                <button className="ghost small" onClick={() => set(r.id, { active: !r.active })}>
+                  {r.active ? 'Resolved' : 'Reactivate'}
+                </button>
+                <button className="ghost tiny" aria-label={`Remove ${r.name}`} onClick={() => edit((d) => void (d.rivals = d.rivals.filter((x) => x.id !== r.id)))}>
+                  ✕
+                </button>
+              </span>
+            </div>
+            {r.active && (
+              <>
+                <div className="form-row">
+                  <Text label="Goal" value={r.goal} onChange={(v) => set(r.id, { goal: v })} placeholder="What they want, and why the party is in the way" />
+                  <Text label="Assets" value={r.assets} onChange={(v) => set(r.id, { assets: v })} placeholder="Money, allies, influence" />
+                </div>
+                <label className="field grow">
+                  <span className="field-label">Plans (one per line)</span>
+                  <textarea rows={2} value={r.plans.join('\n')} onChange={(e) => set(r.id, { plans: e.target.value.split('\n') })} />
+                </label>
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
+      <div className="form-row">
+        <Text label="Name" value={name} onChange={setName} placeholder="e.g. Magistrate Orvane" />
+        <Select label="Who they are" value={idea} onChange={setIdea} options={[{ value: '', label: 'Roll one' }, ...RIVAL_IDEAS.map((x) => ({ value: x, label: x }))]} />
+      </div>
+      <div className="btn-row">
+        <button className="small" onClick={() => (dispatch((st, cx) => E.addRival(st, cx, name.trim(), idea)), setName(''))}>
+          Add rival
+        </button>
+        <button className="small ghost" disabled={!active.length} onClick={() => dispatch((st, cx) => E.advanceRival(st, cx))}>
+          A rival makes a move
+        </button>
+      </div>
+      <Rule>
+        Xanathar&apos;s: rivals work against the party between adventures. Each time downtime is resolved, a rival advances one of its plans (yours, or a generic move: rumors cost renown, sabotage hurts a business or Bastion facility, bribes make the next crime harder, toughs take coin, complaints become fines). Complications marked as rival-friendly name the rival. Pressure {Object.keys(RIVAL_ESCALATION).join(', ')} calls for the rival to act in person (table rule).
+      </Rule>
+    </Card>
+  );
 }

@@ -30,7 +30,7 @@ export interface ActivityResult {
   jailDays?: number;
   /** Lifestyle earned for the week by working. */
   lifestyle?: Lifestyle;
-  complication?: string;
+  complication?: Complication;
 }
 
 export const ACTIVITY_CHECKS: Record<ActivityId, string[]> = {
@@ -53,14 +53,110 @@ export const CRIME_TARGETS = [
   { dc: 25, gp: 1000, label: 'Major target (DC 25, 1,000 GP)' },
 ];
 
-const COMPLICATIONS: Partial<Record<ActivityId, string[]>> = {
-  Carousing: ['a rival takes offense at something said in drink', 'a bar brawl leaves a bruise and a grudge', 'someone claims they were promised money', 'a romance ends badly and publicly', 'the watch takes notice of the noise', 'a stranger with a strange request won’t leave you alone'],
-  Crime: ['a bounty is posted on a description that fits you', 'a fence talks to the wrong people', 'the victim was protected by someone powerful', 'an accomplice wants a bigger cut', 'a witness recognized you', 'a rival gang claims the territory'],
-  Gambling: ['you’re accused of cheating', 'a loser blames you and wants revenge', 'the house expects a favor', 'a debt collector follows you home', 'you win something stolen', 'a noble wants a rematch'],
-  'Pit fighting': ['an opponent wants a rematch, to the death', 'a bookie asks you to take a dive', 'an injury lingers for a few days', 'a patron wants to sponsor you, with strings', 'the fights are raided by the watch', 'a rival fighter spreads lies about you'],
-  'Religious service': ['a rival sect objects to your presence', 'a priest asks a dangerous favor', 'you witness something you shouldn’t have', 'your faith is publicly questioned', 'a relic goes missing on your watch', 'an omen points to trouble'],
-  Research: ['your inquiries alert someone who wants the topic buried', 'a source turns out to be forged', 'a scholar demands credit and payment', 'you damage a valuable book', 'a cult notices your interest', 'you uncover a secret that puts you in danger'],
-  'Working a trade': ['a customer refuses to pay', 'a guild objects to your working without membership', 'a tool breaks', 'a demanding client wants the impossible', 'a rival undercuts you', 'an accident at work'],
+export interface Complication {
+  text: string;
+  /** A rival could be behind it (marked in Xanathar's tables). */
+  rival?: boolean;
+  /** Gold lost (dice or a number), a debt taken on, days in jail, wages one step lower or unpaid. */
+  loseGp?: string;
+  debt?: string;
+  jailDays?: number;
+  wageDown?: boolean;
+  noPay?: boolean;
+}
+
+const c = (text: string, extra: Partial<Complication> = {}): Complication => ({ text, ...extra });
+
+/** Short versions of each activity's complications (table rule wording), with their mechanical effects. */
+export const COMPLICATIONS: Record<string, Complication[]> = {
+  'Carousing:lower': [
+    c('a pickpocket lifts some coin', { rival: true, loseGp: '1d10*5' }),
+    c('a bar brawl leaves you with a scar', { rival: true }),
+    c('you dimly remember doing something very illegal'),
+    c('you are banned from a tavern for your behavior', { rival: true }),
+    c('you swore in public to take on a dangerous quest'),
+    c('you woke up married'),
+    c('a naked dash through the streets seemed wise at the time'),
+    c('everyone calls you by an embarrassing nickname', { rival: true }),
+  ],
+  'Carousing:middle': [
+    c('you insulted a guild master and owe a public apology', { rival: true }),
+    c('you swore to complete a quest for a temple or guild'),
+    c('a social blunder makes you the talk of the town', { rival: true }),
+    c('an obnoxious admirer won’t leave you alone', { rival: true }),
+    c('you made an enemy of a local spellcaster', { rival: true }),
+    c('you’ve been roped into running a local festival'),
+    c('a drunken toast scandalized the locals'),
+    c('you spent extra trying to impress people', { loseGp: '100' }),
+  ],
+  'Carousing:upper': [
+    c('a pushy noble family wants you to marry their heir', { rival: true }),
+    c('you fell during a dance and nobody will forget it'),
+    c('you agreed to take on a noble’s debts', { debt: '1d6*100' }),
+    c('a knight challenges you to a joust', { rival: true }),
+    c('you made an enemy of a local noble', { rival: true }),
+    c('a dull noble insists you visit daily to hear their theories'),
+    c('embarrassing rumors about you spread', { rival: true }),
+    c('you spent extra trying to impress people', { loseGp: '500' }),
+  ],
+  Crime: [
+    c('a bounty matching your take is posted for information', { rival: true }),
+    c('someone knows, and wants a service for their silence', { rival: true }),
+    c('your victim is financially ruined'),
+    c('someone who knows about your crime was arrested for something else', { rival: true }),
+    c('the loot is one easily traced item you can’t fence here'),
+    c('your victim was under a crime lord’s protection'),
+    c('the victim calls in a favor and the watch doubles its efforts'),
+    c('the victim asks one of your companions to solve the crime'),
+  ],
+  Gambling: [
+    c('you are accused of cheating', { rival: true }),
+    c('the watch raids the hall and jails you', { rival: true, jailDays: 7 }),
+    c('a noble who lost badly vows revenge', { rival: true }),
+    c('a thieves’ guild wants back what you won from one of its members'),
+    c('a crime boss insists you gamble only at their parlor'),
+    c('a high-stakes gambler demands you join a game'),
+  ],
+  'Pit fighting': [
+    c('an opponent swears revenge', { rival: true }),
+    c('a crime boss offers money to throw a few fights', { rival: true }),
+    c('you beat a crowd favorite and the crowd turns on you'),
+    c('you beat a noble’s servant and anger the house', { rival: true }),
+    c('you’re accused of cheating and your name suffers', { rival: true }),
+    c('you nearly killed an opponent by accident'),
+  ],
+  'Religious service': [
+    c('you offended a priest', { rival: true }),
+    c('you committed accidental blasphemy'),
+    c('a secret sect within the temple invites you in'),
+    c('another temple tries to recruit you as a spy', { rival: true }),
+    c('the elders urge you to take up a holy quest'),
+    c('you discover an important temple figure worships a fiend'),
+  ],
+  Research: [
+    c('you damaged a rare book'),
+    c('you offended a sage who now demands a lavish gift', { rival: true }),
+    c('the book you opened was cursed'),
+    c('a sage is obsessed with convincing you of strange theories', { rival: true }),
+    c('you are banned from a library until you make amends', { rival: true }),
+    c('the lore came at the price of a dangerous promise'),
+  ],
+  Training: [
+    c('your instructor vanished and you lost a week finding another', { rival: true }),
+    c('your teacher’s old-fashioned methods draw comment'),
+    c('your teacher is a spy sent to learn your plans', { rival: true }),
+    c('your teacher is a wanted criminal'),
+    c('your teacher is a cruel taskmaster'),
+    c('your teacher asks for help with a threat'),
+  ],
+  'Working a trade': [
+    c('a difficult customer or coworker cuts your wages a step', { rival: true, wageDown: true }),
+    c('your employer can’t pay you this week', { rival: true, noPay: true }),
+    c('a well-connected coworker takes a dislike to you', { rival: true }),
+    c('your employer is tied to a cult or a criminal ring'),
+    c('a crime ring tries to extort the business', { rival: true }),
+    c('you get a reputation for laziness', { rival: true }),
+  ],
 };
 
 /** XGtE: 5 + 2d10 DCs for the contested checks of gambling and pit fighting. */
@@ -72,10 +168,12 @@ export function resolveActivity(id: ActivityId, o: ActivityOpts, rng: Rng): Acti
     return { total: r, ok: r >= dc };
   };
   const b = (i: number) => o.bonuses[i] ?? 0;
-  const complication = () => {
-    const list = COMPLICATIONS[id];
-    return list && die(10, rng) === 1 ? list[die(list.length, rng) - 1] : undefined;
+  /** 10% each workweek (training: each ten workweeks); crime instead triggers on exactly one success. */
+  const pickComplication = (key: string) => {
+    const list = COMPLICATIONS[key];
+    return list ? list[die(list.length, rng) - 1] : undefined;
   };
+  const complication = (key: string = id) => (die(10, rng) === 1 ? pickComplication(key) : undefined);
   switch (id) {
     case 'Carousing': {
       const t = d20('normal', rng).value + b(0);
@@ -91,17 +189,17 @@ export function resolveActivity(id: ActivityId, o: ActivityOpts, rng: Rng): Acti
         text = `${t}: ${n} allied contact${n > 1 ? 's' : ''}`;
         for (let i = 0; i < n; i++) notes.push(`Allied contact (${circle} circles)`);
       }
-      return { text, gp: 0, notes, complication: complication() };
+      return { text: `${text}${circle !== 'lower' ? ` (${CAROUSING_COST[circle] - CAROUSING_COST.lower} GP more for ${circle}-class company)` : ''}`, gp: -(CAROUSING_COST[circle] - CAROUSING_COST.lower), notes, complication: complication(`Carousing:${circle}`) };
     }
     case 'Crime': {
       const target = CRIME_TARGETS.find((x) => x.dc === o.dc) ?? CRIME_TARGETS[0];
       const rolls = [0, 1, 2].map((i) => check(b(i), target.dc));
       const ok = rolls.filter((r) => r.ok).length;
       const list = rolls.map((r) => r.total).join(', ');
-      if (ok === 0) return { text: `${list} vs DC ${target.dc}: caught. Fined ${target.gp} GP and jailed ${Math.ceil(target.gp / 25)} week(s)`, gp: -target.gp, notes: [], jailDays: Math.ceil(target.gp / 25) * 7, complication: complication() };
-      if (ok === 1) return { text: `${list} vs DC ${target.dc}: you get away, empty-handed`, gp: 0, notes: [], complication: complication() };
-      if (ok === 2) return { text: `${list} vs DC ${target.dc}: a partial haul`, gp: target.gp / 2, notes: [], complication: complication() };
-      return { text: `${list} vs DC ${target.dc}: a clean job`, gp: target.gp, notes: [], complication: complication() };
+      if (ok === 0) return { text: `${list} vs DC ${target.dc}: caught. Fined ${target.gp} GP and jailed ${Math.ceil(target.gp / 25)} week(s)`, gp: -target.gp, notes: [], jailDays: Math.ceil(target.gp / 25) * 7 };
+      if (ok === 1) return { text: `${list} vs DC ${target.dc}: you get away, empty-handed`, gp: 0, notes: [], complication: pickComplication('Crime') };
+      if (ok === 2) return { text: `${list} vs DC ${target.dc}: a partial haul`, gp: target.gp / 2, notes: [] };
+      return { text: `${list} vs DC ${target.dc}: a clean job`, gp: target.gp, notes: [] };
     }
     case 'Gambling': {
       const stake = Math.max(10, Math.min(1000, o.gp ?? 10));
@@ -112,7 +210,7 @@ export function resolveActivity(id: ActivityId, o: ActivityOpts, rng: Rng): Acti
       });
       const ok = rolls.filter((x) => Number(x.split('/')[0]) >= Number(x.split('/')[1])).length;
       const list = rolls.join(', ');
-      if (ok === 0) return { text: `${list}: you lose the ${stake} GP stake and owe as much again`, gp: -stake, debt: stake, notes: [`Gambling debt: ${stake} GP`], complication: complication() };
+      if (ok === 0) return { text: `${list}: you lose the ${stake} GP stake and owe as much again`, gp: -stake, debt: stake, notes: [], complication: complication() };
       if (ok === 1) return { text: `${list}: you lose half the stake`, gp: -stake / 2, notes: [], complication: complication() };
       if (ok === 2) return { text: `${list}: you win half your stake again`, gp: stake / 2, notes: [], complication: complication() };
       return { text: `${list}: you double your stake`, gp: stake, notes: [], complication: complication() };
@@ -136,19 +234,24 @@ export function resolveActivity(id: ActivityId, o: ActivityOpts, rng: Rng): Acti
     }
     case 'Research': {
       const spent = Math.max(50, o.gp ?? 50);
-      const bonus = Math.min(6, Math.floor(Math.max(0, spent - 100) / 100));
+      const bonus = Math.min(6, Math.floor(Math.max(0, spent - 50) / 50));
       const t = d20('normal', rng).value + b(0) + bonus;
       const n = t <= 5 ? 0 : t <= 10 ? 1 : t <= 20 ? 2 : 3;
       return { text: `${t}${bonus ? ` (+${bonus} for ${spent} GP spent)` : ''}: ${n ? `${n} piece${n > 1 ? 's' : ''} of lore (the DM supplies them)` : 'nothing useful'}`, gp: 0, notes: n ? [`Research: ${n} piece(s) of lore to collect from the DM`] : [], complication: complication() };
     }
     case 'Working a trade': {
       const t = d20('normal', rng).value + b(0);
-      const lifestyle: Lifestyle = t <= 9 ? 'poor' : t <= 14 ? 'modest' : 'comfortable';
-      const extra = t >= 21 ? 25 : 0;
-      return { text: `${t}: earns a ${lifestyle} living for the week${extra ? ' plus 25 GP' : ''}`, gp: LIFESTYLE_GP[lifestyle] * 7 + extra, notes: [], lifestyle, complication: complication() };
+      const comp = complication();
+      const steps: Lifestyle[] = ['squalid', 'poor', 'modest', 'comfortable'];
+      let i = t <= 9 ? 1 : t <= 14 ? 2 : 3;
+      if (comp?.wageDown) i -= 1;
+      const lifestyle = steps[i];
+      const extra = t >= 21 && !comp?.wageDown ? 25 : 0;
+      const gp = comp?.noPay ? 0 : LIFESTYLE_GP[lifestyle] * 7 + extra;
+      return { text: `${t}: ${comp?.noPay ? 'the work is done but the pay never comes' : `earns a ${lifestyle} living for the week${extra ? ' plus 25 GP' : ''}`}`, gp, notes: [], lifestyle, complication: comp };
     }
     case 'Training':
-      return { text: 'training complete', gp: 0, notes: [] };
+      return { text: 'training complete', gp: 0, notes: [], complication: complication('Training') };
   }
 }
 

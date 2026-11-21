@@ -9,6 +9,7 @@ import { HIRELING_ROLES, MESSENGER_GP_PER_MILE, type HirelingRole } from '../rul
 import { coinCount, DENOMS, purseValue, type Denom } from '../rules/coins';
 import type { Hireling } from '../state/types';
 import { TARGET_SPELLS } from '../rules/components';
+import { CREDITOR_LABEL, DUE_DAYS, ESCALATION, LENIENT_GP, WEEKLY_INTEREST, type CreditorKind } from '../rules/debts';
 import { ITEM_PRICES } from '../rules/itemPrices';
 import { inStock, priceOf, RENOWN_DISCOUNT, saleRate, STOCK_LIMIT } from '../rules/shop';
 import { COMMON_SPELL_REQUESTS, PASSAGE, SPELL_SERVICES, spellServiceAvailable, type Settlement } from '../rules/services';
@@ -21,6 +22,7 @@ export function MoneyTab() {
       <HirelingsCard />
       <MountsCard />
       <ShopCard />
+      <DebtsCard />
       <ServicesCard />
     </div>
   );
@@ -440,5 +442,77 @@ function FactionSupply({ buyerId }: { buyerId: string }) {
       </button>
       <p className="small muted">DMG: Renown 10+ can open access to potions and scrolls. Priced at half the 2024 DMG value for consumables (table rule).</p>
     </>
+  );
+}
+
+function DebtsCard() {
+  const s = useGame();
+  const pcs = s.characters.filter((c) => c.kind !== 'mount');
+  const [who, setWho] = useState('');
+  const [kind, setKind] = useState<CreditorKind>('lawful');
+  const [creditor, setCreditor] = useState('');
+  const [amount, setAmount] = useState(100);
+  const [rate, setRate] = useState(WEEKLY_INTEREST.lawful * 100);
+  const [due, setDue] = useState(DUE_DAYS.lawful);
+  const [pay, setPay] = useState<Record<string, number>>({});
+  const whoId = pcs.find((c) => c.id === who)?.id ?? pcs[0]?.id ?? '';
+  return (
+    <Card title="Debts">
+      {s.debts.length === 0 && <p className="muted small">Nobody owes anything.</p>}
+      <ul className="plain">
+        {s.debts.map((d) => {
+          const c = E.charById(s, d.debtorId);
+          const overdue = s.dayIndex - d.dueDay;
+          const next = ESCALATION[d.kind].find((x) => !d.steps.includes(x.label));
+          return (
+            <li key={d.id} className="facility">
+              <div className="armor-row">
+                <span>
+                  <b>{c?.name}</b> owes <b>{d.creditor}</b> {fmtGp(d.owed)} <span className="small muted">({CREDITOR_LABEL[d.kind].split(' (')[0]}{d.rate ? `, ${Math.round(d.rate * 100)}%/week` : ''})</span>{' '}
+                  {d.imprisoned ? <Pill tone="bad">In debtors&apos; prison</Pill> : overdue >= 0 ? <Pill tone="bad">{Math.floor(overdue / 7) + 1} week(s) overdue</Pill> : <Pill tone="muted">Due in {-overdue} day(s)</Pill>}
+                </span>
+              </div>
+              {d.steps.length > 0 && <p className="small">Already: {d.steps.join(', ')}.</p>}
+              {next && !d.imprisoned && <p className="small muted">Next if unpaid: week {next.week} overdue, {next.text}{d.owed < LENIENT_GP && next.action !== 'warn' ? ' (not for a debt this small)' : ''}.</p>}
+              <div className="btn-row tight">
+                <Num value={pay[d.id] ?? Math.min(d.owed, Math.max(0, c?.gp ?? 0))} onChange={(v) => setPay({ ...pay, [d.id]: Math.max(0, v) })} min={0} suffix="GP" width={6} />
+                <button className="small" onClick={() => dispatch((st, cx) => E.payDebt(st, cx, d.id, pay[d.id] ?? d.owed))}>
+                  Pay
+                </button>
+                {d.kind === 'criminal' && d.steps.includes('Forced service') && (
+                  <button className="small ghost" onClick={() => dispatch((st, cx) => E.serveCreditor(st, cx, d.id))}>
+                    Do their job (−25%)
+                  </button>
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      <h3>Borrow</h3>
+      <div className="form-row">
+        <Select label="Who" value={whoId} onChange={setWho} options={pcs.map((c) => ({ value: c.id, label: c.name }))} />
+        <Select
+          label="Lender"
+          value={kind}
+          onChange={(v) => {
+            setKind(v);
+            setRate(WEEKLY_INTEREST[v] * 100);
+            setDue(DUE_DAYS[v]);
+          }}
+          options={(Object.keys(CREDITOR_LABEL) as CreditorKind[]).map((k) => ({ value: k, label: CREDITOR_LABEL[k] }))}
+        />
+        <Text label="Name" value={creditor} onChange={setCreditor} placeholder="e.g. Kundarak Bank, Mother Yellowtooth" />
+        <Num label="Amount" value={amount} onChange={(v) => setAmount(Math.max(1, v))} min={1} suffix="GP" width={6} />
+        <Num label="Interest" value={rate} onChange={(v) => setRate(Math.max(0, v))} min={0} suffix="%/week" width={3} />
+        <Num label="Due in" value={due} onChange={(v) => setDue(Math.max(1, Math.round(v)))} min={1} suffix="days" width={3} />
+      </div>
+      <button className="small" disabled={!whoId} onClick={() => dispatch((st, cx) => E.borrow(st, cx, whoId, creditor.trim(), kind, amount, rate / 100, due))}>
+        Borrow {fmtGp(amount)}
+      </button>
+      <Rule>
+        Table rule: neither 2024 book covers debt. Interest compounds weekly. Overdue debts escalate by creditor: lawful lenders send a notice, then bailiffs seize coin and goods at half value, then debtors&apos; prison (working off a laborer&apos;s wage); criminals threaten, send enforcers, demand an unpaid job, then turn violent and become a rival; noble houses blacken your name (renown −1) and seize property; temples ask penance, then a quest. Debts under {LENIENT_GP} GP never go past a warning. A purse that goes negative becomes a debt at the day&apos;s end.
+      </Rule>
+    </Card>
   );
 }
