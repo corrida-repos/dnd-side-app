@@ -17,8 +17,8 @@ function migrate(raw: unknown): State | null {
     ...base,
     ...parsed,
     version: SAVE_VERSION,
-    // Variant encumbrance is always on.
-    settings: { ...base.settings, ...parsed.settings, variantEncumbrance: true },
+    // Saves made before weatherDamage defaulted off keep the value they had.
+    settings: { ...base.settings, weatherDamage: true, ...parsed.settings },
     travel: { ...base.travel, ...parsed.travel },
     fire: { ...base.fire, ...parsed.fire },
     stores: { ...base.stores, ...parsed.stores, foodRawLb: parsed.stores?.foodRawLb ?? (parsed.stores as { foodUnsafeLb?: number } | undefined)?.foodUnsafeLb ?? 0 },

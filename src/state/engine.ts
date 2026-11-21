@@ -39,6 +39,7 @@ import { RITUAL_EXTRA_MINUTES as RITUAL_TAG_MINUTES, spellInfo } from '../rules/
 import { maxWatchMinutes, slotTimes, watchMinutes, watchSight, type Sight } from '../rules/watch';
 import { abilityMod, ATTUNE_AWAY_MINUTES, IDENTIFY_MINUTES, MAX_ATTUNED, RITUAL_EXTRA_MINUTES } from '../rules/upkeep';
 import { COOK_RAW_MINUTES, DEFAULT_FIRE_COLD_LIMIT_F, FIRE_LIGHT_DC, FIRE_METHODS, FIRE_SPELLS, fireColdLimit, fireKeepsWarm, fireLighting, type FireMethod } from '../rules/campfire';
+import { applyTier, tierName, TIERS, type TierId } from '../rules/detailTiers';
 import { fireThreat, rollWeather, temperatureAt, CLIMATES, weatherDamageAffinities, type Affinity } from '../rules/weather';
 import {
   exhaustionSummary,
@@ -374,13 +375,13 @@ function tickHour(s: State, ctx: Ctx, activity: Activity): void {
   const exp = exposure(s, activity, temp);
   for (const c of s.characters) {
     if (!alive(c)) continue;
-    if (exp.cold && temp <= 0 && !coldProtection(c, activity, s.settings.coldGear2014)) {
+    if (s.settings.extremeWeather && exp.cold && temp <= 0 && !coldProtection(c, activity, s.settings.coldGear2014)) {
       const wrapped = c.blanket && activity === 'rest';
       requestSave(s, ctx, c, 'cold', 10, wrapped ? 'advantage' : 'normal', `extreme cold (${temp}°F)${wrapped ? ', wrapped in a Blanket' : ''}`);
     } else if (activity === 'rest' && exp.cold && s.settings.coldNights && temp <= s.settings.coldNightF && !hasWarmCover(c)) {
       c.nightChill = c.nightChill == null ? temp : Math.min(c.nightChill, temp);
     }
-    if (exp.heat && temp >= 100) {
+    if (s.settings.extremeWeather && exp.heat && temp >= 100) {
       if (!heatProtection(c, hasDrinkableWater(s, c, activity))) {
         c.heatHours += 1;
         requestSave(s, ctx, c, 'heat', 4 + c.heatHours, heatDisadvantage(c, s.settings.heavyClothing2014) ? 'disadvantage' : 'normal', `extreme heat (${temp}°F), hour ${c.heatHours}`);
@@ -418,7 +419,7 @@ function dailyCosts(s: State): void {
     if (fed.length) log(s, `Town living covers meals and lodging for ${fed.join(', ')}.`);
   } else {
     for (const c of adventurers(s)) if (c.lifestyleOwed) settleLifestyle(s, c, 'lodgings and meals on leaving town');
-    if (s.settings.hirelingsEat) hirelingsEat(s);
+    if (s.settings.hirelingsEat && s.settings.foodAndWater) hirelingsEat(s);
   }
   for (const h of s.hirelings) {
     if (h.active && h.wageGp > 0) payGold(s, h.payer === 'party' ? [] : [h.payer], h.wageGp, `${h.name}'s daily wage`);
@@ -458,7 +459,11 @@ function endOfDay(s: State, ctx: Ctx): void {
   checkRituals(s);
   const hotDay = s.weather.high >= 100;
   for (const c of s.characters) {
-    if (!alive(c)) continue;
+    if (!alive(c) || !s.settings.foodAndWater) {
+      c.ateLbToday = 0;
+      c.drankPintsToday = 0;
+      continue;
+    }
     if (c.needsWater) {
       const need = waterNeedPints(c, hotDay, s.settings.doubleWaterInHeat);
       if (c.drankPintsToday < need / 2) {
@@ -723,6 +728,12 @@ export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activi
     if (s.settings.encounters && activity !== 'work' && !opts.exploring) overlandEncounterClock(s, ctx, step, activity);
   }
 }
+
+/** Sets every tiered rule switch to match a level of detail (Light, Standard, Gritty or Hardcore). */
+export const setDetailTier = act((d, _ctx, tier: TierId) => {
+  applyTier(d.settings, tier);
+  log(d, `Level of detail set to ${tierName(tier)}: ${TIERS.find((t) => t.id === tier)!.tagline}`);
+});
 
 export const advance = act((d, ctx, minutes: number, activity: Activity = 'camp') => advanceMut(d, ctx, minutes, activity));
 
@@ -1105,7 +1116,8 @@ export function vesselSpeed(s: State, v: Stash, o: { againstWind?: boolean; down
 }
 
 /** The navigation DC right now, or null when following a road, river or coast. */
-export function currentNavigationDC(s: State) {
+export function currentNavigationDC(s: State): { dc: number | null; reasons: string[] } {
+  if (!s.settings.navigation) return { dc: null, reasons: ['getting lost is switched off'] };
   const dark = lightAt(s.minutes % MIN_PER_DAY, seasonOf(s)).phase === 'Night' || !!CLIMATES[s.weather.climate].noWeather;
   return navigationDC(s.place.onRoute ? null : TERRAIN[s.place.terrain].navigationDC, { heavyPrecip: s.weather.precip === 'heavy', dark, poorVisibilityRule: s.settings.poorVisibilityNav });
 }
@@ -1205,7 +1217,7 @@ function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
         } else d.travel.lostRecheckIn = die(LOST_RECHECK_DIE, ctx.rng);
       }
     }
-    if (d.travel.hoursToday > 8) {
+    if (d.settings.forcedMarch && d.travel.hoursToday > 8) {
       const dc = 10 + (d.travel.hoursToday - 8);
       for (const c of d.characters) {
         if (alive(c)) requestSave(d, ctx, c, 'march', dc, 'normal', `a forced march (hour ${d.travel.hoursToday})`);
@@ -5121,7 +5133,7 @@ export function carriedLoad(s: State, c: Character): Load {
   const magic = c.items.filter((it) => !listed.has(it.name.toLowerCase()) && !listed.has((it.partyName ?? '').toLowerCase())).reduce((a, it) => a + estimateWeight(it.name).weight, 0);
   const total = Math.round((gear + food + water + coins + magic) * 10) / 10;
   const capacity = c.carryCapacity ?? carryingCapacity(c.strScore, c.size);
-  return { gear, food, water, coins, magic, total, capacity, level: loadLevel(total, capacity, c.kind === 'mount' ? 0 : c.strScore, true) };
+  return { gear, food, water, coins, magic, total, capacity, level: s.settings.encumbrance ? loadLevel(total, capacity, c.kind === 'mount' ? 0 : c.strScore, s.settings.variantEncumbrance) : 'light' };
 }
 
 export const addInventory = act((d, _ctx, charId: string, text: string) => {

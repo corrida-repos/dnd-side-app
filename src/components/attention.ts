@@ -29,7 +29,7 @@ export function attentionItems(s: State): AttentionItem[] {
   }
 
   // Survival late in the day: anyone who still hasn't eaten or drunk enough.
-  if (s.minutes % 1440 >= 18 * 60) {
+  if (s.settings.foodAndWater && s.minutes % 1440 >= 18 * 60) {
     const hot = s.weather.high >= 100;
     const hungry = s.characters.filter((c) => c.diedAt == null && c.needsFood && c.ateLbToday < foodNeedLb(c)).map((c) => c.name);
     const thirsty = s.characters.filter((c) => c.diedAt == null && c.needsWater && c.drankPintsToday < waterNeedPints(c, hot, s.settings.doubleWaterInHeat)).map((c) => c.name);

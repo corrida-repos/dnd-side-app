@@ -584,7 +584,7 @@ function TravelCard() {
       {slow.length > 0 && !vesselId && <p className="small warn-text">{slow.join(', ')} {slow.length > 1 ? 'are' : 'is'} at half Speed or less (load or Exhaustion): the party must travel at a Slow pace.</p>}
       <p className="small">
         {p.note}. About <b>{+miles.toFixed(1)} miles</b>. {s.travel.hoursToday} travel hour(s) since the last Long Rest
-        {counted > 8 && (
+        {s.settings.forcedMarch && counted > 8 && (
           <span className="bad-text">
             {' '}
             · forced march: {counted - Math.max(8, s.travel.hoursToday)} hour(s) past 8, each needing a Con save (DC {11 + Math.max(0, s.travel.hoursToday - 8)}
