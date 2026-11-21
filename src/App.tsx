@@ -6,6 +6,7 @@ import { formatClock, formatDate, formatDuration } from './rules/calendar';
 import { weatherSummary, CLIMATES } from './rules/weather';
 import { readSky } from './rules/skyclock';
 import { Overview, TravelTab } from './components/Overview';
+import { PlayerTodosTab } from './components/PlayerTodos';
 import { PartyTab } from './components/PartyTab';
 import { CampTab } from './components/CampTab';
 import { EncountersTab } from './components/EncountersTab';
@@ -28,6 +29,7 @@ const TABS = [
   { id: 'camp', label: 'Camp & Survival', el: CampTab },
   { id: 'encounters', label: 'Encounters', el: EncountersTab },
   { id: 'effects', label: 'Effects & Lights', el: EffectsTab },
+  { id: 'todos', label: 'Player checklists', el: PlayerTodosTab },
   { id: 'party', label: 'Characters', el: PartyTab },
   { id: 'gear', label: 'Gear & Resources', el: GearTab },
   { id: 'morning', label: 'Spells & Morning', el: MorningTab },
@@ -46,7 +48,7 @@ type TabId = (typeof TABS)[number]['id'];
 /** Tabs grouped the way a session runs: at the table, the party, between adventures, the wider world. */
 const SECTIONS: { id: string; label: string; key: string; tabs: TabId[] }[] = [
   { id: 'table', label: 'At the table', key: '1', tabs: ['overview', 'travel', 'camp', 'encounters', 'effects'] },
-  { id: 'party', label: 'Party', key: '2', tabs: ['party', 'gear', 'morning'] },
+  { id: 'party', label: 'Party', key: '2', tabs: ['todos', 'party', 'gear', 'morning'] },
   { id: 'between', label: 'Between adventures', key: '3', tabs: ['downtime', 'bastions', 'money', 'storage'] },
   { id: 'world', label: 'World', key: '4', tabs: ['world', 'log', 'ways', 'settings'] },
 ];

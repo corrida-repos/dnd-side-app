@@ -9,11 +9,13 @@ A tracker for every nitty-gritty part of D&D 5.5e life that isn't tied to one ca
 The app is arranged the way a session runs:
 
 - **At the table:** the Dashboard (what needs attention, the clock, the party, conditions and the latest events), Travel, Camp & Survival, Encounters, and Effects & Lights.
-- **Party:** Characters, Gear & Resources, and Spells & Morning.
+- **Party:** Player checklists, Characters, Gear & Resources, and Spells & Morning.
 - **Between adventures:** Downtime, Bastions, Money & Shop, and Storage.
 - **World:** the World (moons, factions, rivals, patron, regions), the Chronicle, Ways Around, and Settings.
 
 A control bar stays on screen on every tab: the time, +10 minutes, +1 hour, +4 hours, Short and Long Rests, **Undo** (also Ctrl/Cmd+Z, outside text fields) and a count of things to handle. The Dashboard's **Needs attention** list gathers saves to roll, dying characters, hunger and thirst late in the day, guttering lights, Bastion turns and decisions, finished downtime awaiting its outcome, unresolved obstacles, overdue debts and restless rivals, each with a button to where it's handled. Secrets such as a hidden disease incubating are marked *DM only* and can be hidden while players can see the screen. Keys 1–4 switch sections.
+
+**Player checklists** (Party section, and a summary on the Dashboard) list, per player, the conditions they're suffering with what fixes each one (Exhaustion by cause, poison, disease, curses, jail, low HP, overloaded packs, the penalty after being raised) and their routine upkeep (food and water today, rations and waterskin running low, unsafe water, armor off, no warm cover for a cold night, spells to prepare, attunement, unidentified items, spent resources, ammunition to recover, fading charms, debts and downtime projects). A player view hides DM-only secrets, and each list can be copied to send to that player.
 
 ## What it tracks
 

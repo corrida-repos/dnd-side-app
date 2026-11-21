@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
 import { attentionItems } from './attention';
+import { PlayerSummaryCard } from './PlayerTodos';
 import { goTo } from './nav';
 import { CLIMATES, environmentEffects, temperatureAt, weatherSummary, type ClimateId, type Weather } from '../rules/weather';
 import { formatClock, formatDate, formatDuration } from '../rules/calendar';
@@ -23,6 +24,7 @@ export function Overview() {
     <div className="grid">
       <AttentionCard />
       <PendingCard />
+      <PlayerSummaryCard />
       <ClockCard />
       <WeatherCard />
       <PartyStatusCard />
