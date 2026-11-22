@@ -10,6 +10,7 @@ import { Card, Meter, Num, Pill, Select, Text, Toggle, Rule } from './common';
 import { POISONS, poisonByName } from '../rules/poisons';
 import { CONTAGIONS, RECUPERATE_DAYS, RECUPERATE_DC, type ContagionKind } from '../rules/contagion';
 import { WaysAround } from './WaysAround';
+import { FUEL_LABEL, fuelFor, isHooded, isOilLight } from '../rules/gear';
 
 export function EffectsTab() {
   return (
@@ -50,10 +51,32 @@ function ActiveCard() {
                   {who && <span className="muted small"> on {who}</span>}
                 </span>
                 <span className="btn-row tight">
-                  {e.endsAt != null && (
-                    <button className="ghost small" onClick={() => dispatch((st, cx) => E.extendEffect(st, cx, e.id, e.kind === 'light' ? (/lamp|lantern/i.test(e.name) ? 360 : 60) : 60))}>
-                      {e.kind === 'light' && /lamp|lantern/i.test(e.name) ? '+ oil flask (6 h)' : '+1 h'}
-                    </button>
+                  {e.kind === 'light' && isOilLight(e.name) ? (
+                    <>
+                      <button className="ghost small" onClick={() => dispatch((st, cx) => E.refuelLight(st, cx, e.id))}>
+                        + oil flask (6 h)
+                      </button>
+                      {e.pausedLeft != null ? (
+                        <button className="small" onClick={() => dispatch((st, cx) => E.relightLight(st, cx, e.id))}>
+                          Relight
+                        </button>
+                      ) : (
+                        <button className="ghost small" title="Keeps the Oil left in it for later" onClick={() => dispatch((st, cx) => E.snuffLight(st, cx, e.id))}>
+                          Put out
+                        </button>
+                      )}
+                      {isHooded(e.name) && e.pausedLeft == null && (
+                        <button className="ghost small" onClick={() => dispatch((st, cx) => E.setHood(st, cx, e.id, !e.dimmed))}>
+                          {e.dimmed ? 'Raise hood' : 'Lower hood'}
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    e.endsAt != null && (
+                      <button className="ghost small" onClick={() => dispatch((st, cx) => E.extendEffect(st, cx, e.id, 60))}>
+                        +1 h
+                      </button>
+                    )
                   )}
                   <button className="ghost small bad" onClick={() => dispatch((st, cx) => E.endEffect(st, cx, e.id))}>
                     End
@@ -61,7 +84,9 @@ function ActiveCard() {
                 </span>
               </div>
               <div className="small">
-                {left == null ? (
+                {e.pausedLeft != null ? (
+                  <span className="muted">Put out · {formatDuration(e.pausedLeft)} of Oil left in it</span>
+                ) : left == null ? (
                   <span className="muted">Lasts until ended</span>
                 ) : (
                   <>
@@ -72,7 +97,7 @@ function ActiveCard() {
                     </span>
                   </>
                 )}
-                {e.notes && <span className="muted"> · {e.notes}</span>}
+                {e.dimmed ? <span className="muted"> · Hood lowered: Dim Light in a 5-foot radius.</span> : e.notes && <span className="muted"> · {e.notes}</span>}
               </div>
             </li>
           );
@@ -94,6 +119,8 @@ function AddEffectCard() {
   const [minutes, setMinutes] = useState<number | null>(preset.minutes);
   const [targets, setTargets] = useState<string[]>([]);
   const [caster, setCaster] = useState('');
+  const [useGear, setUseGear] = useState(true);
+  const fuel = kind === 'light' ? fuelFor(preset.name) : null;
   const pick = (k: EffectKind) => {
     setKind(k);
     const first = EFFECT_PRESETS.find((p) => p.kind === k)!;
@@ -133,7 +160,15 @@ function AddEffectCard() {
       {kind !== 'light' && (
         <Select label="Caster (for Concentration)" value={caster} onChange={setCaster} options={[{ value: '', label: 'None' }, ...s.characters.map((c) => ({ value: c.id, label: c.name }))]} />
       )}
-      {preset.note && kind !== 'other' && <Rule>{preset.note}</Rule>}
+      {fuel && s.settings.trackGearUse && (
+        <Toggle checked={useGear} onChange={setUseGear} label={`Take ${FUEL_LABEL[fuel]} from the inventory (the people above first)`} />
+      )}
+      {preset.note && kind !== 'other' && (
+        <Rule>
+          {preset.note}
+          {fuel === 'oil' ? ' A flask of Oil burns 6 hours, and can be put out and relit until it has burned 6 hours in all (2024 PHB).' : ''}
+        </Rule>
+      )}
       <div className="btn-row">
         <button
           className="primary"
@@ -145,6 +180,7 @@ function AddEffectCard() {
                 minutes,
                 targetIds: targets,
                 casterId: caster || null,
+                useGear,
               }),
             )
           }
@@ -159,7 +195,7 @@ function AddEffectCard() {
 function ExploreCard() {
   const s = useGame();
   const [what, setWhat] = useState('');
-  const lights = s.effects.filter((e) => e.kind === 'light');
+  const lights = s.effects.filter((e) => e.kind === 'light' && e.pausedLeft == null);
   return (
     <Card title="Exploration turns">
       <p className="small">

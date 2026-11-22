@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ABILITY_LABEL, SADDLE_LABEL, SKILLS, abilityScore, needsExoticSaddle, toolNamed, type AbilityKey, type Saddle } from '../rules/gear';
 import { useGame, edit, dispatch } from '../state/store';
 import { newCharacter, defaultTasks } from '../state/defaults';
 import { CLASSES, isCaster } from '../rules/spells';
@@ -182,6 +183,50 @@ function CharacterCard({ c }: { c: Character }) {
         <Num label="Wis mod" value={c.wisMod} onChange={(v) => set({ wisMod: v })} width={3} />
         <Num label="Survival" value={c.survival} onChange={(v) => set({ survival: v })} width={3} />
       </div>
+      {c.kind === 'pc' && (
+        <details>
+          <summary>
+            Tools, skills and ability scores{' '}
+            <span className="muted small">
+              {c.toolProfs?.length ? `${c.toolProfs.length} tool${c.toolProfs.length > 1 ? 's' : ''}` : 'tools not recorded'}
+              {c.skillProfs?.length ? `, ${c.skillProfs.length} skills` : ''}
+            </span>
+          </summary>
+          <div className="form-row">
+            <ListInput
+              label="Tool proficiencies"
+              value={c.toolProfs ?? []}
+              onChange={(v) => set({ toolProfs: v.map((t) => toolNamed(t)?.name ?? t) })}
+              placeholder="e.g. Thieves' Tools, Herbalism Kit, Lute"
+            />
+            <ListInput label="Skill proficiencies" value={c.skillProfs ?? []} onChange={(v) => set({ skillProfs: v.map((x) => SKILLS.find((k) => k.toLowerCase() === x.toLowerCase()) ?? x) })} placeholder="e.g. Survival, Stealth" />
+          </div>
+          <div className="form-row">
+            {(Object.keys(ABILITY_LABEL) as AbilityKey[]).map((k) => (
+              <Num
+                key={k}
+                label={ABILITY_LABEL[k].slice(0, 3)}
+                value={c.abilities?.[k] ?? abilityScore(c, k) ?? 10}
+                onChange={(v) => set({ abilities: { ...c.abilities, [k]: Math.max(1, Math.min(30, Math.round(v))) }, ...(k === 'str' ? { strScore: Math.round(v) } : k === 'con' ? { conScore: Math.round(v) } : {}) })}
+                min={1}
+                max={30}
+                width={2}
+              />
+            ))}
+          </div>
+          <p className="small muted">
+            2024 PHB: proficiency with a tool adds your Proficiency Bonus to checks with it, and Advantage if you&apos;re also proficient in a skill that applies. Each gaming set and musical instrument is a separate
+            proficiency. Tools learned in downtime ({(c.trainedProficiencies ?? []).join(', ') || 'none yet'}) count too. A D&amp;D Beyond import fills these in.
+          </p>
+        </details>
+      )}
+      {c.kind === 'mount' && (
+        <div className="form-row">
+          <Select label="Moves by" value={c.movement ?? 'land'} onChange={(v: 'land' | 'fly' | 'swim') => set({ movement: v })} options={[{ value: 'land', label: 'Land' }, { value: 'fly', label: 'Flying' }, { value: 'swim', label: 'Swimming' }]} />
+          <Select label="Saddle" value={c.saddle ?? 'riding'} onChange={(v: Saddle) => set({ saddle: v })} options={(Object.keys(SADDLE_LABEL) as Saddle[]).map((k) => ({ value: k, label: SADDLE_LABEL[k] }))} />
+          {needsExoticSaddle(c) && <span className="small warn-text">A flying or swimming mount needs an Exotic Saddle to be ridden (2024 PHB).</span>}
+        </div>
+      )}
       <ExhaustionEditor c={c} set={set} />
 
       <Trackers c={c} />

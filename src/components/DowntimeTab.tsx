@@ -9,9 +9,10 @@ import { uid } from '../state/defaults';
 import {
   ACTIVITY_IDEAS,
   GEAR_CATALOG,
+  batchCrafting,
+  toolLabel,
   calendarDays,
   magicItemCrafting,
-  nonmagicalCrafting,
   POTION_OF_HEALING,
   PROJECT_KIND_LABEL,
   RARITY_LABEL,
@@ -24,6 +25,7 @@ import { MAGIC_ITEM_VALUE, fmtGp } from '../rules/money';
 import { SPELLBOOK_COPY, ACTIVITY_PRESETS } from '../rules/longterm';
 import { AWAY_PROGRESS, BUILDING_PRESETS, BUSINESS_DEBT_PENALTY, BUSINESS_MAX_DAYS, BUSINESS_PRESETS } from '../rules/business';
 import { WaysAround } from './WaysAround';
+import { BOOK, TOOLS, carriesTool, hasSkill, proficientWith } from '../rules/gear';
 
 export function DowntimeTab() {
   const s = useGame();
@@ -174,22 +176,26 @@ function NewProject() {
   const pcs = s.characters.filter((c) => c.kind !== 'mount');
   const [useMats, setUseMats] = useState<Record<string, number>>({});
   const [untrained, setUntrained] = useState(false);
+  const [qty, setQty] = useState(1);
 
   let calc: { days: number; gp: number; label: string; note: string };
   switch (kind) {
     case 'nonmagical': {
-      const r = nonmagicalCrafting(price);
+      const r = batchCrafting(price, qty, s.settings.batchCrafting);
       const item = GEAR_CATALOG.find((g) => g.name === gear);
+      const base = name || item?.name || `Item worth ${price} GP`;
       calc = {
         ...r,
-        label: name || item?.name || `Item worth ${price} GP`,
-        note: `${item ? `Needs proficiency with ${item.tool}. ` : 'Needs proficiency with the right tool. '}Each 8-hour workday makes 10 GP of progress, and materials cost half the price.`,
+        label: qty > 1 ? `${qty} × ${base}` : base,
+        note: `${item ? `Needs proficiency with ${toolLabel(item)}. ` : 'Needs proficiency with the right tool. '}Each 8-hour workday makes 10 GP of progress, and materials cost half the price.${
+          qty > 1 ? (s.settings.batchCrafting ? ' The batch counts as one item worth the total (table rule).' : ' Each item rounds up to a whole day (2024 PHB, read strictly).') : ''
+        }`,
       };
       break;
     }
     case 'scroll': {
       const r = SCROLL_CRAFTING[scrollLevel];
-      calc = { days: r.days, gp: r.gp, label: name || `Spell Scroll (level ${scrollLevel === 0 ? 'cantrip' : scrollLevel})`, note: 'Needs Arcana proficiency and the spell prepared each day of work.' };
+      calc = { days: r.days, gp: r.gp, label: name || `Spell Scroll (level ${scrollLevel === 0 ? 'cantrip' : scrollLevel})`, note: "Needs proficiency in Arcana or with Calligrapher's Supplies, the spell prepared each day of work, and any Material components at hand (consumed ones are used up when the scroll is finished)." };
       break;
     }
     case 'potion':
@@ -248,7 +254,7 @@ function NewProject() {
   const productFor = (): { name: string; qty: number; magic?: boolean; valueGp?: number } | undefined => {
     if (kind === 'nonmagical') {
       const item = GEAR_CATALOG.find((g) => g.name === gear);
-      return { name: name.trim() || item?.name || 'Crafted item', qty: 1, valueGp: price };
+      return { name: name.trim() || item?.name || 'Crafted item', qty: Math.max(1, qty), valueGp: price };
     }
     if (kind === 'potion') return { name: 'Potion of Healing', qty: potions };
     if (kind === 'scroll') return { name: `Spell Scroll (${scrollLevel === 0 ? 'cantrip' : `level ${scrollLevel}`})`, qty: 1 };
@@ -273,10 +279,11 @@ function NewProject() {
               }}
               options={[
                 { value: '', label: 'Custom price…' },
-                ...GEAR_CATALOG.map((g) => ({ value: g.name, label: `${g.name}: ${g.gp} GP, ${Math.max(1, Math.ceil(g.gp / 10))} d` })),
+                ...GEAR_CATALOG.map((g) => ({ value: g.name, label: `${g.group}: ${g.name}, ${g.gp} GP (${g.tools.map((t) => t.replace(/'s (Tools|Supplies|Utensils)$|'s Kit$| Kit$/, '')).join('/')})` })),
               ]}
             />
             <Num label="Item price" value={price} onChange={(v) => (setPrice(v), setGear(''))} min={0} suffix="GP" width={6} />
+            <Num label="How many" value={qty} onChange={(v) => setQty(Math.max(1, Math.round(v)))} min={1} width={3} />
           </>
         )}
         {kind === 'scroll' && (
@@ -401,6 +408,23 @@ function NewProject() {
           return v > 0 ? ` (${fmtGp(v)} covered by materials, ${fmtGp(Math.max(0, calc.gp - v))} in gold)` : '';
         })()} · {cal} calendar day(s) with {Math.max(1, crafters.length)} crafter(s)
       </p>
+      {kind === 'nonmagical' && (() => {
+        const item = GEAR_CATALOG.find((g) => g.name === gear);
+        if (!item || !crafters.length) return null;
+        const who = crafters.map((id) => s.characters.find((c) => c.id === id)).filter((c): c is NonNullable<typeof c> => !!c);
+        const status = who.map((c) => {
+          const prof = item.tools.map((t) => proficientWith(c, t));
+          const has = item.tools.some((t) => carriesTool(c, t));
+          return `${c.name}: ${prof.some((p) => p) ? 'proficient' : prof.every((p) => p === false) ? 'not proficient' : 'proficiency not recorded'}${has ? '' : ', no tool in the inventory'}`;
+        });
+        const nobody = who.every((c) => item.tools.every((t) => proficientWith(c, t) === false));
+        return (
+          <p className={`small ${nobody ? 'warn-text' : 'muted'}`}>
+            {status.join(' · ')}
+            {nobody ? ' Nobody working on it is proficient: the 2024 PHB needs proficiency, so tick the improvised option below if your table allows it.' : ''}
+          </p>
+        );
+      })()}
       {canUntrained && <Toggle checked={untrained} onChange={setUntrained} label="Not proficient with the tool: improvised, twice the workdays (table rule)" />}
       <Rule>{calc.note}</Rule>
       <button
@@ -597,6 +621,20 @@ function ActivityResolver({ p }: { p: Project }) {
   const [dc, setDc] = useState(10);
   const [circle, setCircle] = useState<'lower' | 'middle' | 'upper'>('lower');
   const who = E.charById(s, p.charIds[0]);
+  // 2024 PHB: proficiency with a tool and a skill that both apply gives Advantage.
+  const toolAdv = (i: number): { on: boolean; why: string } | null => {
+    if (!who) return null;
+    const both = (tools: string[], skill: string, label: string) => {
+      const t = tools.find((x) => proficientWith(who, x));
+      return { on: !!t && !!hasSkill(who, skill), why: t ? `${t} and ${skill}` : label };
+    };
+    if (id === 'Gambling' && i === 0) return both(TOOLS.filter((t) => t.category === 'gaming').map((t) => t.name), 'Insight', 'a Gaming Set and Insight');
+    if (id === 'Crime' && i === 1) return both(["Thieves' Tools"], 'Sleight of Hand', "Thieves' Tools and Sleight of Hand");
+    if (id === 'Working a trade' && i === 0) return { on: false, why: 'a tool and a skill that both apply' };
+    return null;
+  };
+  const [adv, setAdv] = useState<boolean[]>(checks.map((_, i) => !!toolAdv(i)?.on));
+  const [book, setBook] = useState(!!who?.inventory.some((i) => BOOK.test(i.name)));
   return (
     <div className="decision">
       <b>{p.name}</b> is done{who ? ` for ${who.name}` : ''}. Roll its checks:
@@ -604,12 +642,17 @@ function ActivityResolver({ p }: { p: Project }) {
         {checks.map((c, i) => (
           <Num key={c} label={c} value={bonuses[i] ?? 0} onChange={(v) => setBonuses(bonuses.map((b, k) => (k === i ? v : b)))} width={3} />
         ))}
+        {checks.map((c, i) => {
+          const t = toolAdv(i);
+          return t ? <Toggle key={`adv-${c}`} checked={!!adv[i]} onChange={(v) => setAdv(adv.map((x, k) => (k === i ? v : x)))} label={`Advantage on ${c.split(' (')[0]} (${t.why})`} /> : null;
+        })}
+        {id === 'Research' && <Toggle checked={book} onChange={setBook} label="Consulting an accurate Book on the topic (+5, 2024 PHB)" />}
         {id === 'Gambling' && <Num label="Stake" value={gp} onChange={(v) => setGp(Math.max(10, Math.min(1000, v)))} min={10} max={1000} suffix="GP" width={5} />}
         {id === 'Research' && <Num label="Spent" value={gp} onChange={(v) => setGp(Math.max(50, v))} min={50} suffix="GP" width={5} />}
         {id === 'Crime' && <Select label="Target" value={String(dc)} onChange={(v) => setDc(Number(v))} options={CRIME_TARGETS.map((t) => ({ value: String(t.dc), label: t.label }))} />}
         {id === 'Carousing' && <Select label="Circle" value={circle} onChange={setCircle} options={(['lower', 'middle', 'upper'] as const).map((c) => ({ value: c, label: `${c[0].toUpperCase()}${c.slice(1)} class (${CAROUSING_COST[c]} GP)` }))} />}
       </div>
-      <button className="small primary" onClick={() => dispatch((st, cx) => E.resolveActivityProject(st, cx, p.id, { bonuses, gp, dc, circle }))}>
+      <button className="small primary" onClick={() => dispatch((st, cx) => E.resolveActivityProject(st, cx, p.id, { bonuses, gp, dc, circle, advantage: adv, book: id === 'Research' && book }))}>
         Roll the outcome
       </button>
       <Rule>Optional rule from Xanathar&apos;s Guide (2014): the 2024 books have no outcome tables for these. Contacts, favors and lore go into the character&apos;s notes. Each week has a 10% chance of a complication.</Rule>

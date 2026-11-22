@@ -129,6 +129,10 @@ export interface InventoryItem {
   container?: { capacityLb: number | null; weightless: boolean; note?: string } | null;
   /** Ammunition: tracks how many were fired since the last recovery. */
   ammo?: { spent: number } | null;
+  /** Uses left in the item being used now (a Healer's Kit has ten); unopened ones in the stack are full. */
+  uses?: number;
+  /** Caltrops or Ball Bearings spread on the ground: 10 minutes to gather up, lost if the party moves on. */
+  scattered?: boolean;
 }
 
 export interface Stash {
@@ -171,6 +175,10 @@ export interface ActiveEffect {
   /** Absolute minute it ends, or null if it lasts until ended. */
   endsAt: number | null;
   notes: string;
+  /** A Lamp or Lantern put out with Oil left: minutes of burning left when it's relit (2024 PHB Oil). */
+  pausedLeft?: number;
+  /** A Hooded Lantern with its hood lowered: Dim Light in a 5-foot radius. */
+  dimmed?: boolean;
 }
 
 export interface Material {
@@ -323,6 +331,16 @@ export interface Character {
   contagions: Contagion[];
   /** Languages and tools learned through downtime training. */
   trainedProficiencies?: string[];
+  /** Tool proficiencies (2024 PHB tool names); undefined until recorded or imported. */
+  toolProfs?: string[];
+  /** Skill proficiencies; undefined until recorded or imported. */
+  skillProfs?: string[];
+  /** Ability scores, when known (D&D Beyond import or typed in). */
+  abilities?: Partial<Record<'str' | 'dex' | 'con' | 'int' | 'wis' | 'cha', number>>;
+  /** Mounts: how it moves, for the saddle it needs. */
+  movement?: 'land' | 'fly' | 'swim';
+  /** Mounts: the saddle it wears (2024 PHB Tack). */
+  saddle?: 'none' | 'riding' | 'military' | 'exotic';
   /** −4 to D20 Tests after Raise Dead or Resurrection, easing by 1 each Long Rest. */
   revivalPenalty?: number;
   /** Remove Curse was cast: attunement to cursed items can be ended. */
@@ -380,6 +398,12 @@ export interface Place {
   region?: RegionKind | null;
   /** Snow on the ground and days of mud (table rule). */
   ground?: { snowIn: number; mudDays: number };
+  /** A Bell strung on a line around the camp (table rule): something crossing it wakes everyone. */
+  alarm?: boolean;
+  /** Hunting Traps set on game trails here, checked when the party breaks camp or after a Long Rest. */
+  trapsSet?: { charId: string; qty: number; setAt: number }[];
+  /** Holes dug here with a Shovel (or by hand): fire pit, latrine, snow cave and the like. */
+  dug?: string[];
 }
 
 export interface Fire {
@@ -794,6 +818,14 @@ export interface Settings {
   stormsAtSea: boolean;
   /** Table rule: a character in debt who can't pay drops to a cheaper lifestyle. */
   debtDropsLifestyle: boolean;
+  /** 2024 PHB: lighting a Torch, Candle, Lamp or Lantern uses up a Torch, Candle or flask of Oil, and Healer's Kits run out of uses. */
+  trackGearUse: boolean;
+  /** 2024 PHB: mounts in a settlement are stabled and fed for 5 SP and 5 CP a day. */
+  stabling: boolean;
+  /** 2024 PHB: a Tent sleeps two; anyone without a place in one sleeps in the open. */
+  tentSpace: boolean;
+  /** Table rule: a batch of cheap crafted items counts as one item worth their total price. */
+  batchCrafting: boolean;
 }
 
 export interface Travel {
