@@ -11,7 +11,7 @@ import { MESSENGER_GP_PER_MILE } from '../rules/hirelings';
 import { COMMS, commCost, commDelay, type CommMethod } from '../rules/comms';
 import { CONTAGIONS, RECUPERATE_DAYS, RECUPERATE_DC, SIGHT_ROT_CURE_HOURS, type ContagionKind } from '../rules/contagion';
 import { neglectLimit } from '../rules/bastion';
-import { magicItemCrafting, nonmagicalCrafting, SCROLL_CRAFTING, type Rarity } from '../rules/crafting';
+import { RARITY_LABEL, magicItemCrafting, nonmagicalCrafting, SCROLL_CRAFTING, type Rarity } from '../rules/crafting';
 import { ALL_IS_WELL, BARRACK_ROOM, BASTION_CHARMS, CONSTRUCTS, CREATURE_ROOM, GROVE_ROOM, GROVE_UNITS, MUSEUM_ORIGINS, NECROPOLIS_ROOM, EVENT_PREFERENCE, FACILITY_OPTIONS, GARDEN_PRODUCTS, GUILDS, MENAGERIE_CREATURES, MENAGERIE_ROOM, SHIPS, TRAINERS, TREASURE_TABLE, facilityHirelings, stableMarkup, storehouseLimit, storehouseMarkup, type GardenType } from '../rules/bastionOrders';
 import { knownValue, misjudged, priceOf, saleRate, sameStack, valueSecret, valueUnknown } from '../rules/shop';
 import { APPRAISE_MINUTES, JEWELER_TOOLS, appraiseCheck, misjudgedValue, valuableKind, type AppraiseMethod } from '../rules/appraise';
@@ -34,7 +34,7 @@ import { addCoins, COIN_GP, coinCount, coinsFor, emptyPurse, exchange, fmtPurse,
 import { detectContainer } from '../rules/containers';
 import { ABILITY_LABEL, INK, INK_PAGES, PAPER, PERFUME, PERFUME_MINUTES, SIGNAL_WHISTLE, carriesTool, liquidCapacity, toolNamed, SPYGLASS, ALARM_LINE, ALARM_MINUTES, BELL, DIG_BY_HAND, DIG_LABEL, GATHER_MINUTES, HUNTING_TRAP, SCATTERABLE, SHOVEL, SHOVEL_MINUTES, STABLING_GP_PER_DAY, TENT, TENT_SLEEPS, TRAP_CATCH_ON, TRAP_MEAT_DICE, TRAP_SAVE_DC, needsExoticSaddle, type DigKind, MAGNIFYING_GLASS, hasSkill, proficientWith, PACKS, RATIONS, WATERSKIN, WATERSKIN_PINTS, packNamed, FUEL_LABEL, FUEL_MATCH, HEALERS_KIT, HEALERS_KIT_USES, OIL_MINUTES, VESSEL_MATCH, fuelFor, isHooded, isOilLight } from '../rules/gear';
 import type { DdbImport } from '../rules/ddb';
-import { FEED_GP_PER_DAY, HIRELING_WAGE, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset, type Lifestyle } from '../rules/money';
+import { FEED_GP_PER_DAY, HIRELING_WAGE, magicItemValue, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset, type Lifestyle } from '../rules/money';
 import { STABLE_WAKE_DIE, STABILIZE_DC } from '../rules/upkeep';
 import { RITUAL_EXTRA_MINUTES as RITUAL_TAG_MINUTES, spellInfo } from '../rules/rituals';
 import { maxWatchMinutes, slotTimes, watchMinutes, watchSight, type Sight } from '../rules/watch';
@@ -5450,8 +5450,11 @@ function revealAll(s: State, it: MagicItem, method: StudyMethod): void {
   for (const c of revealed) c.known = true;
   it.magicKnown = true;
   it.identified = true;
-  addFinding(s, it, method, `Identified as ${it.name}.${revealed.length ? ` Learned: ${revealed.map((c) => c.text).join('; ')}.` : ''}`);
-  if (before !== it.name) log(s, `${before[0].toUpperCase()}${before.slice(1)} turns out to be ${it.name}.`, 'good');
+  // Table rule: identifying also reveals rarity, and with it the item's DMG price.
+  const worth = it.rarity ? magicItemValue(it.name, it.rarity) : null;
+  const value = worth && it.rarity ? ` ${RARITY_LABEL[it.rarity]}: worth about ${fmtGp(worth.gp)} (DMG price${worth.note ? `; ${worth.note}` : ''}).` : ' Its rarity isn’t set yet (DM).';
+  addFinding(s, it, method, `Identified as ${it.name}.${revealed.length ? ` Learned: ${revealed.map((c) => c.text).join('; ')}.` : ''}${value}`);
+  log(s, `${before !== it.name ? `${before[0].toUpperCase()}${before.slice(1)} turns out to be ${it.name}.` : `${it.name} is identified.`}${value}`, 'good');
 }
 
 /** Studying an unknown item: Detect Magic, an Arcana check, or experimenting with it. */

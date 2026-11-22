@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import type { Character, MagicItem } from '../state/types';
 import { CLUE_KIND_LABEL, STUDY_LABEL } from '../rules/identify';
+import { RARITY_LABEL } from '../rules/crafting';
+import { fmtGp, magicItemValue } from '../rules/money';
 import { Card, Pill } from './common';
 import { useGame } from '../state/store';
 
@@ -12,6 +14,10 @@ export function playerSummary(it: MagicItem): { title: string; lines: string[]; 
   else if (it.magicKnown) lines.push(`Magical${it.school ? `, with an aura of ${it.school}` : ''}.`);
   else lines.push('Nobody knows yet whether it is magical.');
   for (const c of (it.clues ?? []).filter((x) => x.known)) lines.push(`${CLUE_KIND_LABEL[c.kind]}: ${c.text}.`);
+  if (it.identified && it.rarity) {
+    const w = magicItemValue(it.name, it.rarity);
+    lines.push(`${RARITY_LABEL[it.rarity]}: worth about ${fmtGp(w.gp)} (DMG price${w.note ? `; ${w.note}` : ''}; selling usually fetches about half).`);
+  }
   if (it.identified && it.requiresAttunement) lines.push('Requires attunement.');
   if (it.identified && it.maxCharges != null) lines.push(`Holds up to ${it.maxCharges} charges.`);
   const moreToLearn = !it.identified || (it.clues ?? []).some((c) => !c.known);
