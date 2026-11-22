@@ -8,7 +8,7 @@ import { formatClock, formatDuration } from '../rules/calendar';
 import { Card, Meter, Num, Pill, Select, Text, Toggle, Rule } from './common';
 import type { Character, InventoryItem, MagicItem, Resource } from '../state/types';
 import { LOAD_LABEL, RATION_WEIGHT } from '../rules/encumbrance';
-import { fmtGp, MAGIC_ITEM_VALUE } from '../rules/money';
+import { fmtGp, magicItemValue } from '../rules/money';
 import { misjudged, valueSecret, valueUnknown } from '../rules/shop';
 import { APPRAISE_EYE_DC, APPRAISE_MINUTES, JEWELER_TOOLS, appraiseCheck } from '../rules/appraise';
 import { CLOTH, IMPROVISED_MEND_DC, MEND_DC, WEAVER } from '../rules/tools';
@@ -699,11 +699,11 @@ function ItemsBlock({ c }: { c: Character }) {
                   <b>{it.identified ? it.name : it.partyName || 'Unknown item'}</b>
                   {!it.identified && <span className="muted small"> (really: {it.name})</span>}{' '}
                   {it.identified && it.rarity ? (
-                    <span className="muted small" title="DMG magic item value by rarity. Selling usually fetches about half.">
-                      {RARITY_LABEL[it.rarity]}, worth about {fmtGp(MAGIC_ITEM_VALUE[it.rarity])}{' '}
+                    <span className="muted small" title={`DMG price by rarity${magicItemValue(it.name, it.rarity).note ? `; ${magicItemValue(it.name, it.rarity).note}` : ''}. Selling usually fetches about half.`}>
+                      {RARITY_LABEL[it.rarity]}, worth about {fmtGp(magicItemValue(it.name, it.rarity).gp)}{' '}
                     </span>
                   ) : (
-                    <Pill tone="warn" title={it.identified ? 'Set its rarity to see its DMG value.' : 'Identifying it reveals its rarity, and so roughly what it’s worth (DMG).'}>
+                    <Pill tone="warn" title={it.identified ? 'Set its rarity to see its DMG value.' : 'Identify or a Short Rest of study reveals its rarity, and so its DMG price (table rule).'}>
                       value unknown
                     </Pill>
                   )}{' '}
@@ -845,7 +845,7 @@ function ItemsBlock({ c }: { c: Character }) {
         </button>
       </details>
       <Rule>
-        Attuning takes a Short Rest focused on the item while touching it, with a maximum of {MAX_ATTUNED} items. Identifying works the same way, or with the Identify spell. Attunement ends if the item is more
+        Attuning takes a Short Rest focused on the item while touching it, with a maximum of {MAX_ATTUNED} items. Identifying works the same way, or with the Identify spell. Table rule: identifying also reveals the item&apos;s rarity, and so its DMG price (Common 100 GP, Uncommon 400, Rare 4,000, Very Rare 40,000, Legendary 200,000; consumables half; a Spell Scroll twice its scribing cost). Attunement ends if the item is more
         than 100 feet away for 24 hours, if you die, or if someone else attunes to it. Ending it voluntarily takes another Short Rest, and the attuning rest can&apos;t be the same one used to learn the item&apos;s properties. A cursed item&apos;s attunement can&apos;t be ended until the curse is broken (Remove Curse), and identifying doesn&apos;t reveal curses. Items that need a class or spellcasting can only be attuned by someone who qualifies. You can&apos;t attune to two copies of the same item.
       </Rule>
     </>
