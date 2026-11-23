@@ -88,7 +88,7 @@ function RulesCard() {
         <Toggle checked={s.settings.heavyClothing2014} onChange={(v) => set('heavyClothing2014', v)} label="Heavy clothing gives Disadvantage on extreme heat saves (2014 rule; 2024 only counts Medium or Heavy armor)" />
         <Toggle checked={s.settings.extraCraftHelpers} onChange={(v) => set('extraCraftHelpers', v)} label="Allow more than one helper on a crafting project (normally only one other character can help)" />
         <Toggle checked={s.settings.taming} onChange={(v) => set('taming', v)} label="Wild Beasts and Monstrosities of Intelligence 5 or lower can be tamed with daily Animal Handling sessions (table rule)" />
-        <Toggle checked={s.settings.workWhileMarching} onChange={(v) => set('workWhileMarching', v)} label="Crafters who are only marching keep working on hand-held projects, at half rate; writers must keep their concentration (table rule)" />
+        <Toggle checked={s.settings.workWhileMarching} onChange={(v) => set('workWhileMarching', v)} label="Crafters who are only marching keep working on hand-held projects (not at a fast pace), at half rate; writers only at a slow pace, keeping concentration (table rule)" />
         <Select
           label="Lifestyle is paid"
           value={s.settings.lifestylePeriod}

@@ -155,18 +155,20 @@ export function jobBoard(s: State): JobBoard {
     }
     for (const p of marching) {
       const on = E.marchWorkers(s, p, navId, foragers);
-      const away = p.charIds.filter((id) => !on.some((c) => c.id === id) && able.some((c) => c.id === id));
+      const writing = !!marchWork(p).concentration;
+      const tooFast = !E.marchPaceOk(p, s.travel.pace);
+      const away = tooFast || (isSoloWork(p.kind) && on.length) ? [] : p.charIds.filter((id) => !on.some((c) => c.id === id) && able.some((c) => c.id === id));
       jobs.push({
         id: `march-${p.id}`,
         group: 'road',
         title: `${p.name || PROJECT_KIND_LABEL[p.kind]} on the march`,
-        what: `${marchWork(p).why[0].toUpperCase()}${marchWork(p).why.slice(1)}, so it goes on while walking: each marching hour counts as half an hour of work. ${p.daysDone}/${p.daysRequired} workdays${p.marchWorkHours ? ` and ${p.marchWorkHours} h toward the next` : ''}.${marchWork(p).concentration ? ` Each writer makes a DC ${MARCH_WRITING_DC} Constitution save per leg, as for Concentration, or that leg’s work is spoiled; nobody holding a Concentration spell can write.` : ''}${away.length ? ` ${away.map(name).join(', ')} can’t work it now (navigating, foraging${marchWork(p).concentration ? ' or concentrating on a spell' : ''}).` : ''}`,
+        what: `${marchWork(p).why[0].toUpperCase()}${marchWork(p).why.slice(1)}, so it goes on while walking${writing || marchWork(p).talk ? '' : ' at a normal or slow pace'}: each marching hour counts as half an hour of work. ${p.daysDone}/${p.daysRequired} workdays${p.marchWorkHours ? ` and ${p.marchWorkHours} h toward the next` : ''}.${marchWork(p).concentration ? ` Only at a slow pace. The writer makes a DC ${MARCH_WRITING_DC} Constitution save per leg, as for Concentration, or that leg’s work is spoiled; nobody holding a Concentration spell can write.` : ''}${away.length ? ` ${away.map(name).join(', ')} can’t work it now (navigating, foraging${marchWork(p).concentration ? ' or concentrating on a spell' : ''}).` : ''}`,
         source: 'Table rule',
         status: on.length ? 'covered' : 'optional',
         shared: !p.learnKind && !isSoloWork(p.kind),
         holders: on.map((c) => ({ id: c.id, name: c.name })),
         picks: [],
-        blocked: on.length ? undefined : 'Nobody on it is free to work while walking.',
+        blocked: on.length ? undefined : tooFast ? `${writing ? 'Writing needs a slow pace' : 'Hand work needs a normal or slow pace'}; the party is set to ${s.travel.pace}.` : 'Nobody on it is free to work while walking.',
         tab: 'downtime',
       });
     }
