@@ -415,6 +415,59 @@ DMG random tables that fit life outside one adventure (from 5etools `book-xdmg.j
 
 ---
 
+## Phase 10: What a settlement offers 📋
+
+Builds on the rolled-up town (Phase 9): its buildings and the people who run them decide what the party can do there. Sources in brackets; anything else is a table rule.
+
+### Services follow the buildings
+- 📋 **Only where there's a building for it:** smith repairs need a smithy, ship passage and hull repairs a dock, coach rides a coaching house, stabling a stable or inn, messengers a courier post, vaults a bank, spellcasting a shrine, temple or cathedral (arcane spells an academy or magic shop). Without a rolled-up town, the size rules stay. (2024 PHB Services)
+- 📋 **Opening hours (switch):** shops and temples open dawn to dusk, inns and taverns always. (2024 DMG: Temple of the Radiant Sun)
+- 📋 **Pick your inn:** stay at a named inn with its own prices for a common room, private room or suite, matched to the lifestyle tiers. (2024 DMG Greyhawk inns: 1–2 SP, 3–5 SP, 1–3 GP a night)
+
+### Healing and the temple
+- 📋 **Temple stock and charity:** Potions of Healing (1d4 a day), Remove Curse (300 GP) and Greater Restoration (3,200 GP) scrolls (1d3 each), free Cure Wounds and Lesser Restoration at a kindly temple, half price after serving it, and a Teleportation Circle (2,000 GP) in cities. (2024 DMG Greyhawk temples)
+- 📋 **Spell Scrolls over the counter:** cantrip 30 GP, level 1 50 GP, from a scribe, temple or magic shop; higher levels by commission. (2024 PHB Adventuring Gear)
+- 📋 **Healer's care:** pay a healer to tend lingering injuries and the sick: their Medicine bonus instead of the party's, and Advantage on recuperating saves.
+
+### Buying, selling and commissions
+- 📋 **The right buyer:** gems and art at a jeweler, hides and trophies at a tanner, herbs at an apothecary, poisons at a fence, anything at a pawnshop; no buyer in town, no sale. (2024 PHB Selling Equipment)
+- 📋 **Magic shop:** buy and sell magic items at the DMG's values by rarity, and Identify for 50 GP a casting; stock rolled weekly on the treasure tables. A switch keeps downtime deals as the only way. (2024 DMG: Unearthed Arcana, Magic Item Values)
+- 📋 **Commissions:** order gear, potions or scrolls from a keeper, who crafts them on the PHB timetable while the party waits or travels; scribes charge double for scrolls. (2024 DMG: Great Library)
+- 📋 **Limited stock:** specialty goods come in small numbers and restock weekly; a calamity (trade dispute, famine, siege) raises prices or empties shelves.
+- 📋 **Haggling:** an Influence check with the keeper moves the price by 10%. (2024 DMG Influence)
+
+### Hiring and learning
+- 📋 **Hire from the town:** unskilled help from taverns, skilled from the guildhall, guards and mercenaries from the barracks (Guard, Warrior Veteran), guides from the courier post (Scout); a village has few to spare. (2024 PHB Hirelings)
+- 📋 **Trainers:** learning a tool, skill or language needs a trainer in town; special training takes 30 days. Optional variant: Training to Gain Levels, 10–40 days and 20–80 GP. (2024 DMG)
+- 📋 **Spells to copy:** an academy or a wizard keeper lets a Wizard copy spells for a fee, on top of the PHB's 2 hours and 50 GP per level.
+- 📋 **Research:** a library or academy is where research downtime finds its answers; without one it takes longer.
+
+### Money, mail and property
+- 📋 **Moneychangers and credit:** a fee to change coins at a moneylender; letters of credit from a bank, honored by banks in other cities; loans become debts.
+- 📋 **Post office:** letters wait at the courier post until the party is in town; without one, mail goes with a traveler and takes longer.
+- 📋 **Renting and owning:** a room by the month, a warehouse for storage, a workshop to craft in, or a house of their own with upkeep dues.
+
+### The law and the gate
+- 📋 **The watch sets the risk:** Notoriety's recognition chance follows the watch's size, jail time is served in the watch house, and the DMG's Greyhawk laws can be switched on for fines and sentences. (2024 DMG)
+- 📋 **Gates and curfew:** a walled town after dusk lets travelers in only through the main gate; tolls are charged on entry; a place can ban armor or make visitors check weapons. (2024 DMG Greyhawk)
+
+### A town that changes
+- 📋 **Calamities run their course:** each week a calamity may worsen, spread or end, changing prices, closing buildings or bringing out the watch, with a line on what the players notice.
+- 📋 **Market days and festivals:** a weekly market day with more stock, and the town's festival on the calendar.
+- 📋 **Rumors:** an evening at a tavern brings a rumor from the news queue, or a keeper's secret leaks out.
+- 📋 **A town's opinion:** good deeds raise it; it changes keepers' attitudes, prices and free lodging. (2024 DMG Marks of Prestige: special rights)
+
+### Build order
+1. Services follow the buildings, and the right buyer.
+2. Temple stock, Spell Scrolls and healer's care.
+3. Hiring from the town and trainers.
+4. Magic shop, commissions and limited stock.
+5. The law and the gate.
+6. Money, mail and property.
+7. A town that changes; then haggling and picking an inn.
+
+---
+
 ## Verified correct ✅
 
 No change needed. These match the 2024 data:
