@@ -66,6 +66,8 @@ function migrate(raw: unknown): State | null {
     encounterExclude: parsed.encounterExclude ?? [],
     encounterSourcesOff: parsed.encounterSourcesOff ?? [],
     restStart: null,
+    // Towns saved before keepers were full NPCs stored only a name.
+    towns: (parsed.towns ?? []).map((t) => ({ ...t, buildings: t.buildings.map((b) => (typeof b.keeper === 'string' ? { ...b, keeper: { name: b.keeper as string } } : b)) })),
     trackingStart: parsed.trackingStart ?? (parsed.dayIndex ?? base.dayIndex) * 1440 + (parsed.minutes ?? 0),
   } as State;
   // Characters saved by older versions pick up any newly added fields.

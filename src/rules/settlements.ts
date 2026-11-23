@@ -8,6 +8,7 @@
  */
 import { die, type Rng } from './dice';
 import type { Settlement } from './services';
+import { rollName, rollNpc, type Lean, type Npc } from './npcs';
 
 /** 2024 DMG Settlements by Size. */
 export const SETTLEMENT_SIZE: Record<Settlement, { label: string; population: string; maxGp: number }> = {
@@ -72,10 +73,6 @@ export const LEADERS = [
 /** 2024 DMG Tavern Names (d20 + d20). */
 export const TAVERN_FIRST = ['The Golden', 'The Silver', 'The Beardless', 'The Laughing', 'The Dancing', 'The Gilded', 'The Stumbling', 'The Wolf and', 'The Fallen', 'The Leering', 'The Drunken', 'The Wine and', 'The Roaring', 'The Frowning', 'The Barrel and', 'The Thirsty', 'The Wandering', 'The Barking', 'The Happy', 'The Witch and'];
 export const TAVERN_SECOND = ['Lyre', 'Dolphin', 'Dwarf', 'Pegasus', 'Hut', 'Rose', 'Stag', 'Duck', 'Lamb', 'Demon', 'Goat', 'Spirit', 'Horde', 'Jester', 'Bucket', 'Crow', 'Satyr', 'Dog', 'Spider', 'Dragon'];
-
-/** 2024 DMG Common Names (d12 given name, d12 surname). */
-export const GIVEN_NAMES = ['Adrik', 'Alvyn', 'Aurora', 'Eldeth', 'Eldon', 'Farris', 'Kathra', 'Kellen', 'Lily', 'Nissa', 'Xinli', 'Zorra'];
-export const SURNAMES = ['Brightsun', 'Dundragon', 'Frostbeard', 'Garrick', 'Goodbarrel', 'Greycastle', 'Ironfist', 'Jaerin', 'Merryweather', 'Redthorn', 'Stormriver', 'Wren'];
 
 export type BuildingGroup = 'Food and lodging' | 'Faith and healing' | 'Shops' | 'Crafts' | 'Money' | 'Travel' | 'Learning and magic' | 'Law and government' | 'Entertainment' | 'Underworld';
 
@@ -205,7 +202,7 @@ export const BUILDINGS: BuildingType[] = [
     does: 'Herbs, Herbalism Kits and the odd Potion of Healing (2024 DMG). Buys harvested herbs and poisons.',
     tab: 'money',
   },
-  { id: 'undertaker', label: 'Undertaker', group: 'Faith and healing', dmgShop: true, per: { village: 0, town: 1, city: [1, 3] }, sells: named('Chest'), does: 'Burials and grave plots, and keeps a body fresh for a resurrection (the clock on Raise Dead keeps running).', tab: 'world' },
+  { id: 'undertaker', label: 'Undertaker', group: 'Faith and healing', dmgShop: true, per: { village: 0, town: 1, city: [1, 3] }, sells: named('Chest'), does: 'Burials, coffins and grave plots; laying out the dead while the party finds a priest who can raise them.', tab: 'world' },
   // Shops
   {
     id: 'general', label: 'General store', group: 'Shops', per: { village: 1, town: [1, 2], city: [2, 4] },
@@ -243,7 +240,7 @@ export const BUILDINGS: BuildingType[] = [
     tab: 'money',
   },
   { id: 'bookstore', label: 'Bookstore', group: 'Shops', dmgShop: true, per: { village: 0, town: 0.4, city: [1, 2] }, sells: named('Book', 'Paper', 'Parchment', 'Ink', 'Ink Pen', 'Map or Scroll Case', "Scholar's Pack", 'Magnifying Glass'), specials: [{ name: 'Spellbook (blank)', gp: 50 }], does: 'Books, paper and ink for spellbooks, scrolls and research.', tab: 'morning' },
-  { id: 'mapmaker', label: 'Mapmaker', group: 'Shops', dmgShop: true, per: { village: 0, town: 0.4, city: 1 }, sells: named('Map', 'Map or Scroll Case', "Cartographer's Tools", "Navigator's Tools", 'Spyglass'), does: 'Maps of the region (a map helps on the navigation check of a journey stage) and navigation tools.', tab: 'travel' },
+  { id: 'mapmaker', label: 'Mapmaker', group: 'Shops', dmgShop: true, per: { village: 0, town: 0.4, city: 1 }, sells: named('Map', 'Map or Scroll Case', "Cartographer's Tools", "Navigator's Tools", 'Spyglass'), does: 'Maps of the region, and cartographer’s and navigator’s tools.', tab: 'travel' },
   { id: 'scribe', label: 'Scribe', group: 'Shops', dmgShop: true, per: { village: 0, town: 1, city: [1, 3] }, sells: named('Paper', 'Parchment', 'Ink', 'Ink Pen', "Calligrapher's Supplies", 'Map or Scroll Case'), does: 'Writes and reads letters for the unlettered, copies documents; paper and ink for Spell Scrolls.', tab: 'world' },
   { id: 'magic', label: 'Curio and magic shop', group: 'Learning and magic', per: { village: 0, town: 0.2, city: 1 }, sells: inGroup('Focus'), specials: [{ name: 'Rare chalks and inks (50 GP)', gp: 50, note: 'Teleportation Circle' }, { name: 'Mushroom powder (25 GP)', gp: 25, note: 'True Seeing' }, { name: 'Component Pouch', gp: 25 }], does: 'Spellcasting foci and components. Buying and selling magic items is a downtime deal: start it on the Downtime tab.', tab: 'downtime' },
   // Crafts
@@ -298,7 +295,10 @@ export interface TownBuilding {
   id: string;
   type: string;
   name: string;
-  keeper: string;
+  /** Who runs it (2024 DMG Detailed NPC). */
+  keeper: Npc;
+  /** Who works there, by stat block. */
+  staff?: StaffGroup[];
 }
 
 export interface Town {
@@ -309,6 +309,9 @@ export interface Town {
   fame: string;
   leader: string;
   calamity: string | null;
+  /** The person the Local Leaders roll describes. */
+  ruler?: Npc;
+  security?: Security;
   buildings: TownBuilding[];
 }
 
@@ -325,7 +328,6 @@ export const rollTavernName = (rng: Rng): string => {
   const first = pick(TAVERN_FIRST, rng);
   return `${first} ${pick(TAVERN_SECOND, rng)}`;
 };
-export const rollPersonName = (rng: Rng): string => `${pick(GIVEN_NAMES, rng)} ${pick(SURNAMES, rng)}`;
 
 /** How many of one kind a settlement of this size gets. */
 export function countFor(b: BuildingType, size: Settlement, water: boolean, rng: Rng): number {
@@ -364,13 +366,14 @@ export function nameFor(b: BuildingType, keeper: string, rng: Rng, taken: Set<st
 let seq = 0;
 const bid = () => `b${Date.now().toString(36)}${(seq++).toString(36)}`;
 
-/** One new building of a kind, named and with a keeper. */
-export function newBuilding(type: string, rng: Rng, taken: Set<string>): TownBuilding {
+/** One new building of a kind, named, with its keeper and staff. */
+export function newBuilding(type: string, rng: Rng, taken: Set<string>, size: Settlement = 'town'): TownBuilding {
   const b = buildingType(type)!;
-  const keeper = rollPersonName(rng);
-  const name = nameFor(b, keeper, rng, taken);
+  const keeper = rollKeeper(type, size, rng);
+  const name = nameFor(b, keeper.name, rng, taken);
   taken.add(name);
-  return { id: bid(), type, name, keeper };
+  const staff = rollStaff(type, size, rng);
+  return { id: bid(), type, name, keeper, ...(staff.length ? { staff } : {}) };
 }
 
 /**
@@ -382,20 +385,37 @@ export function generateTown(name: string, size: Settlement, water: boolean, rng
   const buildings: TownBuilding[] = [];
   for (const b of BUILDINGS) {
     const n = countFor(b, size, water, rng);
-    for (let i = 0; i < n; i++) buildings.push(newBuilding(b.id, rng, taken));
+    for (let i = 0; i < n; i++) buildings.push(newBuilding(b.id, rng, taken, size));
   }
   // The DMG Random Shops table: one more shop of a rolled kind in a town, two in a city.
   const extra = size === 'city' ? 2 : size === 'town' ? 1 : 0;
   const dmgShops = BUILDINGS.filter((b) => b.dmgShop);
-  for (let i = 0; i < extra; i++) buildings.push(newBuilding(pick(dmgShops, rng).id, rng, taken));
+  for (let i = 0; i < extra; i++) buildings.push(newBuilding(pick(dmgShops, rng).id, rng, taken, size));
+  const trait = rollTrait(rng);
+  const leader = rollLeader(rng);
+  const security = rollSecurity(size, trait, buildings.filter((b) => b.type === 'gate').length, rng);
+  // A walled village or town gets a gate building to match.
+  if (security.walls && !buildings.some((b) => b.type === 'gate')) {
+    buildings.push(newBuilding('gate', rng, taken, size));
+    security.gates = 1;
+  }
+  const ruler = rollRuler(leader, size, rng);
+  // Nobody in town shares a full name with someone else.
+  const used = new Set<string>();
+  for (const n of [ruler, ...security.officers, ...buildings.map((b) => b.keeper)]) {
+    for (let tries = 0; used.has(n.name) && tries < 20; tries++) n.name = rollName(rng);
+    used.add(n.name);
+  }
   return {
     name,
     size,
     water,
-    trait: rollTrait(rng),
+    trait,
     fame: rollFame(rng),
-    leader: rollLeader(rng),
+    leader,
     calamity: rng() < 1 / 3 ? rollCalamity(rng) : null,
+    ruler,
+    security,
     buildings: sortBuildings(buildings),
   };
 }
@@ -451,3 +471,214 @@ export function arrivalLine(town: Town): string {
   if (town.calamity) parts.push(`The talk in the streets: ${town.calamity.charAt(0).toLowerCase()}${town.calamity.slice(1)}`);
   return parts.join(' ');
 }
+
+// ---------------------------------------------------------------- people
+
+type BySize<T> = T | Record<Settlement, T>;
+const bySize = <T,>(v: BySize<T>, size: Settlement): T => (v && typeof v === 'object' && 'village' in (v as object) ? (v as Record<Settlement, T>)[size] : (v as T));
+
+/** Who runs a place and who works there, with 2024 Monster Manual stat blocks (table rule, after the DMG's Greyhawk examples). */
+export interface PeopleSpec {
+  keeper: { role: string; stat: BySize<string>; lean?: Lean };
+  staff?: { role: string; stat: BySize<string>; count: BySize<[number, number]> }[];
+}
+
+const shop = (role: string, lean: Lean = 'any'): PeopleSpec => ({ keeper: { role, stat: 'Commoner', lean } });
+
+export const PEOPLE: Record<string, PeopleSpec> = {
+  inn: { keeper: { role: 'Innkeeper', stat: 'Commoner', lean: 'good' }, staff: [{ role: 'Bouncer', stat: 'Tough', count: { village: [0, 0], town: [0, 1], city: [1, 2] } }] },
+  tavern: { keeper: { role: 'Tavern keeper', stat: 'Commoner' }, staff: [{ role: 'Bouncer', stat: 'Tough', count: { village: [0, 0], town: [0, 1], city: [1, 2] } }] },
+  grocer: shop('Grocer'),
+  baker: shop('Baker', 'good'),
+  delicatessen: shop('Delicatessen owner'),
+  shrine: { keeper: { role: 'Keeper of the shrine', stat: 'Priest Acolyte', lean: 'devout' } },
+  temple: { keeper: { role: 'High priest', stat: 'Priest', lean: 'devout' }, staff: [{ role: 'Acolyte', stat: 'Priest Acolyte', count: { village: [1, 2], town: [1, 4], city: [2, 8] } }] },
+  cathedral: {
+    keeper: { role: 'Archpriest', stat: 'Archpriest', lean: 'devout' },
+    staff: [
+      { role: 'Priest', stat: 'Priest', count: [1, 4] },
+      { role: 'Acolyte', stat: 'Priest Acolyte', count: [2, 12] },
+      { role: 'Temple guard', stat: 'Guard', count: [2, 8] },
+    ],
+  },
+  healer: { keeper: { role: 'Healer', stat: 'Priest Acolyte', lean: 'good' } },
+  apothecary: shop('Apothecary'),
+  herbalist: { keeper: { role: 'Herbalist', stat: 'Druid', lean: 'good' } },
+  undertaker: shop('Undertaker'),
+  general: shop('Shopkeeper'),
+  market: { keeper: { role: 'Market warden', stat: 'Commoner', lean: 'lawful' }, staff: [{ role: 'Watch on the market', stat: 'Guard', count: { village: [0, 0], town: [1, 2], city: [2, 4] } }] },
+  pawnshop: shop('Pawnbroker', 'shady'),
+  chandler: shop('Chandler'),
+  ropemaker: shop('Ropemaker'),
+  potter: shop('Potter'),
+  tailor: shop('Tailor'),
+  weaver: shop('Weaver'),
+  jeweler: { keeper: { role: 'Jeweler', stat: 'Commoner' }, staff: [{ role: 'Guard', stat: 'Guard', count: { village: [1, 1], town: [1, 2], city: [2, 3] } }] },
+  bookstore: shop('Bookseller'),
+  mapmaker: { keeper: { role: 'Mapmaker', stat: 'Scout' } },
+  scribe: shop('Scribe', 'lawful'),
+  magic: { keeper: { role: 'Proprietor', stat: { village: 'Mage Apprentice', town: 'Mage Apprentice', city: 'Mage' } } },
+  smithy: shop('Smith'),
+  armorer: shop('Armorer'),
+  weaponsmith: shop('Weaponsmith'),
+  bowyer: { keeper: { role: 'Bowyer', stat: 'Scout' } },
+  gunsmith: shop('Gunsmith'),
+  leatherworker: shop('Tanner'),
+  carpenter: shop('Carpenter'),
+  mason: shop('Master mason', 'lawful'),
+  cartwright: shop('Cartwright'),
+  tinker: shop('Tinker'),
+  musician: { keeper: { role: 'Instrument maker', stat: 'Performer' } },
+  brewer: shop('Brewer'),
+  alchemist: { keeper: { role: 'Alchemist', stat: 'Mage Apprentice' } },
+  moneylender: { keeper: { role: 'Moneylender', stat: 'Commoner', lean: 'shady' }, staff: [{ role: 'Debt collector', stat: 'Tough', count: [1, 2] }] },
+  bank: { keeper: { role: 'Banker', stat: 'Noble', lean: 'lawful' }, staff: [{ role: 'Vault guard', stat: 'Guard', count: { village: [2, 3], town: [2, 4], city: [3, 6] } }] },
+  guildhall: { keeper: { role: 'Guildmaster', stat: 'Noble', lean: 'lawful' } },
+  stable: shop('Stablemaster'),
+  coaching: shop('Coachmaster'),
+  docks: { keeper: { role: 'Harbormaster', stat: 'Warrior Veteran', lean: 'lawful' }, staff: [{ role: 'Dock watch', stat: 'Guard', count: { village: [0, 1], town: [1, 4], city: [2, 8] } }] },
+  shipwright: shop('Shipwright'),
+  courier: { keeper: { role: 'Postmaster', stat: 'Commoner', lean: 'lawful' }, staff: [{ role: 'Rider', stat: 'Scout', count: [1, 4] }] },
+  gate: { keeper: { role: 'Sergeant of the gate', stat: 'Warrior Veteran', lean: 'lawful' }, staff: [{ role: 'Gate guard (doubled at night)', stat: 'Guard', count: [2, 4] }] },
+  library: { keeper: { role: 'Head librarian', stat: { village: 'Mage Apprentice', town: 'Mage Apprentice', city: 'Mage' }, lean: 'lawful' }, staff: [{ role: 'Scribe', stat: 'Commoner', count: { village: [1, 1], town: [1, 2], city: [2, 4] } }] },
+  academy: {
+    keeper: { role: 'Archmage of the academy', stat: 'Archmage' },
+    staff: [
+      { role: 'Master', stat: 'Mage', count: [1, 4] },
+      { role: 'Apprentice', stat: 'Mage Apprentice', count: [2, 8] },
+    ],
+  },
+  hall: { keeper: { role: 'Clerk of the council', stat: 'Commoner', lean: 'lawful' }, staff: [{ role: 'Guard', stat: 'Guard', count: { village: [0, 1], town: [1, 4], city: [2, 6] } }] },
+  watch: { keeper: { role: 'Captain of the watch house', stat: 'Guard Captain', lean: 'lawful' } },
+  barracks: { keeper: { role: 'Commander of the garrison', stat: 'Warrior Veteran', lean: 'lawful' }, staff: [{ role: 'Soldier', stat: 'Warrior Infantry', count: { village: [5, 10], town: [10, 30], city: [30, 120] } }] },
+  gambling: { keeper: { role: 'Owner', stat: 'Tough Boss', lean: 'shady' }, staff: [{ role: 'Bouncer', stat: 'Tough', count: [1, 4] }] },
+  arena: { keeper: { role: 'Promoter', stat: 'Tough Boss', lean: 'shady' }, staff: [{ role: 'Pit fighter', stat: 'Gladiator', count: [1, 4] }] },
+  theater: { keeper: { role: 'Theater manager', stat: 'Performer' }, staff: [{ role: 'Player', stat: 'Performer', count: [2, 6] }] },
+  fence: { keeper: { role: 'Fence', stat: 'Spy', lean: 'criminal' } },
+  thieves: {
+    keeper: { role: 'Guildmaster of thieves', stat: { village: 'Bandit Captain', town: 'Bandit Captain', city: 'Bandit Crime Lord' }, lean: 'criminal' },
+    staff: [
+      { role: 'Thief', stat: 'Bandit', count: { village: [2, 6], town: [2, 12], city: [6, 24] } },
+      { role: 'Spy', stat: 'Spy', count: [1, 3] },
+      { role: 'Enforcer', stat: 'Tough', count: [1, 4] },
+    ],
+  },
+};
+
+export interface StaffGroup {
+  role: string;
+  stat: string;
+  count: number;
+}
+
+const roll = ([lo, hi]: [number, number], rng: Rng): number => lo + Math.floor(rng() * (hi - lo + 1));
+
+export function rollStaff(type: string, size: Settlement, rng: Rng): StaffGroup[] {
+  return (PEOPLE[type]?.staff ?? []).map((s) => ({ role: s.role, stat: bySize(s.stat, size), count: roll(bySize(s.count, size), rng) })).filter((s) => s.count > 0);
+}
+
+export function rollKeeper(type: string, size: Settlement, rng: Rng): Npc {
+  const p = PEOPLE[type] ?? shop('Proprietor');
+  return rollNpc(p.keeper.role, bySize(p.keeper.stat, size), p.keeper.lean ?? 'any', rng);
+}
+
+// ---------------------------------------------------------------- the ruler and the law
+
+/** Stat block and leaning for the 2024 DMG Local Leaders result (table rule). */
+export const LEADER_NPC: { role: string; stat: BySize<string>; lean: Lean }[] = [
+  { role: 'Mayor', stat: { village: 'Commoner', town: 'Noble', city: 'Noble' }, lean: 'good' },
+  { role: 'Tyrant', stat: { village: 'Tough Boss', town: 'Knight', city: 'Warrior Commander' }, lean: 'criminal' },
+  { role: 'Figurehead', stat: { village: 'Commoner', town: 'Noble', city: 'Noble' }, lean: 'any' },
+  { role: 'Usurper', stat: { village: 'Bandit Captain', town: 'Bandit Captain', city: 'Knight' }, lean: 'shady' },
+  { role: 'Monster ruler', stat: 'a monster of the DM’s choice', lean: 'criminal' },
+  { role: 'Hidden conspirator', stat: { village: 'Spy', town: 'Spy', city: 'Spy Master' }, lean: 'criminal' },
+  { role: 'Claimant', stat: { village: 'Warrior Veteran', town: 'Knight', city: 'Knight' }, lean: 'any' },
+  { role: 'Council speaker', stat: { village: 'Commoner', town: 'Noble', city: 'Noble' }, lean: 'any' },
+  { role: 'Lout in charge', stat: { village: 'Tough', town: 'Tough Boss', city: 'Tough Boss' }, lean: 'shady' },
+  { role: 'Ailing ruler', stat: { village: 'Commoner', town: 'Noble', city: 'Noble' }, lean: 'any' },
+  { role: 'Lord', stat: { village: 'Warrior Veteran', town: 'Knight', city: 'Warrior Commander' }, lean: 'lawful' },
+  { role: 'High priest', stat: { village: 'Priest Acolyte', town: 'Priest', city: 'Archpriest' }, lean: 'devout' },
+];
+
+export function rollRuler(leader: string, size: Settlement, rng: Rng): Npc {
+  const i = Math.max(0, LEADERS.indexOf(leader));
+  const l = LEADER_NPC[i];
+  return rollNpc(l.role, bySize(l.stat, size), l.lean, rng);
+}
+
+/** Who keeps the peace (table rule, scaled down from the 2024 DMG's City Watch of Greyhawk). */
+export interface Security {
+  walls: boolean;
+  gates: number;
+  /** Named officers. */
+  officers: Npc[];
+  /** Rank and file, by stat block. */
+  forces: StaffGroup[];
+  /** Citizens who can be armed in an emergency. */
+  militia: StaffGroup | null;
+}
+
+export function rollSecurity(size: Settlement, trait: string, gates: number, rng: Rng): Security {
+  const fortified = /fortified/i.test(trait);
+  if (size === 'village') {
+    const stat = rng() < 0.25 ? 'Warrior Veteran' : 'Guard';
+    return {
+      walls: fortified,
+      gates: fortified ? 1 : 0,
+      officers: [rollNpc('Constable', stat, 'lawful', rng)],
+      forces: [],
+      militia: { role: 'Villagers who answer the alarm bell', stat: 'Warrior Infantry', count: roll([2, 12], rng) },
+    };
+  }
+  if (size === 'town') {
+    const guards = roll([3, 18], rng) + 6;
+    return {
+      walls: fortified || rng() < 0.5,
+      gates,
+      officers: [rollNpc('Captain of the watch', 'Guard Captain', 'lawful', rng), rollNpc('Priest who serves the watch', 'Priest', 'devout', rng)],
+      forces: [
+        { role: 'Watch', stat: 'Guard', count: guards },
+        { role: 'Sergeant', stat: 'Warrior Veteran', count: roll([1, 3], rng) },
+      ],
+      militia: { role: 'Townsfolk armed from the watch house', stat: 'Warrior Infantry', count: roll([4, 40], rng) },
+    };
+  }
+  const guards = roll([4, 24], rng) * 20;
+  return {
+    walls: true,
+    gates,
+    officers: [rollNpc('Captain-general of the watch', 'Warrior Veteran', 'lawful', rng), rollNpc('Constable, second in command', 'Priest', 'devout', rng)],
+    forces: [
+      { role: 'City watch', stat: 'Guard', count: guards },
+      { role: 'Veterans of the watch', stat: 'Warrior Veteran', count: Math.round(guards / 4) },
+      { role: 'Mages from the city’s wizards', stat: 'Mage', count: roll([1, 4], rng) },
+      { role: 'Priests from the temples', stat: 'Priest', count: roll([2, 8], rng) },
+    ],
+    militia: { role: 'Citizens armed from the armory in an emergency', stat: 'Warrior Infantry', count: roll([1, 6], rng) * 100 },
+  };
+}
+
+/** How the watch works, in lines for the DM (2024 DMG Greyhawk example; patrol sizes are a table rule). */
+export function securityNotes(size: Settlement, sec: Security): string[] {
+  const out: string[] = [];
+  if (size === 'village') {
+    out.push('No standing watch. The constable walks the lanes at dusk; at the alarm bell the villagers turn out with spears and pitchforks.');
+    if (sec.walls) out.push('A palisade with one gate, barred at night.');
+    return out;
+  }
+  out.push(size === 'city' ? 'Street patrols of 4 Guards by day; at night 4 Guards and a Warrior Veteran, carrying lanterns.' : 'Street patrols of 2 Guards by day, 4 at night.');
+  if (sec.walls) {
+    out.push('On the walls: one Guard every 300 feet by day. At night the patrol is quadrupled, two Guards together every 150 feet, with torches between them (2024 DMG, Free City of Greyhawk).');
+    out.push(
+      `Gates (${sec.gates}): the main gate stays open day and night; ${sec.gates > 1 ? 'the others close' : 'it closes only in an emergency, and the rest of the walls are'} ${sec.gates > 1 ? 'from dusk to dawn, and opening one takes a written order from the ruler or the captain' : 'sealed'}. Travelers aren’t asked their business unless recognised as fugitives; suspicious wagons are searched; the guards keep a daily roster of who passes (2024 DMG).`,
+    );
+  }
+  return out;
+}
+
+/** The DMG's example of a city's laws (Free City of Greyhawk): for the DM to use or adapt. */
+export const CRIME_EXAMPLE: { label: string; covers: string; punishment: string }[] = [
+  { label: 'Petty crime', covers: 'Public unarmed brawling, pickpocketing, vandalism, up to 50 GP of damage', punishment: 'A fine of 2d10 GP, or work to make restitution' },
+  { label: 'Minor crime', covers: 'Armed assault (a nonfatal attack with a weapon or damaging spell), 50–250 GP of damage', punishment: 'A fine of at least 100 GP and 1d6 years in prison' },
+  { label: 'Major crime', covers: 'Murder, bribing or impersonating an official, magical coercion', punishment: '2d10 years in prison, death or permanent exile, as a magistrate decides' },
+];

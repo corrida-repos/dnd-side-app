@@ -85,7 +85,8 @@ import { DUE_PRESETS, GUILD_EXPULSION, PERIOD_DAYS, dueAmount, type DueKind, typ
 import { BRIBE_GP_PER_HEAT, CRIMES, HEAT_DECAY_PER_WEEK, RECOGNISE_ON, heatLevel, jailDaysFor, samePlace, type CrimeSeverity } from '../rules/notoriety';
 import { FAVOR_COOLDOWN_DAYS, NEGLECT_DAYS, attitudeOf, clampBond, favorDC } from '../rules/contacts';
 import { REPLY_DIE, newsDelay, type NewsRoute } from '../rules/letters';
-import { arrivalLine, buildingType, generateTown, newBuilding, rollCalamity, rollFame, rollLeader, rollTrait, sortBuildings, type Town } from '../rules/settlements';
+import { arrivalLine, buildingType, generateTown, newBuilding, rollCalamity, rollFame, rollKeeper, rollLeader, rollRuler, rollTrait, sortBuildings, type Town } from '../rules/settlements';
+import { npcLine, rollNpc, type Npc } from '../rules/npcs';
 import type { Settlement } from '../rules/services';
 
 export interface Ctx {
@@ -8249,7 +8250,10 @@ export const rerollTownDetail = act((d, ctx, townName: string, field: 'trait' | 
   if (!t) return;
   if (field === 'trait') t.trait = rollTrait(ctx.rng);
   else if (field === 'fame') t.fame = rollFame(ctx.rng);
-  else if (field === 'leader') t.leader = rollLeader(ctx.rng);
+  else if (field === 'leader') {
+    t.leader = rollLeader(ctx.rng);
+    t.ruler = rollRuler(t.leader, t.size, ctx.rng);
+  }
   else if (field === 'calamity') {
     t.calamity = rollCalamity(ctx.rng);
     log(d, `Trouble in ${t.name}: ${t.calamity}`, 'warn');
@@ -8269,9 +8273,9 @@ export const setTownSize = act((d, _ctx, townName: string, size: Settlement) => 
 export const addTownBuilding = act((d, ctx, townName: string, type: string) => {
   const t = townNamed(d, townName);
   if (!t || !buildingType(type)) return;
-  const b = newBuilding(type, ctx.rng, new Set(t.buildings.map((x) => x.name)));
+  const b = newBuilding(type, ctx.rng, new Set(t.buildings.map((x) => x.name)), t.size);
   t.buildings = sortBuildings([...t.buildings, b]);
-  log(d, `${t.name}: ${b.name} (${buildingType(type)!.label.toLowerCase()}, run by ${b.keeper}).`, 'info');
+  log(d, `${t.name}: ${b.name} (${buildingType(type)!.label.toLowerCase()}, run by ${b.keeper.name}).`, 'info');
 });
 
 /** Removes a building: it burned down, closed, or the DM doesn't want it. */
@@ -8288,10 +8292,46 @@ export const editTownBuilding = act((d, _ctx, townName: string, id: string, patc
   const b = townNamed(d, townName)?.buildings.find((x) => x.id === id);
   if (!b) return;
   if (patch.name != null) b.name = patch.name;
-  if (patch.keeper != null) b.keeper = patch.keeper;
+  if (patch.keeper != null) b.keeper = { ...b.keeper, name: patch.keeper };
 });
 
 /** Forgets a settlement's roll. */
 export const forgetTown = act((d, _ctx, townName: string) => {
   d.towns = (d.towns ?? []).filter((t) => !samePlace(t.name, townName));
 });
+
+/** Which NPC in a settlement: a building's keeper, the ruler, or an officer of the watch. */
+export type TownNpcRef = { building: string } | { ruler: true } | { officer: number };
+
+function townNpc(t: Town, ref: TownNpcRef): Npc | undefined {
+  if ('building' in ref) return t.buildings.find((b) => b.id === ref.building)?.keeper;
+  if ('ruler' in ref) return t.ruler;
+  return t.security?.officers[ref.officer];
+}
+
+/** Rolls a new person for the job (2024 DMG Detailed NPCs), keeping the role and stat block. */
+export const rerollTownNpc = act((d, ctx, townName: string, ref: TownNpcRef) => {
+  const t = townNamed(d, townName);
+  const old = t && townNpc(t, ref);
+  if (!t || !old) return;
+  const fresh: Npc = 'building' in ref ? rollKeeper(t.buildings.find((b) => b.id === ref.building)!.type, t.size, ctx.rng) : rollNpc(old.role ?? 'Townsfolk', old.stat ?? 'Commoner', 'any', ctx.rng);
+  if ('building' in ref) t.buildings.find((b) => b.id === ref.building)!.keeper = fresh;
+  else if ('ruler' in ref) t.ruler = rollRuler(t.leader, t.size, ctx.rng);
+  else if (t.security) t.security.officers[ref.officer] = { ...fresh, role: old.role, stat: old.stat };
+});
+
+/** The party gets to know a townsperson: they join the contacts, with what the party can see (not their secret). */
+export const townNpcToContact = act((d, _ctx, townName: string, ref: TownNpcRef) => {
+  const t = townNamed(d, townName);
+  const n = t && townNpc(t, ref);
+  if (!t || !n) return;
+  if ((d.contacts ?? []).some((k) => k.name === n.name && samePlace(k.place, t.name))) return void log(d, `${n.name} is already among the party's contacts.`, 'info');
+  const where = 'building' in ref ? t.buildings.find((b) => b.id === ref.building)?.name : '';
+  const role = [n.role, where].filter(Boolean).join(', ');
+  addContactMut(d, { name: n.name, role, place: t.name, bond: 0, knownBy: [], notes: [n.appearance, n.traits?.join(', ')].filter(Boolean).join('. '), distanceMiles: 0 });
+  log(d, `${n.name} (${role}, ${t.name}) joins the party's acquaintances.`);
+});
+
+/** A short description of an NPC, for the DM. */
+export const describeNpc = (n: Npc): string => npcLine(n);
+
