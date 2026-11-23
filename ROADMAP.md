@@ -413,6 +413,16 @@ No change needed. These match the 2024 data:
 - ✅ Table rule: city water is worse than a wild stream. Living Squalid in a settlement means a DC 12 Con save against foul water every day, Wretched DC 14 (Renown 3+ spares the Wretched). Failing makes the character Sick.
 - ✅ Table rule: each new bout of sickness from unpurified or city water counts toward Sewer Plague. After 3 (adjustable, 0 = never), that bout brings a DC 11 Con save against it, and the count starts again. Drinking more while already Sick doesn't count twice. The count shows on the Effects tab.
 
+### Dangers of Squalid and Wretched living ✅
+Table rules under "Lifestyle risks in town". Renown 3+ spares the Wretched, as before.
+- ✅ **Sleeping rough:** the Wretched face extreme cold and heat and cold nights in town as if camping. Squalid lodgings are drafty: a cold night still bites without a Blanket or Bedroll.
+- ✅ **Weekly, Squalid:** theft (coins or an item), spoiled food (Con DC 10 or Sick), a rat bite (1 damage, counts toward Sewer Plague), vermin and damp (a day of Rations eaten or an item damaged), Cackle Fever from a cheap tonic (1 in 12), a gang shakedown (pay 1d6 GP or take 1d6, maybe a Rival), and a rare tenement fire (2d6 Fire, maybe an item lost).
+- ✅ **Weekly, Wretched:** theft, being roughed up, rat bites (1 in 4), vermin, Cackle Fever from the crowded street, the town watch (moved on, fined 1d4 GP, or 1d3 days in jail), a broken night (next Long Rest removes no Exhaustion), and +1 Stress.
+- ✅ **Sight Rot:** failing the daily city-water save by 5 or more also means a DC 15 save against Sight Rot.
+- ✅ **Tainted potions:** a potion bought while living rough is tainted 1 time in 6 (a DM-only flag: Cackle Fever when drunk).
+- ✅ **No real rest:** the Relaxation downtime activity gives nothing below a Modest lifestyle (*Xanathar's*).
+- ✅ **Shunned:** after 30 days of low living in town, Disadvantage on Charisma checks with the upper classes until they live Poor or better.
+
 ## Not planned
 
 - Nothing at the moment. (The 2024 DMG contagions, Cackle Fever, Sewer Plague and Sight Rot, are tracked on the Effects tab.)

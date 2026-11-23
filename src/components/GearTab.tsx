@@ -272,6 +272,7 @@ function InventoryBlock({ c }: { c: Character }) {
                   )}
                   {i.damaged && <Pill tone="bad" title="Torn, cracked or broken: see Damaged gear below">damaged</Pill>}{' '}
                   {HEALERS_KIT.test(i.name) && <Pill tone="info" title="A Healer's Kit has ten uses (2024 PHB)">{i.uses ?? HEALERS_KIT_USES}/{HEALERS_KIT_USES} uses</Pill>}{' '}
+                  {i.tainted && <Pill tone="muted" title="DM only: tainted (bought from a backstreet hawker). Whoever drinks it makes a DC 10 Con save against Cackle Fever: use Expose on the Effects tab.">cheap</Pill>}{' '}
                   {i.scattered && <Pill tone="warn" title="Spread on the ground: gather them up (10 minutes) before moving on, or they're left behind">on the ground</Pill>}{' '}
                   {valueUnknown(i) ? (
                     <Pill tone="warn" title={`Nobody in the party knows what ${i.qty > 1 ? 'these are' : 'it is'} worth yet.${i.valueGp != null ? ` DM: ${fmtGp(i.valueGp)} each.` : ' No value set.'}`}>

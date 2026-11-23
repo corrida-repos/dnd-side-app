@@ -57,7 +57,9 @@ export type SenseKey =
   | 'blinded'
   | 'encounter'
   | 'groundHeavy'
-  | 'groundClear';
+  | 'groundClear'
+  | 'robbed'
+  | 'jailed';
 
 /** How the change reaches the character: felt in the body, noticed with the senses, or not noticed at all. */
 export type Awareness = 'feels' | 'notices' | 'unaware';
@@ -104,6 +106,8 @@ export const SENSES: Record<SenseKey, SenseDef> = {
   wakesFromStable: F('feels everything hurt on waking, but is alive', 'feels a pounding head and aching body on coming to'),
   death: U('breathes their last', 'falls still'),
   revived: F('feels warmth flood back in with a gasping breath', 'feels the heart lurch back into rhythm'),
+  robbed: N('notices something missing or spoiled among their things', 'notices a torn seam and gnawed edges where something used to be'),
+  jailed: N('notices the clank of a cell door and the smell of old straw', 'notices cold stone walls and a tiny barred window'),
   stressUp: F('feels knotted shoulders and a jaw clenched tight', 'feels jumpy, the heart racing at nothing'),
   stressDown: F('feels the tension in the chest loosen', 'feels able to breathe a little easier'),
   fearUp: F('feels a cold dread settle in the gut', 'feels shaky hands and a dry mouth'),

@@ -34,6 +34,7 @@ import { approachMode, bigEnoughToRide, canTame, FACTOR_LABEL, missedDays, sessi
 import { BUTCHER_DC, BUTCHER_MINUTES, isEdible, MEAT_LB, STRANGE_TYPES, yieldsHide, type Creature } from '../rules/hunting';
 import { addCoins, COIN_GP, coinCount, coinsFor, emptyPurse, exchange, fmtPurse, purseValue, spend, type Denom, type Purse } from '../rules/coins';
 import { detectContainer } from '../rules/containers';
+import { FIRE_DAMAGE, RAT_BITE_DAMAGE, RELAXATION_NEEDS, SHAKEDOWN_DAMAGE, SHAKEDOWN_GP, SHAKEDOWN_RIVAL_ODDS, SHUNNED_AFTER_DAYS, SIGHT_ROT_MARGIN, SPOILED_FOOD_DC, TAINTED_POTION_ODDS, WATCH_FINE, WATCH_JAIL_DAYS, WEEKLY_ODDS, WRETCHED_STRESS, isLowLife } from '../rules/lowLife';
 import { BOILING_POT, CHARCOAL_WORDS, FRICTION_LIGHT_MINUTES, HIDE_WATERSKIN, LEAN_TO, BEDDING, MAKESHIFT_DC, MAKESHIFT_TORCH, POTS, POT_ALARM_DC, SNARE, SNARE_LINE, TINDERBOX, VINE_CORD, isBareback, leanToDC, ABILITY_LABEL, INK, INK_PAGES, PAPER, PERFUME, PERFUME_MINUTES, SIGNAL_WHISTLE, carriesTool, liquidCapacity, toolNamed, SPYGLASS, ALARM_LINE, ALARM_MINUTES, BELL, DIG_BY_HAND, DIG_LABEL, GATHER_MINUTES, HUNTING_TRAP, SCATTERABLE, SHOVEL, SHOVEL_MINUTES, STABLING_GP_PER_DAY, TENT, TENT_SLEEPS, TRAP_CATCH_ON, TRAP_MEAT_DICE, TRAP_SAVE_DC, needsExoticSaddle, type DigKind, MAGNIFYING_GLASS, hasSkill, proficientWith, PACKS, RATIONS, WATERSKIN, WATERSKIN_PINTS, packNamed, FUEL_LABEL, FUEL_MATCH, HEALERS_KIT, HEALERS_KIT_USES, OIL_MINUTES, VESSEL_MATCH, fuelFor, isHooded, isOilLight } from '../rules/gear';
 import type { DdbImport } from '../rules/ddb';
 import { FEED_GP_PER_DAY, HIRELING_WAGE, magicItemValue, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset, type Lifestyle } from '../rules/money';
@@ -240,6 +241,22 @@ export function exposure(s: State, activity: Activity, tempF: number = tempNow(s
   return { cold: true, heat: true, reason: activity === 'travel' ? 'On the road' : s.place.shelter === 'tent' ? 'In a tent (still exposed to temperature)' : 'In the open' };
 }
 
+/** Sleeping rough in town (table rule): Wretched characters face the weather as if camping, unless Renown 3+ finds them shelter. */
+export function sleepsRough(s: State, c: Character): boolean {
+  return s.settings.lifestyleRisks && s.place.settlement && c.kind !== 'mount' && c.lifestyle === 'wretched' && bestRenown(s) < 3;
+}
+
+/** Squalid lodgings are drafty (table rule): a cold night still bites without a Blanket or Bedroll. */
+function draftyLodgings(s: State, c: Character): boolean {
+  return s.settings.lifestyleRisks && s.place.settlement && c.kind !== 'mount' && c.lifestyle === 'squalid';
+}
+
+/** One character's exposure: the party's, unless they're sleeping rough on the street. */
+export function personalExposure(s: State, c: Character, activity: Activity, partyExp: Exposure): Exposure {
+  if (!sleepsRough(s, c) || s.effects.some((e) => e.shelter && activity !== 'travel')) return partyExp;
+  return { cold: true, heat: true, reason: 'Sleeping rough on the street' };
+}
+
 /** Anything that means an automatic success against extreme cold. A Bedroll only counts while resting in it. */
 export function coldProtection(c: Character, activity: Activity = 'camp', gearCounts = false): string | null {
   if (c.coldResist === 'immunity') return 'Cold Immunity';
@@ -327,7 +344,7 @@ export function rollSave(c: Character, dc: number, mode: RollMode, rng: Rng) {
   const total = r.value + mod;
   const modeTxt = mode === 'normal' ? '' : ` (${mode === 'advantage' ? 'Advantage' : 'Disadvantage'})`;
   const exhTxt = c.exhaustion ? `, including −${2 * c.exhaustion} from Exhaustion` : '';
-  return { passed: total >= dc, detail: `Rolled ${r.rolls.join('/')}${modeTxt} ${signed(mod)}${exhTxt} = ${total}. ` };
+  return { passed: total >= dc, total, detail: `Rolled ${r.rolls.join('/')}${modeTxt} ${signed(mod)}${exhTxt} = ${total}. ` };
 }
 
 /** Is an Antitoxin giving this creature Advantage on saves to avoid or end the Poisoned condition? */
@@ -380,13 +397,14 @@ function tickHour(s: State, ctx: Ctx, activity: Activity): void {
     }
   }
 
-  const exp = exposure(s, activity, temp);
+  const partyExp = exposure(s, activity, temp);
   for (const c of s.characters) {
     if (!alive(c)) continue;
+    const exp = personalExposure(s, c, activity, partyExp);
     if (s.settings.extremeWeather && exp.cold && temp <= 0 && !coldProtection(c, activity, s.settings.coldGear2014)) {
       const wrapped = (c.blanket || !!c.bedding) && activity === 'rest';
       requestSave(s, ctx, c, 'cold', 10, wrapped ? 'advantage' : 'normal', `extreme cold (${temp}°F)${wrapped ? (c.blanket ? ', wrapped in a Blanket' : ', on a bed of boughs') : ''}`);
-    } else if (activity === 'rest' && exp.cold && s.settings.coldNights && temp <= s.settings.coldNightF && !hasWarmCover(c)) {
+    } else if (activity === 'rest' && (exp.cold || draftyLodgings(s, c)) && s.settings.coldNights && temp <= s.settings.coldNightF && !hasWarmCover(c)) {
       c.nightChill = c.nightChill == null ? temp : Math.min(c.nightChill, temp);
     }
     if (s.settings.extremeWeather && exp.heat && temp >= 100) {
@@ -896,7 +914,12 @@ function completeLongRest(d: State, ctx: Ctx, watched: Record<string, number>): 
     }
     const restless = sewerWeakened(c);
     if (restless) status(d, c, 'contagionWorse', `${c.name} has Sewer Plague: this Long Rest restores no HP and removes no Exhaustion.`, 'warn');
-    if (c.exhaustion > 0 && !armorSpoiled && !restless) {
+    const brokenNight = !!c.restless;
+    if (brokenNight) {
+      c.restless = false;
+      if (c.exhaustion > 0) status(d, c, 'exhaustionStuck', `${c.name} slept badly, woken again and again, and wakes no less tired: no Exhaustion removed this time (table rule).`, 'warn');
+    }
+    if (c.exhaustion > 0 && !armorSpoiled && !restless && !brokenNight) {
       const gone = recoverExhaustion(c);
       if (gone) {
         status(d, c, 'exhaustionEases', `${c.name} recovers 1 Exhaustion level (${EXHAUSTION_CAUSE_LABEL[gone]}). Now level ${c.exhaustion}.`, 'good');
@@ -1977,7 +2000,13 @@ function progressFinish(s: State, p: Project, ctx?: Ctx): void {
       } else if (act === 'Relaxation') {
         for (const id of p.charIds) {
           const c = charById(s, id);
-          if (c) c.recuperatedUntil = absNow(s) + 7 * MIN_PER_DAY;
+          if (!c) continue;
+          // Xanathar's: relaxation needs at least a Modest lifestyle.
+          if (s.settings.lifestyleRisks && !RELAXATION_NEEDS.includes(c.lifestyle)) {
+            log(s, `${c.name} can't truly relax living ${LIFESTYLE_LABEL[c.lifestyle].toLowerCase()}: no benefit from the week (Xanathar's needs a Modest lifestyle or better).`, 'warn');
+            continue;
+          }
+          c.recuperatedUntil = absNow(s) + 7 * MIN_PER_DAY;
         }
         log(s, `${p.name}: a quiet week. Advantage on saves against lingering diseases and poisons for the next 7 days, and one effect that blocks healing can end.`, 'good');
       } else {
@@ -2159,38 +2188,175 @@ const bestRenown = (s: State): number => Math.max(0, ...s.factions.map((f) => f.
  * shelter in need, which spares Wretched characters the street.
  */
 function lifestyleRisks(s: State, ctx: Ctx): void {
-  if (!s.settings.lifestyleRisks || !s.place.settlement || (s.dayIndex + 1) % 7 !== 0) return;
-  for (const c of adventurers(s)) {
-    const r = die(6, ctx.rng);
+  if (!s.settings.lifestyleRisks || !s.place.settlement) return;
+  trackLowLife(s);
+  if ((s.dayIndex + 1) % 7 !== 0) return;
+  const chance = (n: number) => die(n, ctx.rng) === 1;
+  const hurt = (id: string, n: number) => Object.assign(s, changeHp(s, ctx, id, -n));
+  for (const id of adventurers(s).map((c) => c.id)) {
+    const me = () => charById(s, id)!;
+    const c = me();
     const steal = (dice: string) => {
-      const gp = Math.min(c.gp, rollExpr(dice, ctx.rng) ?? 1);
+      const who = me();
+      // Half the time the thief takes something from the pack instead of the purse.
+      const loose = who.inventory.filter((i) => i.qty > 0 && !i.container && !i.scattered && (i.valueGp ?? 0) > 0);
+      if (loose.length && (who.gp <= 0 || die(2, ctx.rng) === 1)) {
+        const it = loose[die(loose.length, ctx.rng) - 1];
+        useUpOne(who, it);
+        return void status(s, who, 'robbed', `${who.name} finds their ${it.name} gone, taken while they slept or looked away (table rule).`, 'warn');
+      }
+      const gp = Math.min(who.gp, rollExpr(dice, ctx.rng) ?? 1);
       if (gp <= 0) return;
-      spendWealth(c, gp);
-      log(s, `${c.name} notices their purse is lighter: ${fmtGp(gp)} gone, lifted while living ${LIFESTYLE_LABEL[c.lifestyle].toLowerCase()} (table rule).`, 'warn');
+      spendWealth(who, gp);
+      log(s, `${who.name} notices their purse is lighter: ${fmtGp(gp)} gone, lifted while living ${LIFESTYLE_LABEL[who.lifestyle].toLowerCase()} (table rule).`, 'warn');
     };
     switch (c.lifestyle) {
-      case 'wretched':
+      case 'wretched': {
         if (bestRenown(s) >= 3) break;
-        if (r === 1) steal('1d6');
-        else if (r === 2) {
-          log(s, `${c.name} is roughed up sleeping rough on the street (table rule).`, 'warn');
-          Object.assign(s, changeHp(s, ctx, c.id, -die(4, ctx.rng)));
+        const o = WEEKLY_ODDS.wretched;
+        if (chance(o.theft)) steal('1d6');
+        if (chance(o.roughedUp)) {
+          status(s, me(), 'hurt', `${me().name} is roughed up sleeping rough on the street (table rule).`, 'warn');
+          hurt(id, die(4, ctx.rng));
         }
+        if (chance(o.ratBite)) ratBite(s, ctx, id);
+        if (chance(o.vermin)) vermin(s, ctx, me());
+        if (chance(o.cackle)) crowdFever(s, ctx, me(), 'a feverish stranger who laughed all night in the doorway beside them');
+        if (chance(o.watch)) townWatch(s, ctx, me());
+        if (chance(o.brokenNight)) {
+          me().restless = true;
+          status(s, me(), 'shakenAwake', `${me().name} is kicked awake, rained on and moved along all week: their next Long Rest removes no Exhaustion (table rule).`, 'warn');
+        }
+        const w = me();
+        w.stress += WRETCHED_STRESS;
+        status(s, w, 'stressUp', `A week on the street grinds ${w.name} down: Stress ${w.stress} (table rule).`, 'warn');
         break;
-      case 'squalid':
-        if (r === 1) steal('1d6');
+      }
+      case 'squalid': {
+        const o = WEEKLY_ODDS.squalid;
+        if (chance(o.theft)) steal('1d6');
+        if (chance(o.spoiledFood) && s.settings.rawFoodRisk) requestSave(s, ctx, me(), 'raw', SPOILED_FOOD_DC, 'normal', 'a bowl of gone-off stew from the boarding house');
+        if (chance(o.ratBite)) ratBite(s, ctx, id);
+        if (chance(o.vermin)) vermin(s, ctx, me());
+        if (chance(o.cackle)) crowdFever(s, ctx, me(), 'a cheap tonic from a hawker in the boarding house');
+        if (chance(o.shakedown)) shakedown(s, ctx, id);
+        if (chance(o.fire)) tenementFire(s, ctx, id);
         break;
+      }
       case 'poor':
-        if (r === 1 && die(2, ctx.rng) === 1) steal('1d4');
+        if (chance(6) && die(2, ctx.rng) === 1) steal('1d4');
         break;
-      case 'aristocratic':
+      case 'aristocratic': {
+        const r = die(6, ctx.rng);
         if (r === 1) steal('2d10');
         else if (r === 2) log(s, `Word of ${c.name}'s wealth spreads: someone seeks their patronage, a loan or a favor (table rule).`, 'info');
         else if (r === 3) log(s, `${c.name} receives an invitation from someone who wants to be seen with them (table rule).`, 'info');
         break;
+      }
       case 'wealthy':
-        if (r === 1) log(s, `A petitioner approaches ${c.name}, having heard they can afford to help (table rule).`, 'info');
+        if (chance(6)) log(s, `A petitioner approaches ${c.name}, having heard they can afford to help (table rule).`, 'info');
         break;
+    }
+  }
+}
+
+/** A rat bite in the night (table rule): 1 Piercing damage, and it counts toward Sewer Plague (the DMG names rats as carriers). */
+function ratBite(s: State, ctx: Ctx, id: string): void {
+  const c = charById(s, id)!;
+  status(s, c, 'hurt', `${c.name} wakes to a sharp pain: a rat has bitten them in the night (table rule).`, 'warn');
+  Object.assign(s, changeHp(s, ctx, id, -RAT_BITE_DAMAGE));
+  const me = charById(s, id)!;
+  if (s.settings.wildNeedsPurifying) waterborneIllness(s, ctx, me);
+}
+
+/** Rats and damp (table rule): a day of Rations eaten, or a piece of gear chewed or rotted. */
+function vermin(s: State, ctx: Ctx, c: Character): void {
+  const day = foodNeedLb(c);
+  if (c.rationsLb >= day && die(2, ctx.rng) === 1) {
+    c.rationsLb = round2(c.rationsLb - day);
+    return void status(s, c, 'robbed', `Rats have chewed into ${c.name}'s pack: a day's Rations gone (table rule).`, 'warn');
+  }
+  const sound = c.inventory.filter((i) => !i.damaged && !i.scattered && i.qty > 0 && (CLOTH.test(i.name) || /pack|bag|sack|book|paper|parchment|rations?|boots|leather/i.test(i.name)));
+  if (!sound.length) return;
+  const it = sound[die(sound.length, ctx.rng) - 1];
+  if (it.qty > 1) {
+    it.qty -= 1;
+    c.inventory.push({ ...it, id: uid(), qty: 1, damaged: true });
+  } else it.damaged = true;
+  status(s, c, 'robbed', `Damp and gnawing teeth have got at ${c.name}'s ${it.name}: it's damaged (table rule; mend it on the Gear tab).`, 'warn');
+}
+
+/** Cackle Fever from a crowded flophouse or a cheap tainted elixir (table rule; the 2024 DMG names both). Gnomes are immune. */
+function crowdFever(s: State, ctx: Ctx, c: Character, how: string): void {
+  if (/gnome/i.test(c.species)) return;
+  status(s, c, 'contagionOnset', `${c.name} has been close to ${how}.`, 'warn');
+  exposeContagionMut(s, ctx, c.id, 'cackle', true);
+}
+
+/** A gang comes for protection money (table rule): pay up, or take a beating that may make an enemy. */
+function shakedown(s: State, ctx: Ctx, id: string): void {
+  const c = charById(s, id)!;
+  const ask = rollExpr(SHAKEDOWN_GP, ctx.rng) ?? 3;
+  if (c.gp >= ask) {
+    spendWealth(c, ask);
+    return void log(s, `Local toughs lean on ${c.name} for protection money: ${fmtGp(ask)} paid to be left alone (table rule).`, 'warn');
+  }
+  status(s, c, 'hurt', `Local toughs want ${fmtGp(ask)} in protection money ${c.name} doesn't have, so they take it out of their hide (table rule).`, 'bad');
+  Object.assign(s, changeHp(s, ctx, id, -(rollExpr(SHAKEDOWN_DAMAGE, ctx.rng) ?? 3)));
+  if (die(SHAKEDOWN_RIVAL_ODDS, ctx.rng) === 1 && !s.rivals.some((r) => r.name === 'The tenement gang')) {
+    s.rivals.push({ id: uid(), name: 'The tenement gang', idea: 'A street gang running protection in the slums', goal: `Make an example of ${c.name}`, assets: 'Toughs, lookouts, a fence', plans: [], pressure: 1, active: true });
+    log(s, 'The gang won’t forget the defiance: they become a Rival (table rule).', 'warn');
+  }
+}
+
+/** The town watch moves the homeless on (table rule): a lost night, a fine, or a few days in the cells. */
+function townWatch(s: State, ctx: Ctx, c: Character): void {
+  const r = die(3, ctx.rng);
+  if (r === 1) {
+    c.restless = true;
+    return void status(s, c, 'shakenAwake', `The watch rousts ${c.name} from a doorway in the small hours and moves them on: their next Long Rest removes no Exhaustion (table rule).`, 'warn');
+  }
+  if (r === 2) {
+    const gp = Math.min(Math.max(0, c.gp), rollExpr(WATCH_FINE, ctx.rng) ?? 2);
+    if (gp > 0) spendWealth(c, gp);
+    return void log(s, `The watch fines ${c.name} ${fmtGp(gp)} for vagrancy (table rule).`, 'warn');
+  }
+  const days = rollExpr(WATCH_JAIL_DAYS, ctx.rng) ?? 2;
+  s.effects.push({ id: uid(), name: 'In jail', kind: 'other', targetIds: [c.id], casterId: null, concentration: false, shelter: false, startedAt: absNow(s), endsAt: absNow(s) + days * MIN_PER_DAY, notes: 'Locked up for vagrancy.' });
+  status(s, c, 'jailed', `The watch locks ${c.name} up for vagrancy: ${days} day${days > 1 ? 's' : ''} in the cells (table rule).`, 'bad');
+}
+
+/** A fire in the tenement (table rule, rare): 2d6 Fire damage and maybe some belongings lost. */
+function tenementFire(s: State, ctx: Ctx, id: string): void {
+  const c = charById(s, id)!;
+  noticed(s, 'hurt', [c], `Fire! Smoke pours up the stairwell of ${c.name}'s boarding house, and they get out through the flames (table rule).`, 'bad');
+  Object.assign(s, changeHp(s, ctx, id, -(rollExpr(FIRE_DAMAGE, ctx.rng) ?? 7)));
+  const me = charById(s, id)!;
+  const left = me.inventory.filter((i) => i.qty > 0 && !i.scattered);
+  if (left.length && die(2, ctx.rng) === 1) {
+    const it = left[die(left.length, ctx.rng) - 1];
+    me.inventory = me.inventory.filter((x) => x.id !== it.id);
+    log(s, `${me.name}'s ${it.qty > 1 ? `${it.qty} × ` : ''}${it.name} burned with the room.`, 'warn');
+  }
+}
+
+/** Counts days of low living in town; after 30, respectable folk shun the character until they live better (table rule). */
+function trackLowLife(s: State): void {
+  for (const c of adventurers(s)) {
+    const low = isLowLife(c.lifestyle) && !(c.lifestyle === 'wretched' && bestRenown(s) >= 3);
+    const shunned = s.effects.find((e) => e.name === 'Shunned by respectable folk' && e.targetIds.includes(c.id));
+    if (!low) {
+      c.lowLifeDays = 0;
+      if (shunned) {
+        s.effects = s.effects.filter((e) => e !== shunned);
+        log(s, `Living better again, ${c.name} is no longer shunned by respectable folk.`, 'good');
+      }
+      continue;
+    }
+    c.lowLifeDays = (c.lowLifeDays ?? 0) + 1;
+    if (c.lowLifeDays >= SHUNNED_AFTER_DAYS && !shunned) {
+      s.effects.push({ id: uid(), name: 'Shunned by respectable folk', kind: 'other', targetIds: [c.id], casterId: null, concentration: false, shelter: false, startedAt: absNow(s), endsAt: null, notes: 'Disadvantage on Charisma checks with the upper classes, and respectable factions may think less of them. Ends when they live Poor or better.' });
+      status(s, c, 'lifestyleDrops', `After a month living ${LIFESTYLE_LABEL[c.lifestyle].toLowerCase()}, ${c.name} looks and smells it: respectable folk cross the street (table rule: Disadvantage on Charisma checks with the upper classes).`, 'warn');
     }
   }
 }
@@ -2678,13 +2844,19 @@ function purseDebts(d: State): void {
 // ---------------------------------------------------------------- shop and loot
 
 /** Buys equipment at its PHB price (less any discount) and adds it to the buyer's inventory. */
-export const buyItem = act((d, _ctx, charId: string, name: string, qty: number, unitGp: number, discount: number) => {
+export const buyItem = act((d, _ctx: Ctx, charId: string, name: string, qty: number, unitGp: number, discount: number) => {
   const c = charById(d, charId);
   if (!c || qty < 1) return;
   const cost = Math.round(unitGp * qty * (1 - discount) * 100) / 100;
   if (c.gp < cost) return void log(d, `${c.name} can't afford ${qty} × ${name} (${fmtGp(cost)}; has ${fmtGp(c.gp)}).`, 'warn');
   spendWealth(c, cost);
-  const notes = stowItem(d, c, name, qty, packNamed(name) ? {} : { valueGp: unitGp }, true);
+  // Table rule: buying potions on the cheap while living Squalid or Wretched, one in six comes from a backstreet hawker and is tainted.
+  const tainted = d.settings.lifestyleRisks && d.place.settlement && isLowLife(c.lifestyle) && /potion|elixir|tonic/i.test(name) && die(TAINTED_POTION_ODDS, _ctx.rng) === 1;
+  const notes = tainted ? [] : stowItem(d, c, name, qty, packNamed(name) ? {} : { valueGp: unitGp }, true);
+  if (tainted) {
+    c.inventory.push({ id: uid(), name, qty, weight: estimateWeight(name).weight, source: 'book', valueGp: unitGp, container: null, ammo: null, tainted: true });
+    log(d, `DM only: the ${name} ${c.name} bought from a backstreet hawker is tainted. Whoever drinks it makes a DC 10 Con save against Cackle Fever (Effects tab, Expose).`, 'warn');
+  }
   log(d, `${c.name} buys ${qty} × ${name} for ${fmtGp(cost)}${discount ? ` (${Math.round(discount * 100)}% off)` : ''}.${notes.length ? ` ${notes.join(' ')}` : ''}`, 'good');
 });
 
@@ -3039,7 +3211,19 @@ function cityWater(s: State, ctx: Ctx): void {
     if (c.lifestyle !== 'squalid' && c.lifestyle !== 'wretched') continue;
     if (c.lifestyle === 'wretched' && bestRenown(s) >= 3) continue;
     const dc = CITY_WATER_DC[c.lifestyle]!;
-    requestSave(s, ctx, c, 'tainted', dc, 'normal', c.lifestyle === 'wretched' ? 'gutter water and the dregs of public wells' : 'foul water from a tenement cistern');
+    const reason = c.lifestyle === 'wretched' ? 'gutter water and the dregs of public wells' : 'foul water from a tenement cistern';
+    if (!s.settings.autoRollSaves) {
+      requestSave(s, ctx, c, 'tainted', dc, 'normal', reason);
+      continue;
+    }
+    const mode = poisonSaveMode(s, c);
+    const r = rollSave(c, dc, mode, ctx.rng);
+    applySaveResult(s, ctx, c, { charId: c.id, kind: 'tainted', dc, mode, reason: `${reason}${mode === 'advantage' ? ', with Antitoxin' : ''}` }, r.passed, r.detail);
+    // Table rule: water bad enough to fail by 5 or more may carry Sight Rot (the 2024 DMG names tainted water).
+    if (!r.passed && r.total <= dc - SIGHT_ROT_MARGIN && !c.contagions.some((x) => x.kind === 'sightRot')) {
+      status(s, c, 'contagionOnset', `The water ${c.name} drank was worse than most: their eyes start to itch and water (table rule).`, 'bad');
+      exposeContagionMut(s, ctx, c.id, 'sightRot', true);
+    }
   }
 }
 

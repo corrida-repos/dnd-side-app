@@ -26,6 +26,7 @@ import { SPELLBOOK_COPY, ACTIVITY_PRESETS } from '../rules/longterm';
 import { AWAY_PROGRESS, BUILDING_PRESETS, BUSINESS_DEBT_PENALTY, BUSINESS_MAX_DAYS, BUSINESS_PRESETS } from '../rules/business';
 import { WaysAround } from './WaysAround';
 import { BOOK, SKILLS, TOOLS, carriesTool, hasSkill, proficientWith } from '../rules/gear';
+import { isLowLife } from '../rules/lowLife';
 import { TRAINING_KIND_LABEL, type TrainingKind } from '../rules/prestige';
 
 export function DowntimeTab() {
@@ -439,6 +440,9 @@ function NewProject() {
           </p>
         );
       })()}
+      {kind === 'activity' && name.startsWith('Relaxation') && s.settings.lifestyleRisks && crafters.some((id) => isLowLife(s.characters.find((c) => c.id === id)?.lifestyle ?? '')) && (
+        <p className="small warn-text">Relaxation needs a Modest lifestyle or better (Xanathar&apos;s): anyone living Squalid or Wretched gets nothing from the week.</p>
+      )}
       {canUntrained && <Toggle checked={untrained} onChange={setUntrained} label="Not proficient with the tool: improvised, twice the workdays (table rule)" />}
       <Rule>{calc.note}</Rule>
       <button

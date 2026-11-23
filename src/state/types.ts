@@ -134,6 +134,8 @@ export interface InventoryItem {
   uses?: number;
   /** Caltrops or Ball Bearings spread on the ground: 10 minutes to gather up, lost if the party moves on. */
   scattered?: boolean;
+  /** DM secret: a cheap potion bought while living rough is tainted (table rule): drinking it risks Cackle Fever. */
+  tainted?: boolean;
 }
 
 export interface Stash {
@@ -330,6 +332,10 @@ export interface Character {
   sickFrom?: string;
   /** Absolute minute an Antitoxin's Advantage on saves against poison runs out (PHB: 1 hour). */
   antitoxinUntil?: number | null;
+  /** A bad night on the street or in a flophouse (table rule): the next Long Rest removes no Exhaustion. */
+  restless?: boolean;
+  /** Days spent living Squalid or Wretched in a settlement in a row (table rule: after 30, respectable folk shun them). */
+  lowLifeDays?: number;
   /** Bouts of illness from bad water since the last Sewer Plague check (table rule). */
   waterborneIllnesses?: number;
   /** Magical contagions (2024 DMG): Cackle Fever, Sewer Plague, Sight Rot. */
