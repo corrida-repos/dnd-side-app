@@ -857,7 +857,7 @@ function PlaceCard() {
             Typical for {CLIMATES[s.place.climate].label}: {TERRAIN[TERRAIN_FOR_CLIMATE[s.place.climate]].label}
           </button>
         )}
-        <Toggle checked={s.place.settlement} onChange={(v) => set({ settlement: v })} label="Town or city (lifestyle covers meals)" />
+        <Toggle checked={s.place.settlement} onChange={(v) => set({ settlement: v })} label="Town or city (lifestyle covers meals during downtime)" />
         <Toggle checked={s.place.waterSource} onChange={(v) => set({ waterSource: v })} label="Water source nearby" />
         {s.place.waterSource && (
           <Select

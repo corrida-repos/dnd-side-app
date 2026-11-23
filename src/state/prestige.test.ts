@@ -95,6 +95,7 @@ describe('special rights', () => {
     expect(sameCommunity('', 'Greywater')).toBe(false);
     let s = fresh((d) => {
       d.place = { ...d.place, settlement: true, name: 'Greywater' };
+      d.townMode = 'downtime';
       d.characters[0].lifestyle = 'comfortable';
       d.characters[1].lifestyle = 'wealthy';
     });
@@ -218,5 +219,17 @@ describe('faction renown (2024 DMG) and its ties to marks', () => {
     s = E.grantMark(s, ctx(), { kind: 'title', name: 'Baron', holderIds: [s.characters[0].id], grantor: '', rank: 'lord', factionId: 'f' });
     expect(s.marks).toHaveLength(1);
     expect(s.log.some((l) => /below the 25/.test(l.text))).toBe(true);
+  });
+});
+
+describe('free room and board, day to day in town', () => {
+  it('covers inn rooms and meals up to Comfortable in the named community', () => {
+    let s = fresh((d) => (d.place = { ...d.place, settlement: true, name: 'Greywater' }));
+    const [a, b] = s.characters;
+    s = E.grantMark(s, ctx(), { kind: 'rights', name: 'Freedom of Greywater', holderIds: [a.id], grantor: '', right: 'lodging', community: 'Greywater' });
+    s = E.rentRooms(s, ctx(), [a.id, b.id], 'comfortable', 1);
+    s = E.buyMeals(s, ctx(), [a.id], 'wealthy', 1);
+    expect(s.characters[0].gp).toBeCloseTo(999.9); // only the Wealthy meal's extra 1 SP
+    expect(s.characters[1].gp).toBeCloseTo(999.2);
   });
 });

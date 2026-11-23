@@ -84,6 +84,7 @@ describe('crafting, lifestyle and feed', () => {
   it('charges weekly lifestyle for the days spent in town', () => {
     const s = fresh((d) => {
       d.place.settlement = true;
+      d.townMode = "downtime";
       d.settings.lifestylePeriod = 'week';
       d.characters[0].lifestyle = 'modest';
       d.dayIndex = 4;

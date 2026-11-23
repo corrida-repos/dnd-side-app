@@ -92,7 +92,7 @@ export type RightKind = 'lodging' | 'soldiers' | 'marque' | 'rites' | 'envoy' | 
 export const RIGHTS: Record<RightKind, { label: string; effect: string }> = {
   lodging: {
     label: 'Free room and board in a community',
-    effect: 'Lifestyle costs nothing while in that settlement, up to Comfortable; above that, only the difference is paid (table rule cap).',
+    effect: 'In that settlement, downtime lifestyle and inn rooms and meals cost nothing up to Comfortable; above that, only the difference is paid (table rule cap).',
   },
   soldiers: {
     label: 'Sworn service of local soldiers',

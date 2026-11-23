@@ -30,13 +30,14 @@ import { AWAY_PROGRESS, BUILD_SPELLS, BUSINESS_DEBT_PENALTY, BUSINESS_MAX_DAYS, 
 import { HAZARDS, type GiftType, type HazardId } from '../rules/hazards';
 import { ARCANA_DC, STUDY_MINUTES, type StudyMethod } from '../rules/identify';
 import { FEED_LB_PER_DAY, MOUNT_CAPACITY, carryingCapacity, COINS_PER_LB, estimateWeight, loadLevel, parseInventory, RATION_WEIGHT, type LoadLevel } from '../rules/encumbrance';
-import { approachMode, bigEnoughToRide, canTame, FACTOR_LABEL, missedDays, sessionResult, tameDC, TAME_MAX_FAILS, TAME_RETRY_MINUTES, TAME_SESSION_MINUTES, trainingNeeded, TRAINING_LABEL, trustCue, trustNeeded, type ApproachFactors, type TameTraining } from '../rules/taming';
+import { bigEnoughToRide, canBeSidekick, canTame, currentDC, dayOutcome, missedDays, NO_AIDS, resultGain, sessionAttitude, sessionResult, tameCheck, tameDC, TRUST_PER_DAY_MAX, TAME_MAX_FAILS, TAME_RETRY_MINUTES, TAME_SESSION_MINUTES, trainingNeeded, TRAINING_LABEL, trustCue, trustNeeded, type TameAids, type TamerFacts, type TameTraining } from '../rules/taming';
 import { BUTCHER_DC, BUTCHER_MINUTES, isEdible, MEAT_LB, STRANGE_TYPES, yieldsHide, type Creature } from '../rules/hunting';
 import { addCoins, COIN_GP, coinCount, coinsFor, emptyPurse, exchange, fmtPurse, purseValue, spend, type Denom, type Purse } from '../rules/coins';
 import { detectContainer } from '../rules/containers';
+import { FIRE_DAMAGE, RAT_BITE_DAMAGE, RELAXATION_NEEDS, SHAKEDOWN_DAMAGE, SHAKEDOWN_GP, SHAKEDOWN_RIVAL_ODDS, SHUNNED_AFTER_DAYS, SIGHT_ROT_MARGIN, SPOILED_FOOD_DC, TAINTED_POTION_ODDS, WATCH_FINE, WATCH_JAIL_DAYS, WEEKLY_ODDS, WRETCHED_STRESS, isLowLife } from '../rules/lowLife';
 import { BOILING_POT, CHARCOAL_WORDS, FRICTION_LIGHT_MINUTES, HIDE_WATERSKIN, LEAN_TO, BEDDING, MAKESHIFT_DC, MAKESHIFT_TORCH, POTS, POT_ALARM_DC, SNARE, SNARE_LINE, TINDERBOX, VINE_CORD, isBareback, leanToDC, ABILITY_LABEL, INK, INK_PAGES, PAPER, PERFUME, PERFUME_MINUTES, SIGNAL_WHISTLE, carriesTool, liquidCapacity, toolNamed, SPYGLASS, ALARM_LINE, ALARM_MINUTES, BELL, DIG_BY_HAND, DIG_LABEL, GATHER_MINUTES, HUNTING_TRAP, SCATTERABLE, SHOVEL, SHOVEL_MINUTES, STABLING_GP_PER_DAY, TENT, TENT_SLEEPS, TRAP_CATCH_ON, TRAP_MEAT_DICE, TRAP_SAVE_DC, needsExoticSaddle, type DigKind, MAGNIFYING_GLASS, hasSkill, proficientWith, PACKS, RATIONS, WATERSKIN, WATERSKIN_PINTS, packNamed, FUEL_LABEL, FUEL_MATCH, HEALERS_KIT, HEALERS_KIT_USES, OIL_MINUTES, VESSEL_MATCH, fuelFor, isHooded, isOilLight } from '../rules/gear';
 import type { DdbImport } from '../rules/ddb';
-import { FEED_GP_PER_DAY, HIRELING_WAGE, magicItemValue, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset, type Lifestyle } from '../rules/money';
+import { INN_STAY_GP, MEAL_GP, MEALS_PER_DAY, FEED_GP_PER_DAY, HIRELING_WAGE, magicItemValue, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset, type Lifestyle } from '../rules/money';
 import { STABLE_WAKE_DIE, STABILIZE_DC } from '../rules/upkeep';
 import { FORT_NEGLECT_DAYS, FORT_UPKEEP, LAND, LODGING_CAP, MARK_LABEL, PRIZE_CROWN_SHARE, RIGHTS, TITLE_RANK, TRUST_LABEL, TRUST_MAX, lifestyleBelow, lowerLifestyle, monthDue, rollLandIncome, rollLandTrouble, sameCommunity, TRAINING_KIND_LABEL, levelRenown, renownMinimum } from '../rules/prestige';
 import { RITUAL_EXTRA_MINUTES as RITUAL_TAG_MINUTES, spellInfo } from '../rules/rituals';
@@ -240,6 +241,38 @@ export function exposure(s: State, activity: Activity, tempF: number = tempNow(s
   return { cold: true, heat: true, reason: activity === 'travel' ? 'On the road' : s.place.shelter === 'tent' ? 'In a tent (still exposed to temperature)' : 'In the open' };
 }
 
+/** Whether the party is in downtime in a settlement, where lifestyle expenses cover lodging and meals. */
+export const inDowntime = (s: State): boolean => s.place.settlement && s.townMode === 'downtime';
+
+/** A rented room still valid right now. */
+export const hasRoom = (s: State, c: Character): boolean => !!c.lodging && c.lodging.until > absNow(s);
+
+/**
+ * The standard of living that sets a character's risks in town: their lifestyle during downtime; in day-to-day play,
+ * the quality of the room they rented, or Wretched (sleeping rough) without one.
+ */
+export function livingOf(s: State, c: Character): Lifestyle {
+  if (inDowntime(s)) return c.lifestyle;
+  return hasRoom(s, c) ? c.lodging!.tier : 'wretched';
+}
+
+/** Sleeping rough in town (table rule): Wretched characters face the weather as if camping, unless Renown 3+ finds them shelter. */
+export function sleepsRough(s: State, c: Character): boolean {
+  return s.settings.lifestyleRisks && s.place.settlement && c.kind !== 'mount' && livingOf(s, c) === 'wretched' && bestRenown(s) < 3;
+}
+
+/** Squalid lodgings are drafty (table rule): a cold night still bites without a Blanket or Bedroll. */
+function draftyLodgings(s: State, c: Character): boolean {
+  return s.settings.lifestyleRisks && s.place.settlement && c.kind !== 'mount' && livingOf(s, c) === 'squalid';
+}
+
+/** One character's exposure: the party's, unless they're sleeping rough on the street. */
+export function personalExposure(s: State, c: Character, activity: Activity, partyExp: Exposure): Exposure {
+  if (s.place.settlement && !inDowntime(s) && hasRoom(s, c) && activity !== 'travel') return { cold: false, heat: false, reason: 'In a rented room' };
+  if (!sleepsRough(s, c) || s.effects.some((e) => e.shelter && activity !== 'travel')) return partyExp;
+  return { cold: true, heat: true, reason: 'Sleeping rough on the street' };
+}
+
 /** Anything that means an automatic success against extreme cold. A Bedroll only counts while resting in it. */
 export function coldProtection(c: Character, activity: Activity = 'camp', gearCounts = false): string | null {
   if (c.coldResist === 'immunity') return 'Cold Immunity';
@@ -327,7 +360,7 @@ export function rollSave(c: Character, dc: number, mode: RollMode, rng: Rng) {
   const total = r.value + mod;
   const modeTxt = mode === 'normal' ? '' : ` (${mode === 'advantage' ? 'Advantage' : 'Disadvantage'})`;
   const exhTxt = c.exhaustion ? `, including −${2 * c.exhaustion} from Exhaustion` : '';
-  return { passed: total >= dc, detail: `Rolled ${r.rolls.join('/')}${modeTxt} ${signed(mod)}${exhTxt} = ${total}. ` };
+  return { passed: total >= dc, total, detail: `Rolled ${r.rolls.join('/')}${modeTxt} ${signed(mod)}${exhTxt} = ${total}. ` };
 }
 
 /** Is an Antitoxin giving this creature Advantage on saves to avoid or end the Poisoned condition? */
@@ -380,13 +413,14 @@ function tickHour(s: State, ctx: Ctx, activity: Activity): void {
     }
   }
 
-  const exp = exposure(s, activity, temp);
+  const partyExp = exposure(s, activity, temp);
   for (const c of s.characters) {
     if (!alive(c)) continue;
+    const exp = personalExposure(s, c, activity, partyExp);
     if (s.settings.extremeWeather && exp.cold && temp <= 0 && !coldProtection(c, activity, s.settings.coldGear2014)) {
       const wrapped = (c.blanket || !!c.bedding) && activity === 'rest';
       requestSave(s, ctx, c, 'cold', 10, wrapped ? 'advantage' : 'normal', `extreme cold (${temp}°F)${wrapped ? (c.blanket ? ', wrapped in a Blanket' : ', on a bed of boughs') : ''}`);
-    } else if (activity === 'rest' && exp.cold && s.settings.coldNights && temp <= s.settings.coldNightF && !hasWarmCover(c)) {
+    } else if (activity === 'rest' && (exp.cold || draftyLodgings(s, c)) && s.settings.coldNights && temp <= s.settings.coldNightF && !hasWarmCover(c)) {
       c.nightChill = c.nightChill == null ? temp : Math.min(c.nightChill, temp);
     }
     if (s.settings.extremeWeather && exp.heat && temp >= 100) {
@@ -399,7 +433,14 @@ function tickHour(s: State, ctx: Ctx, activity: Activity): void {
 }
 
 function dailyCosts(s: State): void {
-  if (s.place.settlement) {
+  if (s.place.settlement && !inDowntime(s)) {
+    // Day to day in town: no lifestyle expenses (2024 PHB). Meals and rooms are bought as they go.
+    for (const c of adventurers(s)) {
+      if (c.lifestyleOwed) settleLifestyle(s, c, 'downtime lodgings and meals');
+      if (c.lodging && c.lodging.until <= absNow(s)) c.lodging = null;
+    }
+  }
+  if (inDowntime(s)) {
     const fed: string[] = [];
     for (const c of adventurers(s)) {
       if (c.lifestyle !== 'wretched' || Math.max(0, ...s.factions.map((f) => f.renown)) >= 3) {
@@ -425,22 +466,75 @@ function dailyCosts(s: State): void {
       }
     }
     if (fed.length) log(s, `Town living covers meals and lodging for ${fed.join(', ')}.`);
-    if (s.settings.stabling) {
-      const stabled = s.characters.filter((m) => m.kind === 'mount' && alive(m));
-      for (const m of stabled) {
-        m.ateLbToday = Math.max(m.ateLbToday, foodNeedLb(m));
-        m.drankPintsToday = Math.max(m.drankPintsToday, waterNeedPints(m, false, false));
-      }
-      if (stabled.length) payGold(s, [], Math.round(stabled.length * (STABLING_GP_PER_DAY + FEED_GP_PER_DAY) * 100) / 100, `stabling and feed for ${stabled.map((m) => m.name).join(', ')}`);
-    }
-  } else {
+    if (s.settings.stabling) stableMounts(s);
+  } else if (!s.place.settlement) {
     for (const c of adventurers(s)) if (c.lifestyleOwed) settleLifestyle(s, c, 'lodgings and meals on leaving town');
     if (s.settings.hirelingsEat && s.settings.foodAndWater) hirelingsEat(s);
   }
+  if (s.place.settlement && s.settings.stabling && !inDowntime(s)) stableMounts(s);
   for (const h of s.hirelings) {
     if (h.active && h.wageGp > 0) payGold(s, h.payer === 'party' ? [] : [h.payer], h.wageGp, `${h.name}'s daily wage`);
   }
 }
+
+/** Stables and feeds the mounts in a settlement (2024 PHB: Stabling 5 SP, Feed 5 CP a day). */
+function stableMounts(s: State): void {
+  const stabled = s.characters.filter((m) => m.kind === 'mount' && alive(m));
+  for (const m of stabled) {
+    m.ateLbToday = Math.max(m.ateLbToday, foodNeedLb(m));
+    m.drankPintsToday = Math.max(m.drankPintsToday, waterNeedPints(m, false, false));
+  }
+  if (stabled.length) payGold(s, [], Math.round(stabled.length * (STABLING_GP_PER_DAY + FEED_GP_PER_DAY) * 100) / 100, `stabling and feed for ${stabled.map((m) => m.name).join(', ')}`);
+}
+
+/** Switches between downtime (lifestyle covers lodging and meals) and day-to-day play (buy them as you go). */
+function setTownModeMut(s: State, mode: 'downtime' | 'active', why = ''): void {
+  if ((s.townMode ?? 'active') === mode) return;
+  s.townMode = mode;
+  if (mode === 'active') for (const c of adventurers(s)) if (c.lifestyleOwed) settleLifestyle(s, c, 'downtime lodgings and meals');
+  log(
+    s,
+    mode === 'downtime'
+      ? `${why}Downtime in ${s.place.name || 'town'}: each character's lifestyle now covers lodging, meals and upkeep (2024 PHB).`
+      : `${why}Day-to-day play: no lifestyle expenses. Buy meals and rent rooms as you go, or live off rations.`,
+  );
+}
+
+export const setTownMode = act((d, _ctx, mode: 'downtime' | 'active') => setTownModeMut(d, mode));
+
+/** Free room and board (special rights) covers rooms and meals up to Comfortable in its community; above that only the difference is paid. */
+function freeBoardPrice(s: State, c: Character, table: Record<Exclude<Lifestyle, 'wretched'>, number>, tier: Exclude<Lifestyle, 'wretched'>): number {
+  if (!freeLodging(s, c)) return table[tier];
+  return Math.max(0, table[tier] - table[lowerLifestyle(tier, LODGING_CAP) as Exclude<Lifestyle, 'wretched'>]);
+}
+
+/** Rents rooms at an inn (2024 PHB Inn Stay per Day). A room keeps the weather out and sets the quality of town life. */
+export const rentRooms = act((d, _ctx, charIds: string[], tier: Exclude<Lifestyle, 'wretched'>, nights: number) => {
+  const who = charIds.map((id) => charById(d, id)).filter((c): c is Character => !!c && c.kind !== 'mount');
+  const n = Math.max(1, Math.round(nights));
+  if (!who.length || !d.place.settlement) return;
+  const now = absNow(d);
+  // A night's stay runs to midday after the last night.
+  const checkout = (d.dayIndex + n) * MIN_PER_DAY + 12 * 60;
+  for (const c of who) {
+    payGold(d, [c.id], Math.round(freeBoardPrice(d, c, INN_STAY_GP, tier) * n * 100) / 100, `${n} night${n > 1 ? 's' : ''} at a ${LIFESTYLE_LABEL[tier].toLowerCase()} inn`);
+    c.lodging = { tier, until: Math.max(now + 60, checkout) };
+  }
+  log(d, `${who.map((c) => c.name).join(', ')} take${who.length > 1 ? '' : 's'} ${LIFESTYLE_LABEL[tier].toLowerCase()} rooms for ${n} night${n > 1 ? 's' : ''}.`, 'good');
+});
+
+/** Buys meals at an inn or tavern (2024 PHB Meal prices). Three meals make a day's food and drink. */
+export const buyMeals = act((d, _ctx, charIds: string[], tier: Exclude<Lifestyle, 'wretched'>, meals: number) => {
+  const who = charIds.map((id) => charById(d, id)).filter((c): c is Character => !!c && c.kind !== 'mount');
+  const n = Math.max(1, Math.round(meals));
+  if (!who.length || !d.place.settlement) return;
+  for (const c of who) {
+    payGold(d, [c.id], Math.round(freeBoardPrice(d, c, MEAL_GP, tier) * n * 100) / 100, `${n} ${LIFESTYLE_LABEL[tier].toLowerCase()} meal${n > 1 ? 's' : ''}`);
+    c.ateLbToday = round2(c.ateLbToday + (foodNeedLb(c) * n) / MEALS_PER_DAY);
+    c.drankPintsToday = round2(c.drankPintsToday + (waterNeedPints(c, false, false) * n) / MEALS_PER_DAY);
+  }
+  log(d, `${who.map((c) => c.name).join(', ')} ${who.length > 1 ? 'eat' : 'eats'} ${n === MEALS_PER_DAY ? "a day's" : n} ${LIFESTYLE_LABEL[tier].toLowerCase()} meal${n > 1 ? 's' : ''}, food and drink included.`);
+});
 
 function settleLifestyle(s: State, c: Character, what: string): void {
   const owed = Math.round((c.lifestyleOwed ?? 0) * 100) / 100;
@@ -896,7 +990,12 @@ function completeLongRest(d: State, ctx: Ctx, watched: Record<string, number>): 
     }
     const restless = sewerWeakened(c);
     if (restless) status(d, c, 'contagionWorse', `${c.name} has Sewer Plague: this Long Rest restores no HP and removes no Exhaustion.`, 'warn');
-    if (c.exhaustion > 0 && !armorSpoiled && !restless) {
+    const brokenNight = !!c.restless;
+    if (brokenNight) {
+      c.restless = false;
+      if (c.exhaustion > 0) status(d, c, 'exhaustionStuck', `${c.name} slept badly, woken again and again, and wakes no less tired: no Exhaustion removed this time (table rule).`, 'warn');
+    }
+    if (c.exhaustion > 0 && !armorSpoiled && !restless && !brokenNight) {
       const gone = recoverExhaustion(c);
       if (gone) {
         status(d, c, 'exhaustionEases', `${c.name} recovers 1 Exhaustion level (${EXHAUSTION_CAUSE_LABEL[gone]}). Now level ${c.exhaustion}.`, 'good');
@@ -1213,6 +1312,8 @@ export const travel = act((d, ctx, o: TravelOpts) => travelMut(d, ctx, o));
 
 function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
   breakCamp(d, ctx);
+  if (d.townMode === 'downtime') setTownModeMut(d, 'active', 'Downtime is over. ');
+  for (const c of d.characters) if (c.lodging) c.lodging = null;
   const vessel = o.vesselId ? d.stashes.find((x) => x.id === o.vesselId && x.speedMph) : undefined;
   if (vessel) return sail(d, ctx, vessel, o);
   if (o.flying && o.difficult) o = { ...o, difficult: false };
@@ -1931,6 +2032,7 @@ export const finishPreparation = act((d, _ctx, charId: string) => {
 export const workOnProjects = act((d, ctx, projectIds: string[]) => {
   const projects = d.projects.filter((p) => projectIds.includes(p.id) && !p.done);
   if (!projects.length) return;
+  if (d.place.settlement) setTownModeMut(d, 'downtime', 'The party settles in to work. ');
   advanceMut(d, ctx, 8 * 60, 'work');
   for (const p of projects) progress(d, p, ctx);
 });
@@ -1977,7 +2079,13 @@ function progressFinish(s: State, p: Project, ctx?: Ctx): void {
       } else if (act === 'Relaxation') {
         for (const id of p.charIds) {
           const c = charById(s, id);
-          if (c) c.recuperatedUntil = absNow(s) + 7 * MIN_PER_DAY;
+          if (!c) continue;
+          // Xanathar's: relaxation needs at least a Modest lifestyle.
+          if (s.settings.lifestyleRisks && !RELAXATION_NEEDS.includes(c.lifestyle)) {
+            log(s, `${c.name} can't truly relax living ${LIFESTYLE_LABEL[c.lifestyle].toLowerCase()}: no benefit from the week (Xanathar's needs a Modest lifestyle or better).`, 'warn');
+            continue;
+          }
+          c.recuperatedUntil = absNow(s) + 7 * MIN_PER_DAY;
         }
         log(s, `${p.name}: a quiet week. Advantage on saves against lingering diseases and poisons for the next 7 days, and one effect that blocks healing can end.`, 'good');
       } else {
@@ -2159,38 +2267,176 @@ const bestRenown = (s: State): number => Math.max(0, ...s.factions.map((f) => f.
  * shelter in need, which spares Wretched characters the street.
  */
 function lifestyleRisks(s: State, ctx: Ctx): void {
-  if (!s.settings.lifestyleRisks || !s.place.settlement || (s.dayIndex + 1) % 7 !== 0) return;
-  for (const c of adventurers(s)) {
-    const r = die(6, ctx.rng);
+  if (!s.settings.lifestyleRisks || !s.place.settlement) return;
+  trackLowLife(s);
+  if ((s.dayIndex + 1) % 7 !== 0) return;
+  const chance = (n: number) => die(n, ctx.rng) === 1;
+  const hurt = (id: string, n: number) => Object.assign(s, changeHp(s, ctx, id, -n));
+  for (const id of adventurers(s).map((c) => c.id)) {
+    const me = () => charById(s, id)!;
+    const c = me();
     const steal = (dice: string) => {
-      const gp = Math.min(c.gp, rollExpr(dice, ctx.rng) ?? 1);
+      const who = me();
+      // Half the time the thief takes something from the pack instead of the purse.
+      const loose = who.inventory.filter((i) => i.qty > 0 && !i.container && !i.scattered && (i.valueGp ?? 0) > 0);
+      if (loose.length && (who.gp <= 0 || die(2, ctx.rng) === 1)) {
+        const it = loose[die(loose.length, ctx.rng) - 1];
+        useUpOne(who, it);
+        return void status(s, who, 'robbed', `${who.name} finds their ${it.name} gone, taken while they slept or looked away (table rule).`, 'warn');
+      }
+      const gp = Math.min(who.gp, rollExpr(dice, ctx.rng) ?? 1);
       if (gp <= 0) return;
-      spendWealth(c, gp);
-      log(s, `${c.name} notices their purse is lighter: ${fmtGp(gp)} gone, lifted while living ${LIFESTYLE_LABEL[c.lifestyle].toLowerCase()} (table rule).`, 'warn');
+      spendWealth(who, gp);
+      log(s, `${who.name} notices their purse is lighter: ${fmtGp(gp)} gone, lifted while living ${LIFESTYLE_LABEL[livingOf(s, who)].toLowerCase()} (table rule).`, 'warn');
     };
-    switch (c.lifestyle) {
-      case 'wretched':
+    switch (livingOf(s, c)) {
+      case 'wretched': {
         if (bestRenown(s) >= 3) break;
-        if (r === 1) steal('1d6');
-        else if (r === 2) {
-          log(s, `${c.name} is roughed up sleeping rough on the street (table rule).`, 'warn');
-          Object.assign(s, changeHp(s, ctx, c.id, -die(4, ctx.rng)));
+        const o = WEEKLY_ODDS.wretched;
+        if (chance(o.theft)) steal('1d6');
+        if (chance(o.roughedUp)) {
+          status(s, me(), 'hurt', `${me().name} is roughed up sleeping rough on the street (table rule).`, 'warn');
+          hurt(id, die(4, ctx.rng));
         }
+        if (chance(o.ratBite)) ratBite(s, ctx, id);
+        if (chance(o.vermin)) vermin(s, ctx, me());
+        if (chance(o.cackle)) crowdFever(s, ctx, me(), 'a feverish stranger who laughed all night in the doorway beside them');
+        if (chance(o.watch)) townWatch(s, ctx, me());
+        if (chance(o.brokenNight)) {
+          me().restless = true;
+          status(s, me(), 'shakenAwake', `${me().name} is kicked awake, rained on and moved along all week: their next Long Rest removes no Exhaustion (table rule).`, 'warn');
+        }
+        const w = me();
+        w.stress += WRETCHED_STRESS;
+        status(s, w, 'stressUp', `A week on the street grinds ${w.name} down: Stress ${w.stress} (table rule).`, 'warn');
         break;
-      case 'squalid':
-        if (r === 1) steal('1d6');
+      }
+      case 'squalid': {
+        const o = WEEKLY_ODDS.squalid;
+        if (chance(o.theft)) steal('1d6');
+        if (chance(o.spoiledFood) && s.settings.rawFoodRisk) requestSave(s, ctx, me(), 'raw', SPOILED_FOOD_DC, 'normal', 'a bowl of gone-off stew from the boarding house');
+        if (chance(o.ratBite)) ratBite(s, ctx, id);
+        if (chance(o.vermin)) vermin(s, ctx, me());
+        if (chance(o.cackle)) crowdFever(s, ctx, me(), 'a cheap tonic from a hawker in the boarding house');
+        if (chance(o.shakedown)) shakedown(s, ctx, id);
+        if (chance(o.fire)) tenementFire(s, ctx, id);
         break;
+      }
       case 'poor':
-        if (r === 1 && die(2, ctx.rng) === 1) steal('1d4');
+        if (chance(6) && die(2, ctx.rng) === 1) steal('1d4');
         break;
-      case 'aristocratic':
+      case 'aristocratic': {
+        const r = die(6, ctx.rng);
         if (r === 1) steal('2d10');
         else if (r === 2) log(s, `Word of ${c.name}'s wealth spreads: someone seeks their patronage, a loan or a favor (table rule).`, 'info');
         else if (r === 3) log(s, `${c.name} receives an invitation from someone who wants to be seen with them (table rule).`, 'info');
         break;
+      }
       case 'wealthy':
-        if (r === 1) log(s, `A petitioner approaches ${c.name}, having heard they can afford to help (table rule).`, 'info');
+        if (chance(6)) log(s, `A petitioner approaches ${c.name}, having heard they can afford to help (table rule).`, 'info');
         break;
+    }
+  }
+}
+
+/** A rat bite in the night (table rule): 1 Piercing damage, and it counts toward Sewer Plague (the DMG names rats as carriers). */
+function ratBite(s: State, ctx: Ctx, id: string): void {
+  const c = charById(s, id)!;
+  status(s, c, 'hurt', `${c.name} wakes to a sharp pain: a rat has bitten them in the night (table rule).`, 'warn');
+  Object.assign(s, changeHp(s, ctx, id, -RAT_BITE_DAMAGE));
+  const me = charById(s, id)!;
+  if (s.settings.wildNeedsPurifying) waterborneIllness(s, ctx, me);
+}
+
+/** Rats and damp (table rule): a day of Rations eaten, or a piece of gear chewed or rotted. */
+function vermin(s: State, ctx: Ctx, c: Character): void {
+  const day = foodNeedLb(c);
+  if (c.rationsLb >= day && die(2, ctx.rng) === 1) {
+    c.rationsLb = round2(c.rationsLb - day);
+    return void status(s, c, 'robbed', `Rats have chewed into ${c.name}'s pack: a day's Rations gone (table rule).`, 'warn');
+  }
+  const sound = c.inventory.filter((i) => !i.damaged && !i.scattered && i.qty > 0 && (CLOTH.test(i.name) || /pack|bag|sack|book|paper|parchment|rations?|boots|leather/i.test(i.name)));
+  if (!sound.length) return;
+  const it = sound[die(sound.length, ctx.rng) - 1];
+  if (it.qty > 1) {
+    it.qty -= 1;
+    c.inventory.push({ ...it, id: uid(), qty: 1, damaged: true });
+  } else it.damaged = true;
+  status(s, c, 'robbed', `Damp and gnawing teeth have got at ${c.name}'s ${it.name}: it's damaged (table rule; mend it on the Gear tab).`, 'warn');
+}
+
+/** Cackle Fever from a crowded flophouse or a cheap tainted elixir (table rule; the 2024 DMG names both). Gnomes are immune. */
+function crowdFever(s: State, ctx: Ctx, c: Character, how: string): void {
+  if (/gnome/i.test(c.species)) return;
+  status(s, c, 'contagionOnset', `${c.name} has been close to ${how}.`, 'warn');
+  exposeContagionMut(s, ctx, c.id, 'cackle', true);
+}
+
+/** A gang comes for protection money (table rule): pay up, or take a beating that may make an enemy. */
+function shakedown(s: State, ctx: Ctx, id: string): void {
+  const c = charById(s, id)!;
+  const ask = rollExpr(SHAKEDOWN_GP, ctx.rng) ?? 3;
+  if (c.gp >= ask) {
+    spendWealth(c, ask);
+    return void log(s, `Local toughs lean on ${c.name} for protection money: ${fmtGp(ask)} paid to be left alone (table rule).`, 'warn');
+  }
+  status(s, c, 'hurt', `Local toughs want ${fmtGp(ask)} in protection money ${c.name} doesn't have, so they take it out of their hide (table rule).`, 'bad');
+  Object.assign(s, changeHp(s, ctx, id, -(rollExpr(SHAKEDOWN_DAMAGE, ctx.rng) ?? 3)));
+  if (die(SHAKEDOWN_RIVAL_ODDS, ctx.rng) === 1 && !s.rivals.some((r) => r.name === 'The tenement gang')) {
+    s.rivals.push({ id: uid(), name: 'The tenement gang', idea: 'A street gang running protection in the slums', goal: `Make an example of ${c.name}`, assets: 'Toughs, lookouts, a fence', plans: [], pressure: 1, active: true });
+    log(s, 'The gang won’t forget the defiance: they become a Rival (table rule).', 'warn');
+  }
+}
+
+/** The town watch moves the homeless on (table rule): a lost night, a fine, or a few days in the cells. */
+function townWatch(s: State, ctx: Ctx, c: Character): void {
+  const r = die(3, ctx.rng);
+  if (r === 1) {
+    c.restless = true;
+    return void status(s, c, 'shakenAwake', `The watch rousts ${c.name} from a doorway in the small hours and moves them on: their next Long Rest removes no Exhaustion (table rule).`, 'warn');
+  }
+  if (r === 2) {
+    const gp = Math.min(Math.max(0, c.gp), rollExpr(WATCH_FINE, ctx.rng) ?? 2);
+    if (gp > 0) spendWealth(c, gp);
+    return void log(s, `The watch fines ${c.name} ${fmtGp(gp)} for vagrancy (table rule).`, 'warn');
+  }
+  const days = rollExpr(WATCH_JAIL_DAYS, ctx.rng) ?? 2;
+  s.effects.push({ id: uid(), name: 'In jail', kind: 'other', targetIds: [c.id], casterId: null, concentration: false, shelter: false, startedAt: absNow(s), endsAt: absNow(s) + days * MIN_PER_DAY, notes: 'Locked up for vagrancy.' });
+  status(s, c, 'jailed', `The watch locks ${c.name} up for vagrancy: ${days} day${days > 1 ? 's' : ''} in the cells (table rule).`, 'bad');
+}
+
+/** A fire in the tenement (table rule, rare): 2d6 Fire damage and maybe some belongings lost. */
+function tenementFire(s: State, ctx: Ctx, id: string): void {
+  const c = charById(s, id)!;
+  noticed(s, 'hurt', [c], `Fire! Smoke pours up the stairwell of ${c.name}'s boarding house, and they get out through the flames (table rule).`, 'bad');
+  Object.assign(s, changeHp(s, ctx, id, -(rollExpr(FIRE_DAMAGE, ctx.rng) ?? 7)));
+  const me = charById(s, id)!;
+  const left = me.inventory.filter((i) => i.qty > 0 && !i.scattered);
+  if (left.length && die(2, ctx.rng) === 1) {
+    const it = left[die(left.length, ctx.rng) - 1];
+    me.inventory = me.inventory.filter((x) => x.id !== it.id);
+    log(s, `${me.name}'s ${it.qty > 1 ? `${it.qty} × ` : ''}${it.name} burned with the room.`, 'warn');
+  }
+}
+
+/** Counts days of low living in town; after 30, respectable folk shun the character until they live better (table rule). */
+function trackLowLife(s: State): void {
+  for (const c of adventurers(s)) {
+    const life = livingOf(s, c);
+    const low = isLowLife(life) && !(life === 'wretched' && bestRenown(s) >= 3);
+    const shunned = s.effects.find((e) => e.name === 'Shunned by respectable folk' && e.targetIds.includes(c.id));
+    if (!low) {
+      c.lowLifeDays = 0;
+      if (shunned) {
+        s.effects = s.effects.filter((e) => e !== shunned);
+        log(s, `Living better again, ${c.name} is no longer shunned by respectable folk.`, 'good');
+      }
+      continue;
+    }
+    c.lowLifeDays = (c.lowLifeDays ?? 0) + 1;
+    if (c.lowLifeDays >= SHUNNED_AFTER_DAYS && !shunned) {
+      s.effects.push({ id: uid(), name: 'Shunned by respectable folk', kind: 'other', targetIds: [c.id], casterId: null, concentration: false, shelter: false, startedAt: absNow(s), endsAt: null, notes: 'Disadvantage on Charisma checks with the upper classes, and respectable factions may think less of them. Ends when they live Poor or better.' });
+      status(s, c, 'lifestyleDrops', `After a month living ${LIFESTYLE_LABEL[life].toLowerCase()}, ${c.name} looks and smells it: respectable folk cross the street (table rule: Disadvantage on Charisma checks with the upper classes).`, 'warn');
     }
   }
 }
@@ -2739,13 +2985,19 @@ function purseDebts(d: State): void {
 // ---------------------------------------------------------------- shop and loot
 
 /** Buys equipment at its PHB price (less any discount) and adds it to the buyer's inventory. */
-export const buyItem = act((d, _ctx, charId: string, name: string, qty: number, unitGp: number, discount: number) => {
+export const buyItem = act((d, _ctx: Ctx, charId: string, name: string, qty: number, unitGp: number, discount: number) => {
   const c = charById(d, charId);
   if (!c || qty < 1) return;
   const cost = Math.round(unitGp * qty * (1 - discount) * 100) / 100;
   if (c.gp < cost) return void log(d, `${c.name} can't afford ${qty} × ${name} (${fmtGp(cost)}; has ${fmtGp(c.gp)}).`, 'warn');
   spendWealth(c, cost);
-  const notes = stowItem(d, c, name, qty, packNamed(name) ? {} : { valueGp: unitGp }, true);
+  // Table rule: buying potions on the cheap while living Squalid or Wretched, one in six comes from a backstreet hawker and is tainted.
+  const tainted = d.settings.lifestyleRisks && d.place.settlement && isLowLife(livingOf(d, c)) && /potion|elixir|tonic/i.test(name) && die(TAINTED_POTION_ODDS, _ctx.rng) === 1;
+  const notes = tainted ? [] : stowItem(d, c, name, qty, packNamed(name) ? {} : { valueGp: unitGp }, true);
+  if (tainted) {
+    c.inventory.push({ id: uid(), name, qty, weight: estimateWeight(name).weight, source: 'book', valueGp: unitGp, container: null, ammo: null, tainted: true });
+    log(d, `DM only: the ${name} ${c.name} bought from a backstreet hawker is tainted. Whoever drinks it makes a DC 10 Con save against Cackle Fever (Effects tab, Expose).`, 'warn');
+  }
   log(d, `${c.name} buys ${qty} × ${name} for ${fmtGp(cost)}${discount ? ` (${Math.round(discount * 100)}% off)` : ''}.${notes.length ? ` ${notes.join(' ')}` : ''}`, 'good');
 });
 
@@ -3097,10 +3349,25 @@ function waterborneIllness(s: State, ctx: Ctx, c: Character): void {
 function cityWater(s: State, ctx: Ctx): void {
   if (!s.settings.lifestyleRisks || !s.settings.wildNeedsPurifying || !s.place.settlement) return;
   for (const c of adventurers(s)) {
-    if (c.lifestyle !== 'squalid' && c.lifestyle !== 'wretched') continue;
-    if (c.lifestyle === 'wretched' && bestRenown(s) >= 3) continue;
-    const dc = CITY_WATER_DC[c.lifestyle]!;
-    requestSave(s, ctx, c, 'tainted', dc, 'normal', c.lifestyle === 'wretched' ? 'gutter water and the dregs of public wells' : 'foul water from a tenement cistern');
+    const life = livingOf(s, c);
+    if (life !== 'squalid' && life !== 'wretched') continue;
+    if (life === 'wretched' && bestRenown(s) >= 3) continue;
+    // Day to day, someone sleeping rough drinks from their own waterskin; only a squalid inn serves cistern water.
+    if (life === 'wretched' && !inDowntime(s)) continue;
+    const dc = CITY_WATER_DC[life]!;
+    const reason = life === 'wretched' ? 'gutter water and the dregs of public wells' : 'foul water from a tenement cistern';
+    if (!s.settings.autoRollSaves) {
+      requestSave(s, ctx, c, 'tainted', dc, 'normal', reason);
+      continue;
+    }
+    const mode = poisonSaveMode(s, c);
+    const r = rollSave(c, dc, mode, ctx.rng);
+    applySaveResult(s, ctx, c, { charId: c.id, kind: 'tainted', dc, mode, reason: `${reason}${mode === 'advantage' ? ', with Antitoxin' : ''}` }, r.passed, r.detail);
+    // Table rule: water bad enough to fail by 5 or more may carry Sight Rot (the 2024 DMG names tainted water).
+    if (!r.passed && r.total <= dc - SIGHT_ROT_MARGIN && !c.contagions.some((x) => x.kind === 'sightRot')) {
+      status(s, c, 'contagionOnset', `The water ${c.name} drank was worse than most: their eyes start to itch and water (table rule).`, 'bad');
+      exposeContagionMut(s, ctx, c.id, 'sightRot', true);
+    }
   }
 }
 
@@ -6710,13 +6977,28 @@ export const removeMark = act((d, _ctx, id: string) => {
 
 // ---------------------------------------------------------------- taming wild creatures (table rule)
 
-/** Wisdom (Animal Handling): Wisdom modifier, plus Proficiency Bonus if proficient, minus Exhaustion. */
-export function animalHandling(c: Character): { bonus: number; why: string } {
-  const prof = hasSkill(c, 'Animal Handling');
-  const pb = proficiencyBonus(c.level);
-  const bonus = c.wisMod + (prof ? pb : 0) - 2 * c.exhaustion;
-  const why = `Wisdom ${signed(c.wisMod)}${prof ? `, proficient ${signed(pb)}` : prof === false ? ', not proficient' : ', proficiency not recorded'}${c.exhaustion ? `, Exhaustion −${2 * c.exhaustion}` : ''}`;
-  return { bonus, why };
+/** What a character brings to taming, read from their sheet. */
+export function tamerFacts(c: Character): TamerFacts {
+  const cha = c.abilities?.cha;
+  return {
+    wisMod: c.wisMod,
+    chaMod: typeof cha === 'number' ? abilityMod(cha) : null,
+    pb: proficiencyBonus(c.level),
+    exhaustion: c.exhaustion,
+    animalHandling: !!hasSkill(c, 'Animal Handling'),
+    persuasion: !!hasSkill(c, 'Persuasion'),
+    performance: !!hasSkill(c, 'Performance'),
+    feats: c.feats ?? [],
+    species: c.species ?? '',
+    level: c.level,
+  };
+}
+
+/** Who can take the Help action for a taming check: proficient in Animal Handling (2024 PHB), or a groom hireling. */
+export function tameHelpers(s: State, tamerId: string): { id: string; name: string }[] {
+  const pcs = s.characters.filter((c) => c.id !== tamerId && c.kind !== 'mount' && alive(c) && hasSkill(c, 'Animal Handling')).map((c) => ({ id: c.id, name: c.name }));
+  const grooms = s.hirelings.filter((h) => h.active && h.role === 'groom').map((h) => ({ id: `h:${h.id}`, name: `${h.name} (groom)` }));
+  return [...pcs, ...grooms];
 }
 
 export interface NewTame {
@@ -6730,32 +7012,32 @@ export interface NewTame {
   movement: 'land' | 'fly' | 'swim';
 }
 
-function tameRoll(ctx: Ctx, tamer: Character, f: ApproachFactors, dc: number) {
-  const { adv, dis } = approachMode(f);
-  const mode = combineModes(adv ? 'advantage' : 'normal', dis ? 'disadvantage' : 'normal');
-  const r = d20(mode, ctx.rng);
-  const { bonus } = animalHandling(tamer);
-  const total = r.value + bonus;
-  const why = (Object.keys(f) as (keyof ApproachFactors)[]).filter((k) => f[k]).map((k) => FACTOR_LABEL[k]);
-  const text = `Wisdom (Animal Handling) ${r.rolls.join('/')}${mode !== 'normal' ? ` with ${mode === 'advantage' ? 'Advantage' : 'Disadvantage'}` : ''} ${signed(bonus)} = ${total} against DC ${dc}${why.length ? ` (${why.join(', ')})` : ''}`;
-  return { natural: r.value, total, text };
+function tameRoll(ctx: Ctx, tamer: Character, c: { type: string; int: number; movement: 'land' | 'fly' | 'swim' }, a: TameAids, dc: number) {
+  const chk = tameCheck(tamerFacts(tamer), c, a);
+  if (!chk.ok) return { ok: false as const, why: chk.why! };
+  const r = d20(chk.mode, ctx.rng);
+  const extra = chk.dice.map((n) => die(n, ctx.rng));
+  const total = r.value + chk.bonus + extra.reduce((x, y) => x + y, 0);
+  const dice = chk.dice.map((n, i) => ` + ${extra[i]} (d${n})`).join('');
+  const text = `${chk.skill} ${r.rolls.join('/')}${chk.mode !== 'normal' ? ` with ${chk.mode === 'advantage' ? 'Advantage' : 'Disadvantage'}` : ''} ${signed(chk.bonus)}${dice} = ${total} against DC ${dc}${chk.notes.length ? ` (${chk.notes.join('; ')})` : ''}`;
+  return { ok: true as const, natural: r.value, total, text };
 }
 
 /** First contact: the Influence action to coax a wild Beast or Monstrosity into letting the tamer near (2024 PHB). */
-export const approachCreature = act((d, ctx, o: NewTame, tamerId: string, f: ApproachFactors, hostile: boolean) => {
+export const approachCreature = act((d, ctx, o: NewTame, tamerId: string, a: TameAids) => {
   if (!d.settings.taming) return void log(d, 'Taming wild creatures is switched off in Settings.', 'warn');
   const tamer = charById(d, tamerId);
   if (!tamer || tamer.kind === 'mount' || !alive(tamer)) return;
   const ok = canTame(o.type, o.int);
   if (!ok.ok) return void log(d, `${tamer.name} can't tame the ${o.creature}: ${ok.why}.`, 'warn');
-  if (hostile && !f.charmed) return void log(d, `The ${o.creature} is Hostile and won't be coaxed (2024 PHB: an unwilling creature refuses outright). Let it calm down, back off, or charm it first with Animal Friendship.`, 'warn');
   d.taming ??= [];
   const old = d.taming.find((t) => t.stage === 'wary' && t.creature === o.creature && t.tamerId === tamerId);
   const now = absNow(d);
-  if (old?.retryAt && old.retryAt > now) return void log(d, `The ${old.name} won't let ${tamer.name} near again yet: try after ${formatDuration(old.retryAt - now)} (table rule: 24 hours after a failed approach).`, 'warn');
+  if (old?.retryAt && old.retryAt > now) return void log(d, `The ${old.name} won't let ${tamer.name} near again yet: try after ${formatDuration(old.retryAt - now)} (2024 PHB Influence: 24 hours after a failed check), or try a different way.`, 'warn');
   const dc = tameDC(o.int, o.cr);
+  const r = tameRoll(ctx, tamer, o, { ...a, stable: false }, dc);
+  if (!r.ok) return void log(d, `The ${o.creature} won't be coaxed: ${r.why}.`, 'warn');
   advanceMut(d, ctx, 10, 'camp');
-  const r = tameRoll(ctx, tamer, f, dc);
   const name = o.name.trim() || o.creature;
   const base: TameTarget = { id: uid(), ...o, name, tamerId, stage: 'bonding', trust: 0, needed: trustNeeded(o.cr, o.int), fails: 0, lastSessionDay: null, startedDay: d.dayIndex, retryAt: null, trained: [] };
   if (old) d.taming = d.taming.filter((t) => t !== old);
@@ -6763,9 +7045,22 @@ export const approachCreature = act((d, ctx, o: NewTame, tamerId: string, f: App
     d.taming.push(base);
     return void log(d, `${tamer.name} edges toward the ${o.creature}, slow and low: ${r.text}. It stops, sniffs the air, and doesn't run. Taming has begun: about ${base.needed} good days of patient work (an hour a day) will win it over.`, 'good', { charIds: [tamer.id] });
   }
-  if (r.total <= dc - 5) return void log(d, `${tamer.name} misjudges the ${o.creature}: ${r.text}. It bares its teeth and lashes out or bolts (DM's call). It won't let anyone tame it now.`, 'bad', { charIds: [tamer.id] });
-  d.taming.push({ ...base, stage: 'wary', lastSessionDay: null, retryAt: absNow(d) + TAME_RETRY_MINUTES });
-  log(d, `${tamer.name} gets too close too fast: ${r.text}. The ${o.creature} backs off to a safe distance and watches. ${tamer.name} can try again in 24 hours (table rule).`, 'warn', { charIds: [tamer.id] });
+  if (r.total <= dc - 5) return void log(d, `${tamer.name} misjudges the ${o.creature}: ${r.text}. It bares its teeth and lashes out or bolts (table rule; DM decides which). It won't let anyone tame it now.`, 'bad', { charIds: [tamer.id] });
+  d.taming.push({ ...base, stage: 'wary', retryAt: absNow(d) + TAME_RETRY_MINUTES });
+  log(d, `${tamer.name} gets too close too fast: ${r.text}. The ${o.creature} backs off to a safe distance and watches. ${tamer.name} can try the same way again in 24 hours (2024 PHB Influence).`, 'warn', { charIds: [tamer.id] });
+});
+
+/** Raising a creature from an egg or a newborn: no approach, and it bonds in half the time (table rule after Monster Manual lore). */
+export const raiseYoung = act((d, _ctx, o: NewTame, tamerId: string) => {
+  if (!d.settings.taming) return void log(d, 'Taming wild creatures is switched off in Settings.', 'warn');
+  const tamer = charById(d, tamerId);
+  if (!tamer || tamer.kind === 'mount' || !alive(tamer)) return;
+  const ok = canTame(o.type, o.int);
+  if (!ok.ok) return void log(d, `${tamer.name} can't raise the ${o.creature}: ${ok.why}.`, 'warn');
+  const name = o.name.trim() || o.creature;
+  const t: TameTarget = { id: uid(), ...o, name, tamerId, stage: 'bonding', trust: 0, needed: trustNeeded(o.cr, o.int, true), fails: 0, lastSessionDay: null, startedDay: d.dayIndex, retryAt: null, trained: [], raised: true };
+  (d.taming ??= []).push(t);
+  log(d, `${tamer.name} takes on a young ${o.creature} and names it ${name}. It imprints on whoever feeds it: about ${t.needed} good days of care will bond it (table rule). The DM decides how long until it is grown enough to ride: Monster Manual lore says griffons, hippogriffs, wyverns and hadrosauruses are trained this way.`, 'good', { charIds: [tamer.id] });
 });
 
 function tamedMount(d: State, t: TameTarget): Character {
@@ -6793,8 +7088,8 @@ function tamedMount(d: State, t: TameTarget): Character {
   return m;
 }
 
-/** An hour's daily session with a creature being tamed or trained. Feeds it from the camp stores (raw meat first). */
-export const tameSession = act((d, ctx, id: string, f: Omit<ApproachFactors, 'food'>) => {
+/** An hour's daily session with a creature being tamed or trained, with any co-trainers. Feeds it from the camp stores (raw meat first). */
+export const tameSession = act((d, ctx, id: string, a: Omit<TameAids, 'attitude' | 'food' | 'unwilling'>, coTrainerIds: string[] = []) => {
   const t = d.taming?.find((x) => x.id === id);
   if (!t || t.stage === 'wary') return;
   const tamer = charById(d, t.tamerId);
@@ -6825,28 +7120,46 @@ export const tameSession = act((d, ctx, id: string, f: Omit<ApproachFactors, 'fo
   }
   advanceMut(d, ctx, TAME_SESSION_MINUTES, 'camp');
   t.lastSessionDay = d.dayIndex;
-  const dc = tameDC(t.int, t.cr);
-  const r = tameRoll(ctx, tamer, { ...f, food: fed }, dc);
-  const res = sessionResult(r.natural, r.total, dc);
-  const feedTxt = fed ? ` It eats ${fmtLb(need)} from the camp stores.` : ` There was no food to offer (${fmtLb(need)} needed), so no Advantage.`;
-  if (res === 'great' || res === 'success') t.fails = 0;
-  else t.fails += 1;
-  const gain = res === 'great' ? 2 : res === 'success' ? 1 : res === 'setback' ? -1 : 0;
+  const progress = t.training?.progress ?? 0;
+  const dc = currentDC(t.int, t.cr, t.trust, progress);
+  const startDC = tameDC(t.int, t.cr);
+  const attitude = sessionAttitude(t.trust, t.needed, t.stage === 'tamed');
+  const shared = { attitude, food: fed, unwilling: false, stable: a.stable, threatened: a.threatened };
+  // The tamer gets their own spells and helpers; co-trainers roll with only what the whole group shares (table rule).
+  const team = [tamer, ...coTrainerIds.map((cid) => charById(d, cid)).filter((c): c is Character => !!c && c.id !== tamer.id && c.kind !== 'mount' && alive(c))];
+  const rolls = team
+    .map((c, i) => ({ c, r: tameRoll(ctx, c, t, i === 0 ? { ...a, ...shared } : { ...NO_AIDS, ...shared }, dc) }))
+    .filter((x): x is { c: Character; r: Extract<ReturnType<typeof tameRoll>, { ok: true }> } => x.r.ok);
+  if (!rolls.length) return;
+  const results = rolls.map((x) => sessionResult(x.r.natural, x.r.total, dc));
+  const day = dayOutcome(results);
+  const word = { great: 'a breakthrough', success: 'success', fail: 'no progress', setback: 'a setback' } as const;
+  const rollTxt = rolls.map((x, i) => `${x.c.name}: ${x.r.text}, ${word[results[i]]}`).join('. ');
+  const who = rolls.map((x) => x.c.name).join(', ');
+  const ids = rolls.map((x) => x.c.id);
+  const feedTxt = fed ? ` It eats ${fmtLb(need)} from the camp stores.` : ` There was no food to offer (${fmtLb(need)} needed), so no Advantage from food.`;
+  const capped = rolls.length > 1 && results.reduce((n, r) => n + resultGain(r), 0) > TRUST_PER_DAY_MAX ? ` (it can only take in ${TRUST_PER_DAY_MAX} a day, table rule)` : '';
+  if (day.bad) t.fails += 1;
+  else t.fails = 0;
+  const gain = day.gain;
 
   if (t.stage === 'bonding') {
     t.trust = Math.max(0, t.trust + gain);
     if (t.fails >= TAME_MAX_FAILS) {
       d.taming = d.taming!.filter((x) => x !== t);
-      return void log(d, `${tamer.name} works with ${t.name}: ${r.text}.${feedTxt} After ${TAME_MAX_FAILS} bad days in a row it slips away in the night and doesn't come back (table rule).`, 'bad', { charIds: [tamer.id] });
+      return void log(d, `${who} work${rolls.length > 1 ? '' : 's'} with ${t.name}. ${rollTxt}.${feedTxt} After ${TAME_MAX_FAILS} bad days in a row it slips away in the night and doesn't come back (table rule).`, 'bad', { charIds: ids });
     }
     if (t.trust >= t.needed) {
       t.stage = 'tamed';
       const m = tamedMount(d, t);
       t.mountId = m.id;
-      return void log(d, `${tamer.name} works with ${t.name}: ${r.text}.${feedTxt} ${trustCue(t.creature, t.trust, t.needed)} ${t.name} is tamed and joins the party: it needs food and water every day like any mount. Untrained, it acts on its own in a fight and can only be ridden as an independent mount.`, 'good', { charIds: [tamer.id] });
+      const sidekick = canBeSidekick(t.cr) ? ` Optional rule (Tasha's Cauldron): at CR ${t.cr} it can join as a sidekick with the Warrior or Expert class, at the party's average level.` : '';
+      return void log(d, `${who} work${rolls.length > 1 ? '' : 's'} with ${t.name}. ${rollTxt}.${feedTxt} ${trustCue(t.creature, t.trust, t.needed)} ${t.name} is tamed and joins the party: it needs food and water every day like any mount. Untrained, it acts on its own in a fight and can only be ridden as an independent mount.${sidekick}`, 'good', { charIds: ids });
     }
-    const how = res === 'great' ? 'a breakthrough' : res === 'success' ? 'a good session' : res === 'setback' ? 'a setback' : 'no progress';
-    return void log(d, `${tamer.name} works with ${t.name}: ${r.text}, ${how}.${feedTxt} ${trustCue(t.creature, t.trust, t.needed)}${t.fails ? ` (${t.fails} bad day${t.fails > 1 ? 's' : ''} in a row)` : ''}`, gain > 0 ? 'good' : 'warn', { charIds: [tamer.id] });
+    const next = currentDC(t.int, t.cr, t.trust);
+    const dcTxt = next !== dc ? ` Trust ${gain > 0 ? '+' : ''}${gain}${capped}: the next session is DC ${next} (it started at ${startDC}).` : gain ? ` Trust ${gain > 0 ? '+' : ''}${gain}${capped}.` : '';
+    const friendly = attitude === 'indifferent' && t.trust * 2 >= t.needed ? ` It now counts as Friendly, so later sessions have Advantage (2024 PHB attitudes).` : '';
+    return void log(d, `${who} work${rolls.length > 1 ? '' : 's'} with ${t.name}. ${rollTxt}.${feedTxt}${dcTxt} ${trustCue(t.creature, t.trust, t.needed)}${friendly}${t.fails ? ` (${t.fails} bad day${t.fails > 1 ? 's' : ''} in a row)` : ''}`, gain > 0 ? 'good' : 'warn', { charIds: ids });
   }
 
   // Training a tamed creature: failures never undo it, they just waste the day.
@@ -6865,9 +7178,10 @@ export const tameSession = act((d, ctx, id: string, f: Omit<ApproachFactors, 'fo
       tr.kind === 'mount'
         ? `${t.name} now accepts a rider and can be a controlled mount (2024 PHB).${t.movement !== 'land' ? ' A flying or swimming mount needs an Exotic Saddle.' : ''}`
         : `${t.name} now follows simple commands from ${tamer.name}: come, stay, guard, attack, fetch (table rule).`;
-    return void log(d, `${tamer.name} trains ${t.name}: ${r.text}.${feedTxt} ${what}`, 'good', { charIds: [tamer.id] });
+    return void log(d, `${who} train${rolls.length > 1 ? '' : 's'} ${t.name}. ${rollTxt}.${feedTxt} ${what}`, 'good', { charIds: ids });
   }
-  log(d, `${tamer.name} trains ${t.name} ${TRAINING_LABEL[tr.kind]}: ${r.text}, ${gain > 0 ? 'it learns a little more' : 'a wasted day'}.${feedTxt} About ${tr.needed - tr.progress} more good session${tr.needed - tr.progress === 1 ? '' : 's'} to go.`, gain > 0 ? 'good' : 'warn', { charIds: [tamer.id] });
+  const next = currentDC(t.int, t.cr, t.trust, tr.progress);
+  log(d, `${who} train${rolls.length > 1 ? '' : 's'} ${t.name} ${TRAINING_LABEL[tr.kind]}. ${rollTxt}: ${gain > 0 ? `it learns a little more${capped}` : 'a wasted day'}.${feedTxt} About ${tr.needed - tr.progress} more good session${tr.needed - tr.progress === 1 ? '' : 's'} to go${next !== dc ? `; next session DC ${next}` : ''}.`, gain > 0 ? 'good' : 'warn', { charIds: ids });
 });
 
 /** Starts training a tamed creature to accept a rider or follow commands. */
@@ -6877,7 +7191,7 @@ export const startTraining = act((d, _ctx, id: string, kind: TameTraining) => {
   const tamer = charById(d, t.tamerId);
   if (kind === 'mount' && tamer && !bigEnoughToRide(t.size, tamer.size)) return void log(d, `A ${t.size} ${t.creature} is too small to carry ${tamer.name} (2024 PHB: a mount must be at least one size larger than its rider). Someone smaller could ride it.`, 'warn');
   t.training = { kind, progress: 0, needed: trainingNeeded(t.cr, t.int) };
-  log(d, `${tamer?.name ?? 'Its tamer'} begins training ${t.name} ${TRAINING_LABEL[kind]}: about ${t.training.needed} good sessions, an hour a day (table rule).${kind === 'mount' ? ' It must also have the right shape to carry a rider: DM\'s call.' : ''}`);
+  log(d, `${tamer?.name ?? 'Its tamer'} begins training ${t.name} ${TRAINING_LABEL[kind]}: about ${t.training.needed} good sessions, an hour a day (table rule).${kind === 'mount' ? " It must also have the right shape to carry a rider: DM's call." : ''}`);
 });
 
 /** Lets the creature go, or stops tracking it once it is tamed and trained. */

@@ -14,6 +14,15 @@ export const LIFESTYLE_GP: Record<Lifestyle, number> = {
   aristocratic: 10,
 };
 
+/**
+ * 2024 PHB Food, Drink, and Lodging: a night at an inn and a single meal, by quality. These are for day-to-day play;
+ * during downtime the lifestyle's expenses already include lodging and meals.
+ */
+export const INN_STAY_GP: Record<Exclude<Lifestyle, 'wretched'>, number> = { squalid: 0.07, poor: 0.1, modest: 0.5, comfortable: 0.8, wealthy: 2, aristocratic: 4 };
+export const MEAL_GP: Record<Exclude<Lifestyle, 'wretched'>, number> = { squalid: 0.01, poor: 0.02, modest: 0.1, comfortable: 0.2, wealthy: 0.3, aristocratic: 0.6 };
+/** A day's food is three meals (table rule). */
+export const MEALS_PER_DAY = 3;
+
 export const LIFESTYLE_LABEL: Record<Lifestyle, string> = {
   wretched: 'Wretched',
   squalid: 'Squalid',

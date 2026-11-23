@@ -35,6 +35,7 @@ describe('mixed potions, renown and lifestyle', () => {
       s.settings.sleepDeprivation = false;
       s.settings.sewerPlagueAfter = after;
       s.place.settlement = true;
+      s.townMode = 'downtime';
       s.factions = renown ? [{ id: 'f', name: 'Harpers', renown, notes: '', levelOf: null }] : [];
       s.characters = [newCharacter({ name: 'A', gp: 100, lifestyle, conSave: -10 })];
       s.dayIndex = 2;

@@ -134,6 +134,8 @@ export interface InventoryItem {
   uses?: number;
   /** Caltrops or Ball Bearings spread on the ground: 10 minutes to gather up, lost if the party moves on. */
   scattered?: boolean;
+  /** DM secret: a cheap potion bought while living rough is tainted (table rule): drinking it risks Cackle Fever. */
+  tainted?: boolean;
 }
 
 export interface Stash {
@@ -332,6 +334,12 @@ export interface Character {
   sickFrom?: string;
   /** Absolute minute an Antitoxin's Advantage on saves against poison runs out (PHB: 1 hour). */
   antitoxinUntil?: number | null;
+  /** A room rented for day-to-day play in town: its quality, and the absolute minute it must be vacated. */
+  lodging?: { tier: 'squalid' | 'poor' | 'modest' | 'comfortable' | 'wealthy' | 'aristocratic'; until: number } | null;
+  /** A bad night on the street or in a flophouse (table rule): the next Long Rest removes no Exhaustion. */
+  restless?: boolean;
+  /** Days spent living Squalid or Wretched in a settlement in a row (table rule: after 30, respectable folk shun them). */
+  lowLifeDays?: number;
   /** Bouts of illness from bad water since the last Sewer Plague check (table rule). */
   waterborneIllnesses?: number;
   /** Magical contagions (2024 DMG): Cackle Fever, Sewer Plague, Sight Rot. */
@@ -917,6 +925,8 @@ export interface TameTarget {
   mountId?: string;
   training?: { kind: 'mount' | 'commands'; progress: number; needed: number };
   trained: ('mount' | 'commands')[];
+  /** Raised from an egg or newborn rather than tamed from the wild. */
+  raised?: boolean;
 }
 
 export interface Travel {
@@ -995,6 +1005,11 @@ export interface State {
   /** Night watch plan: how many watches the Long Rest is split into, and who stands each one. */
   watchPlan: { count: number; slots: string[][] };
   effects: ActiveEffect[];
+  /**
+   * How the party lives in a settlement. Downtime: lifestyle expenses cover lodging and meals (2024 PHB). Day to day:
+   * no lifestyle charge; they buy meals and rent rooms as they go. Undefined means day to day.
+   */
+  townMode?: 'downtime' | 'active';
   hirelings: Hireling[];
   rituals: Ritual[];
   factions: Faction[];

@@ -8,6 +8,7 @@ function town() {
   s.settings.sleepDeprivation = false;
   s.settings.lifestyleRisks = false;
   s.place.settlement = true;
+  s.townMode = "downtime";
   s.characters = [newCharacter({ name: 'A', gp: 10, lifestyle: 'modest', needsFood: false, needsWater: false })];
   return s;
 }

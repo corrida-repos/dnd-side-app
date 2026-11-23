@@ -25,7 +25,7 @@ describe('gold, lifestyle and wages', () => {
   });
 
   it('charges lifestyle in town and feeds everyone', () => {
-    const s = fresh((d) => void (d.place.settlement = true));
+    const s = fresh((d) => void ((d.place.settlement = true), (d.townMode = "downtime")));
     const n = E.advance(s, ctx(), 60);
     expect(n.characters.map((c) => c.gp)).toEqual([9, 9.8]);
     expect(n.characters.every((c) => c.exhaustion === 0)).toBe(true);

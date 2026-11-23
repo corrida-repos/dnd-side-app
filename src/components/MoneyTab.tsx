@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
 import { uid } from '../state/defaults';
-import { fmtGp, HIRELING_WAGE, LIFESTYLE_GP, LIFESTYLE_LABEL, MOUNT_PRESETS, FEED_GP_PER_DAY, type Lifestyle } from '../rules/money';
+import { fmtGp, HIRELING_WAGE, INN_STAY_GP, LIFESTYLE_GP, LIFESTYLE_LABEL, MEAL_GP, MEALS_PER_DAY, MOUNT_PRESETS, FEED_GP_PER_DAY, type Lifestyle } from '../rules/money';
+
+type Tier = Exclude<Lifestyle, 'wretched'>;
 import { foodNeedLb, fmtLb, WATER_GAL_PER_DAY } from '../rules/survival';
 import { Card, Num, Pill, Select, Text, Toggle, Rule } from './common';
 import { HIRELING_ROLES, MESSENGER_GP_PER_MILE, type HirelingRole } from '../rules/hirelings';
@@ -35,7 +37,8 @@ function PurseCard() {
   const pcs = s.characters.filter((c) => c.kind !== 'mount');
   const [amt, setAmt] = useState(10);
   const [reason, setReason] = useState('');
-  const daily = s.place.settlement ? pcs.reduce((a, c) => a + LIFESTYLE_GP[c.lifestyle], 0) : 0;
+  const downtime = E.inDowntime(s);
+  const daily = downtime ? pcs.reduce((a, c) => a + LIFESTYLE_GP[c.lifestyle], 0) : 0;
   const wages = s.hirelings.filter((h) => h.active).reduce((a, h) => a + h.wageGp, 0);
   return (
     <Card title="Gold and lifestyle" className="span-2">
@@ -43,6 +46,18 @@ function PurseCard() {
         <Toggle checked={s.place.settlement} onChange={(v) => edit((d) => void (d.place.settlement = v))} label={`In a town or city (${s.place.name})`} />
         {!s.settings.chargeCosts && <Pill tone="warn">Charging costs is off in Settings</Pill>}
       </div>
+      {s.place.settlement && (
+        <div className="btn-row tight">
+          <span className="small">In town:</span>
+          <button className={`small ${downtime ? 'primary' : 'ghost'}`} onClick={() => dispatch((st, cx) => E.setTownMode(st, cx, 'downtime'))}>
+            Downtime: lifestyle covers lodging and meals
+          </button>
+          <button className={`small ${!downtime ? 'primary' : 'ghost'}`} onClick={() => dispatch((st, cx) => E.setTownMode(st, cx, 'active'))}>
+            Day to day: buy meals and rooms
+          </button>
+        </div>
+      )}
+      {s.place.settlement && !downtime && <TownDayToDay />}
       <div className="table-wrap">
         <table>
           <thead>
@@ -78,7 +93,7 @@ function PurseCard() {
                     options={(Object.keys(LIFESTYLE_LABEL) as Lifestyle[]).map((k) => ({ value: k, label: `${LIFESTYLE_LABEL[k]} (${fmtGp(LIFESTYLE_GP[k])})` }))}
                   />
                 </td>
-                <td className="small">{s.place.settlement ? fmtGp(LIFESTYLE_GP[c.lifestyle]) : <span className="muted">only in town</span>}</td>
+                <td className="small">{downtime ? fmtGp(LIFESTYLE_GP[c.lifestyle]) : <span className="muted">{s.place.settlement ? 'only in downtime' : 'only in town'}</span>}</td>
               </tr>
             ))}
           </tbody>
@@ -104,11 +119,54 @@ function PurseCard() {
       </div>
       <ExchangeRow />
       <Rule>
-        In town, lifestyle is charged every midnight, and everything except Wretched covers food, water and lodging, so nobody goes hungry. Lifestyle per day: Wretched free, Squalid 1 SP, Poor 2 SP, Modest 1 GP,
-        Comfortable 2 GP, Wealthy 4 GP, Aristocratic 10 GP. Crafting materials and Bastion construction are charged when the work starts.
+        Lifestyle expenses are for downtime (2024 PHB): they cover lodging, meals and upkeep, charged every midnight, and everything except Wretched keeps everyone fed. Lifestyle per day: Wretched free, Squalid 1 SP, Poor 2 SP,
+        Modest 1 GP, Comfortable 2 GP, Wealthy 4 GP, Aristocratic 10 GP. Playing day to day in town, there&apos;s no lifestyle charge: buy meals and rent rooms as you go, or live off rations. Working on a downtime project in town
+        switches to downtime, and leaving town switches back. Crafting materials and Bastion construction are charged when the work starts.
       </Rule>
       <WaysAround topic={'lifestyle'} />
     </Card>
+  );
+}
+
+/** Day-to-day play in town: rent rooms and buy meals at 2024 PHB prices. */
+function TownDayToDay() {
+  const s = useGame();
+  const pcs = s.characters.filter((c) => c.kind !== 'mount' && E.alive(c));
+  const [who, setWho] = useState<string[]>([]);
+  const [room, setRoom] = useState<Tier>('modest');
+  const [nights, setNights] = useState(1);
+  const [meal, setMeal] = useState<Tier>('modest');
+  const ids = who.length ? who.filter((id) => pcs.some((c) => c.id === id)) : pcs.map((c) => c.id);
+  const tiers = Object.keys(INN_STAY_GP) as Tier[];
+  return (
+    <div className="decision">
+      <div className="chips">
+        {pcs.map((c) => (
+          <Toggle key={c.id} checked={ids.includes(c.id)} onChange={(v) => setWho(v ? [...ids, c.id] : ids.filter((x) => x !== c.id))} label={c.name} />
+        ))}
+      </div>
+      <div className="btn-row tight">
+        <Select value={room} onChange={setRoom} options={tiers.map((t) => ({ value: t, label: `${LIFESTYLE_LABEL[t]} room (${fmtGp(INN_STAY_GP[t])} a night)` }))} />
+        <Num value={nights} onChange={(v) => setNights(Math.max(1, Math.round(v)))} min={1} suffix="nights" width={3} />
+        <button className="small" disabled={!ids.length} onClick={() => dispatch((st, cx) => E.rentRooms(st, cx, ids, room, nights))}>
+          Rent ({fmtGp(INN_STAY_GP[room] * nights * ids.length)})
+        </button>
+      </div>
+      <div className="btn-row tight">
+        <Select value={meal} onChange={setMeal} options={tiers.map((t) => ({ value: t, label: `${LIFESTYLE_LABEL[t]} meal (${fmtGp(MEAL_GP[t])})` }))} />
+        <button className="small" disabled={!ids.length} onClick={() => dispatch((st, cx) => E.buyMeals(st, cx, ids, meal, 1))}>
+          One meal each
+        </button>
+        <button className="small" disabled={!ids.length} onClick={() => dispatch((st, cx) => E.buyMeals(st, cx, ids, meal, MEALS_PER_DAY))}>
+          A day&apos;s meals ({fmtGp(MEAL_GP[meal] * MEALS_PER_DAY * ids.length)})
+        </button>
+      </div>
+      <p className="small muted">
+        Tonight:{' '}
+        {pcs.map((c) => (E.hasRoom(s, c) ? `${c.name} in a ${LIFESTYLE_LABEL[c.lodging!.tier].toLowerCase()} room` : `${c.name} has no room`)).join(' · ')}.
+        {s.settings.lifestyleRisks ? ' The room sets the risks of town life; no room means sleeping rough.' : ''} Three meals make a day&apos;s food and drink.
+      </p>
+    </div>
   );
 }
 
@@ -359,7 +417,7 @@ function ServicesCard() {
         Pay {fmtGp(spellGp)}
         {req && TARGET_SPELLS[req.name] ? ' and cast' : ''}
       </button>
-      <Rule>2024 PHB services. Higher-level casters are harder to find: level 3+ only in towns and cities, level 6+ only in cities. Spells with costly components add their cost. Daily food and lodging are already part of lifestyle expenses.</Rule>
+      <Rule>2024 PHB services. Higher-level casters are harder to find: level 3+ only in towns and cities, level 6+ only in cities. Spells with costly components add their cost. During downtime, daily food and lodging are part of lifestyle expenses; day to day, rent rooms and buy meals under Gold and lifestyle.</Rule>
       <WaysAround topic={'services'} />
     </Card>
   );
