@@ -37,6 +37,9 @@ function extras(s: Settings): Partial<Record<SwitchKey, { inline?: ReactNode; mo
     hirelingsEat: { more: '1 lb of food and 1 gallon of water each per day. In a settlement their wages cover their keep. Needs Food and water on.' },
     foodAndWater: { more: 'Off, characters and mounts never go hungry or thirsty: nothing is checked at midnight and the checklists stop asking for meals. Rations and water can still be tracked by hand.' },
     extremeWeather: { more: 'Off, the weather is still rolled and described, but nobody saves against cold or heat. Cold nights (if on) then apply at any temperature at or below their threshold.' },
+    unchartedLand: {
+      more: 'Mark a journey stage as uncharted and its miles become the party’s guess. The real distance is rolled on 1d6 when they set out (1: ×0.75, 2–3: as guessed, 4–5: ×1.25, 6: ×1.5) and revealed on arrival. A mapper with Cartographer’s Tools, not travelling at a Fast pace, makes a Wisdom check (DC 15) on arrival to chart the stage: the Map gives +5 to find the way there next time (2024 PHB). A party that already carries a map of the stage knows the real distance.',
+    },
     navigation: { more: 'Off, the party always finds its way, whatever the terrain.' },
     encumbrance: { more: 'Off, weight is still added up and shown, but no load slows anyone down or forces a Slow pace. The 5 × and 10 × Strength thresholds also need this on.' },
     weatherDamage: {

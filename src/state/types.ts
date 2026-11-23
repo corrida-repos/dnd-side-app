@@ -898,6 +898,8 @@ export interface Settings {
   batchCrafting: boolean;
   /** Table rule: taming a wild Beast or Monstrosity of low Intelligence with daily Animal Handling sessions. */
   taming: boolean;
+  /** Table rule: uncharted journey stages have a guessed distance, and a mapper can chart them on the way. */
+  unchartedLand: boolean;
 }
 
 /** A wild creature someone is trying to tame or train (table rule). */
@@ -952,6 +954,8 @@ export interface Travel {
   navigatorId: string | null;
   /** Mounts can gallop (double distance for 1 hour) until they get a Short or Long Rest. */
   gallopUsed: boolean;
+  /** The journey stage being run, so a map of it counts while travelling it. */
+  stageName?: string;
 }
 
 export interface JourneyStage {
@@ -967,6 +971,12 @@ export interface JourneyStage {
   notes: string;
   /** Obstacles on this stage (2024 DMG journey stage challenges). */
   obstacles?: Obstacle[];
+  /** Table rule: land nobody in the party knows. `miles` is then only the party's guess. */
+  uncharted?: boolean;
+  /** The real distance of an uncharted stage, rolled when the party sets out and learned on arrival. */
+  trueMiles?: number;
+  /** The party has already gone the guessed distance without arriving (noted once). */
+  overdueNoted?: boolean;
 }
 
 export interface Obstacle {

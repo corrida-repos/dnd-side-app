@@ -1,4 +1,4 @@
-import type { TameTarget, ActiveEffect, Activity, CharacterSpell, InventoryItem, LogEntry, Ritual, Stash, Bastion, Business, Character, FacilityWork, Obstacle, Rival, Debt, Mark, Faction, ExhaustionCause, Facility, MagicItem, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
+import type { TameTarget, ActiveEffect, Activity, CharacterSpell, InventoryItem, LogEntry, Ritual, Stash, Bastion, Business, Character, FacilityWork, Obstacle, Rival, Debt, Mark, Faction, ExhaustionCause, Facility, JourneyStage, MagicItem, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
 import { BASIC_BUILD, BASTION_TURN_DAYS, defaultSize, ENLARGE, rollBastionEvent, SIZE_LABEL, SPECIAL_FACILITIES, type FacilitySize } from '../rules/bastion';
 import { d20, die, combineModes, rollDice, rollExpr, signed, type Rng, type RollMode } from '../rules/dice';
 import { dateFromIndex, formatClock, formatDate, formatDuration, lightAt, sunriseMinutes } from '../rules/calendar';
@@ -6,6 +6,7 @@ import { EFFECT_PRESETS, EXPLORATION_TURN_MINUTES, LIGHT_WARNING_MINUTES, type E
 import { divinationFailChance, moonPhase, SPELLBOOK_REPLACE } from '../rules/longterm';
 import { illumination, passiveMod, sightFor, weatherObscures, type Vision } from '../rules/sight';
 import { LOST_RECHECK_DIE, navigationDC } from '../rules/navigation';
+import { CHART_DC, OVERDUE_NOTE, arrivalNote, intoTheUnknown, trueDistance } from '../rules/uncharted';
 import { TERRAIN, clampPace } from '../rules/terrain';
 import { readSky, SKY_DC } from '../rules/skyclock';
 import { MESSENGER_GP_PER_MILE } from '../rules/hirelings';
@@ -1214,6 +1215,8 @@ export interface TravelOpts {
   /** Sailing into a strong wind (half speed), or downstream on a river (+3 mph for keelboats and rowboats). */
   againstWind?: boolean;
   downstream?: boolean;
+  /** Journey stages only: who charts an uncharted stage on the way (table rule). */
+  mapperId?: string | null;
 }
 
 /** Table rule: Unconscious companions who must be carried because there aren't enough spare mounts for them. */
@@ -1299,14 +1302,14 @@ function navigate(s: State, ctx: Ctx, nav: Character, pace: Pace): boolean | nul
   if (dc == null) return null;
   // Advantage needs proficiency with the tools and in Survival (taken as given when the sheet doesn't record them).
   const tools = !!s.travel.navTools && nav.inventory.some((i) => NAVIGATOR.test(i.name)) && proficientWith(nav, "Navigator's Tools") !== false && hasSkill(nav, 'Survival') !== false;
-  const map = partyHasMapHere(s);
+  const map = mapHereName(s);
   let mode = combineModes(combineModes(pace === 'slow' ? 'advantage' : 'normal', pace === 'fast' ? 'disadvantage' : 'normal'), s.travel.reconAdvantage ? 'advantage' : 'normal');
   // 2024 PHB: proficiency in a skill and a tool that both apply gives Advantage. An accurate Map of the place gives +5.
   if (tools) mode = combineModes(mode, 'advantage');
   const r = d20(mode, ctx.rng);
   const mod = nav.survival - 2 * nav.exhaustion + (map ? MAP_BONUS : 0);
   const ok = r.value + mod >= dc;
-  const aids = [...(tools ? ["with Navigator's Tools"] : []), ...(map ? [`using the ${mapName(s.place.name)}`] : [])];
+  const aids = [...(tools ? ["with Navigator's Tools"] : []), ...(map ? [`using the ${map}`] : [])];
   log(s, `${nav.name} navigates${aids.length ? ` ${aids.join(' and ')}` : ''}: Wisdom (Survival) ${r.rolls.join('/')} ${signed(mod)} = ${r.value + mod} against DC ${dc} (${reasons.join(', ')}). ${ok ? 'On course.' : 'The party strays off course without realising it.'}`, ok ? 'good' : 'warn');
   return ok;
 }
@@ -1468,18 +1471,37 @@ export const runStage = act((d, ctx, stageId: string, o: Omit<TravelOpts, 'hours
   const first = stage();
   if (!first || first.done) return;
   Object.assign(d.place, { terrain: first.terrain, onRoute: first.onRoute, goodRoad: first.goodRoad });
-  log(d, `Journey stage: ${first.name} (${first.miles - first.milesDone} miles to go, ${TERRAIN[first.terrain].label}).`);
-  for (let day = 0; day < 60 && stage()!.milesDone < stage()!.miles; day++) {
+  const uncharted = d.settings.unchartedLand && !!first.uncharted;
+  if (uncharted && first.trueMiles == null) {
+    if (partyHasMapOf(d, first.name)) {
+      first.trueMiles = first.miles;
+      log(d, `The party's ${mapName(first.name)} shows the way: ${first.miles} miles.`);
+    } else {
+      const roll = die(6, ctx.rng);
+      first.trueMiles = trueDistance(first.miles, roll);
+      log(d, `${intoTheUnknown(first.terrain, roll)} The party guesses it's about ${first.miles} miles (table rule: the real distance is rolled secretly).`);
+    }
+  }
+  const target = (st: JourneyStage) => (uncharted ? (st.trueMiles ?? st.miles) : st.miles);
+  d.travel.stageName = first.name;
+  log(d, `Journey stage: ${first.name} (${uncharted && first.trueMiles !== first.miles ? 'about ' : ''}${Math.max(0, first.miles - first.milesDone)} miles to go, ${TERRAIN[first.terrain].label}).`);
+  let fastDays = false;
+  for (let day = 0; day < 60 && stage()!.milesDone < target(stage()!); day++) {
     const st = stage()!;
     const vessel = o.vesselId ? d.stashes.find((x) => x.id === o.vesselId && x.speedMph) : undefined;
     const pace = clampPace(o.pace, st.terrain, st.goodRoad || !!d.travel.paceBoost);
     const pending = (st.obstacles ?? []).filter((x) => !x.resolved);
     if (pending.length && day === 0) log(d, `This stage has ${pending.length} unresolved obstacle(s): ${pending.map((x) => x.name).join(', ')}. Resolve them on the Journey card.`, 'warn');
     const mph = vessel ? Math.max(0.1, vesselSpeed(d, vessel, o).mph) : PACES[pace].mph * (st.difficult || groundDifficulty(d.place.ground, st.goodRoad) ? 0.5 : 1);
-    const hours = Math.max(1, Math.min(vessel ? 24 : 8, Math.ceil((st.miles - st.milesDone) / mph)));
+    const hours = Math.max(1, Math.min(vessel ? 24 : 8, Math.ceil((target(st) - st.milesDone) / mph)));
+    if (pace === 'fast' && !vessel) fastDays = true;
     const covered = travelMut(d, ctx, { ...o, pace, hours, difficult: st.difficult });
-    st.milesDone = Math.min(st.miles, Math.round((st.milesDone + covered) * 10) / 10);
-    if (st.milesDone >= st.miles || !camp) break;
+    st.milesDone = Math.min(target(st), Math.round((st.milesDone + covered) * 10) / 10);
+    if (uncharted && !st.overdueNoted && st.milesDone >= st.miles && st.milesDone < target(st)) {
+      st.overdueNoted = true;
+      log(d, OVERDUE_NOTE, 'warn');
+    }
+    if (st.milesDone >= target(st) || !camp) break;
     const eaten = partyEat(d, ctx, 'topup');
     Object.assign(d, partyDrink(eaten, ctx, 'topup'));
     if (d.minutes % MIN_PER_DAY < 22 * 60) advanceMut(d, ctx, 22 * 60 - (d.minutes % MIN_PER_DAY), 'camp');
@@ -1487,15 +1509,39 @@ export const runStage = act((d, ctx, stageId: string, o: Omit<TravelOpts, 'hours
     if (d.minutes % MIN_PER_DAY < 7 * 60) advanceMut(d, ctx, 7 * 60 - (d.minutes % MIN_PER_DAY), 'camp');
   }
   const done = stage()!;
-  if (done.milesDone >= done.miles) {
+  delete d.travel.stageName;
+  if (done.milesDone >= target(done)) {
     done.done = true;
     log(d, `Stage complete: ${done.name}.`, 'good');
+    if (uncharted) {
+      if (done.trueMiles !== done.miles || !partyHasMapOf(d, done.name)) log(d, arrivalNote(done.miles, target(done)));
+      chartStage(d, ctx, done, o.mapperId ?? null, fastDays);
+    }
     if (d.travel.reconAdvantage && d.journey.every((x) => x.done)) {
       d.travel.reconAdvantage = false;
       log(d, 'The journey is over; the Zhentarim reconnaissance no longer helps.');
     }
   }
 });
+
+/**
+ * Charting an uncharted stage on arrival (table rule): the mapper's Wisdom check with Cartographer's Tools (2024 PHB, DC 15).
+ * A Fast pace leaves no time to take bearings. Success gives a Map of the stage: +5 to find the way there (2024 PHB Map).
+ */
+function chartStage(d: State, ctx: Ctx, st: JourneyStage, mapperId: string | null, fast: boolean): void {
+  if (!mapperId || partyHasMapOf(d, st.name)) return;
+  const c = charById(d, mapperId);
+  if (!c || !alive(c)) return;
+  if (!c.inventory.some((i) => CARTOGRAPHER.test(i.name))) return void log(d, `${c.name} has no Cartographer's Tools, so nobody charts the way.`, 'warn');
+  if (fast) return void log(d, `At a Fast pace ${c.name} had no time to take bearings, so the way isn't charted.`, 'warn');
+  const mod = c.wisMod + (proficientWith(c, "Cartographer's Tools") === false ? 0 : proficiencyBonus(c.level)) - 2 * c.exhaustion;
+  const r = d20('normal', ctx.rng);
+  const roll = `Wisdom with Cartographer's Tools ${r.value} ${signed(mod)} = ${r.value + mod} against DC ${CHART_DC}`;
+  if (r.value + mod < CHART_DC) return void log(d, `${c.name} tries to turn the notes from the road into a map (${roll}), but there are too many gaps to steer by.`, 'warn');
+  const name = mapName(st.name);
+  c.inventory.push({ id: uid(), name, qty: 1, weight: 0, source: 'manual', valueGp: 1, container: null, ammo: null });
+  log(d, `${c.name} charts the way (${roll}) and draws a ${name}. Finding the way here next time gets +5 (2024 PHB Map).`, 'good');
+}
 
 // ---------------------------------------------------------------- foraging, fire, food
 
@@ -5393,6 +5439,21 @@ export function currentAffinities(s: State): Affinity[] {
 /** Someone in the party carries a map of the current place (2024 PHB Map: +5 to Wisdom (Survival) checks to find the way there). */
 export function partyHasMapHere(s: State): boolean {
   return s.characters.some((c) => c.inventory.some((i) => isMapOf(i.name, s.place.name)));
+}
+
+/** The map that helps find the way right now: of the current place, or of the journey stage being travelled. */
+function mapHereName(s: State): string | null {
+  for (const where of [s.place.name, s.travel.stageName]) {
+    if (where == null) continue;
+    const item = s.characters.flatMap((c) => c.inventory).find((i) => isMapOf(i.name, where));
+    if (item) return item.name;
+  }
+  return null;
+}
+
+/** Someone in the party carries a map of this journey stage. */
+export function partyHasMapOf(s: State, place: string): boolean {
+  return s.characters.some((c) => c.inventory.some((i) => isMapOf(i.name, place)));
 }
 
 /** Whether the stars can be seen right now: night, no precipitation, not underground. */

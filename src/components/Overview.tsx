@@ -18,6 +18,7 @@ import { DEEP_SNOW_IN, groundDifficulty, OBSTACLES } from '../rules/ground';
 import { WaysAround } from './WaysAround';
 import type { TopicId } from '../rules/shortcuts';
 import { CARTOGRAPHER, IMPROVISED_MAP_DC, IMPROVISED_STARGAZE_DC, MAP_DC, NAVIGATOR, STARGAZE_DC, mapName } from '../rules/tools';
+import { CHART_DC } from '../rules/uncharted';
 
 /** The DM's dashboard: what needs attention, the clock, the party, the conditions and what just happened. */
 export function Overview() {
@@ -696,9 +697,13 @@ function JourneyCard() {
   const [onRoute, setOnRoute] = useState(true);
   const [goodRoad, setGoodRoad] = useState(true);
   const [difficult, setDifficult] = useState(false);
+  const [uncharted, setUncharted] = useState(false);
   const [pace, setPace] = useState<Pace>('normal');
   const [camp, setCamp] = useState(true);
   const [vesselId, setVesselId] = useState('');
+  const [mapperId, setMapperId] = useState('');
+  const unchartedOn = s.settings.unchartedLand;
+  const cartographers = s.characters.filter((c) => c.kind !== 'mount' && E.alive(c) && c.inventory.some((i) => CARTOGRAPHER.test(i.name)));
   const vessels = s.stashes.filter((x) => x.speedMph);
   const left = s.journey.filter((x) => !x.done);
   return (
@@ -711,7 +716,8 @@ function JourneyCard() {
               <span>
                 <b>{st.name}</b>{' '}
                 <span className="muted small">
-                  {st.miles} mi · {TERRAIN[st.terrain].label}
+                  {unchartedOn && st.uncharted && !st.done ? `about ${st.miles}` : unchartedOn && st.uncharted && st.trueMiles ? st.trueMiles : st.miles} mi · {TERRAIN[st.terrain].label}
+                  {unchartedOn && st.uncharted ? (E.partyHasMapOf(s, st.name) ? ', charted' : ', uncharted') : ''}
                   {st.onRoute ? ', on a road or river' : ''}
                   {st.goodRoad ? ', good road' : ''}
                   {st.difficult ? ', difficult' : ''}
@@ -720,7 +726,7 @@ function JourneyCard() {
               </span>
               <span className="btn-row tight">
                 {!st.done && (
-                  <button className="small primary" onClick={() => dispatch((st2, cx) => E.runStage(st2, cx, st.id, { pace, foragerIds: [], navigatorId: s.travel.navigatorId, vesselId: vesselId || null }, camp))}>
+                  <button className="small primary" onClick={() => dispatch((st2, cx) => E.runStage(st2, cx, st.id, { pace, foragerIds: [], navigatorId: s.travel.navigatorId, vesselId: vesselId || null, mapperId: mapperId || null }, camp))}>
                     Run stage
                   </button>
                 )}
@@ -731,7 +737,16 @@ function JourneyCard() {
             </div>
             {!st.done && st.milesDone > 0 && (
               <div className="small">
-                <Meter value={st.milesDone} max={st.miles} tone="good" /> {st.milesDone}/{st.miles} miles
+                {unchartedOn && st.uncharted ? (
+                  <>
+                    {st.milesDone} miles so far of about {st.miles}
+                    {st.milesDone >= st.miles ? ' (further than the party guessed)' : ''}
+                  </>
+                ) : (
+                  <>
+                    <Meter value={st.milesDone} max={st.miles} tone="good" /> {st.milesDone}/{st.miles} miles
+                  </>
+                )}
               </div>
             )}
             {!st.done && <StageObstacles stageId={st.id} />}
@@ -752,6 +767,14 @@ function JourneyCard() {
           />
           {vessels.length > 0 && <Select label="Aboard" value={vesselId} onChange={setVesselId} options={[{ value: '', label: 'On foot or mounted' }, ...vessels.map((v) => ({ value: v.id, label: v.name }))]} />}
           <Toggle checked={camp} onChange={setCamp} label="Camp each night (eat, drink, Long Rest)" />
+          {unchartedOn && left.some((x) => x.uncharted) && (
+            <Select
+              label="Charts the way"
+              value={mapperId}
+              onChange={setMapperId}
+              options={[{ value: '', label: 'Nobody' }, ...cartographers.map((c) => ({ value: c.id, label: `${c.name} (Cartographer's Tools)` }))]}
+            />
+          )}
         </div>
       )}
       <details>
@@ -765,10 +788,11 @@ function JourneyCard() {
           <Toggle checked={onRoute} onChange={setOnRoute} label="On a road, river or landmark" />
           <Toggle checked={goodRoad} onChange={setGoodRoad} label="Good road" />
           <Toggle checked={difficult} onChange={setDifficult} label="Difficult Terrain" />
+          {unchartedOn && <Toggle checked={uncharted} onChange={setUncharted} label="Uncharted (the miles are only a guess)" />}
         </div>
         <button
           onClick={() => {
-            edit((d) => void d.journey.push({ id: Math.random().toString(36).slice(2), name: name.trim() || `Stage ${d.journey.length + 1}`, miles, terrain, onRoute, goodRoad, difficult, milesDone: 0, done: false, notes: '' }));
+            edit((d) => void d.journey.push({ id: Math.random().toString(36).slice(2), name: name.trim() || `Stage ${d.journey.length + 1}`, miles, terrain, onRoute, goodRoad, difficult, milesDone: 0, done: false, notes: '', ...(unchartedOn && uncharted ? { uncharted: true } : {}) }));
             setName('');
           }}
         >
@@ -776,6 +800,11 @@ function JourneyCard() {
         </button>
       </details>
       <Rule>Each day of a stage the party travels up to 8 hours (vessels sail around the clock), with one navigation check, then camps if you choose. Food and water are used each day, and the weather, hazards and Exhaustion all apply.</Rule>
+      {unchartedOn && (
+        <Rule>
+          Table rule: on an uncharted stage the miles are the party&apos;s guess. The real distance is rolled when they set out (it can be up to half as far again) and learned on arrival, so pack spare food. A mapper with Cartographer&apos;s Tools, not travelling at a Fast pace, makes a Wisdom check (DC {CHART_DC}) on arrival to chart the way: the Map gives +5 to find it next time (2024 PHB).
+        </Rule>
+      )}
       <WaysAround topic={['tracking', 'march']} />
     </Card>
   );
