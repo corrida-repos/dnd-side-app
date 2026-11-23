@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as E from './engine';
 import { createDefaultState, newCharacter } from './defaults';
 import type { State } from './types';
-import { canTame, charmSpellsFor, influenceDC, missedDays, NO_AIDS, sessionAttitude, sessionResult, tameCheck, tameDC, trainingNeeded, trustNeeded, bigEnoughToRide, type TamerFacts } from '../rules/taming';
+import { canTame, charmSpellsFor, currentDC, dayOutcome, influenceDC, missedDays, NO_AIDS, sessionAttitude, sessionResult, tameCheck, tameDC, trainingNeeded, trustNeeded, bigEnoughToRide, type TamerFacts } from '../rules/taming';
 
 const ctx = (v = 0.5): E.Ctx => ({ rng: () => v });
 const NAT20 = ctx(0.999);
@@ -209,5 +209,43 @@ describe('workarounds and shortcuts', () => {
       d.characters.push(newCharacter({ name: 'Bard', skillProfs: ['Animal Handling'], tasks: [] }), newCharacter({ name: 'Wizard', skillProfs: [], tasks: [] }));
     });
     expect(E.tameHelpers(s, s.characters[0].id).map((h) => h.name)).toEqual(['Bard']);
+  });
+});
+
+describe('working together and getting easier', () => {
+  it('lowers the DC by 1 per trust and training session, down to 10', () => {
+    expect(currentDC(2, '2', 0)).toBe(17);
+    expect(currentDC(2, '2', 3)).toBe(14);
+    expect(currentDC(2, '2', 7, 2)).toBe(10);
+    expect(currentDC(2, '6', 14)).toBe(10);
+  });
+
+  it('adds everyone’s results, capped at +3 and −1 a day; a day is bad only if nobody succeeded', () => {
+    expect(dayOutcome(['success', 'success'])).toEqual({ gain: 2, bad: false });
+    expect(dayOutcome(['great', 'great', 'success'])).toEqual({ gain: 3, bad: false });
+    expect(dayOutcome(['setback', 'setback'])).toEqual({ gain: -1, bad: true });
+    expect(dayOutcome(['success', 'setback'])).toEqual({ gain: 0, bad: false });
+    expect(dayOutcome(['fail'])).toEqual({ gain: 0, bad: true });
+  });
+
+  it('lets co-trainers roll in the same hour', () => {
+    let s = begin(griffon);
+    s = { ...s, characters: [...s.characters, newCharacter({ name: 'Bard', wisMod: 1, level: 5, skillProfs: ['Animal Handling'], tasks: [] })] };
+    const id = s.taming![0].id;
+    // d20 = 15 for both: 15 + 5 and 15 + 4 against DC 17.
+    const n = E.tameSession(s, ctx(0.7), id, NO_AIDS, [s.characters[1].id]);
+    expect(n.taming![0].trust).toBe(2);
+    expect(n.minutes).toBe(s.minutes + 60);
+    expect(n.stores.foodRawLb).toBe(96);
+    expect(n.log.some((l) => /Ranger, Bard work with Talon/.test(l.text) && /DC 15/.test(l.text))).toBe(true);
+  });
+
+  it('makes the next session easier as trust builds', () => {
+    let s = begin(griffon);
+    const id = s.taming![0].id;
+    // d20 = 11 + 5 = 16: fails DC 17 at the start, passes once trust has knocked it to 16.
+    expect(E.tameSession(s, ctx(0.5), id, NO_AIDS).taming![0].trust).toBe(0);
+    s = { ...s, taming: [{ ...s.taming![0], trust: 1 }] };
+    expect(E.tameSession(s, ctx(0.5), id, NO_AIDS).taming![0].trust).toBe(2);
   });
 });

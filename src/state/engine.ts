@@ -30,7 +30,7 @@ import { AWAY_PROGRESS, BUILD_SPELLS, BUSINESS_DEBT_PENALTY, BUSINESS_MAX_DAYS, 
 import { HAZARDS, type GiftType, type HazardId } from '../rules/hazards';
 import { ARCANA_DC, STUDY_MINUTES, type StudyMethod } from '../rules/identify';
 import { FEED_LB_PER_DAY, MOUNT_CAPACITY, carryingCapacity, COINS_PER_LB, estimateWeight, loadLevel, parseInventory, RATION_WEIGHT, type LoadLevel } from '../rules/encumbrance';
-import { bigEnoughToRide, canBeSidekick, canTame, missedDays, sessionAttitude, sessionResult, tameCheck, tameDC, TAME_MAX_FAILS, TAME_RETRY_MINUTES, TAME_SESSION_MINUTES, trainingNeeded, TRAINING_LABEL, trustCue, trustNeeded, type TameAids, type TamerFacts, type TameTraining } from '../rules/taming';
+import { bigEnoughToRide, canBeSidekick, canTame, currentDC, dayOutcome, missedDays, NO_AIDS, resultGain, sessionAttitude, sessionResult, tameCheck, tameDC, TRUST_PER_DAY_MAX, TAME_MAX_FAILS, TAME_RETRY_MINUTES, TAME_SESSION_MINUTES, trainingNeeded, TRAINING_LABEL, trustCue, trustNeeded, type TameAids, type TamerFacts, type TameTraining } from '../rules/taming';
 import { BUTCHER_DC, BUTCHER_MINUTES, isEdible, MEAT_LB, STRANGE_TYPES, yieldsHide, type Creature } from '../rules/hunting';
 import { addCoins, COIN_GP, coinCount, coinsFor, emptyPurse, exchange, fmtPurse, purseValue, spend, type Denom, type Purse } from '../rules/coins';
 import { detectContainer } from '../rules/containers';
@@ -6747,8 +6747,8 @@ function tamedMount(d: State, t: TameTarget): Character {
   return m;
 }
 
-/** An hour's daily session with a creature being tamed or trained. Feeds it from the camp stores (raw meat first). */
-export const tameSession = act((d, ctx, id: string, a: Omit<TameAids, 'attitude' | 'food' | 'unwilling'>) => {
+/** An hour's daily session with a creature being tamed or trained, with any co-trainers. Feeds it from the camp stores (raw meat first). */
+export const tameSession = act((d, ctx, id: string, a: Omit<TameAids, 'attitude' | 'food' | 'unwilling'>, coTrainerIds: string[] = []) => {
   const t = d.taming?.find((x) => x.id === id);
   if (!t || t.stage === 'wary') return;
   const tamer = charById(d, t.tamerId);
@@ -6779,32 +6779,46 @@ export const tameSession = act((d, ctx, id: string, a: Omit<TameAids, 'attitude'
   }
   advanceMut(d, ctx, TAME_SESSION_MINUTES, 'camp');
   t.lastSessionDay = d.dayIndex;
-  const dc = tameDC(t.int, t.cr);
+  const progress = t.training?.progress ?? 0;
+  const dc = currentDC(t.int, t.cr, t.trust, progress);
+  const startDC = tameDC(t.int, t.cr);
   const attitude = sessionAttitude(t.trust, t.needed, t.stage === 'tamed');
-  const r = tameRoll(ctx, tamer, t, { ...a, attitude, food: fed, unwilling: false }, dc);
-  if (!r.ok) return;
-  const res = sessionResult(r.natural, r.total, dc);
+  const shared = { attitude, food: fed, unwilling: false, stable: a.stable, threatened: a.threatened };
+  // The tamer gets their own spells and helpers; co-trainers roll with only what the whole group shares (table rule).
+  const team = [tamer, ...coTrainerIds.map((cid) => charById(d, cid)).filter((c): c is Character => !!c && c.id !== tamer.id && c.kind !== 'mount' && alive(c))];
+  const rolls = team
+    .map((c, i) => ({ c, r: tameRoll(ctx, c, t, i === 0 ? { ...a, ...shared } : { ...NO_AIDS, ...shared }, dc) }))
+    .filter((x): x is { c: Character; r: Extract<ReturnType<typeof tameRoll>, { ok: true }> } => x.r.ok);
+  if (!rolls.length) return;
+  const results = rolls.map((x) => sessionResult(x.r.natural, x.r.total, dc));
+  const day = dayOutcome(results);
+  const word = { great: 'a breakthrough', success: 'success', fail: 'no progress', setback: 'a setback' } as const;
+  const rollTxt = rolls.map((x, i) => `${x.c.name}: ${x.r.text}, ${word[results[i]]}`).join('. ');
+  const who = rolls.map((x) => x.c.name).join(', ');
+  const ids = rolls.map((x) => x.c.id);
   const feedTxt = fed ? ` It eats ${fmtLb(need)} from the camp stores.` : ` There was no food to offer (${fmtLb(need)} needed), so no Advantage from food.`;
-  if (res === 'great' || res === 'success') t.fails = 0;
-  else t.fails += 1;
-  const gain = res === 'great' ? 2 : res === 'success' ? 1 : res === 'setback' ? -1 : 0;
+  const capped = rolls.length > 1 && results.reduce((n, r) => n + resultGain(r), 0) > TRUST_PER_DAY_MAX ? ` (it can only take in ${TRUST_PER_DAY_MAX} a day, table rule)` : '';
+  if (day.bad) t.fails += 1;
+  else t.fails = 0;
+  const gain = day.gain;
 
   if (t.stage === 'bonding') {
     t.trust = Math.max(0, t.trust + gain);
     if (t.fails >= TAME_MAX_FAILS) {
       d.taming = d.taming!.filter((x) => x !== t);
-      return void log(d, `${tamer.name} works with ${t.name}: ${r.text}.${feedTxt} After ${TAME_MAX_FAILS} bad days in a row it slips away in the night and doesn't come back (table rule).`, 'bad', { charIds: [tamer.id] });
+      return void log(d, `${who} work${rolls.length > 1 ? '' : 's'} with ${t.name}. ${rollTxt}.${feedTxt} After ${TAME_MAX_FAILS} bad days in a row it slips away in the night and doesn't come back (table rule).`, 'bad', { charIds: ids });
     }
     if (t.trust >= t.needed) {
       t.stage = 'tamed';
       const m = tamedMount(d, t);
       t.mountId = m.id;
       const sidekick = canBeSidekick(t.cr) ? ` Optional rule (Tasha's Cauldron): at CR ${t.cr} it can join as a sidekick with the Warrior or Expert class, at the party's average level.` : '';
-      return void log(d, `${tamer.name} works with ${t.name}: ${r.text}.${feedTxt} ${trustCue(t.creature, t.trust, t.needed)} ${t.name} is tamed and joins the party: it needs food and water every day like any mount. Untrained, it acts on its own in a fight and can only be ridden as an independent mount.${sidekick}`, 'good', { charIds: [tamer.id] });
+      return void log(d, `${who} work${rolls.length > 1 ? '' : 's'} with ${t.name}. ${rollTxt}.${feedTxt} ${trustCue(t.creature, t.trust, t.needed)} ${t.name} is tamed and joins the party: it needs food and water every day like any mount. Untrained, it acts on its own in a fight and can only be ridden as an independent mount.${sidekick}`, 'good', { charIds: ids });
     }
-    const how = res === 'great' ? 'a breakthrough' : res === 'success' ? 'a good session' : res === 'setback' ? 'a setback' : 'no progress';
-    const friendly = attitude === 'indifferent' && t.trust * 2 >= t.needed ? ` It now counts as Friendly toward ${tamer.name}, so later sessions have Advantage (2024 PHB attitudes).` : '';
-    return void log(d, `${tamer.name} works with ${t.name}: ${r.text}, ${how}.${feedTxt} ${trustCue(t.creature, t.trust, t.needed)}${friendly}${t.fails ? ` (${t.fails} bad day${t.fails > 1 ? 's' : ''} in a row)` : ''}`, gain > 0 ? 'good' : 'warn', { charIds: [tamer.id] });
+    const next = currentDC(t.int, t.cr, t.trust);
+    const dcTxt = next !== dc ? ` Trust ${gain > 0 ? '+' : ''}${gain}${capped}: the next session is DC ${next} (it started at ${startDC}).` : gain ? ` Trust ${gain > 0 ? '+' : ''}${gain}${capped}.` : '';
+    const friendly = attitude === 'indifferent' && t.trust * 2 >= t.needed ? ` It now counts as Friendly, so later sessions have Advantage (2024 PHB attitudes).` : '';
+    return void log(d, `${who} work${rolls.length > 1 ? '' : 's'} with ${t.name}. ${rollTxt}.${feedTxt}${dcTxt} ${trustCue(t.creature, t.trust, t.needed)}${friendly}${t.fails ? ` (${t.fails} bad day${t.fails > 1 ? 's' : ''} in a row)` : ''}`, gain > 0 ? 'good' : 'warn', { charIds: ids });
   }
 
   // Training a tamed creature: failures never undo it, they just waste the day.
@@ -6823,9 +6837,10 @@ export const tameSession = act((d, ctx, id: string, a: Omit<TameAids, 'attitude'
       tr.kind === 'mount'
         ? `${t.name} now accepts a rider and can be a controlled mount (2024 PHB).${t.movement !== 'land' ? ' A flying or swimming mount needs an Exotic Saddle.' : ''}`
         : `${t.name} now follows simple commands from ${tamer.name}: come, stay, guard, attack, fetch (table rule).`;
-    return void log(d, `${tamer.name} trains ${t.name}: ${r.text}.${feedTxt} ${what}`, 'good', { charIds: [tamer.id] });
+    return void log(d, `${who} train${rolls.length > 1 ? '' : 's'} ${t.name}. ${rollTxt}.${feedTxt} ${what}`, 'good', { charIds: ids });
   }
-  log(d, `${tamer.name} trains ${t.name} ${TRAINING_LABEL[tr.kind]}: ${r.text}, ${gain > 0 ? 'it learns a little more' : 'a wasted day'}.${feedTxt} About ${tr.needed - tr.progress} more good session${tr.needed - tr.progress === 1 ? '' : 's'} to go.`, gain > 0 ? 'good' : 'warn', { charIds: [tamer.id] });
+  const next = currentDC(t.int, t.cr, t.trust, tr.progress);
+  log(d, `${who} train${rolls.length > 1 ? '' : 's'} ${t.name} ${TRAINING_LABEL[tr.kind]}. ${rollTxt}: ${gain > 0 ? `it learns a little more${capped}` : 'a wasted day'}.${feedTxt} About ${tr.needed - tr.progress} more good session${tr.needed - tr.progress === 1 ? '' : 's'} to go${next !== dc ? `; next session DC ${next}` : ''}.`, gain > 0 ? 'good' : 'warn', { charIds: ids });
 });
 
 /** Starts training a tamed creature to accept a rider or follow commands. */

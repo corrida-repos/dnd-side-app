@@ -58,6 +58,32 @@ export function crDCBonus(cr: string): number {
 /** The DC for every taming and training check with this creature. */
 export const tameDC = (int: number, cr: string): number => influenceDC(int) + crDCBonus(cr);
 
+/** Table rule: the DC never drops below this, however much it trusts you. */
+export const TAME_MIN_DC = 10;
+
+/**
+ * Table rule: every point of trust (and every training session learned) lowers the DC by 1,
+ * down to DC 10, so each good day makes the next one easier.
+ */
+export function currentDC(int: number, cr: string, trust: number, progress = 0): number {
+  return Math.max(TAME_MIN_DC, tameDC(int, cr) - Math.max(0, trust) - Math.max(0, progress));
+}
+
+/** Table rule: however many people work with it, it can't learn more than this in a day. */
+export const TRUST_PER_DAY_MAX = 3;
+
+/** Trust gained from one trainer's roll. */
+export const resultGain = (r: SessionResult): number => (r === 'great' ? 2 : r === 'success' ? 1 : r === 'setback' ? -1 : 0);
+
+/**
+ * Table rule: everyone who works with it that hour rolls; the gains add up, between −1 and +3 a day.
+ * The day is a bad one only if nobody succeeded.
+ */
+export function dayOutcome(results: SessionResult[]): { gain: number; bad: boolean } {
+  const sum = results.reduce((n, r) => n + resultGain(r), 0);
+  return { gain: Math.max(-1, Math.min(TRUST_PER_DAY_MAX, sum)), bad: !results.some((r) => r === 'great' || r === 'success') };
+}
+
 /** Table rule: successful daily sessions needed to tame, by Challenge Rating; clever creatures (Int 4+) need 2 more. */
 export function trustNeeded(cr: string, int: number, raised = false): number {
   const v = crValue(cr);
