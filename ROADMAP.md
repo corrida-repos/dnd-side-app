@@ -424,6 +424,15 @@ Builds on the rolled-up town (Phase 9): its buildings and the people who run the
 - 📋 **Opening hours (switch):** shops and temples open dawn to dusk, inns and taverns always. (2024 DMG: Temple of the Radiant Sun)
 - 📋 **Pick your inn:** stay at a named inn with its own prices for a common room, private room or suite, matched to the lifestyle tiers. (2024 DMG Greyhawk inns: 1–2 SP, 3–5 SP, 1–3 GP a night)
 
+### Stables and mounts in town
+- 📋 **Where each mount is:** with the party, boarded at a named stable or inn, in a Bastion Stable, or aboard a vehicle. Only mounts in town are charged stabling and feed, and only a town with a stable or an inn with a stable yard takes them. (2024 PHB: Stabling 5 SP, Feed 5 CP a day; 2024 DMG: the Black Dragon Inn's stable holds a dozen steeds)
+- 📋 **Boarding while away:** leave mounts at a stable while the party goes into a dungeon, sails or teleports. The bill runs up day by day and is paid on return; unpaid for 30 days, the stable sells the animal to cover it.
+- 📋 **Rest and care:** a stabled mount is fed, watered and rested: each night counts as a Long Rest (2024 PHB: regain all Hit Points, lose a level of Exhaustion). A stablehand looks after it like a groom, and a sick or injured animal can be treated (Animal Handling or Medicine).
+- 📋 **Vehicles in the yard:** carts and wagons are parked at a stable or coaching house for a small daily fee; left in the street, they and their cargo risk theft.
+- 📋 **The stable's trade:** buy, sell (half price) and trade in mounts and tack at a stable or market; barding from an armorer (any armor, four times the cost and twice the weight); horseshoes and tack repairs at a smithy; animal training and taming with a stablemaster. (2024 PHB Barding, Selling Equipment)
+- 📋 **Animals at sea:** a ship carries mounts in stalls for a fare per animal per day, and they arrive with a level of Exhaustion after a long voyage.
+- 📋 **Thieves and the watch:** a stable with a watchman keeps mounts safe; a mount tied up outside an inn overnight may be stolen 1 time in 20 in a town and 1 in 10 in a city, which the watch may help recover.
+
 ### Healing and the temple
 - 📋 **Temple stock and charity:** Potions of Healing (1d4 a day), Remove Curse (300 GP) and Greater Restoration (3,200 GP) scrolls (1d3 each), free Cure Wounds and Lesser Restoration at a kindly temple, half price after serving it, and a Teleportation Circle (2,000 GP) in cities. (2024 DMG Greyhawk temples)
 - 📋 **Spell Scrolls over the counter:** cantrip 30 GP, level 1 50 GP, from a scribe, temple or magic shop; higher levels by commission. (2024 PHB Adventuring Gear)
@@ -459,12 +468,13 @@ Builds on the rolled-up town (Phase 9): its buildings and the people who run the
 
 ### Build order
 1. Services follow the buildings, and the right buyer.
-2. Temple stock, Spell Scrolls and healer's care.
-3. Hiring from the town and trainers.
-4. Magic shop, commissions and limited stock.
-5. The law and the gate.
-6. Money, mail and property.
-7. A town that changes; then haggling and picking an inn.
+2. Stables and mounts in town: where each mount is, boarding while away, rest and care, barding.
+3. Temple stock, Spell Scrolls and healer's care.
+4. Hiring from the town and trainers.
+5. Magic shop, commissions and limited stock.
+6. The law and the gate.
+7. Money, mail and property.
+8. A town that changes; then haggling and picking an inn.
 
 ---
 
