@@ -13,6 +13,8 @@ import { Card, Num, Pill, Select, Text, Toggle, Rule } from './common';
 import { POISON_HARVEST_DC } from '../rules/potions';
 import { ALCHEMIST, ALCHEMIST_FIRE_DC, IMPROVISED_COOK_DC, IMPROVISED_HARVEST_DC, IMPROVISED_TESTS, TEST_KIND_LABEL, toolTestsFor, type TestKind } from '../rules/tools';
 import { WaysAround } from './WaysAround';
+import { SRD_POOL } from '../rules/encounters';
+import { bigEnoughToRide, canTame, FACTOR_LABEL, TAMED_RULES, tameDC, TAME_MAX_FAILS, TAME_MAX_INT, TAMEABLE_TYPES, TRAINING_LABEL, trainingNeeded, trustCue, trustNeeded, type ApproachFactors, type TameTraining } from '../rules/taming';
 
 export function CampTab() {
   return (
@@ -25,6 +27,7 @@ export function CampTab() {
       <MealsCard />
       <ForageCard />
       <HuntCard />
+      <TameCard />
       <CampGearCard />
       <PoisonHarvestCard />
       <TestCard />
@@ -681,6 +684,139 @@ function HuntCard() {
         (Survival) check stops half the meat going to waste. Constructs, elementals, oozes and undead give nothing.
       </Rule>
       <WaysAround topic={'hunting'} />
+    </Card>
+  );
+}
+
+/** Taming a wild Beast or Monstrosity of low Intelligence (table rule built on the 2024 Influence action). */
+function TameCard() {
+  const s = useGame();
+  const tamers = s.characters.filter((c) => c.kind !== 'mount' && E.alive(c));
+  const pool = [...SRD_POOL.map((c) => ({ name: c.name, size: c.size, type: c.type, cr: c.cr, flags: c.flags ?? '', source: c.source ?? '' })), ...s.bestiary.map((c) => ({ name: c.name, size: c.size, type: c.type, cr: c.cr ?? '0', flags: c.flags ?? '', source: c.source ?? '' }))].filter((c) => TAMEABLE_TYPES.includes(c.type.toLowerCase()));
+  const [query, setQuery] = useState('');
+  const [pick, setPick] = useState('');
+  const list = pool.filter((c) => !query || c.name.toLowerCase().includes(query.toLowerCase()));
+  const cr = list.find((c) => `${c.name}|${c.source}` === pick) ?? list[0];
+  const [name, setName] = useState('');
+  const [int, setInt] = useState(2);
+  const [speed, setSpeed] = useState(40);
+  const [who, setWho] = useState('');
+  const [f, setF] = useState<ApproachFactors>({ food: true, charmed: false, speaking: false, threatened: false });
+  const [hostile, setHostile] = useState(false);
+  const tamer = tamers.find((c) => c.id === who) ?? tamers[0];
+  const targets = s.taming ?? [];
+  if (!s.settings.taming)
+    return (
+      <Card title="Taming a wild creature">
+        <p className="small muted">Taming is switched off in Settings (table rule).</p>
+      </Card>
+    );
+  const movement: 'land' | 'fly' | 'swim' = cr?.flags.includes('f') ? 'fly' : cr?.flags.includes('s') ? 'swim' : 'land';
+  const ok = cr ? canTame(cr.type, int) : null;
+  const ah = tamer ? E.animalHandling(tamer) : null;
+  const flag = (k: keyof ApproachFactors) => <Toggle key={k} checked={f[k]} onChange={(v) => setF({ ...f, [k]: v })} label={FACTOR_LABEL[k]} />;
+  return (
+    <Card title="Taming a wild creature">
+      {targets.map((t) => {
+        const tm = s.characters.find((c) => c.id === t.tamerId);
+        const now = E.absNow(s);
+        const doneToday = t.lastSessionDay === s.dayIndex;
+        const sessionFlags = { charmed: f.charmed, speaking: f.speaking, threatened: f.threatened };
+        return (
+          <div key={t.id} className="calc">
+            <b>{t.name}</b> ({t.size} {t.creature}, CR {t.cr}, Int {t.int}) with {tm?.name ?? 'nobody'}:{' '}
+            {t.stage === 'wary' && <Pill tone="warn">wary</Pill>}
+            {t.stage === 'bonding' && <Pill tone="info">bonding {t.trust}/{t.needed}</Pill>}
+            {t.stage === 'tamed' && <Pill tone="good">tamed</Pill>}
+            {t.trained.map((k) => (
+              <Pill key={k} tone="good">
+                trained {TRAINING_LABEL[k]}
+              </Pill>
+            ))}
+            {t.fails > 0 && <Pill tone="bad">{t.fails} bad day{t.fails > 1 ? 's' : ''} in a row</Pill>}
+            <p className="small">
+              {t.stage === 'wary' && (t.retryAt && t.retryAt > now ? `It keeps its distance. Try again in ${formatDuration(t.retryAt - now)}.` : 'It may let you near now: try the approach again below.')}
+              {t.stage === 'bonding' && trustCue(t.creature, t.trust, t.needed)}
+              {t.training && ` Training ${TRAINING_LABEL[t.training.kind]}: ${t.training.progress}/${t.training.needed}.`}
+              {' '}DC {tameDC(t.int, t.cr)}.
+            </p>
+            <div className="btn-row">
+              {(t.stage === 'bonding' || t.training) && (
+                <button className="primary" disabled={doneToday} title={doneToday ? 'One session a day' : undefined} onClick={() => dispatch((st, cx) => E.tameSession(st, cx, t.id, sessionFlags))}>
+                  {t.training ? 'Train' : 'Work with it'} (1 h){doneToday ? ': done today' : ''}
+                </button>
+              )}
+              {t.stage === 'tamed' &&
+                !t.training &&
+                (['mount', 'commands'] as TameTraining[])
+                  .filter((k) => !t.trained.includes(k))
+                  .map((k) => (
+                    <button key={k} disabled={k === 'mount' && !!tm && !bigEnoughToRide(t.size, tm.size)} title={k === 'mount' && tm && !bigEnoughToRide(t.size, tm.size) ? `Too small to carry ${tm.name}` : undefined} onClick={() => dispatch((st, cx) => E.startTraining(st, cx, t.id, k))}>
+                      Train {TRAINING_LABEL[k]} ({trainingNeeded(t.cr, t.int)} sessions)
+                    </button>
+                  ))}
+              <button onClick={() => dispatch((st, cx) => E.releaseTame(st, cx, t.id))}>{t.stage === 'tamed' ? 'Done tracking' : 'Let it go'}</button>
+            </div>
+          </div>
+        );
+      })}
+      <div className="form-row">
+        <Text label="Search" value={query} onChange={setQuery} placeholder="e.g. wolf, griffon" />
+        {cr && (
+          <Select
+            label="Creature"
+            value={`${cr.name}|${cr.source}`}
+            onChange={setPick}
+            options={list.slice(0, 300).map((c) => ({ value: `${c.name}|${c.source}`, label: `${c.name} (${c.size} ${c.type}, CR ${c.cr}${c.source ? `, ${c.source}` : ''})` }))}
+          />
+        )}
+      </div>
+      {cr && (
+        <>
+          <div className="form-row">
+            <Text label="Call it" value={name} onChange={setName} placeholder={cr.name} />
+            <Num label="Intelligence" value={int} onChange={(v) => setInt(Math.max(1, Math.round(v)))} min={1} max={30} width={3} />
+            <Num label="Speed" value={speed} onChange={(v) => setSpeed(Math.max(0, Math.round(v)))} min={0} suffix="ft" width={3} />
+            <Select label="Tamer" value={tamer?.id ?? ''} onChange={setWho} options={tamers.map((c) => ({ value: c.id, label: c.name }))} />
+          </div>
+          <div className="btn-row">
+            {flag('food')}
+            {flag('charmed')}
+            {flag('speaking')}
+            {flag('threatened')}
+            <Toggle checked={hostile} onChange={setHostile} label="it is Hostile (attacking or about to)" />
+          </div>
+          <p className="calc small">
+            {ok && !ok.ok ? (
+              <span className="bad-text">Can't be tamed: {ok.why}.</span>
+            ) : (
+              <>
+                DC <b>{tameDC(int, cr.cr)}</b> Wisdom (Animal Handling){ah && tamer ? `; ${tamer.name} has ${ah.bonus >= 0 ? '+' : ''}${ah.bonus} (${ah.why})` : ''}. About <b>{trustNeeded(cr.cr, int)}</b> good days to tame, then {Math.ceil(trustNeeded(cr.cr, int) / 2)} more for each kind of training.
+                {movement !== 'land' ? ` As a ${movement === 'fly' ? 'flying' : 'swimming'} mount it needs an Exotic Saddle.` : ''}
+              </>
+            )}
+          </p>
+          <button className="primary" disabled={!tamer || (ok ? !ok.ok : true)} onClick={() => tamer && dispatch((st, cx) => E.approachCreature(st, cx, { name, creature: cr.name, type: cr.type.toLowerCase(), size: cr.size, int, cr: cr.cr, speed, movement }, tamer.id, f, hostile))}>
+            Approach it (10 min)
+          </button>
+        </>
+      )}
+      <Rule>
+        Table rule built on the 2024 PHB. <b>Approach:</b> the Influence action, Wisdom (Animal Handling) to coax a Beast or Monstrosity, DC 15 or its Intelligence, whichever is higher (+2 at CR 2–4, +5 at CR 5+, table rule). A Hostile creature refuses outright unless
+        Charmed, and Charmed gives Advantage (2024 PHB). Food, or Speak with Animals, gives Advantage; a hurt, cornered or hunted creature gives Disadvantage. Fail and it backs off for 24 hours; fail by 5 or more and it attacks or flees for good. Only Intelligence {TAME_MAX_INT} or lower.
+      </Rule>
+      <Rule>
+        <b>Bonding:</b> one hour a day, the same check, feeding it a day's food from the camp stores (raw meat first; no food, no Advantage). Success +1 trust, a natural 20 +2, failing by 5 or more −1. Each day skipped costs 1 trust, and {TAME_MAX_FAILS} bad days in a row and it slips away. At full trust (3 days for CR ¼ or lower, 5 to CR 1, 7 to CR 3, 10 to CR 5, 14 above; +2 for Intelligence 4–5) it joins the party as a mount.
+      </Rule>
+      <Rule>
+        {TAMED_RULES.map((r) => (
+          <span key={r}>
+            {r}{' '}
+          </span>
+        ))}
+        Training takes half the taming time again; bad days never undo taming, but {TAME_MAX_FAILS} in a row lose a session of training.
+      </Rule>
+      <WaysAround topic={'taming'} />
     </Card>
   );
 }
