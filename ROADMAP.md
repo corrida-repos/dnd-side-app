@@ -393,12 +393,18 @@ The gear makes things automatic, faster or better; without it you can still try,
 - ✅ **Vine cord:** Survival DC 15, 1 hour, 10 feet, bursts at Strength DC 15.
 - Barren terrain (desert, arctic without snow, underground, at sea, in town) has nothing to make these from.
 
+### Chores that pay off ✅
+- ✅ **Harvested poison is the real thing** (2024 DMG): a wyvern gives Wyvern Poison (1,200 GP), a purple worm Purple Worm Poison (2,000 GP), a carrion crawler Carrion Crawler Mucus and a venomous snake Serpent Venom (200 GP each). The dose is priced, sellable and usable from the Poisons card. Table rule (switch *Rewarding chores*): any other venom works as Basic Poison (100 GP).
+- ✅ **Trophies** (table rule): a clean butchering job on a Medium or bigger beast, monstrosity or dragon keeps its antlers, horns, fangs or scales, worth 2/10/50/200 GP by size × Challenge Rating (at least 1).
+- ✅ **Lucky finds** (table rule): a natural 20, or beating the DC by 10, while foraging or gathering firewood turns up something worth having (healing herbs, honey, rare mushrooms, burl wood, a lost purse, a stone or ring worth appraising). Digging turns something up on a d20 roll of 20 (old coins, flint, clay, a fossil, a buried relic). Finds land in the purse, pack, stores or crafting stash.
+
 ## Phase 9: Random tables from the 2024 DMG 📋
 
 DMG random tables that fit life outside one adventure (from 5etools `book-xdmg.json`).
 
 - 📋 **Treasure:** gemstones and art objects by value, trade bars, individual and hoard treasure by CR, magic items by rarity (Arcana, Armaments, Implements, Relics). Rolls land in the inventory with their value; the Bastion Treasure event uses them.
-- 📋 **Settlements:** size, defining trait, claim to fame, current calamity, local leader, tavern names and shops, rolled when the party reaches a new town.
+- ✅ **Settlements:** roll up the town the party is in (Money & Shop tab): DMG size, defining trait, claim to fame, local leader and a calamity (1 in 3, table rule), and every building with a game function: inns and taverns (DMG Tavern Names), shrines, temples and a cathedral, healers and apothecaries, all 20 DMG Random Shops plus general store, market, crafts, moneylender, bank, guildhall, stables, coaching house, docks, courier, gate, library, academy, town hall, watch, barracks, gambling hall, fighting pit, theater, fence and thieves' guild. Keepers get DMG Common Names. Table rule: how many of each a village, town or city has. The shop sells only what those buildings stock, specialty goods (Potions of Healing, costly spell components) come from the right shop, and spellcasting follows the town's size. Towns are kept by name for the next visit.
+- ✅ **Fix:** shop stock limits now follow the 2024 DMG Settlements by Size (village 20 GP, town 2,000 GP, city 200,000 GP) instead of the old 50 / 1,000 / any table rule.
 - 📋 **NPCs:** names (six styles), appearance and a DM-only secret for hirelings, contacts, patrons, rivals and Bastion guests.
 - 📋 **Monster personality and relationships:** rolled with each encounter, next to its attitude.
 - 📋 **Audible distance:** how far camp noise carries for encounters and the watch.

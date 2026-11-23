@@ -46,10 +46,10 @@ export const priceOf = (name: string): number | undefined => {
 };
 
 /**
- * Table rule: what a settlement stocks. The PHB lists prices but not availability.
- * Villages sell items up to 50 GP, towns up to 1,000 GP, cities anything; vehicles and ships need a town or city.
+ * 2024 DMG Settlements by Size: the most expensive item a settlement is likely to have for sale.
+ * Villages up to 20 GP, towns up to 2,000 GP, cities up to 200,000 GP.
  */
-export const STOCK_LIMIT: Record<Settlement, number> = { village: 50, town: 1000, city: Infinity };
+export const STOCK_LIMIT: Record<Settlement, number> = { village: 20, town: 2000, city: 200000 };
 export const inStock = (gp: number, here: Settlement): boolean => gp <= STOCK_LIMIT[here];
 
 /** Table rule: the DMG says renown 3+ might bring a discount on adventuring gear; 10% is used here. */

@@ -15,6 +15,7 @@ import type { ContagionKind } from '../rules/contagion';
 import type { CreditorKind } from '../rules/debts';
 import type { PatronKind } from '../rules/patrons';
 import type { RegionKind } from '../rules/regions';
+import type { Town } from '../rules/settlements';
 import type { HirelingRole } from '../rules/hirelings';
 import type { ClueKind, StudyMethod } from '../rules/identify';
 import type { WeightSource } from '../rules/encumbrance';
@@ -932,6 +933,8 @@ export interface Settings {
   appraiseMisjudge: boolean;
   /** Table rule: without the right tool, try anyway at DC +5, taking twice as long where time matters. */
   improvised: boolean;
+  /** Table rule: chores pay off. Exceptional forage, firewood and digging turn up finds, clean butchering keeps trophies, and stray venom works as Basic Poison. */
+  choreFinds: boolean;
   /** Optional 2014 DMG rule: running a business as a downtime activity. */
   runningBusiness: boolean;
   /** Roll random encounter checks automatically by the location's danger while travelling, camping, resting and exploring. */
@@ -1252,4 +1255,6 @@ export interface State {
   letters?: Letter[];
   /** News travelling toward the party, and recent news. */
   news?: NewsItem[];
+  /** Settlements the party has rolled up or visited, with their buildings (2024 DMG Settlement Tables). */
+  towns?: Town[];
 }

@@ -84,7 +84,7 @@ describe('potions and poison', () => {
     s = E.mixPotions(s, ctx(0.995), 'Healing and Speed');
     expect(s.log[0].text).toMatch(/d100 = 100.*permanent/);
     s = E.harvestPoison(s, ctx(0.99), s.characters[0].id, 2, 'Giant Spider');
-    expect(s.characters[0].inventory.some((i) => i.name === 'Poison dose (Giant Spider)')).toBe(true);
+    expect(s.characters[0].inventory.some((i) => i.name === 'Poison: Basic Poison (Giant Spider venom)' && i.valueGp === 100)).toBe(true);
     s = E.harvestPoison(s, ctx(0.1), s.characters[0].id, 2, 'Wyvern');
     expect(s.log[0].text).toMatch(/exposed to its poison/);
   });

@@ -5,6 +5,8 @@ import { fireThreat } from '../rules/weather';
 import { DIG_LABEL, HUNTING_TRAP, MAGNIFYING_GLASS, POT_ALARM_DC, SHOVEL, SNARE, SNARE_LINE, TRAP_CATCH_ON, type DigKind } from '../rules/gear';
 import { COOK_RAW_MINUTES, DEFAULT_FIRE_COLD_LIMIT_F, FIRE_LIGHT_DC, FIRE_METHODS, fireColdLimit, fireLighting, type FireMethod } from '../rules/campfire';
 import { GAME_ANIMALS, MEAT_LB, BUTCHER_MINUTES, BUTCHER_DC, isEdible, yieldsHide, STRANGE_TYPES } from '../rules/hunting';
+import { DIG_FIND_ON, FIND_MARGIN, poisonYield, trophyFor } from '../rules/chorePayoffs';
+import { fmtGp } from '../rules/money';
 import { formatClock, formatDuration, lightAt } from '../rules/calendar';
 import { autoAssign, maxWatchMinutes, WATCH_COUNTS, watchCapacity, watchMinutes } from '../rules/watch';
 import { TERRAIN } from '../rules/terrain';
@@ -195,6 +197,7 @@ function FireCard() {
           Gather firewood (1 h, Survival DC {TERRAIN[s.place.terrain].forageDC})
         </button>
       </div>
+      {s.settings.choreFinds && <p className="small muted">Table rule (rewarding chores): a natural 20, or beating the DC by {FIND_MARGIN}, turns up resin knots, honey, prized burl wood or something hidden in a hollow tree.</p>}
       {threat && s.fire.lit && !s.fire.sheltered && !indoors && <Rule>The {threat} will put this fire out at the end of the hour unless the pit is sheltered.</Rule>}
       <WaysAround topic={'fire'} />
     </Card>
@@ -616,7 +619,7 @@ function ForageCard() {
       <p>
         {TERRAIN[s.place.terrain].label} terrain: <b>DC {TERRAIN[s.place.terrain].forageDC}</b> Wisdom (Survival).
       </p>
-      <Rule>On a success you find 1d6 + Wisdom modifier pounds of food and the same roll again in gallons of water. Spend an hour in camp, or forage while you travel (Slow pace gives Advantage, Fast gives Disadvantage).</Rule>
+      <Rule>On a success you find 1d6 + Wisdom modifier pounds of food and the same roll again in gallons of water. Spend an hour in camp, or forage while you travel (Slow pace gives Advantage, Fast gives Disadvantage).{s.settings.choreFinds && ` Table rule (rewarding chores): a natural 20, or beating the DC by ${FIND_MARGIN} or more, also turns up a find: healing herbs, honey, rare mushrooms, a lost purse or a stone worth appraising.`}</Rule>
       <div className="btn-row">
         <Select value={who} onChange={setWho} options={opts} />
         <button className="primary" disabled={!who} onClick={() => dispatch((st, c) => E.forage(st, c, who))}>
@@ -668,7 +671,8 @@ function HuntCard() {
             {isEdible(cr) ? (
               <>
                 About <b>{MEAT_LB[cr.size] * count} lb</b> of raw meat in {formatDuration(BUTCHER_MINUTES[cr.size] * count)}
-                {yieldsHide(cr) ? `, plus ${count} hide${count > 1 ? 's' : ''} for crafting` : ''}.{STRANGE_TYPES.includes(cr.type.toLowerCase()) ? ' Strange meat: ask your DM.' : ''}
+                {yieldsHide(cr) ? `, plus ${count} hide${count > 1 ? 's' : ''} for crafting` : ''}
+                {s.settings.choreFinds && trophyFor(cr) ? `, and on a clean job ${count > 1 ? `${count} trophies` : 'a trophy'} (${trophyFor(cr)!.parts}) worth ${fmtGp(trophyFor(cr)!.valueGp)} each` : ''}.{STRANGE_TYPES.includes(cr.type.toLowerCase()) ? ' Strange meat: ask your DM.' : ''}
               </>
             ) : (
               <span className="bad-text">A {cr.type} has no edible meat.</span>
@@ -681,7 +685,7 @@ function HuntCard() {
       )}
       <Rule>
         Table rule: meat by size is Tiny 1 lb, Small 10, Medium 50, Large 200, Huge 1,000, Gargantuan 4,000. It lands in the camp stores as <b>raw food</b>, so cook it before eating. With a butcher, a DC {BUTCHER_DC} Wisdom
-        (Survival) check stops half the meat going to waste. Constructs, elementals, oozes and undead give nothing.
+        (Survival) check stops half the meat going to waste. Constructs, elementals, oozes and undead give nothing.{s.settings.choreFinds && ' Rewarding chores (table rule): a clean job on a Medium or bigger beast, monstrosity or dragon keeps its trophy parts, worth 2 GP (Medium), 10 (Large), 50 (Huge) or 200 (Gargantuan) times its Challenge Rating (at least 1). Sell them, or keep them to mount.'}
       </Rule>
       <WaysAround topic={'hunting'} />
     </Card>
@@ -997,9 +1001,10 @@ function PoisonHarvestCard() {
       <button className="small" disabled={!whoId || (!hasKit && !s.settings.improvised)} onClick={() => dispatch((st, cx) => E.harvestPoison(st, cx, whoId, bonus, creature, hasKit))}>
         Harvest ({hasKit ? '1d6' : '2d6'} min, DC {dc})
       </button>
+      {creature.trim() && <p className="small calc">Yields: {poisonYield(creature, s.settings.choreFinds).note}</p>}
       {!hasKit && <span className="small muted"> {s.settings.improvised ? 'Without the kit: DC +5 and twice as long (table rule).' : 'Needs a Poisoner’s Kit.'}</span>}
       <Rule>
-        2024 DMG: from a venomous creature that is dead or Incapacitated, using a Poisoner&apos;s Kit. Success yields one dose, and nothing more can be taken from that creature. Failing by 5 or more exposes the harvester to the poison. Buying poison is often illegal: it means criminal contacts, inquiries and bribes.
+        2024 DMG: from a venomous creature that is dead or Incapacitated, using a Poisoner&apos;s Kit. Success yields one dose, and nothing more can be taken from that creature. Failing by 5 or more exposes the harvester to the poison. A wyvern gives Wyvern Poison (1,200 GP a dose), a purple worm Purple Worm Poison (2,000 GP), a carrion crawler Carrion Crawler Mucus (200 GP) and a venomous snake Serpent Venom (200 GP).{s.settings.choreFinds && ' Table rule: any other venom works as Basic Poison (100 GP).'} Buying poison is often illegal: it means criminal contacts, inquiries and bribes.
       </Rule>
       <WaysAround topic={'poisonHarvest'} />
     </Card>
@@ -1056,7 +1061,7 @@ function CampGearCard() {
         </button>
         {(s.place.dug ?? []).length > 0 && <span className="small muted">Dug here: {(s.place.dug ?? []).join(', ')}.</span>}
       </div>
-      <p className="small muted">{DIG_LABEL[kind].note}</p>
+      <p className="small muted">{DIG_LABEL[kind].note}{s.settings.choreFinds && ` Rewarding chores (table rule): on a d20 roll of ${DIG_FIND_ON}, the spade turns up old coins, flint, clay, a fossil or a buried relic.`}</p>
       <h3>Hunting Traps</h3>
       {set.length > 0 && (
         <div className="btn-row tight">
