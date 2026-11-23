@@ -1757,11 +1757,10 @@ export const gatherWood = act((d, ctx, charId: string) => {
 });
 
 /**
- * Table rule (Rewarding chores): an exceptional result on a camp chore turns up something worth having. The find lands
+ * Table rule: an exceptional result on a camp chore turns up something worth having. The find lands
  * where it belongs: coins in the purse, valuables in the pack, materials in the crafting stash, food in the stores.
  */
 function grantFind(d: State, ctx: Ctx, c: Character, chore: Chore): void {
-  if (!d.settings.choreFinds) return;
   const f = rollFind(chore, ctx.rng);
   const r = f.reward;
   const n = (dice: string) => Math.max(1, rollExpr(dice, ctx.rng) ?? 1);
@@ -1800,7 +1799,7 @@ function grantFind(d: State, ctx: Ctx, c: Character, chore: Chore): void {
       break;
     }
   }
-  log(d, `${c.name} comes across ${f.text}: ${got} (table rule: rewarding chores).`, 'good');
+  log(d, `${c.name} comes across ${f.text}: ${got} (table rule).`, 'good');
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -2378,7 +2377,7 @@ export const harvestPoison = act((d, ctx, charId: string, bonus: number, creatur
   const name = creature || 'the creature';
   const me = charById(d, charId)!;
   if (total >= dc) {
-    const y = poisonYield(creature, d.settings.choreFinds);
+    const y = poisonYield(creature);
     const have = me.inventory.find((i) => i.name === y.name && !i.containerId);
     if (have) have.qty += 1;
     else me.inventory.push({ id: uid(), name: y.name, qty: 1, weight: 0, source: 'manual', valueGp: y.valueGp, container: null, ammo: null });
@@ -5537,8 +5536,8 @@ export const butcher = act((d, ctx, o: ButcherOpts) => {
     else d.materials.push({ id: uid(), name, qty: count, unit: 'hide', valueGp: cr.size === 'Medium' ? 1 : cr.size === 'Large' ? 5 : 20 });
     hide = ` ${count} hide${count > 1 ? 's go' : ' goes'} into the materials stash.`;
   }
-  // Table rule (Rewarding chores): a clean job keeps the trophy parts whole, for selling or mounting.
-  const trophy = d.settings.choreFinds && clean ? trophyFor(cr) : null;
+  // Table rule: a clean job keeps the trophy parts whole, for selling or mounting.
+  const trophy = clean ? trophyFor(cr) : null;
   let trophyTxt = '';
   if (trophy) {
     const keeper = (who && alive(who) ? who : undefined) ?? d.characters.find((x) => x.kind === 'pc' && alive(x));

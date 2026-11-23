@@ -933,8 +933,6 @@ export interface Settings {
   appraiseMisjudge: boolean;
   /** Table rule: without the right tool, try anyway at DC +5, taking twice as long where time matters. */
   improvised: boolean;
-  /** Table rule: chores pay off. Exceptional forage, firewood and digging turn up finds, clean butchering keeps trophies, and stray venom works as Basic Poison. */
-  choreFinds: boolean;
   /** Optional 2014 DMG rule: running a business as a downtime activity. */
   runningBusiness: boolean;
   /** Roll random encounter checks automatically by the location's danger while travelling, camping, resting and exploring. */
