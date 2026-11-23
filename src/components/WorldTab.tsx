@@ -649,6 +649,11 @@ function MarkRow({ m }: { m: Mark }) {
               </button>
             </>
           )}
+          {!m.factionId && m.grantor.trim() && (
+            <button className="small" onClick={() => dispatch((st, cx) => E.markRulerAsFaction(st, cx, m.id))}>
+              Track {m.grantor} as a faction
+            </button>
+          )}
           {m.kind === 'fortification' && (
             <button className="small" onClick={() => dispatch((st, cx) => E.fortToBastion(st, cx, m.id))}>
               Make it a Bastion
@@ -681,6 +686,7 @@ function MarksCard() {
   const [rank, setRank] = useState<TitleRank>('knight');
   const [withLand, setWithLand] = useState<LandKind | ''>('');
   const [factionId, setFactionId] = useState('');
+  const [rulerAsFaction, setRulerAsFaction] = useState(true);
   const fac = s.factions.find((f) => f.id === factionId);
   const need = fac && s.settings.prestigeRenownMin ? renownMinimum(kind, rank) : 0;
   const active = s.marks.filter((m) => !m.revoked && !m.bastionId);
@@ -742,6 +748,13 @@ function MarksCard() {
             ))}
           </div>
         </div>
+        {!fac && grantor.trim() && (
+          <Toggle
+            checked={rulerAsFaction}
+            onChange={setRulerAsFaction}
+            label={s.factions.some((f) => f.name.trim().toLowerCase() === grantor.trim().toLowerCase()) ? `Link to the faction ${grantor.trim()}` : `Track ${grantor.trim()} as a faction (standing at court, renown 0)`}
+          />
+        )}
         {kind === 'rights' && <p className="small muted">{RIGHTS[right].effect}</p>}
         {fac && need > fac.renown && <p className="small warn-text">Table rule: {fac.name} would expect renown {need} for this; the party has {fac.renown}.</p>}
         <button
@@ -764,6 +777,7 @@ function MarksCard() {
                 rank,
                 withLand: withLand || null,
                 factionId: factionId || null,
+                rulerAsFaction,
               }),
             );
             setName('');

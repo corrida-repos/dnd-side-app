@@ -6877,10 +6877,24 @@ export interface MarkGrant {
   withLand?: Mark['land'] | null;
   /** A faction in the tracker that grants it. */
   factionId?: string | null;
+  /** With no faction chosen: track the grantor (a monarch, a court, a city) as a faction, reusing one of the same name. */
+  rulerAsFaction?: boolean;
+}
+
+/** The faction standing for a ruler or ruling body: one already tracked under that name, or a new one at renown 0. */
+function rulerFaction(s: State, name: string): Faction | null {
+  const n = name.trim();
+  if (!n) return null;
+  const found = s.factions.find((f) => f.name.trim().toLowerCase() === n.toLowerCase());
+  if (found) return found;
+  const f: Faction = { id: uid(), name: n, renown: 0, notes: 'A ruler tracked as a faction: standing at court.' };
+  s.factions.push(f);
+  log(s, `${n} is now tracked as a faction (renown 0): the party's standing with this ruler and their court.`);
+  return f;
 }
 
 export const grantMark = act((d, _ctx, g: MarkGrant) => {
-  const fac = g.factionId ? d.factions.find((x) => x.id === g.factionId) : undefined;
+  const fac = (g.factionId ? d.factions.find((x) => x.id === g.factionId) : undefined) ?? (g.rulerAsFaction ? rulerFaction(d, g.grantor) ?? undefined : undefined);
   const base = { id: uid(), name: g.name.trim() || MARK_LABEL[g.kind], holderIds: g.holderIds, grantor: g.grantor.trim() || fac?.name || '', grantedDay: d.dayIndex, trust: TRUST_MAX, notes: g.notes ?? '', ...(fac ? { factionId: fac.id } : {}) };
   const m: Mark = { ...base, kind: g.kind };
   const need = fac && d.settings.prestigeRenownMin ? renownMinimum(g.kind, g.rank) : 0;
@@ -6926,6 +6940,16 @@ export const grantMark = act((d, _ctx, g: MarkGrant) => {
 });
 
 const markById = (s: State, id: string) => s.marks.find((m) => m.id === id);
+
+/** Tracks a mark's grantor as a faction, and links every other mark from the same grantor that has none. */
+export const markRulerAsFaction = act((d, _ctx, id: string) => {
+  const m = markById(d, id);
+  if (!m || m.factionId || !m.grantor.trim()) return;
+  const f = rulerFaction(d, m.grantor)!;
+  const linked = d.marks.filter((x) => !x.factionId && x.grantor.trim().toLowerCase() === m.grantor.trim().toLowerCase());
+  for (const x of linked) x.factionId = f.id;
+  log(d, `${linked.map((x) => x.name).join(', ')} now count${linked.length > 1 ? '' : 's'} as granted by the faction ${f.name}.`);
+});
 
 export const revokeMark = act((d, _ctx, id: string, why: string) => {
   const m = markById(d, id);

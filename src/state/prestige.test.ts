@@ -233,3 +233,29 @@ describe('free room and board, day to day in town', () => {
     expect(s.characters[1].gp).toBeCloseTo(999.2);
   });
 });
+
+describe('a ruler tracked as a faction', () => {
+  it('creates the ruler’s faction once and reuses it for later grants', () => {
+    let s = fresh();
+    const a = s.characters[0].id;
+    s = E.grantMark(s, ctx(), { kind: 'title', name: 'Sir Ada', holderIds: [a], grantor: 'Queen Yolande', rank: 'knight', rulerAsFaction: true });
+    s = E.grantMark(s, ctx(), { kind: 'land', name: 'Fenwick', holderIds: [a], grantor: 'queen yolande', land: 'farmland', rulerAsFaction: true });
+    expect(s.factions).toHaveLength(1);
+    expect(s.factions[0]).toMatchObject({ name: 'Queen Yolande', renown: 0 });
+    expect(s.marks.every((m) => m.factionId === s.factions[0].id)).toBe(true);
+    s = E.changeRenown(s, ctx(), s.factions[0].id, 1, 'gave the queen a gift');
+    s = E.changeRenown(s, ctx(), s.factions[0].id, -1, 'insulted the queen at court');
+    expect(s.marks.every((m) => m.trust === 2)).toBe(true);
+  });
+
+  it('links existing marks from the same grantor afterwards', () => {
+    let s = fresh();
+    const a = s.characters[0].id;
+    s = E.grantMark(s, ctx(), { kind: 'title', name: 'Earl', holderIds: [a], grantor: 'King Boranel', rank: 'count', withLand: 'village' });
+    s = E.grantMark(s, ctx(), { kind: 'title', name: 'Sir', holderIds: [a], grantor: 'Someone else', rank: 'knight' });
+    expect(s.factions).toHaveLength(0);
+    s = E.markRulerAsFaction(s, ctx(), s.marks.find((m) => m.name === 'Earl')!.id);
+    expect(s.factions.map((f) => f.name)).toEqual(['King Boranel']);
+    expect(s.marks.filter((m) => m.factionId).map((m) => m.name).sort()).toEqual(['Earl', 'Lands of Earl']);
+  });
+});
