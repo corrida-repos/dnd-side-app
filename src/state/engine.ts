@@ -13,6 +13,7 @@ import { MESSENGER_GP_PER_MILE } from '../rules/hirelings';
 import { COMMS, commCost, commDelay, type CommMethod } from '../rules/comms';
 import { CONTAGIONS, RECUPERATE_DAYS, RECUPERATE_DC, SIGHT_ROT_CURE_HOURS, type ContagionKind } from '../rules/contagion';
 import { neglectLimit } from '../rules/bastion';
+import { marchWork } from '../rules/marchWork';
 import { RARITY_LABEL, magicItemCrafting, nonmagicalCrafting, SCROLL_CRAFTING, type Rarity } from '../rules/crafting';
 import { ALL_IS_WELL, BARRACK_ROOM, BASTION_CHARMS, CONSTRUCTS, CREATURE_ROOM, GROVE_ROOM, GROVE_UNITS, MUSEUM_ORIGINS, NECROPOLIS_ROOM, EVENT_PREFERENCE, FACILITY_OPTIONS, GARDEN_PRODUCTS, GUILDS, MENAGERIE_CREATURES, MENAGERIE_ROOM, SHIPS, TRAINERS, TREASURE_TABLE, facilityHirelings, stableMarkup, storehouseLimit, storehouseMarkup, type GardenType } from '../rules/bastionOrders';
 import { knownValue, misjudged, priceOf, saleRate, sameStack, valueSecret, valueUnknown } from '../rules/shop';
@@ -2103,7 +2104,7 @@ export function marchWorkers(s: State, p: Project, navigatorId: string | null | 
 /** Table rule: crafters who are only marching keep working on projects they can carry in their hands, at half rate. */
 function workOnTheMarch(s: State, ctx: Ctx, hours: number, navigatorId: string | null | undefined, foragerIds: string[]): void {
   if (!s.settings.workWhileMarching || hours <= 0) return;
-  for (const p of s.projects.filter((x) => x.onTheMove && !x.done && !x.awaitingOutcome)) {
+  for (const p of s.projects.filter((x) => marchWork(x).ok && !x.done && !x.awaitingOutcome)) {
     const who = marchWorkers(s, p, navigatorId, foragerIds);
     if (!who.length) continue;
     // Same helper limit as a day at the workbench; training is time with the trainer, so trainees don't add up.

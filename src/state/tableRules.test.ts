@@ -105,10 +105,11 @@ describe('table rules for edge cases', () => {
 });
 
 describe('working on projects while marching (table rule)', () => {
-  const withProject = (onTheMove: boolean) =>
+  const withProject = (walkable: boolean) =>
     fresh((s) => {
       s.settings.forcedMarch = false;
-      s.projects = [{ id: 'p', name: 'Wooden flute', kind: 'nonmagical', charIds: [s.characters[0].id], daysRequired: 3, daysDone: 0, costGp: 1, notes: '', done: false, onTheMove }];
+      const item = walkable ? 'Quarterstaff' : 'Plate Armor';
+      s.projects = [{ id: 'p', name: item, kind: 'nonmagical', charIds: [s.characters[0].id], daysRequired: 3, daysDone: 0, costGp: 1, notes: '', done: false, product: { name: item, qty: 1 } }];
     });
 
   it('counts marching hours at half rate toward hand-held projects', () => {

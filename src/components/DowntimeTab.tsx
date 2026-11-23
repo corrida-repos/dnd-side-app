@@ -28,6 +28,7 @@ import { WaysAround } from './WaysAround';
 import { BOOK, SKILLS, TOOLS, carriesTool, hasSkill, proficientWith } from '../rules/gear';
 import { isLowLife } from '../rules/lowLife';
 import { TRAINING_KIND_LABEL, type TrainingKind } from '../rules/prestige';
+import { marchWork } from '../rules/marchWork';
 
 export function DowntimeTab() {
   const s = useGame();
@@ -54,16 +55,15 @@ export function DowntimeTab() {
                 </span>
                 {p.notes && <span className="muted small">{p.notes}</span>}
                 {p.materialsUsed && p.materialsUsed.length > 0 && <span className="muted small">Materials: {p.materialsUsed.map((u) => `${u.qty} × ${u.name}`).join(', ')}</span>}
-                {s.settings.workWhileMarching && p.kind !== 'buyMagic' && p.kind !== 'sellMagic' && (
-                  <span className="small">
-                    <Toggle
-                      checked={!!p.onTheMove}
-                      onChange={(v) => edit((d) => void (d.projects.find((x) => x.id === p.id)!.onTheMove = v))}
-                      label="Can be worked while walking, held in the hands (half rate on the march, table rule)"
-                    />
-                    {(p.marchWorkHours ?? 0) > 0 && <span className="muted"> {p.marchWorkHours} h of march work toward the next workday</span>}
-                  </span>
-                )}
+                {s.settings.workWhileMarching && p.kind !== 'buyMagic' && p.kind !== 'sellMagic' && (() => {
+                  const mw = marchWork(p);
+                  return (
+                    <span className="small muted" title="Table rule: hand work continues on the march at half rate">
+                      {mw.ok ? 'Workable while marching, at half rate' : 'Not workable while marching'}: {mw.why}.
+                      {(p.marchWorkHours ?? 0) > 0 && ` ${p.marchWorkHours} h of march work toward the next workday.`}
+                    </span>
+                  );
+                })()}
                 {E.ARTISAN_KINDS.includes(p.kind) && <CraftSpeedUp p={p} />}
               </div>
               <span className="btn-row tight">
