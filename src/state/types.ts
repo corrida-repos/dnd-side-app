@@ -950,6 +950,8 @@ export interface Travel {
   lostRecheckIn: number;
   milesOffCourse: number;
   navigatorId: string | null;
+  /** Who forages as the party travels, kept from one leg to the next. */
+  foragerIds?: string[];
   /** Mounts can gallop (double distance for 1 hour) until they get a Short or Long Rest. */
   gallopUsed: boolean;
 }

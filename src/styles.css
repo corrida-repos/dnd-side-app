@@ -1246,3 +1246,23 @@ select {
 .tier-list .pill {
   margin-left: 6px;
 }
+
+/* Party jobs: who is doing what, and what can be split up */
+.jobs-hands {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-bottom: 8px;
+}
+.job-row > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.job-picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  align-items: baseline;
+}
