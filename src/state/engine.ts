@@ -63,6 +63,7 @@ import {
   ARMOR_LABEL,
   PURIFY_SPELL,
   TAINTED_DC,
+  CITY_WATER_DC,
   BOIL_MINUTES,
 } from '../rules/survival';
 import { isCaster, PREP_RULE, preparedCount, preparedLimit } from '../rules/spells';
@@ -467,6 +468,7 @@ function endOfDay(s: State, ctx: Ctx): void {
   dailyCosts(s);
   patronDaily(s);
   lifestyleRisks(s, ctx);
+  cityWater(s, ctx);
   purseDebts(s);
   if ((s.dayIndex + 1) % 7 === 0) debtsWeekly(s, ctx);
   groomTheMounts(s);
@@ -2167,15 +2169,13 @@ function lifestyleRisks(s: State, ctx: Ctx): void {
       case 'wretched':
         if (bestRenown(s) >= 3) break;
         if (r === 1) steal('1d6');
-        else if (r === 2) foulWaterBout(s, ctx, c, 'from the gutters and public wells');
-        else if (r === 3) {
+        else if (r === 2) {
           log(s, `${c.name} is roughed up sleeping rough on the street (table rule).`, 'warn');
           Object.assign(s, changeHp(s, ctx, c.id, -die(4, ctx.rng)));
         }
         break;
       case 'squalid':
-        if (r === 1) foulWaterBout(s, ctx, c, 'in a squalid tenement');
-        else if (r === 2) steal('1d6');
+        if (r === 1) steal('1d6');
         break;
       case 'poor':
         if (r === 1 && die(2, ctx.rng) === 1) steal('1d4');
@@ -3025,13 +3025,19 @@ function waterborneIllness(s: State, ctx: Ctx, c: Character): void {
   exposeContagionMut(s, ctx, c.id, 'sewer', true);
 }
 
-/** Squalid or wretched living in town (table rule): a bout of sickness from foul water, counting toward Sewer Plague. */
-function foulWaterBout(s: State, ctx: Ctx, c: Character, why: string): void {
-  const was = c.sick;
-  c.sick = true;
-  c.sickFrom = was && c.sickFrom && c.sickFrom !== 'unpurified water' ? 'raw food and unpurified water' : 'unpurified water';
-  status(s, c, 'waterIllness', `${c.name} is Sick from foul water ${why}: Poisoned until they finish a Long Rest (table rule).`, 'bad');
-  if (!was) waterborneIllness(s, ctx, c);
+/**
+ * Table rule: city water is more dangerous than a wild stream. Each day in a settlement, anyone living Squalid (DC 12) or
+ * Wretched (DC 14) drinks from public wells and gutters: a Con save or Sick, which counts toward Sewer Plague.
+ * Renown 3+ with a faction means shelter in need, which spares the Wretched the gutters.
+ */
+function cityWater(s: State, ctx: Ctx): void {
+  if (!s.settings.lifestyleRisks || !s.settings.wildNeedsPurifying || !s.place.settlement) return;
+  for (const c of adventurers(s)) {
+    if (c.lifestyle !== 'squalid' && c.lifestyle !== 'wretched') continue;
+    if (c.lifestyle === 'wretched' && bestRenown(s) >= 3) continue;
+    const dc = CITY_WATER_DC[c.lifestyle]!;
+    requestSave(s, ctx, c, 'tainted', dc, 'normal', c.lifestyle === 'wretched' ? 'gutter water and the dregs of public wells' : 'foul water from a tenement cistern');
+  }
 }
 
 function exposeContagionMut(d: State, ctx: Ctx, charId: string, kind: ContagionKind, rollToResist: boolean): void {

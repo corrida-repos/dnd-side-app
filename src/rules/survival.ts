@@ -67,6 +67,11 @@ export function armorTime(c: Character, action: 'don' | 'doff'): number {
 export const PURIFY_SPELL = 'Purify Food and Drink';
 /** Table rule: eating or drinking unpurified wild supplies. */
 export const TAINTED_DC = 10;
+/**
+ * Table rule: city water is worse than a wild stream. Living Squalid or Wretched in a settlement means drinking from
+ * public wells, cisterns and gutters every day: a Con save each day or Sick, like unpurified water.
+ */
+export const CITY_WATER_DC: Partial<Record<'wretched' | 'squalid', number>> = { squalid: 12, wretched: 14 };
 export const TAINTED_POISON_MINUTES = 60;
 /** Table rule: boiling a batch of water over a campfire. */
 export const BOIL_MINUTES = 30;
