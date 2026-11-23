@@ -19,7 +19,7 @@ import { ALL_IS_WELL, BARRACK_ROOM, BASTION_CHARMS, CONSTRUCTS, CREATURE_ROOM, G
 import { knownValue, misjudged, priceOf, saleRate, sameStack, valueSecret, valueUnknown } from '../rules/shop';
 import { APPRAISE_MINUTES, JEWELER_TOOLS, appraiseCheck, misjudgedValue, valuableKind, type AppraiseMethod } from '../rules/appraise';
 import { groundDifficulty, meltInches, mudAfter, snowfallInches } from '../rules/ground';
-import { activityOf, COMPLICATIONS, resolveActivity, type ActivityOpts, type Complication } from '../rules/downtimeOutcomes';
+import { activityOf, bondCap, COMPLICATIONS, resolveActivity, resolveBuying, resolveSelling, weeksIn, type ActivityOpts, type Complication, type MagicLevel } from '../rules/downtimeOutcomes';
 import { GROUP_ASSISTANCE, PATRONS, type PatronKind } from '../rules/patrons';
 import { REGIONS, regionBand, type RegionKind } from '../rules/regions';
 import { CREDITOR_LABEL, DUE_DAYS, ESCALATION, LENIENT_GP, PRISON_LABOR_GP_PER_WEEK, SERVICE_CREDIT, WEEKLY_INTEREST, type CreditorKind, type Escalation } from '../rules/debts';
@@ -34,11 +34,12 @@ import { ARCANA_DC, STUDY_MINUTES, type StudyMethod } from '../rules/identify';
 import { FEED_LB_PER_DAY, MOUNT_CAPACITY, carryingCapacity, COINS_PER_LB, estimateWeight, loadLevel, parseInventory, RATION_WEIGHT, type LoadLevel } from '../rules/encumbrance';
 import { bigEnoughToRide, canBeSidekick, canTame, currentDC, dayOutcome, missedDays, NO_AIDS, resultGain, sessionAttitude, sessionResult, tameCheck, tameDC, TRUST_PER_DAY_MAX, TAME_MAX_FAILS, TAME_RETRY_MINUTES, TAME_SESSION_MINUTES, trainingNeeded, TRAINING_LABEL, trustCue, trustNeeded, type TameAids, type TamerFacts, type TameTraining } from '../rules/taming';
 import { BUTCHER_DC, BUTCHER_MINUTES, isEdible, MEAT_LB, STRANGE_TYPES, yieldsHide, type Creature } from '../rules/hunting';
+import { CURE_DC, CURE_LB_PER_RATION, CURE_MAX_LB, CURE_MINUTES, curedRations, FEAST_FEAR_RELIEF, FEAST_STRESS_RELIEF, feastTempHp, HEARTY_SAVES, isFeast, MEAL_BUFF_MINUTES, MEAL_STRESS_RELIEF, tastyTempHp, WARM_SAVES } from '../rules/cooking';
 import { DIG_FIND_ON, isExceptional, poisonYield, rollFind, trophyFor, type Chore } from '../rules/chorePayoffs';
 import { addCoins, COIN_GP, coinCount, coinsFor, emptyPurse, exchange, fmtPurse, purseValue, spend, type Denom, type Purse } from '../rules/coins';
 import { detectContainer } from '../rules/containers';
 import { FIRE_DAMAGE, RAT_BITE_DAMAGE, RELAXATION_NEEDS, SHAKEDOWN_DAMAGE, SHAKEDOWN_GP, SHAKEDOWN_RIVAL_ODDS, SHUNNED_AFTER_DAYS, SPOILED_FOOD_DC, TAINTED_POTION_ODDS, WATCH_FINE, WATCH_JAIL_DAYS, WEEKLY_ODDS, WRETCHED_STRESS, isLowLife } from '../rules/lowLife';
-import { BOILING_POT, CHARCOAL_WORDS, FRICTION_LIGHT_MINUTES, HIDE_WATERSKIN, LEAN_TO, BEDDING, MAKESHIFT_DC, MAKESHIFT_TORCH, POTS, POT_ALARM_DC, SNARE, SNARE_LINE, TINDERBOX, VINE_CORD, isBareback, leanToDC, ABILITY_LABEL, INK, INK_PAGES, PAPER, PERFUME, PERFUME_MINUTES, SIGNAL_WHISTLE, carriesTool, liquidCapacity, toolNamed, SPYGLASS, ALARM_LINE, ALARM_MINUTES, BELL, DIG_BY_HAND, DIG_LABEL, GATHER_MINUTES, HUNTING_TRAP, SCATTERABLE, SHOVEL, SHOVEL_MINUTES, STABLING_GP_PER_DAY, TENT, TENT_SLEEPS, TRAP_CATCH_ON, TRAP_MEAT_DICE, TRAP_SAVE_DC, needsExoticSaddle, type DigKind, MAGNIFYING_GLASS, hasSkill, proficientWith, PACKS, RATIONS, WATERSKIN, WATERSKIN_PINTS, packNamed, FUEL_LABEL, FUEL_MATCH, HEALERS_KIT, HEALERS_KIT_USES, OIL_MINUTES, VESSEL_MATCH, fuelFor, isHooded, isOilLight } from '../rules/gear';
+import { BOILING_POT, CHARCOAL_WORDS, FRICTION_LIGHT_MINUTES, HIDE_WATERSKIN, LEAN_TO, BEDDING, MAKESHIFT_DC, MAKESHIFT_TORCH, POTS, POT_ALARM_DC, SNARE, SNARE_LINE, TINDERBOX, VINE_CORD, isBareback, leanToDC, ABILITY_LABEL, INK, INK_PAGES, PAPER, PERFUME, PERFUME_MINUTES, SIGNAL_WHISTLE, carriesTool, liquidCapacity, toolNamed, SPYGLASS, ALARM_LINE, ALARM_MINUTES, BELL, DIG_BY_HAND, DIG_LABEL, GATHER_MINUTES, HUNTING_TRAP, SCATTERABLE, SHOVEL, SHOVEL_MINUTES, STABLING_GP_PER_DAY, TENT, TENT_SLEEPS, TRAP_CATCH_ON, TRAP_MEAT_DICE, TRAP_SAVE_DC, needsExoticSaddle, type DigKind, MAGNIFYING_GLASS, hasSkill, proficientWith, abilityScore, PACKS, RATIONS, WATERSKIN, WATERSKIN_PINTS, packNamed, FUEL_LABEL, FUEL_MATCH, HEALERS_KIT, HEALERS_KIT_USES, OIL_MINUTES, VESSEL_MATCH, fuelFor, isHooded, isOilLight } from '../rules/gear';
 import type { DdbImport } from '../rules/ddb';
 import { INN_STAY_GP, MEAL_GP, MEALS_PER_DAY, FEED_GP_PER_DAY, HIRELING_WAGE, magicItemValue, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset, type Lifestyle } from '../rules/money';
 import { STABLE_WAKE_DIE, STABILIZE_DC } from '../rules/upkeep';
@@ -392,6 +393,12 @@ function requestSave(s: State, ctx: Ctx, c: Character, kind: SaveKind, dc: numbe
   if ((kind === 'raw' || kind === 'tainted') && antitoxinActive(s, c)) {
     mode = poisonSaveMode(s, c, mode);
     reason = `${reason}, with Antitoxin`;
+  }
+  // Table rule: a hot meal in the belly helps against the cold, and a good one against a hard march.
+  const meal = c.mealBuff && c.mealBuff.until > absNow(s) ? c.mealBuff : null;
+  if (meal && ((WARM_SAVES as readonly string[]).includes(kind) || (meal.hearty && (HEARTY_SAVES as readonly string[]).includes(kind)))) {
+    mode = combineModes(mode, 'advantage');
+    reason = `${reason}, warmed by a hot meal`;
   }
   const spec = { charId: c.id, kind, dc, mode, reason, ...(city ? { city: true } : {}) };
   if (s.settings.autoRollSaves) {
@@ -1758,11 +1765,10 @@ export const gatherWood = act((d, ctx, charId: string) => {
 });
 
 /**
- * Table rule (Rewarding chores): an exceptional result on a camp chore turns up something worth having. The find lands
+ * Table rule: an exceptional result on a camp chore turns up something worth having. The find lands
  * where it belongs: coins in the purse, valuables in the pack, materials in the crafting stash, food in the stores.
  */
 function grantFind(d: State, ctx: Ctx, c: Character, chore: Chore): void {
-  if (!d.settings.choreFinds) return;
   const f = rollFind(chore, ctx.rng);
   const r = f.reward;
   const n = (dice: string) => Math.max(1, rollExpr(dice, ctx.rng) ?? 1);
@@ -1801,7 +1807,7 @@ function grantFind(d: State, ctx: Ctx, c: Character, chore: Chore): void {
       break;
     }
   }
-  log(d, `${c.name} comes across ${f.text}: ${got} (table rule: rewarding chores).`, 'good');
+  log(d, `${c.name} comes across ${f.text}: ${got} (table rule).`, 'good');
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -1980,33 +1986,101 @@ export const cookMeal = act((d, ctx, cookId: string | null) => {
   const cook = cookId ? actorById(d, cookId) : undefined;
   advanceMut(d, ctx, 60, 'camp');
   const eaters: string[] = [];
+  const ate: Character[] = [];
   let cookedUnsafe = 0;
   for (const c of d.characters) {
     if (!alive(c) || !c.needsFood) continue;
     const got = takeFood(d, c, foodNeedLb(c) / 2, 'cook');
     cookedUnsafe += got.unsafe;
-    if (got.amount > 0) eaters.push(c.name);
+    if (got.amount > 0) (eaters.push(c.name), ate.push(c));
   }
   let flavor = '';
+  let tasty = false;
+  let feast = false;
+  let pb = 2;
   const hiredCook = !!cookId?.startsWith('h:');
   if (cook && (cook.cooksUtensils || hiredCook || partyHasCooksUtensils(d) !== false)) {
     // 2024 PHB Cook's Utensils: improve food's flavor, Wisdom DC 10, plus Proficiency Bonus if proficient. A hired cook brings utensils and their own bonus.
     const bonus = hiredCook ? cook.wisMod : cook.wisMod + (cook.cooksUtensils ? proficiencyBonus(cook.level) : 0) - 2 * cook.exhaustion;
     const r = d20('normal', ctx.rng);
     const ok = r.value + bonus >= 10;
-    flavor = ` ${cook.name} cooks: Wisdom with Cook's Utensils ${r.value} ${signed(bonus)} = ${r.value + bonus} against DC 10, ${ok ? 'a delicious meal' : 'edible, at least'}.`;
+    tasty = ok;
+    pb = hiredCook ? 2 : proficiencyBonus(cook.level);
+    feast = ok && isFeast(r.value, r.value + bonus, 10);
+    flavor = ` ${cook.name} cooks: Wisdom with Cook's Utensils ${r.value} ${signed(bonus)} = ${r.value + bonus} against DC 10, ${feast ? 'a feast to remember' : ok ? 'a delicious meal' : 'edible, at least'}.`;
   } else if (cook && d.settings.improvised) {
     // Table rule: no utensils, so a pot, a spit and Wisdom (Survival) at DC +5.
     const bonus = cook.survival - 2 * cook.exhaustion;
     const r = d20('normal', ctx.rng);
     const ok = r.value + bonus >= IMPROVISED_COOK_DC;
-    flavor = ` ${cook.name} cooks without proper utensils: Wisdom (Survival) ${r.value} ${signed(bonus)} = ${r.value + bonus} against DC ${IMPROVISED_COOK_DC}, ${ok ? 'surprisingly tasty' : 'edible, at least'}.`;
+    tasty = ok;
+    pb = proficiencyBonus(cook.level);
+    feast = ok && isFeast(r.value, r.value + bonus, IMPROVISED_COOK_DC);
+    flavor = ` ${cook.name} cooks without proper utensils: Wisdom (Survival) ${r.value} ${signed(bonus)} = ${r.value + bonus} against DC ${IMPROVISED_COOK_DC}, ${feast ? 'a spit-roast feast against all odds' : ok ? 'surprisingly tasty' : 'edible, at least'}.`;
   } else if (cook) {
     flavor = ` ${cook.name} has no Cook's Utensils: plain fare, filling but nothing more.`;
   }
   const dish = d.recipeNames.length ? ` On the menu: ${d.recipeNames[absNow(d) % d.recipeNames.length]}.` : '';
   const purified = cookedUnsafe > 0 ? ` Cooking makes the ${fmtLb(round2(cookedUnsafe))} of raw food safe to eat.` : '';
   log(d, eaters.length ? `A hot meal at the campfire for ${eaters.join(', ')} (half a day's food each).${dish}${purified}${flavor}` : `Nothing to cook: the stores and rations are empty.${flavor}`, eaters.length ? 'good' : 'warn');
+  // Table rule: a good meal is worth the hour. Any hot meal warms against the cold for 8 hours; a tasty one also
+  // fortifies for a hard march, eases Stress and gives Temporary HP; a feast does more.
+  const until = absNow(d) + MEAL_BUFF_MINUTES;
+  const temp = feast ? feastTempHp(cook!.level ?? 1, cook!.wisMod, pb) : tasty ? tastyTempHp(pb) : 0;
+  const relief = feast ? FEAST_STRESS_RELIEF : tasty ? MEAL_STRESS_RELIEF : 0;
+  for (const c of ate) {
+    c.mealBuff = { until: Math.max(until, c.mealBuff?.until ?? 0), hearty: tasty || (!!c.mealBuff?.hearty && c.mealBuff.until > absNow(d)) };
+    if (c.kind === 'mount') continue;
+    if (relief && c.stress > 0) {
+      const by = Math.min(c.stress, relief);
+      c.stress -= by;
+      status(d, c, 'stressDown', `${c.name} lingers over the meal and feels the day's tension ease (Stress −${by}, now ${c.stress}; table rule).`, 'good');
+    }
+    if (feast && c.fear > 0) {
+      const by = Math.min(c.fear, FEAST_FEAR_RELIEF);
+      c.fear -= by;
+      status(d, c, 'fearDown', `${c.name} laughs with the others around the fire, and the dread loosens its hold (Fear −${by}, now ${c.fear}; table rule).`, 'good');
+    }
+    if (temp && c.tempHp < temp) c.tempHp = temp;
+  }
+  if (!ate.length) return;
+  const perks = [`warm against the cold for 8 hours (Advantage on saves against extreme cold and cold nights)`, tasty && 'fortified for the road (Advantage on forced-march saves)', temp && `${temp} Temporary HP`].filter(Boolean);
+  log(d, `${feast ? 'A feast to remember' : tasty ? 'A good hot meal' : 'Hot food'}: everyone who ate is ${perks.join(', ')} (table rule).`, 'good');
+});
+
+/**
+ * Table rule: smoking and drying meat from the camp stores into trail Rations over a lit fire. 4 hours, Wisdom (Survival)
+ * or Wisdom with Cook's Utensils at DC 10; 3 lb of meat makes a day of Rations (half on a failure). Up to 30 lb a batch.
+ * Rations keep, weigh less, and sell for 5 SP a day.
+ */
+export const cureRations = act((d, ctx, curerId: string) => {
+  const c = charById(d, curerId);
+  if (!c || !alive(c)) return;
+  if (!d.fire.lit) return void log(d, 'Smoking meat needs a lit fire.', 'warn');
+  const have = round2(d.stores.foodRawLb + d.stores.foodLb);
+  if (have < CURE_LB_PER_RATION) return void log(d, `There isn't enough meat in the stores to smoke (it takes ${CURE_LB_PER_RATION} lb for a day of Rations).`, 'warn');
+  const lb = Math.min(have, CURE_MAX_LB);
+  advanceMut(d, ctx, CURE_MINUTES, 'camp');
+  const me = charById(d, curerId)!;
+  const utensils = me.cooksUtensils ? me.wisMod + proficiencyBonus(me.level) : -Infinity;
+  const bonus = Math.max(me.survival, utensils) - 2 * me.exhaustion;
+  const r = d20('normal', ctx.rng);
+  const ok = r.value + bonus >= CURE_DC;
+  const used = Math.floor(lb / CURE_LB_PER_RATION) * CURE_LB_PER_RATION;
+  // Raw meat goes on the racks first: smoking it makes it safe.
+  const fromRaw = Math.min(d.stores.foodRawLb, used);
+  d.stores.foodRawLb = round2(d.stores.foodRawLb - fromRaw);
+  d.stores.foodLb = round2(d.stores.foodLb - (used - fromRaw));
+  const days = curedRations(used, ok);
+  if (days) addLine(d, me, 'Rations', days, {}, null, false);
+  const roll = `${utensils > me.survival ? "Wisdom with Cook's Utensils" : 'Wisdom (Survival)'} ${r.value} ${signed(bonus)} = ${r.value + bonus} against DC ${CURE_DC}`;
+  log(
+    d,
+    ok
+      ? `${me.name} smokes ${used} lb of meat over the fire for 4 hours (${roll}): ${days} day${days === 1 ? '' : 's'} of Rations, dry and keeping, worth 5 SP each (table rule).`
+      : `${me.name} smokes ${used} lb of meat (${roll}), but the fire runs hot and cold: half scorches or stays wet, and only ${days} day${days === 1 ? '' : 's'} of Rations come off the racks (table rule).`,
+    ok ? 'good' : 'warn',
+  );
 });
 
 // ---------------------------------------------------------------- purification
@@ -2256,7 +2330,8 @@ function progress(s: State, p: Project, ctx?: Ctx): void {
     }).length + hired;
   if (hired > 0) payGold(s, p.charIds, hired * HIRELING_WAGE.skilled, `${hired} hired artisan${hired > 1 ? 's' : ''} on ${p.name}`);
   // Normally only one other character can help (the DM can allow more). Training is time with the trainer: trainees don't speed each other up.
-  const amount = p.learnKind || isSoloWork(p.kind) ? 1 : Math.max(1, s.settings.extraCraftHelpers ? crafters : Math.min(2, crafters));
+  // Activities are each participant's own week (carousing together doesn't make the week shorter).
+  const amount = p.learnKind || isSoloWork(p.kind) || (p.kind === 'activity' && activityOf(p.name)) ? 1 : Math.max(1, s.settings.extraCraftHelpers ? crafters : Math.min(2, crafters));
   p.daysDone = Math.min(p.daysRequired, p.daysDone + amount);
   if (p.daysDone >= p.daysRequired) progressFinish(s, p, ctx);
   else log(s, `A day's work on ${p.name}: ${p.daysDone}/${p.daysRequired} workdays.`);
@@ -2300,6 +2375,12 @@ function progressFinish(s: State, p: Project, ctx?: Ctx): void {
         log(s, `${p.name} is done. Roll its checks on the Downtime tab.`);
       }
     } else if (p.kind === 'activity' && p.notes) log(s, `${p.name} is done. Make the check: ${p.notes}. The DM decides the outcome.`);
+    const trade = p.kind === 'buyMagic' || p.kind === 'sellMagic';
+    if (trade && s.settings.downtimeOutcomes) {
+      p.awaitingOutcome = true;
+      log(s, `${p.name}: the search is over. Roll it on the Downtime tab.`);
+      return;
+    }
     deliverProduct(s, p);
     if (p.kind === 'buyMagic' && p.dealGp) payGold(s, p.charIds, p.dealGp, p.name);
     if (p.kind === 'sellMagic' && p.dealGp) receiveGold(s, p.charIds, p.dealGp, p.name);
@@ -2372,7 +2453,7 @@ export const harvestPoison = act((d, ctx, charId: string, bonus: number, creatur
   const name = creature || 'the creature';
   const me = charById(d, charId)!;
   if (total >= dc) {
-    const y = poisonYield(creature, d.settings.choreFinds);
+    const y = poisonYield(creature);
     const have = me.inventory.find((i) => i.name === y.name && !i.containerId);
     if (have) have.qty += 1;
     else me.inventory.push({ id: uid(), name: y.name, qty: 1, weight: 0, source: 'manual', valueGp: y.valueGp, container: null, ammo: null });
@@ -2794,30 +2875,119 @@ export const resolveObstacle = act((d, ctx, stageId: string, obstacleId: string,
 // ---------------------------------------------------------------- downtime activity outcomes
 
 /** Rolls a finished activity's checks (optional Xanathar's rules) and applies the gold, contacts, favors, jail time and complications. */
-export const resolveActivityProject = act((d, ctx, projectId: string, o: ActivityOpts) => {
+export const resolveActivityProject = act((d, ctx, projectId: string, o: ActivityOpts, charId?: string) => {
   const p = d.projects.find((x) => x.id === projectId);
   const id = p ? activityOf(p.name) : null;
-  const c = p ? charById(d, p.charIds[0]) : undefined;
-  if (!p || !id || !c) return;
+  const done = p?.resolvedFor ?? [];
+  const who = charId ?? p?.charIds.find((x) => !done.includes(x));
+  const c = p && who ? charById(d, who) : undefined;
+  if (!p || !id || !c || done.includes(c.id)) return;
   const heat = id === 'Crime' && d.rivalHeat;
   if (heat) d.rivalHeat = false;
-  const r = resolveActivity(id, heat ? { ...o, dc: Math.min(25, (o.dc ?? 10) + 5) } : o, ctx.rng);
+  const weeks = o.weeks ?? weeksIn(p.daysRequired);
+  const r = resolveActivity(id, { ...o, weeks, lazyWeeks: c.workLazyWeeks ?? 0, ...(heat ? { dc: Math.min(25, (o.dc ?? 10) + 5) } : {}) }, ctx.rng);
+  if (id === 'Working a trade') c.workLazyWeeks = r.lazyWeeks || undefined;
+  // Xanathar's: unspecified allied contacts and unused temple favors are capped at 1 + Charisma modifier (minimum 1).
+  const cha = abilityScore(c, 'cha');
+  const cap = bondCap(cha == null ? 0 : abilityMod(cha));
+  for (const [re, what] of [[/^Allied contact/, 'allied contacts'], [/^Temple favor/, 'unused temple favors']] as const) {
+    const held = (c.notes ?? '').split('\n').filter((l) => re.test(l)).length;
+    const fresh = r.notes.filter((n) => re.test(n));
+    const room = Math.max(0, cap - held);
+    if (fresh.length > room) {
+      let drop = fresh.length - room;
+      r.notes = r.notes.filter((n) => !(re.test(n) && drop-- > 0));
+      log(d, `${c.name} can hold only ${cap} ${what} at a time (1 + Charisma modifier): ${fresh.length - room} more go${fresh.length - room === 1 ? 'es' : ''} to waste.`, 'warn');
+    }
+  }
   if (heat) log(d, 'Bribed officials are watching: the job is harder (+5 DC).', 'warn');
-  p.awaitingOutcome = false;
-  p.outcome = r.text;
+  p.resolvedFor = [...done, c.id];
+  const alive = p.charIds.filter((x) => charById(d, x));
+  p.awaitingOutcome = alive.some((x) => !p.resolvedFor!.includes(x));
+  const line = `${p.charIds.length > 1 ? `${c.name}: ` : ''}${r.text}`;
+  p.outcome = p.outcome && p.charIds.length > 1 ? `${p.outcome} · ${line}` : line;
   log(d, `${c.name}'s ${p.name}: ${r.text}.`, r.gp < 0 || r.jailDays ? 'bad' : r.gp > 0 || r.notes.length ? 'good' : 'info');
+  // Weekly costs (company kept, research money) beyond what the project already charged, shared out per participant.
+  const covered = p.costGp / Math.max(1, p.charIds.length);
+  const extra = Math.round(Math.max(0, (r.spent ?? 0) - covered) * 100) / 100;
+  if (extra > 0) payGold(d, [c.id], extra, `${p.name} (${weeks} week${weeks > 1 ? 's' : ''})`);
   if (r.gp > 0) gainWealth(c, r.gp);
   if (r.gp < 0) spendWealth(c, -r.gp);
   if (r.debt) addDebtMut(d, c.id, 'The gambling house', 'criminal', r.debt);
   if (r.notes.length) c.notes = [c.notes, ...r.notes.map((n) => `${n} (${stamp(d)})`)].filter(Boolean).join('\n');
+  if (r.lifestyle && id === 'Working a trade') log(d, `${c.name}'s work covers a ${LIFESTYLE_LABEL[r.lifestyle].toLowerCase()} lifestyle while it lasts.`);
   if (r.jailDays) d.effects.push({ id: uid(), name: 'In jail', kind: 'other', targetIds: [c.id], casterId: null, concentration: false, shelter: false, startedAt: absNow(d), endsAt: absNow(d) + r.jailDays * MIN_PER_DAY, notes: 'Serving time for a crime.' });
   if (r.jailDays && id === 'Crime' && d.settings.notoriety) addHeatMut(d, d.place.name, 'serious', [c.id], 'caught at a crime');
   for (const n of r.notes) {
     const m = /^(Allied|Hostile) contact/.exec(n);
     if (m) addContactMut(d, { name: `New ${m[1].toLowerCase()} contact (${p.name})`, role: 'Other', place: d.place.name, bond: m[1] === 'Allied' ? 1 : -1, knownBy: [c.id], notes: n });
   }
-  if (r.complication) applyComplication(d, ctx, c, r.complication);
+  for (const comp of r.complications ?? (r.complication ? [r.complication] : [])) applyComplication(d, ctx, c, comp);
   rivalAdvances(d, ctx);
+});
+
+export interface DealOpts {
+  /** Charisma (Persuasion). */
+  bonus: number;
+  advantage?: boolean;
+  /** Buying: total gold spent on the search (100 GP minimum; each 100 beyond the first adds +1). */
+  gp?: number;
+  /** Buying: optional campaign magic level (−10 low, +10 high). */
+  magic?: MagicLevel;
+}
+
+/** Rolls a finished magic item search (Xanathar's): pays the search money and lays out any offers to accept or turn down. */
+export const resolveDealProject = act((d, ctx, projectId: string, o: DealOpts) => {
+  const p = d.projects.find((x) => x.id === projectId);
+  const c = p ? charById(d, p.charIds[0]) : undefined;
+  if (!p || !c || (p.kind !== 'buyMagic' && p.kind !== 'sellMagic')) return;
+  const weeks = weeksIn(p.daysRequired);
+  const rarity = p.rarity ?? 'uncommon';
+  const consumable = !!p.consumable;
+  const r =
+    p.kind === 'buyMagic'
+      ? resolveBuying({ bonus: o.bonus, weeks, gp: o.gp, rarity, consumable, advantage: o.advantage, magic: o.magic }, ctx.rng)
+      : resolveSelling({ bonus: o.bonus, weeks, rarity, consumable, advantage: o.advantage }, ctx.rng);
+  p.awaitingOutcome = false;
+  p.outcome = r.text;
+  payGold(d, p.charIds, r.spent, `${p.kind === 'buyMagic' ? 'searching for a seller' : 'spreading word of the sale'} (${p.name})`);
+  log(d, `${c.name}'s ${p.name}: ${r.text}.`, r.offers.length ? 'good' : 'warn');
+  for (const comp of r.complications) applyComplication(d, ctx, c, comp);
+  if (r.offers.length) p.offers = r.offers;
+  else log(d, 'No deal. Start a new search to try again.');
+  rivalAdvances(d, ctx);
+});
+
+/** Takes one of a search's offers (by index), or turns them all down (null). */
+export const answerDeal = act((d, _ctx, projectId: string, index: number | null) => {
+  const p = d.projects.find((x) => x.id === projectId);
+  if (!p?.offers?.length) return;
+  const offer = index == null ? null : p.offers[index];
+  p.offers = undefined;
+  if (!offer) {
+    p.outcome = `${p.outcome ?? ''} · turned down`;
+    log(d, `${p.name}: the offer is turned down.`);
+    return;
+  }
+  p.dealGp = offer.gp;
+  p.outcome = `${p.outcome ?? ''} · ${p.kind === 'buyMagic' ? 'bought' : 'sold'} for ${fmtGp(offer.gp)}`;
+  if (p.kind === 'buyMagic') {
+    payGold(d, p.charIds, offer.gp, p.name);
+    if (!p.product) p.product = { name: p.itemName?.trim() || `${p.rarity ? RARITY_LABEL[p.rarity] : 'Magic'} magic item`, qty: 1, magic: true };
+    deliverProduct(d, p);
+  } else {
+    receiveGold(d, p.charIds, offer.gp, p.name);
+    const name = p.itemName?.trim().toLowerCase();
+    for (const id of p.charIds) {
+      const c = charById(d, id);
+      const i = name && c ? c.items.findIndex((x) => x.name.toLowerCase() === name) : -1;
+      if (c && i >= 0) {
+        c.items.splice(i, 1);
+        log(d, `${c.name} hands over the ${p.itemName}.`);
+        break;
+      }
+    }
+  }
 });
 
 /** A complication's text, its rival (if any) and its mechanical effects. */
@@ -5452,8 +5622,8 @@ export const butcher = act((d, ctx, o: ButcherOpts) => {
     else d.materials.push({ id: uid(), name, qty: count, unit: 'hide', valueGp: cr.size === 'Medium' ? 1 : cr.size === 'Large' ? 5 : 20 });
     hide = ` ${count} hide${count > 1 ? 's go' : ' goes'} into the materials stash.`;
   }
-  // Table rule (Rewarding chores): a clean job keeps the trophy parts whole, for selling or mounting.
-  const trophy = d.settings.choreFinds && clean ? trophyFor(cr) : null;
+  // Table rule: a clean job keeps the trophy parts whole, for selling or mounting.
+  const trophy = clean ? trophyFor(cr) : null;
   let trophyTxt = '';
   if (trophy) {
     const keeper = (who && alive(who) ? who : undefined) ?? d.characters.find((x) => x.kind === 'pc' && alive(x));

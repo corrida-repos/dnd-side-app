@@ -38,11 +38,10 @@ describe('travel terrain', () => {
     s.place.onRoute = true;
     expect(E.currentNavigationDC(s).dc).toBeNull();
     s.stores = { foodLb: 0, waterGal: 0, foodRawLb: 0, waterUnsafeGal: 0 };
-    s.settings.choreFinds = false;
     s.settings.rawFoodRisk = false;
     s.settings.wildNeedsPurifying = false;
     const trip = E.travel(s, HIGH, { hours: 16, pace: 'normal', difficult: false, foragerIds: [s.characters[0].id] });
-    expect(trip.stores.foodLb).toBe(14); // (6 + 1) per day for 2 days
+    expect(trip.stores.foodLb).toBe(14 + 2 * 5); // (6 + 1) per day for 2 days, plus a 5 lb find on each natural 20
   });
 });
 

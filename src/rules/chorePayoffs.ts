@@ -6,7 +6,7 @@ import { POISONS, poisonItemName, type PoisonInfo } from './poisons';
  * Worthy payoffs for mundane work: the things a careful hand turns up while doing camp chores.
  *
  * The 2024 DMG names four sample poisons that are harvested from a creature (Carrion Crawler Mucus, Purple Worm Poison,
- * Serpent Venom and Wyvern Poison). Everything else here is a table rule, under the "Rewarding chores" switch.
+ * Serpent Venom and Wyvern Poison). Everything else here is a table rule, always on: realistic work should pay realistically.
  */
 
 /** 2024 DMG: sample poisons taken from a creature, and the creatures that give them. Snakes beyond the Giant Venomous Snake are a table rule. */
@@ -32,14 +32,13 @@ export interface PoisonYield {
 
 /**
  * What one harvested dose is. A named DMG poison keeps its price and effect. Other venom (table rule, with rewarding
- * chores on) works as a dose of Basic Poison (2024 PHB, 100 GP): coat a weapon for an extra 1d4 Poison damage.
+ * chores always) works as a dose of Basic Poison (2024 PHB, 100 GP): coat a weapon for an extra 1d4 Poison damage.
  */
-export function poisonYield(creature: string, rewarding: boolean): PoisonYield {
+export function poisonYield(creature: string): PoisonYield {
   const from = creature.trim() || 'the creature';
   const p = harvestedPoison(from);
   if (p) return { name: poisonItemName(p), valueGp: p.gp, note: `${p.name} (2024 DMG, ${p.gp} GP a dose): ${p.effect}` };
-  if (rewarding) return { name: `${poisonItemName('Basic Poison')} (${from} venom)`, valueGp: 100, note: 'Raw venom that works as Basic Poison (table rule, 100 GP a dose): coat one weapon or three pieces of ammunition for an extra 1d4 Poison damage.' };
-  return { name: `Poison dose (${from})`, valueGp: 0, note: "Its effect is the creature's own poison, as the DM rules." };
+  return { name: `${poisonItemName('Basic Poison')} (${from} venom)`, valueGp: 100, note: 'Raw venom that works as Basic Poison (table rule, 100 GP a dose): coat one weapon or three pieces of ammunition for an extra 1d4 Poison damage.' };
 }
 
 // ---------------------------------------------------------------- trophies from a kill
@@ -93,10 +92,10 @@ export interface Find {
   reward: FindReward;
 }
 
-/** Table rule: a find comes on a natural 20, or a check that beats the DC by 10 or more. */
-export const FIND_MARGIN = 10;
-/** Table rule: digging has no check, so each job turns something up on a d20 roll of 20. */
-export const DIG_FIND_ON = 20;
+/** Table rule: a find comes on a natural 20, or a check that beats the DC by 5 or more. */
+export const FIND_MARGIN = 5;
+/** Table rule: digging has no check, so each job turns something up on a d20 roll of 19 or 20. */
+export const DIG_FIND_ON = 19;
 
 export const isExceptional = (natural: number, total: number, dc: number): boolean => natural === 20 || total >= dc + FIND_MARGIN;
 

@@ -1,5 +1,10 @@
-import { d20, die, rollDice, type Rng } from './dice';
-import { LIFESTYLE_GP, type Lifestyle } from './money';
+import { combineModes, d20, die, rollDice, signed, type Rng } from './dice';
+import { ABILITY_LABEL, abilityScore, hasSkill, proficientWith, toolNamed, toolProficiencies, type AbilityKey } from './gear';
+import { abilityMod } from './upkeep';
+import { proficiencyBonus } from './survival';
+import type { Character } from '../state/types';
+import { LIFESTYLE_GP, MAGIC_ITEM_VALUE, type Lifestyle } from './money';
+import type { Rarity } from './crafting';
 
 /**
  * Downtime activity outcomes. The 2024 books give these activities no tables, so this follows the optional
@@ -21,6 +26,14 @@ export interface ActivityOpts {
   advantage?: boolean[];
   /** Research: consulting an accurate Book on the topic (+5, 2024 PHB). */
   book?: boolean;
+  /** Pit fighting: sides of the character's largest Hit Die, rolled and added to the Constitution check. */
+  hitDie?: number;
+  /** Workweeks spent. Each week is rolled on its own, with its own complication chance (Xanathar's). */
+  weeks?: number;
+  /** Crime: the character's rival is in crime or law enforcement, so two successes bring a complication too. */
+  rivalInCrime?: boolean;
+  /** Working a trade: workweeks left with Disadvantage from a reputation for laziness. */
+  lazyWeeks?: number;
 }
 
 export interface ActivityResult {
@@ -35,18 +48,24 @@ export interface ActivityResult {
   /** Lifestyle earned for the week by working. */
   lifestyle?: Lifestyle;
   complication?: Complication;
+  /** Every complication over all the weeks rolled (Xanathar's: 10% each week). */
+  complications?: Complication[];
+  /** Gold spent on the week's own costs beyond the project's (carousing in better company, research). */
+  spent?: number;
+  /** Working a trade: workweeks of Disadvantage still to come. */
+  lazyWeeks?: number;
 }
 
 export const ACTIVITY_CHECKS: Record<ActivityId, string[]> = {
   Carousing: ['Charisma (Persuasion)'],
   Crime: ['Dexterity (Stealth)', "Dexterity (Thieves' Tools)", 'Investigation, Perception or Deception'],
   Gambling: ['Wisdom (Insight)', 'Charisma (Deception)', 'Charisma (Intimidation)'],
-  'Pit fighting': ['Strength (Athletics)', 'Dexterity (Acrobatics)', 'Constitution check (Hit Die bonus)'],
+  'Pit fighting': ['Strength (Athletics)', 'Dexterity (Acrobatics)', 'Constitution check (+ largest Hit Die)'],
   Relaxation: [],
   'Religious service': ['Intelligence (Religion) or Charisma (Persuasion)'],
   Research: ['Intelligence check'],
   Training: [],
-  'Working a trade': ['Tool, skill or ability check'],
+  'Working a trade': ['Athletics, Acrobatics, Intelligence with tools, Performance, or Charisma with an instrument'],
 };
 
 export const CAROUSING_COST = { lower: 10, middle: 50, upper: 250 };
@@ -67,6 +86,10 @@ export interface Complication {
   jailDays?: number;
   wageDown?: boolean;
   noPay?: boolean;
+  /** Working a trade: Disadvantage on the work checks for this many workweeks. */
+  workDisadvantageWeeks?: number;
+  /** Buying: a third party bids, doubling the price. */
+  doublePrice?: boolean;
 }
 
 const c = (text: string, extra: Partial<Complication> = {}): Complication => ({ text, ...extra });
@@ -96,6 +119,7 @@ export const COMPLICATIONS: Record<string, Complication[]> = {
   'Carousing:upper': [
     c('a pushy noble family wants you to marry their heir', { rival: true }),
     c('you fell during a dance and nobody will forget it'),
+    // Xanathar's gives no amount for the debts; 1d6 × 100 GP is a table rule.
     c('you agreed to take on a noble’s debts', { debt: '1d6*100' }),
     c('a knight challenges you to a joust', { rival: true }),
     c('you made an enemy of a local noble', { rival: true }),
@@ -153,28 +177,51 @@ export const COMPLICATIONS: Record<string, Complication[]> = {
     c('your teacher is a cruel taskmaster'),
     c('your teacher asks for help with a threat'),
   ],
+  'Buying a magic item': [
+    c('the item is a fake, planted by an enemy', { rival: true }),
+    c('the item is stolen by the party’s enemies', { rival: true }),
+    c('the item is cursed by a god'),
+    c('the item’s original owner will kill to reclaim it, and the party’s enemies spread news of the sale', { rival: true }),
+    c('the item is at the center of a dark prophecy'),
+    c('the seller is murdered before the sale', { rival: true }),
+    c('the seller is a devil looking to make a bargain'),
+    c('the item is the key to freeing an evil entity'),
+    c('a third party bids on the item, doubling its price', { rival: true, doublePrice: true }),
+    c('the item is an enslaved, intelligent entity'),
+    c('the item is tied to a cult'),
+    c('the party’s enemies spread rumors that the item is an artifact of evil', { rival: true }),
+  ],
+  'Selling a magic item': [
+    c('your enemy secretly arranges to buy the item to use it against you', { rival: true }),
+    c('a thieves’ guild, alerted to the sale, tries to steal the item', { rival: true }),
+    c('a foe circulates rumors that your item is a fake', { rival: true }),
+    c('a sorcerer claims your item as a birthright and demands you hand it over'),
+    c('the item’s previous owner, or their surviving allies, vow to retake it by force'),
+    c('the buyer is murdered before the sale is finalized', { rival: true }),
+  ],
   'Working a trade': [
     c('a difficult customer or coworker cuts your wages a step', { rival: true, wageDown: true }),
     c('your employer can’t pay you this week', { rival: true, noPay: true }),
     c('a well-connected coworker takes a dislike to you', { rival: true }),
     c('your employer is tied to a cult or a criminal ring'),
     c('a crime ring tries to extort the business', { rival: true }),
-    c('you get a reputation for laziness', { rival: true }),
+    c('you get a reputation for laziness: Disadvantage on work checks for the next six workweeks', { rival: true, workDisadvantageWeeks: 6 }),
   ],
 };
 
 /** XGtE: 5 + 2d10 DCs for the contested checks of gambling and pit fighting. */
 const rolledDC = (rng: Rng) => 5 + rollDice(2, 10, rng);
 
-export function resolveActivity(id: ActivityId, o: ActivityOpts, rng: Rng): ActivityResult {
-  const adv = (i: number) => (o.advantage?.[i] ? 'advantage' : 'normal') as 'advantage' | 'normal';
+function resolveWeek(id: ActivityId, o: ActivityOpts, rng: Rng): ActivityResult {
+  const lazy = id === 'Working a trade' && (o.lazyWeeks ?? 0) > 0;
+  const adv = (i: number) => combineModes(o.advantage?.[i] ? 'advantage' : 'normal', lazy ? 'disadvantage' : 'normal');
   const roll = (i: number) => d20(adv(i), rng).value;
   const check = (bonus: number, dc: number, i = 0) => {
     const r = roll(i) + bonus;
     return { total: r, ok: r >= dc };
   };
   const b = (i: number) => o.bonuses[i] ?? 0;
-  /** 10% each workweek (training: each ten workweeks); crime instead triggers on exactly one success. */
+  /** 10% each workweek (training: each ten workweeks); a crime that ends with exactly one success always brings one. */
   const pickComplication = (key: string) => {
     const list = COMPLICATIONS[key];
     return list ? list[die(list.length, rng) - 1] : undefined;
@@ -195,7 +242,7 @@ export function resolveActivity(id: ActivityId, o: ActivityOpts, rng: Rng): Acti
         text = `${t}: ${n} allied contact${n > 1 ? 's' : ''}`;
         for (let i = 0; i < n; i++) notes.push(`Allied contact (${circle} circles)`);
       }
-      return { text: `${text}${circle !== 'lower' ? ` (${CAROUSING_COST[circle] - CAROUSING_COST.lower} GP more for ${circle}-class company)` : ''}`, gp: -(CAROUSING_COST[circle] - CAROUSING_COST.lower), notes, complication: complication(`Carousing:${circle}`) };
+      return { text: `${text}${circle !== 'lower' ? ` (${circle}-class company, ${CAROUSING_COST[circle]} GP)` : ''}`, gp: 0, notes, complication: complication(`Carousing:${circle}`) };
     }
     case 'Crime': {
       const target = CRIME_TARGETS.find((x) => x.dc === o.dc) ?? CRIME_TARGETS[0];
@@ -204,7 +251,8 @@ export function resolveActivity(id: ActivityId, o: ActivityOpts, rng: Rng): Acti
       const list = rolls.map((r) => r.total).join(', ');
       if (ok === 0) return { text: `${list} vs DC ${target.dc}: caught. Fined ${target.gp} GP and jailed ${Math.ceil(target.gp / 25)} week(s)`, gp: -target.gp, notes: [], jailDays: Math.ceil(target.gp / 25) * 7 };
       if (ok === 1) return { text: `${list} vs DC ${target.dc}: you get away, empty-handed`, gp: 0, notes: [], complication: pickComplication('Crime') };
-      if (ok === 2) return { text: `${list} vs DC ${target.dc}: a partial haul`, gp: target.gp / 2, notes: [] };
+      // Xanathar's: a rival in crime or law enforcement brings a complication on two successes too.
+      if (ok === 2) return { text: `${list} vs DC ${target.dc}: a partial haul`, gp: target.gp / 2, notes: [], complication: o.rivalInCrime ? pickComplication('Crime') : undefined };
       return { text: `${list} vs DC ${target.dc}: a clean job`, gp: target.gp, notes: [] };
     }
     case 'Gambling': {
@@ -224,7 +272,8 @@ export function resolveActivity(id: ActivityId, o: ActivityOpts, rng: Rng): Acti
     case 'Pit fighting': {
       const rolls = [0, 1, 2].map((i) => {
         const dc = rolledDC(rng);
-        const r = check(b(i), dc, i);
+        // Xanathar's: the Constitution check adds a roll of the character's largest Hit Die (the die isn't spent).
+        const r = check(b(i) + (i === 2 && o.hitDie ? die(o.hitDie, rng) : 0), dc, i);
         return { ok: r.ok, t: `${r.total}/${dc}` };
       });
       const ok = rolls.filter((r) => r.ok).length;
@@ -232,15 +281,15 @@ export function resolveActivity(id: ActivityId, o: ActivityOpts, rng: Rng): Acti
       return { text: `${rolls.map((r) => r.t).join(', ')}: ${ok} win${ok === 1 ? '' : 's'}, ${gp} GP`, gp, notes: [], complication: complication() };
     }
     case 'Relaxation':
-      return { text: 'a quiet week: Advantage on saves against a lingering disease or poison, and one effect that blocks healing can end', gp: 0, notes: [] };
+      return { text: 'a quiet week: Advantage on saves against a lingering disease or poison, and one effect that blocks healing can end or one reduced ability score is restored (not one from an ongoing spell or magical effect)', gp: 0, notes: [] };
     case 'Religious service': {
       const t = roll(0) + b(0);
       const n = t <= 10 ? 0 : t <= 20 ? 1 : 2;
       return { text: `${t}: ${n ? `${n} favor${n > 1 ? 's' : ''} earned with the temple` : 'no favors this time'}`, gp: 0, notes: Array.from({ length: n }, () => 'Temple favor owed'), complication: complication() };
     }
     case 'Research': {
-      const spent = Math.max(50, o.gp ?? 50);
-      const bonus = Math.min(6, Math.floor(Math.max(0, spent - 50) / 50));
+      const spent = Math.max(RESEARCH_MIN_GP, o.gp ?? RESEARCH_MIN_GP);
+      const bonus = researchBonus(spent);
       const book = o.book ? 5 : 0;
       const t = roll(0) + b(0) + bonus + book;
       const n = t <= 5 ? 0 : t <= 10 ? 1 : t <= 20 ? 2 : 3;
@@ -255,14 +304,261 @@ export function resolveActivity(id: ActivityId, o: ActivityOpts, rng: Rng): Acti
       const lifestyle = steps[i];
       const extra = t >= 21 && !comp?.wageDown ? 25 : 0;
       const gp = comp?.noPay ? 0 : LIFESTYLE_GP[lifestyle] * 7 + extra;
-      return { text: `${t}: ${comp?.noPay ? 'the work is done but the pay never comes' : `earns a ${lifestyle} living for the week${extra ? ' plus 25 GP' : ''}`}`, gp, notes: [], lifestyle, complication: comp };
+      const lazyWeeks = Math.max(0, (o.lazyWeeks ?? 0) - (lazy ? 1 : 0)) + (comp?.workDisadvantageWeeks ?? 0);
+      return { text: `${t}${lazy ? ' (Disadvantage: a reputation for laziness)' : ''}: ${comp?.noPay ? 'the work is done but the pay never comes' : `earns a ${lifestyle} living for the week${extra ? ' plus 25 GP' : ''}`}`, gp, notes: [], lifestyle, complication: comp, lazyWeeks };
     }
     case 'Training':
       return { text: 'training complete', gp: 0, notes: [], complication: complication('Training') };
   }
 }
 
+/** Xanathar's: research needs at least 50 GP; every 50 GP beyond the first 50 adds +1, to a maximum of +6. */
+export const RESEARCH_MIN_GP = 50;
+export const researchBonus = (spent: number): number => Math.min(6, Math.floor(Math.max(0, spent - RESEARCH_MIN_GP) / 50));
+
+/** Xanathar's: a character can hold at most 1 + Charisma modifier (minimum 1) unspecified allied contacts, and as many unused temple favors. */
+export const bondCap = (chaMod: number): number => Math.max(1, 1 + chaMod);
+
+/** Who can carouse in each circle (Xanathar's). */
+export const CAROUSING_NEEDS: Record<'lower' | 'middle' | 'upper', string> = {
+  lower: 'Anyone.',
+  middle: 'Anyone who can pass among merchants and guild members.',
+  upper: 'A noble background, contacts the DM judges sufficient, or a Disguise Kit and Deception to pass as a noble from a distant city.',
+};
+
+/** Activities rolled once per workweek. Relaxation and training are one long stretch with no checks. */
+export const WEEKLY: ActivityId[] = ['Carousing', 'Crime', 'Gambling', 'Pit fighting', 'Religious service', 'Research', 'Working a trade'];
+
+/** Workweeks in a stretch of downtime days (Xanathar's workweek is 5 days). */
+export const weeksIn = (days: number): number => Math.max(1, Math.floor(days / 5));
+
+/**
+ * Resolves an activity over its workweeks. Each week is its own set of checks and its own 10% complication chance,
+ * and a character caught at a crime is jailed and does nothing more that stretch.
+ */
+export function resolveActivity(id: ActivityId, o: ActivityOpts, rng: Rng): ActivityResult {
+  const weeks = WEEKLY.includes(id) ? Math.max(1, Math.round(o.weeks ?? 1)) : 1;
+  if (weeks === 1) {
+    const r = withSpending(id, o, resolveWeek(id, o, rng));
+    return { ...r, complications: r.complication ? [r.complication] : [] };
+  }
+  const out: ActivityResult = { text: '', gp: 0, notes: [], complications: [], spent: 0 };
+  const lines: string[] = [];
+  let lazyWeeks = o.lazyWeeks;
+  for (let w = 1; w <= weeks; w++) {
+    const r = withSpending(id, o, resolveWeek(id, { ...o, lazyWeeks }, rng));
+    lazyWeeks = r.lazyWeeks;
+    out.lazyWeeks = r.lazyWeeks;
+    lines.push(`week ${w}: ${r.text}`);
+    out.gp += r.gp;
+    out.spent = (out.spent ?? 0) + (r.spent ?? 0);
+    if (r.debt) out.debt = (out.debt ?? 0) + r.debt;
+    out.notes.push(...r.notes);
+    if (r.lifestyle) out.lifestyle = r.lifestyle;
+    if (r.complication) out.complications!.push(r.complication);
+    if (r.jailDays) {
+      out.jailDays = r.jailDays;
+      if (w < weeks) lines.push(`the remaining ${weeks - w} week${weeks - w > 1 ? 's are' : ' is'} spent behind bars`);
+      break;
+    }
+  }
+  out.text = lines.join('; ');
+  out.complication = out.complications![0];
+  return out;
+}
+
+/**
+ * What an activity costs each week (Xanathar's): the company kept when carousing, the money spent on research.
+ * The engine charges whatever the project's own cost didn't already cover.
+ */
+function withSpending(id: ActivityId, o: ActivityOpts, r: ActivityResult): ActivityResult {
+  if (id === 'Carousing') return { ...r, spent: CAROUSING_COST[o.circle ?? 'lower'] };
+  if (id === 'Research') return { ...r, spent: Math.max(RESEARCH_MIN_GP, o.gp ?? RESEARCH_MIN_GP) };
+  return r;
+}
+
+// ---------------------------------------------------------------- buying and selling magic items (Xanathar's)
+
+/**
+ * Buying a Magic Item (Xanathar's): at least a workweek and 100 GP (which includes a wealthy lifestyle to impress
+ * sellers). Charisma (Persuasion), +1 for each workweek beyond the first and +1 for each 100 GP beyond the first 100,
+ * to a maximum of +10. A specific item is among those for sale on a total of 10 (common), 15 (uncommon), 20 (rare),
+ * 25 (very rare) or 30 (legendary). The asking price is rolled on the Magic Item Price table, halved for consumables.
+ * Optional: −10 in a low magic campaign (and prices doubled), +10 in a high magic one.
+ */
+export const BUY_WEEK_GP = 100;
+export const BUY_MAX_BONUS = 10;
+export const BUY_NEEDED: Record<Rarity, number> = { common: 10, uncommon: 15, rare: 20, veryRare: 25, legendary: 30 };
+/** Buying Magic Items table: the check total says which DMG Magic Item table the wares come from, and how many rolls. */
+export const BUY_TABLES: { min: number; table: string; rolls: string }[] = [
+  { min: 41, table: 'I', rolls: '1d4' },
+  { min: 36, table: 'H', rolls: '1d4' },
+  { min: 31, table: 'G', rolls: '1d4' },
+  { min: 26, table: 'F', rolls: '1d4' },
+  { min: 21, table: 'E', rolls: '1d4' },
+  { min: 16, table: 'D', rolls: '1d4' },
+  { min: 11, table: 'C', rolls: '1d4' },
+  { min: 6, table: 'B', rolls: '1d4' },
+  { min: -99, table: 'A', rolls: '1d6' },
+];
+export type MagicLevel = 'low' | 'standard' | 'high';
+export const MAGIC_LEVEL_LABEL: Record<MagicLevel, string> = { low: 'Low magic (−10, prices doubled)', standard: 'Standard', high: 'High magic (+10)' };
+
+export const buyTotalNeeded = (rarity: Rarity): number => BUY_NEEDED[rarity];
+
+/** Magic Item Price table (Xanathar's): the asking price by rarity. */
+export function rollAskingPrice(rarity: Rarity, rng: Rng): number {
+  switch (rarity) {
+    case 'common':
+      return (die(6, rng) + 1) * 10;
+    case 'uncommon':
+      return die(6, rng) * 100;
+    case 'rare':
+      return rollDice(2, 10, rng) * 1000;
+    case 'veryRare':
+      return (die(4, rng) + 1) * 10000;
+    case 'legendary':
+      return rollDice(2, 6, rng) * 25000;
+  }
+}
+export const ASKING_PRICE_DICE: Record<Rarity, string> = { common: '(1d6 + 1) × 10 GP', uncommon: '1d6 × 100 GP', rare: '2d10 × 1,000 GP', veryRare: '(1d4 + 1) × 10,000 GP', legendary: '2d6 × 25,000 GP' };
+
+/** The search bonus: +1 a week beyond the first, +1 per 100 GP beyond the first 100, max +10. */
+export const buyBonus = (weeks: number, gp: number): number => Math.min(BUY_MAX_BONUS, Math.max(0, Math.round(weeks) - 1) + Math.floor(Math.max(0, gp - BUY_WEEK_GP) / 100));
+
+export interface Offer {
+  label: string;
+  gp: number;
+}
+
+export interface DealResult {
+  text: string;
+  /** Search money spent. */
+  spent: number;
+  offers: Offer[];
+  complications: Complication[];
+}
+
+const pick = (key: string, rng: Rng) => COMPLICATIONS[key][die(COMPLICATIONS[key].length, rng) - 1];
+
+export function resolveBuying(
+  o: { bonus: number; weeks: number; gp?: number; rarity: Rarity; consumable: boolean; advantage?: boolean; magic?: MagicLevel },
+  rng: Rng,
+): DealResult {
+  const weeks = Math.max(1, Math.round(o.weeks));
+  const gp = Math.max(BUY_WEEK_GP, o.gp ?? BUY_WEEK_GP);
+  const extra = buyBonus(weeks, gp);
+  const magic = o.magic === 'low' ? -10 : o.magic === 'high' ? 10 : 0;
+  const total = d20(o.advantage ? 'advantage' : 'normal', rng).value + o.bonus + extra + magic;
+  const t = BUY_TABLES.find((x) => total >= x.min)!;
+  const need = BUY_NEEDED[o.rarity];
+  // Table rule: Xanathar's gives no odds for these complications, so they use the usual 10% a workweek.
+  const complications = Array.from({ length: weeks }, () => (die(10, rng) === 1 ? pick('Buying a magic item', rng) : null)).filter((c): c is Complication => !!c);
+  const head = `${total}${extra ? ` (+${extra} for the search)` : ''}${magic ? ` (${magic > 0 ? '+' : ''}${magic} for ${o.magic} magic)` : ''}: the market holds ${t.rolls} rolls on Magic Item Table ${t.table}`;
+  if (total < need) return { text: `${head}. What you seek isn't among them (it needed ${need}+)`, spent: gp, offers: [], complications };
+  let price = Math.round((rollAskingPrice(o.rarity, rng) / (o.consumable ? 2 : 1)) * (o.magic === 'low' ? 2 : 1));
+  const bid = complications.some((c) => c.doublePrice);
+  if (bid) price *= 2;
+  return { text: `${head}, and what you seek is for sale, asking ${price.toLocaleString()} GP${bid ? ' (doubled by a rival bid)' : ''}`, spent: gp, offers: [{ label: `Buy for ${price.toLocaleString()} GP`, gp: price }], complications };
+}
+
+/**
+ * Selling a Magic Item (Xanathar's): one item at a time, a workweek and 25 GP to spread word of the sale, then
+ * Charisma (Persuasion) on the Magic Item Offer table: 1–10 half the base price, 11–20 the full price, 21+ one and a
+ * half times. Base prices by rarity, halved for consumables. The seller can always turn the offer down and try again.
+ */
+export const SELL_WEEK_GP = 25;
+export const sellBase = (rarity: Rarity, consumable: boolean): number => MAGIC_ITEM_VALUE[rarity] / (consumable ? 2 : 1);
+export const offerShare = (total: number): number => (total <= 10 ? 0.5 : total <= 20 ? 1 : 1.5);
+
+export function resolveSelling(o: { bonus: number; weeks: number; rarity: Rarity; consumable: boolean; advantage?: boolean }, rng: Rng): DealResult {
+  const weeks = Math.max(1, Math.round(o.weeks));
+  const base = sellBase(o.rarity, o.consumable);
+  const offers: Offer[] = [];
+  const totals: number[] = [];
+  const complications: Complication[] = [];
+  // Each workweek brings one offer and a 10% complication; the seller weighs them at the end.
+  for (let w = 0; w < weeks; w++) {
+    const total = d20(o.advantage ? 'advantage' : 'normal', rng).value + o.bonus;
+    totals.push(total);
+    const gp = base * offerShare(total);
+    offers.push({ label: `${weeks > 1 ? `Week ${w + 1}: ` : ''}${Math.round(offerShare(total) * 100)}% of ${base.toLocaleString()} GP = ${gp.toLocaleString()} GP`, gp });
+    if (die(10, rng) === 1) complications.push(pick('Selling a magic item', rng));
+  }
+  return { text: `${totals.join(', ')}: ${weeks > 1 ? `${weeks} offers` : 'an offer'} for the item`, spent: weeks * SELL_WEEK_GP, offers, complications };
+}
+
 export const activityOf = (name: string): ActivityId | null => {
   const ids: ActivityId[] = ['Carousing', 'Crime', 'Gambling', 'Pit fighting', 'Relaxation', 'Religious service', 'Research', 'Training', 'Working a trade'];
   return ids.find((x) => name.toLowerCase().startsWith(x.toLowerCase())) ?? null;
 };
+
+// ---------------------------------------------------------------- check bonuses from the character sheet
+
+export interface SheetBonus {
+  bonus: number;
+  /** False when the ability score isn't on the sheet, so the bonus is only a guess (0 or the proficiency alone). */
+  known: boolean;
+  why: string;
+}
+
+type SheetChar = Pick<Character, 'abilities' | 'strScore' | 'conScore' | 'wisMod' | 'skillProfs' | 'toolProfs' | 'trainedProficiencies' | 'level'>;
+
+/** Ability modifier plus Proficiency Bonus when proficient in the skill (2024 PHB). */
+export function skillBonus(c: SheetChar, ab: AbilityKey, skill?: string): SheetBonus {
+  const score = abilityScore(c, ab);
+  const prof = skill ? hasSkill(c, skill) : false;
+  const pb = prof ? proficiencyBonus(c.level) : 0;
+  const mod = score == null ? 0 : abilityMod(score);
+  return {
+    bonus: mod + pb,
+    known: score != null,
+    why: `${ABILITY_LABEL[ab]}${skill ? ` (${skill})` : ''} ${score == null ? '(score not recorded)' : signed(mod)}${prof ? `, proficient +${pb}` : ''}`,
+  };
+}
+
+function toolBonus(c: SheetChar, tool: string, ab: AbilityKey): SheetBonus {
+  const score = abilityScore(c, ab);
+  const prof = proficientWith(c, tool);
+  const pb = prof ? proficiencyBonus(c.level) : 0;
+  const mod = score == null ? 0 : abilityMod(score);
+  return { bonus: mod + pb, known: score != null, why: `${ABILITY_LABEL[ab]} with ${tool} ${score == null ? '(score not recorded)' : signed(mod)}${prof ? `, proficient +${pb}` : ''}` };
+}
+
+const best = (...xs: SheetBonus[]): SheetBonus => xs.reduce((a, b) => (b.bonus > a.bonus ? b : a));
+
+/** The best bonus a character has for each of an activity's checks, from the sheet. */
+export function sheetBonuses(c: SheetChar, id: ActivityId | 'Buying a magic item' | 'Selling a magic item'): SheetBonus[] {
+  switch (id) {
+    case 'Carousing':
+      return [skillBonus(c, 'cha', 'Persuasion')];
+    case 'Crime':
+      return [skillBonus(c, 'dex', 'Stealth'), toolBonus(c, "Thieves' Tools", 'dex'), best(skillBonus(c, 'int', 'Investigation'), skillBonus(c, 'wis', 'Perception'), skillBonus(c, 'cha', 'Deception'))];
+    case 'Gambling': {
+      // Xanathar's: proficiency with a gaming set can replace the skill in any of the checks.
+      const set = toolProficiencies(c).map((t) => toolNamed(t)).find((t) => t?.category === 'gaming');
+      const g = (ab: AbilityKey, skill: string) => (set ? best(skillBonus(c, ab, skill), toolBonus(c, set.name, ab)) : skillBonus(c, ab, skill));
+      return [g('wis', 'Insight'), g('cha', 'Deception'), g('cha', 'Intimidation')];
+    }
+    case 'Pit fighting':
+      return [skillBonus(c, 'str', 'Athletics'), skillBonus(c, 'dex', 'Acrobatics'), skillBonus(c, 'con')];
+    case 'Religious service':
+      return [best(skillBonus(c, 'int', 'Religion'), skillBonus(c, 'cha', 'Persuasion'))];
+    case 'Research':
+      return [skillBonus(c, 'int')];
+    case 'Working a trade': {
+      // Xanathar's: Strength (Athletics), Dexterity (Acrobatics), Intelligence with a set of tools, Charisma (Performance), or Charisma with a musical instrument.
+      const tools = toolProficiencies(c)
+        .map((t) => toolNamed(t))
+        .filter((t): t is NonNullable<typeof t> => !!t && t.category !== 'gaming')
+        .map((t) => toolBonus(c, t.name, t.category === 'instrument' ? 'cha' : 'int'));
+      return [best(skillBonus(c, 'str', 'Athletics'), skillBonus(c, 'dex', 'Acrobatics'), skillBonus(c, 'cha', 'Performance'), ...tools)];
+    }
+    case 'Buying a magic item':
+      return [skillBonus(c, 'cha', 'Persuasion')];
+    case 'Selling a magic item':
+      return [skillBonus(c, 'cha', 'Persuasion')];
+    default:
+      return [];
+  }
+}

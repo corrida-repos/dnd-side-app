@@ -20,11 +20,10 @@ describe('rewarding chores', () => {
     expect(dose?.valueGp).toBe(1200);
   });
 
-  it('other venom works as Basic Poison worth 100 GP, or a plain dose with the switch off', () => {
-    expect(poisonYield('Giant Spider', true)).toMatchObject({ valueGp: 100 });
-    expect(poisonYield('Giant Spider', true).name).toContain('Basic Poison');
-    expect(poisonYield('Giant Spider', false)).toMatchObject({ name: 'Poison dose (Giant Spider)', valueGp: 0 });
-    expect(poisonYield('Giant Venomous Snake', false).name).toBe('Poison: Serpent Venom');
+  it('other venom works as Basic Poison worth 100 GP; DMG creatures give their own poison', () => {
+    expect(poisonYield('Giant Spider')).toMatchObject({ valueGp: 100 });
+    expect(poisonYield('Giant Spider').name).toContain('Basic Poison');
+    expect(poisonYield('Giant Venomous Snake').name).toBe('Poison: Serpent Venom');
   });
 
   it('a clean butchering job keeps a trophy worth selling', () => {
@@ -44,8 +43,8 @@ describe('rewarding chores', () => {
     expect(trophyFor({ name: 'Zombie', size: 'Medium', type: 'undead' })).toBeNull();
   });
 
-  it('a natural 20 on foraging turns up a find; an ordinary success does not', () => {
-    const s0 = one();
+  it('a natural 20 on foraging turns up a find; a bare success does not', () => {
+    const s0 = one(0);
     const plain = E.forage(s0, ctx(0.6), s0.characters[0].id);
     expect(plain.log.some((l) => l.text.includes('comes across'))).toBe(false);
     const s1 = one();
@@ -53,11 +52,10 @@ describe('rewarding chores', () => {
     expect(lucky.log.some((l) => l.text.includes('comes across') && l.text.includes(CHORE_FINDS.forage[7].text))).toBe(true);
   });
 
-  it('finds can be switched off', () => {
-    const s = one();
-    s.settings.choreFinds = false;
-    const r = E.gatherWood(s, ctx(0.99), s.characters[0].id);
-    expect(r.log.some((l) => l.text.includes('comes across'))).toBe(false);
+  it('beating the DC by 5 is enough for a find', () => {
+    const s = one(20);
+    const r = E.gatherWood(s, ctx(0.3), s.characters[0].id);
+    expect(r.log.some((l) => l.text.includes('comes across'))).toBe(true);
   });
 
   it('a lucky firewood find lands where it belongs', () => {

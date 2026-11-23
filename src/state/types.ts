@@ -293,6 +293,8 @@ export interface Character {
   renown: number;
   fear: number;
   stress: number;
+  /** Table rule: a hot meal's warmth (Advantage against cold) until this absolute minute; hearty adds forced marches. */
+  mealBuff?: { until: number; hearty: boolean } | null;
   /** At 0 HP and making death saves. */
   dying: boolean;
   /** At 0 HP but stable: no more death saves, and wakes with 1 HP at `wakesAt`. */
@@ -362,6 +364,8 @@ export interface Character {
   toolProfs?: string[];
   /** Skill proficiencies; undefined until recorded or imported. */
   skillProfs?: string[];
+  /** Working a trade: workweeks left with Disadvantage from a reputation for laziness (Xanathar's). */
+  workLazyWeeks?: number;
   /** Ability scores, when known (D&D Beyond import or typed in). */
   abilities?: Partial<Record<'str' | 'dex' | 'con' | 'int' | 'wis' | 'cha', number>>;
   /** Mounts: how it moves, for the saddle it needs. */
@@ -552,6 +556,13 @@ export interface Project {
   /** A finished activity waiting for its checks, and what came of it. */
   awaitingOutcome?: boolean;
   outcome?: string;
+  /** Participants whose activity checks have been rolled (each rolls their own, Xanathar's). */
+  resolvedFor?: string[];
+  /** Buying or selling a magic item: a consumable (half price, and easier to find), and the item's name. */
+  consumable?: boolean;
+  itemName?: string;
+  /** Offers waiting for an answer once a seller or buyer is found. */
+  offers?: { label: string; gp: number }[];
   /** Skilled hirelings with the right tools assisting the work, paid 2 GP each per workday. */
   hiredArtisans?: number;
   /** Hours of work done on the march toward the next workday (8 hours make one). */
@@ -926,8 +937,6 @@ export interface Settings {
   appraiseMisjudge: boolean;
   /** Table rule: without the right tool, try anyway at DC +5, taking twice as long where time matters. */
   improvised: boolean;
-  /** Table rule: chores pay off. Exceptional forage, firewood and digging turn up finds, clean butchering keeps trophies, and stray venom works as Basic Poison. */
-  choreFinds: boolean;
   /** Optional 2014 DMG rule: running a business as a downtime activity. */
   runningBusiness: boolean;
   /** Roll random encounter checks automatically by the location's danger while travelling, camping, resting and exploring. */
