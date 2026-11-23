@@ -84,6 +84,8 @@ import { DUE_PRESETS, GUILD_EXPULSION, PERIOD_DAYS, dueAmount, type DueKind, typ
 import { BRIBE_GP_PER_HEAT, CRIMES, HEAT_DECAY_PER_WEEK, RECOGNISE_ON, heatLevel, jailDaysFor, samePlace, type CrimeSeverity } from '../rules/notoriety';
 import { FAVOR_COOLDOWN_DAYS, NEGLECT_DAYS, attitudeOf, clampBond, favorDC } from '../rules/contacts';
 import { REPLY_DIE, newsDelay, type NewsRoute } from '../rules/letters';
+import { arrivalLine, buildingType, generateTown, newBuilding, rollCalamity, rollFame, rollLeader, rollTrait, sortBuildings, type Town } from '../rules/settlements';
+import type { Settlement } from '../rules/services';
 
 export interface Ctx {
   rng: Rng;
@@ -8156,3 +8158,72 @@ function deliverNews(s: State): void {
   }
   s.news = (s.news ?? []).filter((n) => !n.delivered || now - n.arrivesAt < 60 * MIN_PER_DAY);
 }
+
+// ---------------------------------------------------------------- settlements
+
+/** The settlement the party is in, if it has been rolled up or set up. */
+export const currentTown = (s: State): Town | undefined => (s.place.settlement ? (s.towns ?? []).find((t) => samePlace(t.name, s.place.name)) : undefined);
+
+const townNamed = (d: State, name: string): Town | undefined => (d.towns ?? []).find((t) => samePlace(t.name, name));
+
+/** Rolls up the settlement the party is in (2024 DMG Settlement Tables), replacing any earlier roll for it. */
+export const rollTown = act((d, ctx, size: Settlement, water: boolean) => {
+  const name = d.place.name.trim() || 'the settlement';
+  const town = generateTown(name, size, water, ctx.rng);
+  d.towns = [...(d.towns ?? []).filter((t) => !samePlace(t.name, name)), town];
+  d.place.settlement = true;
+  log(d, `${arrivalLine(town)} ${town.buildings.length} places of note.`, 'info');
+});
+
+/** Re-rolls one of a settlement's details on its DMG table. */
+export const rerollTownDetail = act((d, ctx, townName: string, field: 'trait' | 'fame' | 'leader' | 'calamity' | 'noCalamity') => {
+  const t = townNamed(d, townName);
+  if (!t) return;
+  if (field === 'trait') t.trait = rollTrait(ctx.rng);
+  else if (field === 'fame') t.fame = rollFame(ctx.rng);
+  else if (field === 'leader') t.leader = rollLeader(ctx.rng);
+  else if (field === 'calamity') {
+    t.calamity = rollCalamity(ctx.rng);
+    log(d, `Trouble in ${t.name}: ${t.calamity}`, 'warn');
+  } else {
+    if (t.calamity) log(d, `${t.name} is past its troubles (${t.calamity.replace(/\.$/, '').toLowerCase()}).`, 'good');
+    t.calamity = null;
+  }
+});
+
+/** Changes a settlement's size; its buildings stay as they are. */
+export const setTownSize = act((d, _ctx, townName: string, size: Settlement) => {
+  const t = townNamed(d, townName);
+  if (t) t.size = size;
+});
+
+/** Adds a building of a kind to a settlement, named and with a keeper. */
+export const addTownBuilding = act((d, ctx, townName: string, type: string) => {
+  const t = townNamed(d, townName);
+  if (!t || !buildingType(type)) return;
+  const b = newBuilding(type, ctx.rng, new Set(t.buildings.map((x) => x.name)));
+  t.buildings = sortBuildings([...t.buildings, b]);
+  log(d, `${t.name}: ${b.name} (${buildingType(type)!.label.toLowerCase()}, run by ${b.keeper}).`, 'info');
+});
+
+/** Removes a building: it burned down, closed, or the DM doesn't want it. */
+export const removeTownBuilding = act((d, _ctx, townName: string, id: string) => {
+  const t = townNamed(d, townName);
+  const b = t?.buildings.find((x) => x.id === id);
+  if (!t || !b) return;
+  t.buildings = t.buildings.filter((x) => x.id !== id);
+  log(d, `${t.name}: ${b.name} is gone.`, 'info');
+});
+
+/** Renames a building or its keeper. */
+export const editTownBuilding = act((d, _ctx, townName: string, id: string, patch: { name?: string; keeper?: string }) => {
+  const b = townNamed(d, townName)?.buildings.find((x) => x.id === id);
+  if (!b) return;
+  if (patch.name != null) b.name = patch.name;
+  if (patch.keeper != null) b.keeper = patch.keeper;
+});
+
+/** Forgets a settlement's roll. */
+export const forgetTown = act((d, _ctx, townName: string) => {
+  d.towns = (d.towns ?? []).filter((t) => !samePlace(t.name, townName));
+});

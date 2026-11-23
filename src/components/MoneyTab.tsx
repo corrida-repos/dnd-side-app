@@ -18,12 +18,15 @@ import { ITEM_PRICES } from '../rules/itemPrices';
 import { valueUnknown, inStock, priceOf, RENOWN_DISCOUNT, saleRate, STOCK_LIMIT } from '../rules/shop';
 import { COMMON_SPELL_REQUESTS, PASSAGE, SPELL_SERVICES, spellServiceAvailable, type Settlement } from '../rules/services';
 import { WaysAround } from './WaysAround';
+import { TownCard } from './TownCard';
+import { SETTLEMENT_SIZE, townSells, townSpecials } from '../rules/settlements';
 import { SADDLE_LABEL, STABLING_GP_PER_DAY, needsExoticSaddle, type Saddle } from '../rules/gear';
 
 export function MoneyTab() {
   return (
     <div className="grid">
       <PurseCard />
+      <TownCard />
       <HirelingsCard />
       <MountsCard />
       <ShopCard />
@@ -364,7 +367,9 @@ function ServicesCard() {
   const [fare, setFare] = useState(PASSAGE[0].id);
   const [amount, setAmount] = useState(20);
   const [people, setPeople] = useState(pcs.length || 1);
-  const [here, setHere] = useState<Settlement>('town');
+  const town = E.currentTown(s);
+  const [pickedHere, setHere] = useState<Settlement>('town');
+  const here = town?.size ?? pickedHere;
   const [spell, setSpell] = useState(COMMON_SPELL_REQUESTS[0].name);
   const [custom, setCustom] = useState(1);
   const [target, setTarget] = useState('');
@@ -391,7 +396,7 @@ function ServicesCard() {
       </button>
       <h3>Spellcasting</h3>
       <div className="form-row">
-        <Select label="Settlement" value={here} onChange={setHere} options={[{ value: 'village', label: 'Village' }, { value: 'town', label: 'Town' }, { value: 'city', label: 'City' }]} />
+        {town ? <span className="small">In the {here} of {town.name}</span> : <Select label="Settlement" value={here} onChange={setHere} options={[{ value: 'village', label: 'Village' }, { value: 'town', label: 'Town' }, { value: 'city', label: 'City' }]} />}
         <Select label="Spell" value={spell} onChange={setSpell} options={[...COMMON_SPELL_REQUESTS.map((x) => ({ value: x.name, label: `${x.name} (level ${x.level})` })), { value: '', label: 'Another spell…' }]} />
         {!req && <Num label="Spell level" value={custom} onChange={(v) => setCustom(Math.max(0, Math.min(9, Math.round(v))))} min={0} max={9} width={2} />}
       </div>
@@ -429,7 +434,10 @@ function ShopCard() {
   const s = useGame();
   const pcs = s.characters.filter((c) => c.kind !== 'mount' && E.alive(c));
   const [who, setWho] = useState('');
-  const [here, setHere] = useState<Settlement>('town');
+  const town = E.currentTown(s);
+  const [pickedHere, setHere] = useState<Settlement>('town');
+  const here = town?.size ?? pickedHere;
+  const [special, setSpecial] = useState('');
   const [group, setGroup] = useState('Gear');
   const [item, setItem] = useState('');
   const [qty, setQty] = useState(1);
@@ -451,7 +459,10 @@ function ShopCard() {
     patron?.discountAll ?? 0,
     pick && (pick.group === 'Weapons' || pick.group === 'Armor') ? (patron?.discountArms ?? 0) : 0,
   );
-  const stocked = pick ? inStock(pick.gp, here) : false;
+  const sold = pick && town ? townSells(town, pick) : null;
+  const stocked = pick ? (sold ? sold.ok : inStock(pick.gp, here)) : false;
+  const specials = town ? townSpecials(town) : [];
+  const spec = specials.find((x) => x.item.name === special) ?? specials[0];
   const sellable = buyer?.inventory ?? [];
   const sell = sellable.find((i) => i.id === sellId) ?? sellable[0];
   const sellUnit = sell ? (sell.valueGp ?? priceOf(sell.name)) : undefined;
@@ -460,7 +471,7 @@ function ShopCard() {
     <Card title="Shop and loot">
       <div className="form-row">
         <Select label="Who" value={whoId} onChange={setWho} options={pcs.map((c) => ({ value: c.id, label: `${c.name} (${fmtGp(c.gp)})` }))} />
-        <Select label="Settlement" value={here} onChange={setHere} options={[{ value: 'village', label: 'Village' }, { value: 'town', label: 'Town' }, { value: 'city', label: 'City' }]} />
+        {town ? <span className="small">Shops of {town.name} ({here})</span> : <Select label="Settlement" value={here} onChange={setHere} options={[{ value: 'village', label: 'Village' }, { value: 'town', label: 'Town' }, { value: 'city', label: 'City' }]} />}
         {friends.length > 0 && <Select label="Faction contact" value={faction} onChange={setFaction} options={[{ value: '', label: 'None' }, ...friends.map((f) => ({ value: f.id, label: `${f.name} (renown ${f.renown})` }))]} />}
       </div>
       <h3>Buy</h3>
@@ -472,7 +483,28 @@ function ShopCard() {
       <button className="small" disabled={!pick || !stocked || !buyer} onClick={() => dispatch((st, cx) => E.buyItem(st, cx, whoId, pick!.name, qty, pick!.gp, discount))}>
         Buy for {fmtGp(Math.round((pick?.gp ?? 0) * qty * (1 - discount) * 100) / 100)}
       </button>
-      {!stocked && <span className="small warn-text"> Not sold in a {here} (table rule: up to {STOCK_LIMIT[here] === Infinity ? 'any price' : `${STOCK_LIMIT[here]} GP`}).</span>}
+      {sold ? (
+        sold.ok ? (
+          <span className="small muted"> At {sold.at.map((b) => b.name).join(', ')}.</span>
+        ) : (
+          <span className="small warn-text"> {sold.why}</span>
+        )
+      ) : (
+        !stocked && <span className="small warn-text"> Not sold in a {here} (2024 DMG: up to {STOCK_LIMIT[here].toLocaleString()} GP).</span>
+      )}
+      {spec && (
+        <>
+          <h3>Specialty goods</h3>
+          <div className="form-row">
+            <Select label="Item" value={spec.item.name} onChange={setSpecial} options={specials.map((x) => ({ value: x.item.name, label: `${x.item.name} (${fmtGp(x.item.gp)})${x.item.note ? ` · ${x.item.note}` : ''}${x.ok ? '' : ' · too costly here'}` }))} />
+            <Num label="Qty" value={qty} onChange={(v) => setQty(Math.max(1, Math.round(v)))} min={1} width={3} />
+          </div>
+          <button className="small" disabled={!spec.ok || !buyer} onClick={() => dispatch((st, cx) => E.buyItem(st, cx, whoId, spec.item.name, qty, spec.item.gp, 0))}>
+            Buy for {fmtGp(spec.item.gp * qty)}
+          </button>
+          <span className="small muted"> At {spec.building.name}.{spec.ok ? '' : ` Too costly for a ${here} (up to ${SETTLEMENT_SIZE[here].maxGp.toLocaleString()} GP).`}</span>
+        </>
+      )}
       <h3>Sell</h3>
       {sellable.length === 0 ? (
         <p className="small muted">Nothing in {buyer?.name ?? 'their'} inventory.</p>
@@ -502,7 +534,7 @@ function ShopCard() {
         Split {fmtGp(loot)} {payees.length} ways
       </button>
       <Rule>
-        2024 PHB prices. Selling: equipment in good condition fetches half its price; gems, jewelry, art objects and trade goods keep their full value. Magic items are sold as downtime deals (Downtime tab). Table rules: what each settlement stocks, and a {Math.round(RENOWN_DISCOUNT * 100)}% discount through a faction where you have Renown 3+.
+        2024 PHB prices. Selling: equipment in good condition fetches half its price; gems, jewelry, art objects and trade goods keep their full value. Magic items are sold as downtime deals (Downtime tab). 2024 DMG: what a settlement has for sale depends on its size (and, once rolled up, its shops). Table rule: a {Math.round(RENOWN_DISCOUNT * 100)}% discount through a faction where you have Renown 3+.
       </Rule>
       <WaysAround topic={'shopping'} />
     </Card>

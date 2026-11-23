@@ -396,7 +396,8 @@ The gear makes things automatic, faster or better; without it you can still try,
 DMG random tables that fit life outside one adventure (from 5etools `book-xdmg.json`).
 
 - 📋 **Treasure:** gemstones and art objects by value, trade bars, individual and hoard treasure by CR, magic items by rarity (Arcana, Armaments, Implements, Relics). Rolls land in the inventory with their value; the Bastion Treasure event uses them.
-- 📋 **Settlements:** size, defining trait, claim to fame, current calamity, local leader, tavern names and shops, rolled when the party reaches a new town.
+- ✅ **Settlements:** roll up the town the party is in (Money & Shop tab): DMG size, defining trait, claim to fame, local leader and a calamity (1 in 3, table rule), and every building with a game function: inns and taverns (DMG Tavern Names), shrines, temples and a cathedral, healers and apothecaries, all 20 DMG Random Shops plus general store, market, crafts, moneylender, bank, guildhall, stables, coaching house, docks, courier, gate, library, academy, town hall, watch, barracks, gambling hall, fighting pit, theater, fence and thieves' guild. Keepers get DMG Common Names. Table rule: how many of each a village, town or city has. The shop sells only what those buildings stock, specialty goods (Potions of Healing, costly spell components) come from the right shop, and spellcasting follows the town's size. Towns are kept by name for the next visit.
+- ✅ **Fix:** shop stock limits now follow the 2024 DMG Settlements by Size (village 20 GP, town 2,000 GP, city 200,000 GP) instead of the old 50 / 1,000 / any table rule.
 - 📋 **NPCs:** names (six styles), appearance and a DM-only secret for hirelings, contacts, patrons, rivals and Bastion guests.
 - 📋 **Monster personality and relationships:** rolled with each encounter, next to its attitude.
 - 📋 **Audible distance:** how far camp noise carries for encounters and the watch.
