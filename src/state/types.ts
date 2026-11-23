@@ -216,6 +216,8 @@ export interface Faction {
   notes: string;
   /** Level-based renown: follows this character's level (DMG option). */
   levelOf?: string | null;
+  /** Group involvement: downtime days spent on minor tasks for the group toward the next point (DMG). */
+  involvementDays?: number;
 }
 
 export interface Holiday {
@@ -643,6 +645,8 @@ export interface Mark {
   trouble?: { text: string; sinceDay: number } | null;
   /** Land granted with a title: the title's id. */
   titleId?: string;
+  /** A faction in the tracker that granted it: loyal service raises renown, disloyalty costs it, and offenses against the faction cost trust. */
+  factionId?: string;
   /** Special rights: which, where, until when (none: for life), and the sworn soldiers. */
   right?: RightKind;
   community?: string;
@@ -832,6 +836,8 @@ export interface Settings {
   lifestyleRisks: boolean;
   /** Table rule: Marks of Prestige carry obligations (land income and trouble, title upkeep, unpaid fortifications) and can be revoked. */
   prestigeRules: boolean;
+  /** Optional table rule: a faction expects a minimum renown before granting a title or fortification. */
+  prestigeRenownMin: boolean;
   /** Optional Xanathar's rules resolve downtime activities with checks and tables. */
   downtimeOutcomes: boolean;
   /** Costly Material components must be in the caster's inventory and are used up (2024 PHB). */

@@ -19,12 +19,14 @@ describe('mixed potions, renown and lifestyle', () => {
     let s = createDefaultState(() => 0);
     s.characters = [newCharacter({ name: 'A', level: 6, needsFood: false, needsWater: false })];
     s.factions = [{ id: 'f', name: 'Harpers', renown: 0, notes: '', levelOf: null }];
-    s = E.factionMission(s, ctx(), 'f');
+    s = E.factionMission(s, ctx(), 'f', 1);
     expect(s.factions[0].renown).toBe(1);
+    s = E.factionMission(s, ctx(), 'f');
+    expect(s.factions[0].renown).toBe(3);
     s.factions[0].levelOf = s.characters[0].id;
     s.minutes = 22 * 60;
     s = E.longRest(s, ctx(), true);
-    expect(s.factions[0].renown).toBe(6);
+    expect(s.factions[0].renown).toBe(10); // DMG table: level 5+ stands for renown 10
   });
 
   it('squalid and wretched living mean drinking city water every day, which counts toward Sewer Plague', () => {

@@ -12,8 +12,8 @@ import { REGIONS, type RegionKind } from '../rules/regions';
 import { WaysAround } from './WaysAround';
 import { DECIPHER_DC } from '../rules/tools';
 import { LIFESTYLE_LABEL, fmtGp } from '../rules/money';
-import { FORT_NEGLECT_DAYS, FORT_UPKEEP, LAND, LODGING_CAP, MARK_LABEL, PRIZE_CROWN_SHARE, RIGHTS, TITLE_RANK, TRUST_LABEL, TRUST_MAX, type FortType, type LandKind, type MarkKind, type RightKind, type TitleRank } from '../rules/prestige';
-import type { Mark } from '../state/types';
+import { FORT_NEGLECT_DAYS, FORT_UPKEEP, LAND, LODGING_CAP, MARK_LABEL, PRIZE_CROWN_SHARE, RIGHTS, TITLE_RANK, TRUST_LABEL, TRUST_MAX, type FortType, type LandKind, type MarkKind, type RightKind, type TitleRank, renownMinimum } from '../rules/prestige';
+import type { Mark, State } from '../state/types';
 
 export function WorldTab() {
   return (
@@ -106,45 +106,68 @@ function SkyCard() {
   );
 }
 
+function FactionRow({ f }: { f: State['factions'][number] }) {
+  const s = useGame();
+  const [gain, setGain] = useState(2);
+  const [days, setDays] = useState(10);
+  const marks = s.marks.filter((m) => m.factionId === f.id && !m.revoked && !m.bastionId);
+  const need = E.involvementDaysNeeded(f);
+  return (
+    <li className="facility">
+      <div className="armor-row">
+        <span>
+          <b>{f.name}</b> <Pill tone={f.renown > 0 ? 'good' : 'muted'}>Renown {f.renown}</Pill> {renownPerk(f.renown) && <span className="small muted">{renownPerk(f.renown)}</span>}
+        </span>
+        <span className="btn-row tight">
+          <button className="small" disabled={f.renown <= 0} title="A serious offense against the group" onClick={() => dispatch((st, cx) => E.changeRenown(st, cx, f.id, -1, ''))}>
+            −
+          </button>
+          <button className="small" onClick={() => dispatch((st, cx) => E.changeRenown(st, cx, f.id, 1, ''))}>
+            +
+          </button>
+          <button className="ghost tiny" aria-label={`Remove ${f.name}`} onClick={() => edit((d) => void (d.factions = d.factions.filter((x) => x.id !== f.id)))}>
+            ✕
+          </button>
+        </span>
+      </div>
+      {marks.length > 0 && <p className="small muted">Granted by {f.name}: {marks.map((m) => m.name).join(', ')}. Offenses against the faction cost trust on these.</p>}
+      <div className="btn-row tight">
+        <Select label="Mission" value={String(gain)} onChange={(v) => setGain(Number(v))} options={E.MISSION_RENOWN.map((m) => ({ value: String(m.gain), label: `${m.label} (+${m.gain})` }))} />
+        <button className="small" onClick={() => dispatch((st, cx) => E.factionMission(st, cx, f.id, gain))}>
+          Mission done
+        </button>
+        <Select
+          label="Level-based renown"
+          value={f.levelOf ?? ''}
+          onChange={(v) => edit((d) => void (d.factions.find((x) => x.id === f.id)!.levelOf = v || null))}
+          options={[{ value: '', label: 'Off' }, ...s.characters.filter((c) => c.kind !== 'mount').map((c) => ({ value: c.id, label: `Follows ${c.name}'s level` }))]}
+        />
+      </div>
+      {f.renown >= 1 && (
+        <div className="btn-row tight">
+          <Num label="Downtime with the group" value={days} onChange={(v) => setDays(Math.max(1, Math.round(v)))} min={1} suffix="days" width={3} />
+          <button className="small" onClick={() => dispatch((st, cx) => E.factionInvolvement(st, cx, f.id, days))}>
+            Spend the days
+          </button>
+          <span className="small muted">
+            {f.involvementDays ?? 0}/{need} days toward +1
+          </span>
+        </div>
+      )}
+      <Text value={f.notes} onChange={(v) => edit((d) => void (d.factions.find((x) => x.id === f.id)!.notes = v))} placeholder="Notes: contacts, favors owed, rumors" />
+    </li>
+  );
+}
+
 function FactionsCard() {
   const s = useGame();
   const [name, setName] = useState('');
-  const set = (id: string, fn: (f: (typeof s.factions)[number]) => void) => edit((d) => fn(d.factions.find((x) => x.id === id)!));
   return (
     <Card title="Factions and renown">
       {s.factions.length === 0 && <p className="muted small">No factions tracked yet.</p>}
       <ul className="plain">
         {s.factions.map((f) => (
-          <li key={f.id} className="facility">
-            <div className="armor-row">
-              <span>
-                <b>{f.name}</b> <Pill tone={f.renown > 0 ? 'good' : 'muted'}>Renown {f.renown}</Pill> {renownPerk(f.renown) && <span className="small muted">{renownPerk(f.renown)}</span>}
-              </span>
-              <span className="btn-row tight">
-                <button className="small" disabled={f.renown <= 0} onClick={() => (set(f.id, (x) => void (x.renown = Math.max(0, x.renown - 1))), dispatch((st) => (E.log(st, `Renown with ${f.name} drops to ${Math.max(0, f.renown - 1)}.`, 'warn'), st)))}>
-                  −
-                </button>
-                <button className="small" onClick={() => (set(f.id, (x) => void (x.renown += 1)), dispatch((st) => (E.log(st, `Renown with ${f.name} rises to ${f.renown + 1}.`, 'good'), st)))}>
-                  +
-                </button>
-                <button className="ghost tiny" aria-label={`Remove ${f.name}`} onClick={() => edit((d) => void (d.factions = d.factions.filter((x) => x.id !== f.id)))}>
-                  ✕
-                </button>
-              </span>
-            </div>
-            <div className="btn-row tight">
-              <button className="small" onClick={() => dispatch((st, cx) => E.factionMission(st, cx, f.id))}>
-                Mission done (+1)
-              </button>
-              <Select
-                label="Level-based renown"
-                value={f.levelOf ?? ''}
-                onChange={(v) => edit((d) => void (d.factions.find((x) => x.id === f.id)!.levelOf = v || null))}
-                options={[{ value: '', label: 'Off' }, ...s.characters.filter((c) => c.kind !== 'mount').map((c) => ({ value: c.id, label: `Follows ${c.name}'s level` }))]}
-              />
-            </div>
-            <Text value={f.notes} onChange={(v) => set(f.id, (x) => void (x.notes = v))} placeholder="Notes: contacts, favors owed, rumors" />
-          </li>
+          <FactionRow key={f.id} f={f} />
         ))}
       </ul>
       <div className="btn-row">
@@ -154,7 +177,7 @@ function FactionsCard() {
         </button>
       </div>
       <Rule>
-        2024 DMG renown: 3+ means a respected member (members are Friendly, and offer lodging and food in dire need; perhaps a contact, safe house or gear discount). 10+ might open access to potions and scrolls, favors and backup. 50+ might mean a small army, a Rare magic item or a helpful spellcaster. Only serious offenses against the group cost renown, and it never drops below 0. A common pace is +1 for a mission that serves the group, or +1 per level with level-based renown.
+        2024 DMG renown: +1 for advancing a group&apos;s interests, +2 for a mission it assigned or that directly benefits it, +3 or +4 for a hugely significant quest. With Renown 1+, downtime spent on minor tasks and among its members raises it by 1 after 10 × the current score in days. Level-based renown: level 1 → 1, 3 → 3, 5 → 10, 11 → 25, 17 → 50. 3+ means a respected member (Friendly members, lodging and food in dire need; perhaps a contact, safe house or gear discount). 10+ might open access to potions and scrolls, favors and backup. 50+ might mean a small army, a Rare magic item or a helpful spellcaster. Disagreements cost nothing; only serious offenses against the group cost renown (the − button), and it never drops below 0. Table rules: a serious offense also costs 1 trust on each mark of prestige the faction granted, and a mark taken back costs {E.REVOKE_RENOWN_LOSS} renown.
       </Rule>
     </Card>
   );
@@ -558,7 +581,8 @@ function MarkRow({ m }: { m: Mark }) {
       </div>
       <p className="small muted">
         Held by {who}
-        {m.grantor ? `, granted by ${m.grantor}` : ''}.
+        {m.grantor ? `, granted by ${m.grantor}` : ''}
+        {m.factionId && s.factions.some((f) => f.id === m.factionId) ? ` (faction, renown ${s.factions.find((f) => f.id === m.factionId)!.renown})` : ''}.
         {m.revoked ? ` Ended: ${m.revoked.why}.` : ''}
       </p>
       {m.kind === 'fortification' && upkeep && (
@@ -656,6 +680,9 @@ function MarksCard() {
   const [soldiers, setSoldiers] = useState(2);
   const [rank, setRank] = useState<TitleRank>('knight');
   const [withLand, setWithLand] = useState<LandKind | ''>('');
+  const [factionId, setFactionId] = useState('');
+  const fac = s.factions.find((f) => f.id === factionId);
+  const need = fac && s.settings.prestigeRenownMin ? renownMinimum(kind, rank) : 0;
   const active = s.marks.filter((m) => !m.revoked && !m.bastionId);
   const past = s.marks.filter((m) => m.revoked || m.bastionId);
   return (
@@ -681,7 +708,8 @@ function MarksCard() {
         <div className="row">
           <Select label="Kind" value={kind} onChange={(v: MarkKind) => setKind(v)} options={(Object.keys(MARK_LABEL) as MarkKind[]).map((k) => ({ value: k, label: MARK_LABEL[k] }))} />
           <Text label="Name" value={name} onChange={setName} placeholder={kind === 'title' ? TITLE_RANK[rank].example : kind === 'fortification' ? 'e.g. Thornwatch Keep' : kind === 'land' ? 'e.g. the Fenwick holding' : 'e.g. Freedom of Greywater'} />
-          <Text label="Granted by" value={grantor} onChange={setGrantor} placeholder="e.g. Queen Yolande" />
+          {s.factions.length > 0 && <Select label="Faction" value={factionId} onChange={setFactionId} options={[{ value: '', label: 'None' }, ...s.factions.map((f) => ({ value: f.id, label: `${f.name} (renown ${f.renown})` }))]} />}
+          <Text label="Granted by" value={grantor} onChange={setGrantor} placeholder={fac ? fac.name : 'e.g. Queen Yolande'} />
         </div>
         <div className="row">
           {kind === 'fortification' && (
@@ -715,6 +743,7 @@ function MarksCard() {
           </div>
         </div>
         {kind === 'rights' && <p className="small muted">{RIGHTS[right].effect}</p>}
+        {fac && need > fac.renown && <p className="small warn-text">Table rule: {fac.name} would expect renown {need} for this; the party has {fac.renown}.</p>}
         <button
           className="primary"
           disabled={!holders.length}
@@ -734,6 +763,7 @@ function MarksCard() {
                 soldiers,
                 rank,
                 withLand: withLand || null,
+                factionId: factionId || null,
               }),
             );
             setName('');
@@ -743,7 +773,7 @@ function MarksCard() {
         </button>
       </details>
       <Rule>
-        2024 DMG, Marks of Prestige: a fortification is governed by the holders, but its land stays the crown&apos;s. It costs {Object.values(FORT_UPKEEP).map((u) => `${fmtGp(u.gpPerDay)}`).join(', ')} a day (outpost, keep, castle), and the grantor may pay for the first months. Land can be built on and inherited but not sold. Special rights last as long as the document says. Titles can be passed down. Any of them can be taken away for disloyalty or abuse. Table rules ({s.settings.prestigeRules ? 'on' : 'off'}, Settings): the grantor&apos;s trust starts at {TRUST_MAX}, and it is gone (the mark taken back) at 0. Land pays rents monthly, but a 1 on a d6 brings trouble, and trouble left for 30 days costs trust and that month&apos;s income. Titles cost trust each month the holder lives below the rank&apos;s lifestyle. {FORT_NEGLECT_DAYS} days of unpaid fortification upkeep costs trust. Free room and board covers lifestyles up to {LIFESTYLE_LABEL[LODGING_CAP]}. The crown takes {Math.round(PRIZE_CROWN_SHARE * 100)}% of a prize.
+        2024 DMG, Marks of Prestige: a fortification is governed by the holders, but its land stays the crown&apos;s. It costs {Object.values(FORT_UPKEEP).map((u) => `${fmtGp(u.gpPerDay)}`).join(', ')} a day (outpost, keep, castle), and the grantor may pay for the first months. Land can be built on and inherited but not sold. Special rights last as long as the document says. Titles can be passed down. Any of them can be taken away for disloyalty or abuse. Table rules ({s.settings.prestigeRules ? 'on' : 'off'}, Settings): the grantor&apos;s trust starts at {TRUST_MAX}, and it is gone (the mark taken back) at 0. Land pays rents monthly, but a 1 on a d6 brings trouble, and trouble left for 30 days costs trust and that month&apos;s income. Titles cost trust each month the holder lives below the rank&apos;s lifestyle. {FORT_NEGLECT_DAYS} days of unpaid fortification upkeep costs trust. Free room and board covers lifestyles up to {LIFESTYLE_LABEL[LODGING_CAP]}. A mark granted by a tracked faction ties into its renown: loyal service also gives +1 renown, a mark taken back for disloyalty costs {E.REVOKE_RENOWN_LOSS}, and serious offenses against the faction cost trust.{s.settings.prestigeRenownMin ? ' Factions expect renown 10 for a knighthood, 25 for a lordship, county or fortification, and 50 for a dukedom.' : ''} The crown takes {Math.round(PRIZE_CROWN_SHARE * 100)}% of a prize.
       </Rule>
     </Card>
   );

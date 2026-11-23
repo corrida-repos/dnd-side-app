@@ -141,3 +141,31 @@ export const lowerLifestyle = (a: Lifestyle, b: Lifestyle): Lifestyle => (lifest
 export type TrainingKind = 'skill' | 'tool' | 'language';
 export const SPECIAL_TRAINING_DAYS = 30;
 export const TRAINING_KIND_LABEL: Record<TrainingKind, string> = { skill: 'Skill proficiency', tool: 'Tool proficiency', language: 'Language' };
+
+// ---------------------------------------------------------------- faction renown
+
+/** DMG Level-Based Renown table: the renown a character's level stands for. */
+export const LEVEL_RENOWN: [number, number][] = [
+  [17, 50],
+  [11, 25],
+  [5, 10],
+  [3, 3],
+  [1, 1],
+];
+
+export function levelRenown(level: number): number {
+  return LEVEL_RENOWN.find(([lvl]) => level >= lvl)?.[1] ?? 0;
+}
+
+/**
+ * Table rule (optional, off by default): the renown a faction's members expect before it grants a title or a fortification.
+ * The DMG suggests tying ranks and titles to renown thresholds but leaves the numbers to the DM.
+ */
+export const TITLE_RENOWN_MIN: Record<TitleRank, number> = { knight: 10, lord: 25, count: 25, duke: 50, fey: 0 };
+export const FORT_RENOWN_MIN = 25;
+
+export function renownMinimum(kind: MarkKind, rank?: TitleRank): number {
+  if (kind === 'title') return TITLE_RENOWN_MIN[rank ?? 'knight'];
+  if (kind === 'fortification') return FORT_RENOWN_MIN;
+  return 0;
+}

@@ -1,4 +1,4 @@
-import type { TameTarget, ActiveEffect, Activity, CharacterSpell, InventoryItem, LogEntry, Ritual, Stash, Bastion, Business, Character, FacilityWork, Obstacle, Rival, Debt, Mark, ExhaustionCause, Facility, MagicItem, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
+import type { TameTarget, ActiveEffect, Activity, CharacterSpell, InventoryItem, LogEntry, Ritual, Stash, Bastion, Business, Character, FacilityWork, Obstacle, Rival, Debt, Mark, Faction, ExhaustionCause, Facility, MagicItem, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
 import { BASIC_BUILD, BASTION_TURN_DAYS, defaultSize, ENLARGE, rollBastionEvent, SIZE_LABEL, SPECIAL_FACILITIES, type FacilitySize } from '../rules/bastion';
 import { d20, die, combineModes, rollDice, rollExpr, signed, type Rng, type RollMode } from '../rules/dice';
 import { dateFromIndex, formatClock, formatDate, formatDuration, lightAt, sunriseMinutes } from '../rules/calendar';
@@ -38,7 +38,7 @@ import { BOILING_POT, CHARCOAL_WORDS, FRICTION_LIGHT_MINUTES, HIDE_WATERSKIN, LE
 import type { DdbImport } from '../rules/ddb';
 import { FEED_GP_PER_DAY, HIRELING_WAGE, magicItemValue, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset, type Lifestyle } from '../rules/money';
 import { STABLE_WAKE_DIE, STABILIZE_DC } from '../rules/upkeep';
-import { FORT_NEGLECT_DAYS, FORT_UPKEEP, LAND, LODGING_CAP, MARK_LABEL, PRIZE_CROWN_SHARE, RIGHTS, TITLE_RANK, TRUST_LABEL, TRUST_MAX, lifestyleBelow, lowerLifestyle, monthDue, rollLandIncome, rollLandTrouble, sameCommunity, TRAINING_KIND_LABEL } from '../rules/prestige';
+import { FORT_NEGLECT_DAYS, FORT_UPKEEP, LAND, LODGING_CAP, MARK_LABEL, PRIZE_CROWN_SHARE, RIGHTS, TITLE_RANK, TRUST_LABEL, TRUST_MAX, lifestyleBelow, lowerLifestyle, monthDue, rollLandIncome, rollLandTrouble, sameCommunity, TRAINING_KIND_LABEL, levelRenown, renownMinimum } from '../rules/prestige';
 import { RITUAL_EXTRA_MINUTES as RITUAL_TAG_MINUTES, spellInfo } from '../rules/rituals';
 import { maxWatchMinutes, slotTimes, watchMinutes, watchSight, type Sight } from '../rules/watch';
 import { abilityMod, ATTUNE_AWAY_MINUTES, IDENTIFY_MINUTES, MAX_ATTUNED, RITUAL_EXTRA_MINUTES } from '../rules/upkeep';
@@ -2195,23 +2195,84 @@ function lifestyleRisks(s: State, ctx: Ctx): void {
   }
 }
 
-/** DMG: +1 renown for completing a mission that serves the group. */
-export const factionMission = act((d, _ctx, factionId: string) => {
+/** Renown perks the DMG names at each threshold, announced when a score crosses it. */
+function renownMilestone(before: number, after: number): string {
+  if (before < 50 && after >= 50) return ' The faction would raise a small army, find a Rare magic item or lend a spellcaster for the party.';
+  if (before < 10 && after >= 10) return ' Potions, scrolls, favors and backup are now within reach.';
+  if (before < 3 && after >= 3) return ' Members now treat the party as respected (Friendly, shelter in need).';
+  return '';
+}
+
+/** DMG: +1 for advancing the group's interests, +2 for a mission it assigned or that directly benefits it, +3 or +4 for a hugely significant quest. */
+export const MISSION_RENOWN: { gain: number; label: string }[] = [
+  { gain: 1, label: 'Advanced its interests' },
+  { gain: 2, label: 'Assigned or directly helpful mission' },
+  { gain: 3, label: 'Hugely significant quest' },
+  { gain: 4, label: 'Hugely significant quest (exceptional)' },
+];
+
+export const factionMission = act((d, _ctx, factionId: string, gain?: number) => {
   const f = d.factions.find((x) => x.id === factionId);
   if (!f) return;
   const before = f.renown;
-  f.renown += 1;
-  log(d, `A mission for ${f.name} is done: renown ${before} → ${f.renown}.${f.renown === 3 ? ' Members now treat the party as respected (Friendly, shelter in need).' : f.renown === 10 ? ' Potions, scrolls, favors and backup are now within reach.' : f.renown === 50 ? ' The faction would raise a small army for you.' : ''}`, 'good');
+  f.renown += Math.max(1, Math.min(4, Math.round(gain ?? 2)));
+  log(d, `${MISSION_RENOWN.find((m) => m.gain === f.renown - before)?.label ?? 'Work'} for ${f.name}: renown ${before} → ${f.renown}.${renownMilestone(before, f.renown)}`, 'good');
 });
 
-/** Level-based renown (DMG option): a faction tied to a character keeps renown at least equal to their level. */
+/**
+ * Lowers a faction's renown (never below 0). A serious offense against the group (table rule, with
+ * prestigeRules on) also costs 1 trust on each Mark of Prestige that faction granted.
+ */
+export function loseRenown(s: State, f: Faction, amount: number, why: string, serious: boolean): void {
+  const before = f.renown;
+  f.renown = Math.max(0, f.renown - amount);
+  if (f.renown !== before) log(s, `Renown with ${f.name} drops ${before} → ${f.renown}: ${why}.`, 'warn');
+  if (!serious || !s.settings.prestigeRules) return;
+  for (const m of s.marks) if (m.factionId === f.id && activeMark(m)) loseTrust(s, m, `${f.name} hears of it (${why})`);
+}
+
+function gainRenown(s: State, f: Faction, amount: number, why: string): void {
+  const before = f.renown;
+  f.renown += amount;
+  log(s, `Renown with ${f.name} rises ${before} → ${f.renown}: ${why}.${renownMilestone(before, f.renown)}`, 'good');
+}
+
+/** The + and − buttons on a faction. A loss marked serious is an offense against the group. */
+export const changeRenown = act((d, _ctx, factionId: string, delta: number, why: string, serious?: boolean) => {
+  const f = d.factions.find((x) => x.id === factionId);
+  if (!f || !delta) return;
+  if (delta > 0) gainRenown(d, f, delta, why || 'the DM awards it');
+  else loseRenown(d, f, -delta, why || 'a serious offense against the group', serious ?? true);
+});
+
+/** DMG group involvement: with Renown 1+, 10 × current renown days of minor tasks and socializing raise it by 1. */
+export const involvementDaysNeeded = (f: Faction): number => Math.max(10, 10 * f.renown);
+
+export const factionInvolvement = act((d, ctx, factionId: string, days: number) => {
+  for (let i = 0; i < Math.max(1, Math.round(days)); i++) {
+    const f0 = d.factions.find((x) => x.id === factionId);
+    if (!f0 || f0.renown < 1) return;
+    Object.assign(d, downtimeDay(d, ctx, []));
+    const f = d.factions.find((x) => x.id === factionId)!;
+    f.involvementDays = (f.involvementDays ?? 0) + 1;
+    if (f.involvementDays >= involvementDaysNeeded(f)) {
+      f.involvementDays = 0;
+      gainRenown(d, f, 1, 'days of minor tasks and time among its members');
+    }
+  }
+  const f = d.factions.find((x) => x.id === factionId);
+  if (f && f.renown >= 1) log(d, `Time spent with ${f.name}: ${f.involvementDays ?? 0}/${involvementDaysNeeded(f)} days toward the next point of renown.`);
+});
+
+/** Level-based renown (DMG option): a faction tied to a character keeps renown at least the table's value for their level. */
 function syncLevelRenown(s: State): void {
   for (const f of s.factions) {
     if (!f.levelOf) continue;
     const c = charById(s, f.levelOf);
-    if (c && c.level > f.renown) {
-      log(s, `${f.name} renown rises with ${c.name}'s level: ${f.renown} → ${c.level}.`, 'good');
-      f.renown = c.level;
+    const r = c ? levelRenown(c.level) : 0;
+    if (c && r > f.renown) {
+      log(s, `${f.name} renown rises with ${c.name}'s level (level ${c.level}): ${f.renown} → ${r}.${renownMilestone(f.renown, r)}`, 'good');
+      f.renown = r;
     }
   }
 }
@@ -2337,8 +2398,7 @@ function rivalAdvances(d: State, ctx: Ctx): void {
         const f = d.factions.filter((x) => x.renown > 0);
         if (f.length) {
           const t = f[die(f.length, ctx.rng) - 1];
-          t.renown -= 1;
-          log(d, `The rumors cost the party standing with ${t.name} (renown ${t.renown}).`, 'warn');
+          loseRenown(d, t, 1, `${rival.name}'s rumors`, true);
         }
         break;
       }
@@ -2655,7 +2715,8 @@ function collect(d: State, ctx: Ctx, debt: Debt, c: Character, step: Escalation)
       break;
     }
     case 'renown':
-      for (const f of d.factions) f.renown = Math.max(0, f.renown - 1);
+      // Every faction hears of it; only the creditor's own faction counts it as an offense against the group.
+      for (const f of d.factions) loseRenown(d, f, 1, `${debt.creditor} spreads word of ${c.name}'s unpaid debt`, nameMatches(f.name, debt.creditor));
       break;
     case 'quest':
       log(d, `${debt.creditor} will forgive the debt for a quest or labor in its service; the DM sets the task.`, 'warn');
@@ -6436,6 +6497,7 @@ function finishSpecialTraining(s: State, p: Project): void {
   }
 }
 
+const nameMatches = (a: string, b: string): boolean => sameCommunity(a, b);
 const activeMark = (m: Mark): boolean => !m.revoked && !m.bastionId;
 const holderNames = (s: State, m: Mark): string =>
   m.holderIds
@@ -6454,9 +6516,14 @@ export function fortUpkeepToday(s: State, m: Mark): number {
   return s.dayIndex < (m.sponsoredUntilDay ?? 0) ? 0 : FORT_UPKEEP[m.fort].gpPerDay;
 }
 
-function takeBack(s: State, m: Mark, why: string, tone: Tone = 'bad'): void {
+/** Table rule: a mark taken back for disloyalty costs this much renown with the faction that granted it. */
+export const REVOKE_RENOWN_LOSS = 2;
+
+function takeBack(s: State, m: Mark, why: string, tone: Tone = 'bad', disgrace = false): void {
   if (m.revoked) return;
   m.revoked = { day: s.dayIndex, why };
+  const f = disgrace && s.settings.prestigeRules && m.factionId ? s.factions.find((x) => x.id === m.factionId) : null;
+  if (f) loseRenown(s, f, REVOKE_RENOWN_LOSS, `${m.name} was taken back`, false);
   if (m.hirelingIds?.length) {
     s.hirelings = s.hirelings.filter((h) => !m.hirelingIds!.includes(h.id));
     log(s, `The soldiers sworn to ${holderNames(s, m)} under “${m.name}” return to their posts.`);
@@ -6469,7 +6536,7 @@ function takeBack(s: State, m: Mark, why: string, tone: Tone = 'bad'): void {
 
 function loseTrust(s: State, m: Mark, why: string): void {
   m.trust = Math.max(0, m.trust - 1);
-  if (m.trust <= 0) takeBack(s, m, `${m.grantor || 'the grantor'} has lost all faith (${why})`);
+  if (m.trust <= 0) takeBack(s, m, `${m.grantor || 'the grantor'} has lost all faith (${why})`, 'bad', true);
   else log(s, `${m.grantor || 'The grantor'}'s trust in ${holderNames(s, m)} over ${m.name} slips to ${TRUST_LABEL[m.trust]} (${m.trust}/${TRUST_MAX}): ${why}.`, 'warn');
 }
 
@@ -6538,11 +6605,16 @@ export interface MarkGrant {
   heir?: string;
   /** A title that comes with land of this kind. */
   withLand?: Mark['land'] | null;
+  /** A faction in the tracker that grants it. */
+  factionId?: string | null;
 }
 
 export const grantMark = act((d, _ctx, g: MarkGrant) => {
-  const base = { id: uid(), name: g.name.trim() || MARK_LABEL[g.kind], holderIds: g.holderIds, grantor: g.grantor.trim(), grantedDay: d.dayIndex, trust: TRUST_MAX, notes: g.notes ?? '' };
+  const fac = g.factionId ? d.factions.find((x) => x.id === g.factionId) : undefined;
+  const base = { id: uid(), name: g.name.trim() || MARK_LABEL[g.kind], holderIds: g.holderIds, grantor: g.grantor.trim() || fac?.name || '', grantedDay: d.dayIndex, trust: TRUST_MAX, notes: g.notes ?? '', ...(fac ? { factionId: fac.id } : {}) };
   const m: Mark = { ...base, kind: g.kind };
+  const need = fac && d.settings.prestigeRenownMin ? renownMinimum(g.kind, g.rank) : 0;
+  if (fac && need > fac.renown) log(d, `${fac.name} grants this with the party at renown ${fac.renown}, below the ${need} its members would expect (table rule). Some will grumble about favoritism.`, 'warn');
   const who = holderNames(d, m);
   const from = m.grantor ? ` by ${m.grantor}` : '';
   if (g.kind === 'fortification') {
@@ -6587,7 +6659,7 @@ const markById = (s: State, id: string) => s.marks.find((m) => m.id === id);
 
 export const revokeMark = act((d, _ctx, id: string, why: string) => {
   const m = markById(d, id);
-  if (m) takeBack(d, m, why || 'by decree');
+  if (m) takeBack(d, m, why || 'by decree', 'bad', true);
 });
 
 /** Table rule: the grantor's trust goes up (service, loyalty) or down (abuse, disloyalty, conduct unbecoming). */
@@ -6599,6 +6671,8 @@ export const adjustMarkTrust = act((d, _ctx, id: string, delta: 1 | -1, why: str
     m.trust += 1;
     log(d, `${m.grantor || 'The grantor'}'s trust in ${holderNames(d, m)} over ${m.name} grows to ${TRUST_LABEL[m.trust]} (${m.trust}/${TRUST_MAX})${why ? `: ${why}` : ''}.`, 'good');
   }
+  const f = m.factionId ? d.factions.find((x) => x.id === m.factionId) : null;
+  if (delta > 0 && f) gainRenown(d, f, 1, why || `service tied to ${m.name}`);
 });
 
 export const resolveLandTrouble = act((d, _ctx, id: string) => {

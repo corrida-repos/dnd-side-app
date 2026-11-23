@@ -154,3 +154,69 @@ describe('special training (2024 DMG)', () => {
     for (const c of s.characters) expect(c.skillProfs).toContain('Stealth');
   });
 });
+
+describe('faction renown (2024 DMG) and its ties to marks', () => {
+  const withFaction = (renown = 5) =>
+    fresh((d) => {
+      d.factions = [
+        { id: 'f', name: 'Order of the Gauntlet', renown, notes: '' },
+        { id: 'g', name: 'Harpers', renown, notes: '' },
+      ];
+    });
+
+  it('missions are worth +1 to +4', () => {
+    let s = withFaction(0);
+    s = E.factionMission(s, ctx(), 'f', 1);
+    s = E.factionMission(s, ctx(), 'f');
+    s = E.factionMission(s, ctx(), 'f', 4);
+    expect(s.factions[0].renown).toBe(7);
+  });
+
+  it('level-based renown follows the DMG table', async () => {
+    const { levelRenown } = await import('../rules/prestige');
+    expect([1, 2, 3, 4, 5, 10, 11, 16, 17, 20].map(levelRenown)).toEqual([1, 1, 3, 3, 10, 10, 25, 25, 50, 50]);
+  });
+
+  it('group involvement: 10 × renown days raise it by 1, and needs renown 1+', () => {
+    let s = withFaction(2);
+    s = E.factionInvolvement(s, ctx(), 'f', 19);
+    expect(s.factions[0].renown).toBe(2);
+    s = E.factionInvolvement(s, ctx(), 'f', 1);
+    expect(s.factions[0].renown).toBe(3);
+    expect(s.factions[0].involvementDays).toBe(0);
+    const zero = E.factionInvolvement(withFaction(0), ctx(), 'f', 10);
+    expect(zero.factions[0].renown).toBe(0);
+  });
+
+  it('a faction-granted mark: loyal service raises renown, offenses against the faction cost trust', () => {
+    let s = withFaction();
+    s = E.grantMark(s, ctx(), { kind: 'title', name: 'Knight of the Gauntlet', holderIds: [s.characters[0].id], grantor: '', rank: 'knight', factionId: 'f' });
+    expect(s.marks[0].grantor).toBe('Order of the Gauntlet');
+    s = E.adjustMarkTrust(s, ctx(), s.marks[0].id, -1, 'brawl');
+    s = E.adjustMarkTrust(s, ctx(), s.marks[0].id, 1, 'held the bridge');
+    expect(s.factions[0].renown).toBe(6);
+    s = E.changeRenown(s, ctx(), 'g', -1, 'insulted a Harper');
+    expect(s.marks[0].trust).toBe(3);
+    s = E.changeRenown(s, ctx(), 'f', -1, 'deserted a muster');
+    expect(s.marks[0].trust).toBe(2);
+    expect(s.factions[0].renown).toBe(5);
+  });
+
+  it('a mark taken back for disloyalty costs 2 renown; an expired right costs nothing', () => {
+    let s = withFaction();
+    s = E.grantMark(s, ctx(), { kind: 'fortification', name: 'Bridgekeep', holderIds: [s.characters[0].id], grantor: '', fort: 'keep', sponsorMonths: 3, factionId: 'f' });
+    s = E.grantMark(s, ctx(), { kind: 'rights', name: 'Lodging', holderIds: [s.characters[0].id], grantor: '', right: 'lodging', community: 'Elturel', days: 2, factionId: 'f' });
+    s = days(s, 2);
+    expect(s.factions[0].renown).toBe(5);
+    s = E.revokeMark(s, ctx(), s.marks[0].id, 'treachery');
+    expect(s.factions[0].renown).toBe(3);
+  });
+
+  it('table rule: granting below the expected renown warns but still grants', () => {
+    let s = withFaction(5);
+    s.settings.prestigeRenownMin = true;
+    s = E.grantMark(s, ctx(), { kind: 'title', name: 'Baron', holderIds: [s.characters[0].id], grantor: '', rank: 'lord', factionId: 'f' });
+    expect(s.marks).toHaveLength(1);
+    expect(s.log.some((l) => /below the 25/.test(l.text))).toBe(true);
+  });
+});
