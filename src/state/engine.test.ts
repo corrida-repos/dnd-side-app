@@ -227,6 +227,7 @@ describe('travel and foraging', () => {
       calm(d, 60, 40);
       d.stores = { foodLb: 0, waterGal: 0, foodRawLb: 0, waterUnsafeGal: 0 };
       d.characters[0].wisMod = 1;
+      d.settings.choreFinds = false;
     });
     const n = E.forage(s, HIGH, s.characters[0].id);
     expect(n.stores).toMatchObject({ foodLb: 0, waterGal: 0, foodRawLb: 7, waterUnsafeGal: 7 });

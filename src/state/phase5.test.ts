@@ -38,6 +38,7 @@ describe('travel terrain', () => {
     s.place.onRoute = true;
     expect(E.currentNavigationDC(s).dc).toBeNull();
     s.stores = { foodLb: 0, waterGal: 0, foodRawLb: 0, waterUnsafeGal: 0 };
+    s.settings.choreFinds = false;
     s.settings.rawFoodRisk = false;
     s.settings.wildNeedsPurifying = false;
     const trip = E.travel(s, HIGH, { hours: 16, pace: 'normal', difficult: false, foragerIds: [s.characters[0].id] });

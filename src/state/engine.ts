@@ -34,6 +34,7 @@ import { ARCANA_DC, STUDY_MINUTES, type StudyMethod } from '../rules/identify';
 import { FEED_LB_PER_DAY, MOUNT_CAPACITY, carryingCapacity, COINS_PER_LB, estimateWeight, loadLevel, parseInventory, RATION_WEIGHT, type LoadLevel } from '../rules/encumbrance';
 import { bigEnoughToRide, canBeSidekick, canTame, currentDC, dayOutcome, missedDays, NO_AIDS, resultGain, sessionAttitude, sessionResult, tameCheck, tameDC, TRUST_PER_DAY_MAX, TAME_MAX_FAILS, TAME_RETRY_MINUTES, TAME_SESSION_MINUTES, trainingNeeded, TRAINING_LABEL, trustCue, trustNeeded, type TameAids, type TamerFacts, type TameTraining } from '../rules/taming';
 import { BUTCHER_DC, BUTCHER_MINUTES, isEdible, MEAT_LB, STRANGE_TYPES, yieldsHide, type Creature } from '../rules/hunting';
+import { DIG_FIND_ON, isExceptional, poisonYield, rollFind, trophyFor, type Chore } from '../rules/chorePayoffs';
 import { addCoins, COIN_GP, coinCount, coinsFor, emptyPurse, exchange, fmtPurse, purseValue, spend, type Denom, type Purse } from '../rules/coins';
 import { detectContainer } from '../rules/containers';
 import { FIRE_DAMAGE, RAT_BITE_DAMAGE, RELAXATION_NEEDS, SHAKEDOWN_DAMAGE, SHAKEDOWN_GP, SHAKEDOWN_RIVAL_ODDS, SHUNNED_AFTER_DAYS, SPOILED_FOOD_DC, TAINTED_POTION_ODDS, WATCH_FINE, WATCH_JAIL_DAYS, WEEKLY_ODDS, WRETCHED_STRESS, isLowLife } from '../rules/lowLife';
@@ -1599,6 +1600,7 @@ function doForage(s: State, ctx: Ctx, c: Character, pace: Pace | null, days = 1)
       `${c.name} forages: Wisdom (Survival) ${r.rolls.join('/')} ${signed(c.survival - 2 * c.exhaustion)} = ${total} against DC ${dc}. Finds ${food} lb of food and ${water} gal of water${notes ? `: ${notes}` : ' for the camp stores'}.`,
       'good',
     );
+    if (isExceptional(r.value, total, dc)) grantFind(s, ctx, c, 'forage');
   } else {
     log(s, `${c.name} forages: Wisdom (Survival) ${r.rolls.join('/')} ${signed(c.survival - 2 * c.exhaustion)} = ${total} against DC ${dc}. Finds nothing.`, 'warn');
   }
@@ -1749,7 +1751,55 @@ export const gatherWood = act((d, ctx, charId: string) => {
   const hours = total >= dc ? die(6, ctx.rng) + 2 : 1;
   d.fire.fuelHours += hours;
   log(d, `${c.name} gathers firewood for an hour: Survival ${total} against DC ${dc}. Adds ${hours} hour(s) of fuel (table rule).`, total >= dc ? 'good' : 'warn');
+  if (isExceptional(r.value, total, dc)) grantFind(d, ctx, c, 'wood');
 });
+
+/**
+ * Table rule (Rewarding chores): an exceptional result on a camp chore turns up something worth having. The find lands
+ * where it belongs: coins in the purse, valuables in the pack, materials in the crafting stash, food in the stores.
+ */
+function grantFind(d: State, ctx: Ctx, c: Character, chore: Chore): void {
+  if (!d.settings.choreFinds) return;
+  const f = rollFind(chore, ctx.rng);
+  const r = f.reward;
+  const n = (dice: string) => Math.max(1, rollExpr(dice, ctx.rng) ?? 1);
+  let got = '';
+  switch (r.kind) {
+    case 'coins': {
+      const q = n(r.dice);
+      gainWealth(c, q * (r.unit === 'gp' ? 1 : r.unit === 'sp' ? 0.1 : 0.01));
+      got = `${q} ${r.unit.toUpperCase()}, now in ${c.name}'s purse`;
+      break;
+    }
+    case 'item':
+      c.inventory.push({ id: uid(), name: r.name, qty: 1, weight: r.weight, source: 'manual', valueGp: r.valueGp, ...(r.hidden ? { valueHidden: true } : {}), container: null, ammo: null });
+      got = `${r.name} goes into ${c.name}'s pack${r.hidden ? ' (appraise it to learn its worth)' : ` (worth ${fmtGp(r.valueGp)})`}`;
+      break;
+    case 'material': {
+      const q = n(r.dice);
+      const m = d.materials.find((x) => x.name === r.name);
+      if (m) m.qty += q;
+      else d.materials.push({ id: uid(), name: r.name, qty: q, unit: r.unit, valueGp: r.valueGp });
+      got = `${q} ${r.unit}${q > 1 ? 's' : ''} of ${r.name.toLowerCase()} for the crafting stash (${fmtGp(q * r.valueGp)} toward a project)`;
+      break;
+    }
+    case 'food': {
+      const q = n(r.dice);
+      const raw = r.raw && d.settings.rawFoodRisk;
+      if (raw) d.stores.foodRawLb = round2(d.stores.foodRawLb + q);
+      else d.stores.foodLb = round2(d.stores.foodLb + q);
+      got = `${q} lb more food for the stores${raw ? ' (raw)' : ''}`;
+      break;
+    }
+    case 'fuel': {
+      const q = n(r.dice);
+      d.fire.fuelHours += q;
+      got = `${q} more hour${q > 1 ? 's' : ''} of fuel`;
+      break;
+    }
+  }
+  log(d, `${c.name} comes across ${f.text}: ${got} (table rule: rewarding chores).`, 'good');
+}
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -2319,8 +2369,11 @@ export const harvestPoison = act((d, ctx, charId: string, bonus: number, creatur
   const name = creature || 'the creature';
   const me = charById(d, charId)!;
   if (total >= dc) {
-    me.inventory.push({ id: uid(), name: `Poison dose (${name})`, qty: 1, weight: 0, source: 'manual', valueGp: 0, container: null, ammo: null });
-    log(d, `${me.name} works over ${name} for ${mins} min ${tool}: Int (Nature) ${r.value} ${signed(bonus - 2 * c.exhaustion)} = ${total} vs DC ${dc}. One dose harvested; nothing more can be taken from it.`, 'good');
+    const y = poisonYield(creature, d.settings.choreFinds);
+    const have = me.inventory.find((i) => i.name === y.name && !i.containerId);
+    if (have) have.qty += 1;
+    else me.inventory.push({ id: uid(), name: y.name, qty: 1, weight: 0, source: 'manual', valueGp: y.valueGp, container: null, ammo: null });
+    log(d, `${me.name} works over ${name} for ${mins} min ${tool}: Int (Nature) ${r.value} ${signed(bonus - 2 * c.exhaustion)} = ${total} vs DC ${dc}. One dose harvested; nothing more can be taken from it. ${y.note}${y.valueGp ? ` A buyer would pay ${fmtGp(y.valueGp / 2)} for it.` : ''}`, 'good');
   } else if (total <= dc - 5) {
     log(d, `${me.name} botches the harvest from ${name} ${tool} (${total} vs DC ${dc}, failed by 5 or more) and is exposed to its poison. Apply the creature's poison effect.`, 'bad');
   } else {
@@ -5378,10 +5431,12 @@ export const butcher = act((d, ctx, o: ButcherOpts) => {
   advanceMut(d, ctx, BUTCHER_MINUTES[cr.size] * count, 'camp');
   let meat = MEAT_LB[cr.size] * count;
   let checkTxt = '';
+  let clean = true;
   if (who) {
     const r = d20('normal', ctx.rng);
     const total = r.value + who.survival - 2 * who.exhaustion;
     const ok = total >= BUTCHER_DC;
+    clean = ok;
     if (!ok) meat = Math.round(meat / 2);
     checkTxt = ` ${who.name} butchers: Wisdom (Survival) ${r.value} ${signed(who.survival - 2 * who.exhaustion)} = ${total} against DC ${BUTCHER_DC}, ${ok ? 'a clean job' : 'half the meat is wasted'}.`;
   }
@@ -5394,8 +5449,20 @@ export const butcher = act((d, ctx, o: ButcherOpts) => {
     else d.materials.push({ id: uid(), name, qty: count, unit: 'hide', valueGp: cr.size === 'Medium' ? 1 : cr.size === 'Large' ? 5 : 20 });
     hide = ` ${count} hide${count > 1 ? 's go' : ' goes'} into the materials stash.`;
   }
+  // Table rule (Rewarding chores): a clean job keeps the trophy parts whole, for selling or mounting.
+  const trophy = d.settings.choreFinds && clean ? trophyFor(cr) : null;
+  let trophyTxt = '';
+  if (trophy) {
+    const keeper = (who && alive(who) ? who : undefined) ?? d.characters.find((x) => x.kind === 'pc' && alive(x));
+    if (keeper) {
+      const have = keeper.inventory.find((i) => i.name === trophy.name && !i.containerId);
+      if (have) have.qty += count;
+      else keeper.inventory.push({ id: uid(), name: trophy.name, qty: count, weight: trophy.weight, source: 'manual', valueGp: trophy.valueGp, container: null, ammo: null });
+      trophyTxt = ` The ${trophy.parts} come away whole: ${count > 1 ? `${count} trophies` : 'a trophy'} worth ${fmtGp(trophy.valueGp)} each, carried by ${keeper.name} (table rule).`;
+    }
+  }
   const strange = STRANGE_TYPES.includes(cr.type.toLowerCase()) ? ` ${cr.type[0].toUpperCase()}${cr.type.slice(1)} meat is strange fare, and the DM may add effects.` : '';
-  log(d, `Butchered ${count} × ${cr.name} (${cr.size} ${cr.type}): ${meat} lb of raw meat added to the camp stores.${checkTxt}${hide}${strange}`, 'good');
+  log(d, `Butchered ${count} × ${cr.name} (${cr.size} ${cr.type}): ${meat} lb of raw meat added to the camp stores.${checkTxt}${hide}${trophyTxt}${strange}`, 'good');
 });
 
 export type Track = 'renown' | 'fear' | 'stress';
@@ -5981,6 +6048,7 @@ export const dig = act((d, ctx, diggerIds: string[], kind: DigKind) => {
     `${diggers.map((c) => c.name).join(', ')} dig${diggers.length > 1 ? '' : 's'} ${job.label.toLowerCase()} in ${formatDuration(minutes)}${withShovel ? ` with ${withShovel} Shovel${withShovel > 1 ? 's' : ''}` : ' by hand (table rule: four times as long)'}. ${job.note}`,
     'good',
   );
+  if (die(20, ctx.rng) >= DIG_FIND_ON) grantFind(d, ctx, charById(d, diggers[0].id)!, 'dig');
 });
 
 const s_count = (s: State, re: RegExp): number => s.characters.reduce((a, c) => a + c.inventory.filter((i) => re.test(i.name.trim()) && !i.scattered).reduce((n, i) => n + i.qty, 0), 0);
