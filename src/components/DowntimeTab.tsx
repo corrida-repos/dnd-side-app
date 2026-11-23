@@ -144,6 +144,7 @@ function MaterialsCard() {
   return (
     <Card title={`Crafting materials (${fmtGp(total)})`}>
       {s.materials.length === 0 && <p className="muted small">The stash is empty. Add materials, or butcher a big kill for hides.</p>}
+      <p className="small muted">Materials count toward the cost of any crafting project that uses them (hides toward leatherwork), or sell them at full value as trade goods.</p>
       <ul className="plain">
         {s.materials.map((m) => (
           <li key={m.id} className="armor-row">
@@ -152,6 +153,9 @@ function MaterialsCard() {
             </span>
             <span className="btn-row tight">
               <Num value={m.qty} onChange={(v) => set(m.id, (x) => void (x.qty = Math.max(0, v)))} min={0} suffix={m.unit} width={4} />
+              <button className="small" disabled={m.qty <= 0} title="Sell at full value (trade goods)" onClick={() => dispatch((st, cx) => E.sellMaterial(st, cx, m.id, m.qty))}>
+                Sell ({fmtGp(m.qty * m.valueGp)})
+              </button>
               <button className="ghost tiny" aria-label={`Remove ${m.name}`} onClick={() => edit((d) => void (d.materials = d.materials.filter((x) => x.id !== m.id)))}>
                 ✕
               </button>

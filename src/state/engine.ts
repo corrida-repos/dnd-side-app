@@ -35,7 +35,7 @@ import { FEED_LB_PER_DAY, MOUNT_CAPACITY, carryingCapacity, COINS_PER_LB, estima
 import { bigEnoughToRide, canBeSidekick, canTame, currentDC, dayOutcome, missedDays, NO_AIDS, resultGain, sessionAttitude, sessionResult, tameCheck, tameDC, TRUST_PER_DAY_MAX, TAME_MAX_FAILS, TAME_RETRY_MINUTES, TAME_SESSION_MINUTES, trainingNeeded, TRAINING_LABEL, trustCue, trustNeeded, type TameAids, type TamerFacts, type TameTraining } from '../rules/taming';
 import { BUTCHER_DC, BUTCHER_MINUTES, isEdible, MEAT_LB, STRANGE_TYPES, yieldsHide, type Creature } from '../rules/hunting';
 import { CURE_DC, CURE_LB_PER_RATION, CURE_MAX_LB, CURE_MINUTES, curedRations, FEAST_FEAR_RELIEF, FEAST_STRESS_RELIEF, feastTempHp, HEARTY_SAVES, isFeast, MEAL_BUFF_MINUTES, MEAL_STRESS_RELIEF, tastyTempHp, WARM_SAVES } from '../rules/cooking';
-import { DIG_FIND_ON, isExceptional, poisonYield, rollFind, trophyFor, type Chore } from '../rules/chorePayoffs';
+import { AMMO_SEARCH_DC, ammoRecovered, CAROUSING_STRESS_PER_WEEK, DIG_FIND_ON, FINE_FUR, FINE_FUR_ODDS, FORECAST_MARGIN, forageBonusDice, HIDE_GP, isExceptional, KEPT_GEAR_MINUTES, KEPT_GEAR_NOTE, poisonYield, REINFORCE_MARGIN, rollFind, SERVICE_FEAR_PER_WEEK, SERVICE_STRESS_PER_WEEK, SMALL_PELT, trophyFor, WATCH_CATCH_DC, WATCH_CATCH_DICE, type Chore } from '../rules/chorePayoffs';
 import { addCoins, COIN_GP, coinCount, coinsFor, emptyPurse, exchange, fmtPurse, purseValue, spend, type Denom, type Purse } from '../rules/coins';
 import { detectContainer } from '../rules/containers';
 import { FIRE_DAMAGE, RAT_BITE_DAMAGE, RELAXATION_NEEDS, SHAKEDOWN_DAMAGE, SHAKEDOWN_GP, SHAKEDOWN_RIVAL_ODDS, SHUNNED_AFTER_DAYS, SPOILED_FOOD_DC, TAINTED_POTION_ODDS, WATCH_FINE, WATCH_JAIL_DAYS, WEEKLY_ODDS, WRETCHED_STRESS, isLowLife } from '../rules/lowLife';
@@ -219,10 +219,14 @@ function newWeather(s: State, ctx: Ctx): void {
     if (after && !before) noticed(s, 'groundHeavy', [], `The ground has turned to ${after}: travel off well-kept roads counts as Difficult Terrain.`, 'warn');
     if (before && !after) noticed(s, 'groundClear', [], 'The ground firms up again; travel is back to normal.', 'good');
   }
-  s.weather = rollWeather(
-    { dayIndex: s.dayIndex, season: seasonOf(s), climate: s.place.climate, altitudeFt: s.place.altitudeFt, climateAdjustedPrecip: s.settings.climateAdjustedPrecip },
-    ctx.rng,
-  );
+  const told = s.forecast && s.forecast.dayIndex === s.dayIndex && s.forecast.climate === s.place.climate ? s.forecast : null;
+  s.forecast = null;
+  s.weather =
+    told ??
+    rollWeather(
+      { dayIndex: s.dayIndex, season: seasonOf(s), climate: s.place.climate, altitudeFt: s.place.altitudeFt, climateAdjustedPrecip: s.settings.climateAdjustedPrecip },
+      ctx.rng,
+    );
   s.weatherHistory = [s.weather, ...s.weatherHistory.filter((w) => w.dayIndex !== s.dayIndex)].slice(0, 30);
   const w = s.weather;
   if (!CLIMATES[w.climate].noWeather) {
@@ -847,6 +851,18 @@ function standWatches(s: State, ctx: Ctx): Record<string, number> {
         log(s, `Random encounter during watch ${i + 1} (${when}), with ${p.watchers.map((w) => w.c.name).join(' and ')} on watch, best passive Perception ${best}. d20 = ${r}. If it interrupts the rest, decide whether the Long Rest still counts.`, 'warn');
       }
     } else if (!p.watchers.length) note += ' (unwatched)';
+    // Table rule: a quiet watch at a wild camp, the watcher works a line or a snare at the edge of the firelight.
+    if (!s.place.settlement && s.place.shelter !== 'building' && !note.includes('encounter')) {
+      const w = [...p.watchers].sort((a, b) => b.c.survival - a.c.survival)[0];
+      const r = d20('normal', ctx.rng);
+      if (r.value + w.c.survival - 2 * w.c.exhaustion >= WATCH_CATCH_DC) {
+        const lb = rollExpr(WATCH_CATCH_DICE, ctx.rng) ?? 1;
+        const raw = s.settings.rawFoodRisk;
+        if (raw) s.stores.foodRawLb = round2(s.stores.foodRawLb + lb);
+        else s.stores.foodLb = round2(s.stores.foodLb + lb);
+        note += `, and ${w.c.name} brings in ${lb} lb of ${s.place.waterSource ? 'fish from a night line' : 'small game from a snare'}`;
+      }
+    }
     lines.push(note);
   });
   log(s, `Night watches: ${lines.join('; ')}.`);
@@ -1596,7 +1612,9 @@ function doForage(s: State, ctx: Ctx, c: Character, pace: Pace | null, days = 1)
   const total = r.value + c.survival - 2 * c.exhaustion;
   if (total >= dc) {
     // Food and water found per day of the journey stage.
-    const food = Math.round(Math.max(0, die(6, ctx.rng) + c.wisMod) * days);
+    // Table rule: a skilled forager finds more, another 1d6 lb for each full 5 points over the DC.
+    const extra = forageBonusDice(total, dc);
+    const food = Math.round(Math.max(0, die(6, ctx.rng) + c.wisMod + (extra ? rollDice(extra, 6, ctx.rng) : 0)) * days);
     const water = Math.round(Math.max(0, die(6, ctx.rng) + c.wisMod) * days);
     const rawFood = s.settings.rawFoodRisk;
     const dirtyWater = s.settings.wildNeedsPurifying;
@@ -2368,6 +2386,8 @@ function progressFinish(s: State, p: Project, ctx?: Ctx): void {
             continue;
           }
           c.recuperatedUntil = absNow(s) + 7 * MIN_PER_DAY;
+          // Table rule: a real week off clears the mind.
+          easeMind(s, c, c.stress, c.fear, 'comes back from the quiet week rested to the bone, the old knots in the chest gone');
         }
         log(s, `${p.name}: a quiet week. Advantage on saves against lingering diseases and poisons for the next 7 days, and one effect that blocks healing can end.`, 'good');
       } else {
@@ -2922,6 +2942,10 @@ export const resolveActivityProject = act((d, ctx, projectId: string, o: Activit
     const m = /^(Allied|Hostile) contact/.exec(n);
     if (m) addContactMut(d, { name: `New ${m[1].toLowerCase()} contact (${p.name})`, role: 'Other', place: d.place.name, bond: m[1] === 'Allied' ? 1 : -1, knownBy: [c.id], notes: n });
   }
+  // Table rule: good company and worship ease the mind, week by week.
+  const wks = r.jailDays ? 1 : weeks;
+  if (id === 'Carousing') easeMind(d, c, CAROUSING_STRESS_PER_WEEK * wks, 0, 'feels lighter after nights of drink, song and laughter');
+  if (id === 'Religious service') easeMind(d, c, SERVICE_STRESS_PER_WEEK * wks, SERVICE_FEAR_PER_WEEK * wks, 'finds a steadiness in the hymns and quiet ritual');
   for (const comp of r.complications ?? (r.complication ? [r.complication] : [])) applyComplication(d, ctx, c, comp);
   rivalAdvances(d, ctx);
 });
@@ -3406,6 +3430,23 @@ export const sellItem = act((d, _ctx, charId: string, itemId: string, qty: numbe
   c.inventory = c.inventory.filter((i) => i.qty > 0);
   gainWealth(c, gp);
   log(d, `${c.name} sells ${n} × ${it.name} for ${fmtGp(gp)} (${rate === 1 ? 'full value' : 'half price'}).${named}`, 'good');
+});
+
+/**
+ * Sells raw materials from the crafting stash (hides, pelts, herbs, wood) as trade goods: full value (table rule,
+ * following the 2024 PHB's trade goods), split among the party.
+ */
+export const sellMaterial = act((d, _ctx, materialId: string, qty: number) => {
+  const m = d.materials.find((x) => x.id === materialId);
+  if (!m || m.qty <= 0) return;
+  const n = Math.min(m.qty, Math.max(0, qty));
+  if (!n) return;
+  m.qty = round2(m.qty - n);
+  d.materials = d.materials.filter((x) => x.qty > 0);
+  const gp = round2(n * m.valueGp);
+  log(d, `Sold ${n} ${m.unit}${n > 1 ? 's' : ''} of ${m.name} to a tanner, trader or crafter for ${fmtGp(gp)} (full value: trade goods).`, 'good');
+  if (!d.settings.chargeCosts) return;
+  receiveGold(d, [], gp, m.name);
 });
 
 /** Splits coin among the party evenly; leftover copper goes to the first named. */
@@ -5619,8 +5660,8 @@ export const butcher = act((d, ctx, o: ButcherOpts) => {
     const name = `Hide (${cr.name})`;
     const m = d.materials.find((x) => x.name === name);
     if (m) m.qty += count;
-    else d.materials.push({ id: uid(), name, qty: count, unit: 'hide', valueGp: cr.size === 'Medium' ? 1 : cr.size === 'Large' ? 5 : 20 });
-    hide = ` ${count} hide${count > 1 ? 's go' : ' goes'} into the materials stash.`;
+    else d.materials.push({ id: uid(), name, qty: count, unit: 'hide', valueGp: HIDE_GP[cr.size] ?? 5 });
+    hide = ` ${count} hide${count > 1 ? 's go' : ' goes'} into the materials stash, worth ${fmtGp(HIDE_GP[cr.size] ?? 5)} each to a tanner or toward leatherwork.`;
   }
   // Table rule: a clean job keeps the trophy parts whole, for selling or mounting.
   const trophy = clean ? trophyFor(cr) : null;
@@ -5637,6 +5678,17 @@ export const butcher = act((d, ctx, o: ButcherOpts) => {
   const strange = STRANGE_TYPES.includes(cr.type.toLowerCase()) ? ` ${cr.type[0].toUpperCase()}${cr.type.slice(1)} meat is strange fare, and the DM may add effects.` : '';
   log(d, `Butchered ${count} × ${cr.name} (${cr.size} ${cr.type}): ${meat} lb of raw meat added to the camp stores.${checkTxt}${hide}${trophyTxt}${strange}`, 'good');
 });
+
+/** Eases Stress and Fear (never below 0) and tells the player what their character feels. */
+function easeMind(s: State, c: Character, stress: number, fear: number, feel: string): void {
+  const st = Math.min(c.stress, stress);
+  const fe = Math.min(c.fear, fear);
+  if (!st && !fe) return;
+  c.stress -= st;
+  c.fear -= fe;
+  const parts = [st && `Stress −${st}, now ${c.stress}`, fe && `Fear −${fe}, now ${c.fear}`].filter(Boolean).join('; ');
+  status(s, c, st ? 'stressDown' : 'fearDown', `${c.name} ${feel} (${parts}; table rule).`, 'good');
+}
 
 export type Track = 'renown' | 'fear' | 'stress';
 const TRACK_LABEL: Record<Track, string> = { renown: 'Renown', fear: 'Fear', stress: 'Stress' };
@@ -5882,7 +5934,9 @@ export const mendItem = act((d, ctx, ownerId: string, itemId: string, menderId: 
     if (!m.spells.some((sp) => sp.name.toLowerCase() === 'mending')) return void log(d, `${m.name} doesn't know Mending.`, 'warn');
     advanceMut(d, ctx, 1, 'camp');
     fixed();
-    return void log(d, `${m.name} casts Mending and the ${it.name} knits itself whole, leaving no trace of the damage.`, 'good');
+    const x = charById(d, ownerId)!.inventory.find((i) => i.id === itemId);
+    if (x) delete x.wear;
+    return void log(d, `${m.name} casts Mending and the ${it.name} knits itself whole, leaving no trace of the damage or wear.`, 'good');
   }
   if (!CLOTH.test(it.name)) return void log(d, `The ${it.name} isn't cloth: it needs Mending, or a smith or other crafter in town.`, 'warn');
   if (method === 'tools' && !m.inventory.some((i) => WEAVER.test(i.name))) return void log(d, `${m.name} has no Weaver's Tools.`, 'warn');
@@ -5895,7 +5949,14 @@ export const mendItem = act((d, ctx, ownerId: string, itemId: string, menderId: 
   const roll = `${tools ? "Dexterity with Weaver's Tools" : 'Dexterity, with needle and thread'} ${r.value} ${signed(mod)} = ${r.value + mod} against DC ${dc}`;
   if (r.value + mod < dc) return void log(d, `${m.name} works at the tear in the ${it.name} (${roll}), but the stitching won't hold.`, 'warn');
   fixed();
-  log(d, `${m.name} mends the ${it.name} (${roll}): the tear is closed${tools ? ' neatly' : ', a little lumpy but sound'}.`, 'good');
+  // Table rule: a sound mend clears the wear too; an expert one reinforces the seams against the next knock.
+  const x = charById(d, ownerId)!.inventory.find((i) => i.id === itemId);
+  const expert = r.value + mod >= dc + REINFORCE_MARGIN;
+  if (x) {
+    delete x.wear;
+    if (expert) x.reinforced = true;
+  }
+  log(d, `${m.name} mends the ${it.name} (${roll}): the tear is closed${tools ? ' neatly' : ', a little lumpy but sound'}, and the wear is gone.${expert ? ' The stitching is better than new: it will shrug off the next wear it would take (table rule).' : ''}`, 'good');
 });
 
 /** Marks an inventory item damaged or sound. */
@@ -5948,6 +6009,17 @@ export const readTheSky = act((d, ctx, charId: string) => {
     `${c.name} reads the ${underground ? 'darkness' : 'sky'}: Wisdom (Survival) ${r.value} ${signed(c.survival - 2 * c.exhaustion)} = ${total} against DC ${dc}. They reckon it's about ${String(guess).padStart(2, '0')}:00${total >= dc ? ' (right to within the hour)' : ` (wrong: it's really about ${String(trueHour).padStart(2, '0')}:00)`}.`,
     total >= dc ? 'good' : 'warn',
   );
+  // Table rule: a good read of clouds, wind and animals also tells tomorrow's weather. Tomorrow will hold to it.
+  if (underground || total < dc) return;
+  const tomorrow = d.dayIndex + 1;
+  if (!d.forecast || d.forecast.dayIndex !== tomorrow || d.forecast.climate !== d.place.climate) {
+    const next = { ...d, dayIndex: tomorrow, minutes: d.minutes } as State;
+    d.forecast = rollWeather({ dayIndex: tomorrow, season: seasonOf(next), climate: d.place.climate, altitudeFt: d.place.altitudeFt, climateAdjustedPrecip: d.settings.climateAdjustedPrecip }, ctx.rng);
+  }
+  const f = d.forecast;
+  const wet = f.precip === 'none' ? 'a dry day' : `${f.precip} ${f.high <= 32 ? 'snow' : 'rain'}`;
+  if (total >= dc + FORECAST_MARGIN) log(d, `${c.name} reads tomorrow in the sky: ${wet}, ${f.wind === 'none' ? 'still air' : `${f.wind} wind`}, a high near ${f.high}°F and a low near ${f.low}°F (table rule).`, 'good');
+  else log(d, `${c.name} smells the air and watches the clouds: tomorrow looks like ${f.precip === 'none' ? 'a dry day' : 'wet weather'}${f.wind === 'strong' ? ', with strong wind' : ''} (table rule).`, 'good');
 });
 
 // ---------------------------------------------------------------- casting spells (normally or as rituals)
@@ -6268,6 +6340,8 @@ function collectTraps(d: State, ctx: Ctx): void {
   let meat = 0;
   let caught = 0;
   let early = 0;
+  let pelts = 0;
+  let furs = 0;
   for (const t of traps) {
     const c = charById(d, t.charId) ?? d.characters.find((x) => x.kind === 'pc');
     for (let i = 0; i < t.qty; i++) {
@@ -6275,6 +6349,11 @@ function collectTraps(d: State, ctx: Ctx): void {
       else if (die(20, ctx.rng) >= (t.snare ? SNARE.catchOn : TRAP_CATCH_ON)) {
         caught++;
         meat += rollExpr(TRAP_MEAT_DICE, ctx.rng) ?? 2;
+        // Table rule: every catch leaves a pelt; one in six is a prized fur.
+        const fur = die(FINE_FUR_ODDS, ctx.rng) === 1 ? FINE_FUR : SMALL_PELT;
+        if (fur === FINE_FUR) furs++;
+        else pelts++;
+        if (c) addLine(d, c, fur.name, 1, { valueGp: fur.valueGp, weight: fur.weight }, null, false);
       }
     }
     if (c && !t.snare) addLine(d, c, 'Hunting Trap', t.qty, {}, null, false);
@@ -6285,7 +6364,7 @@ function collectTraps(d: State, ctx: Ctx): void {
   log(
     d,
     caught
-      ? `The traps are checked and gathered: ${caught} of ${n} caught something, ${meat} lb of raw meat for the stores (table rule).`
+      ? `The traps are checked and gathered: ${caught} of ${n} caught something, ${meat} lb of raw meat for the stores${pelts ? `, ${pelts} small pelt${pelts > 1 ? 's' : ''} (2 SP each)` : ''}${furs ? `, and ${furs} fine fur${furs > 1 ? 's' : ''} worth 2 GP${furs > 1 ? ' each' : ''}` : ''} (table rule).`
       : `The traps are checked and gathered: nothing caught${early ? ` (${early} hadn't been out a full night)` : ''}.`,
     caught ? 'good' : 'info',
   );
@@ -6928,19 +7007,34 @@ export const fireAmmo = act((d, _ctx, charId: string, itemId: string, n: number)
   if (it.qty === 0) log(d, `${c.name} is out of ${it.name}!`, 'warn');
 });
 
-/** After a fight, a minute of searching recovers half the spent ammunition, rounded down. */
-export const recoverAmmo = act((d, ctx, charIds: string[]) => {
+/**
+ * After a fight, a minute of searching recovers half the spent ammunition, rounded down (2024 PHB). Table rule: each
+ * searcher also rolls Wisdom (Perception or Survival, whichever is better) at DC 10: a success finds three quarters,
+ * beating it by 5 nine in ten.
+ */
+export const recoverAmmo = act((d, ctx, charIds: string[], search: boolean = true) => {
   const lines: string[] = [];
   for (const id of charIds) {
     const c = charById(d, id);
     if (!c) continue;
+    const spentAny = c.inventory.some((it) => (it.ammo?.spent ?? 0) > 0);
+    if (!spentAny) continue;
+    let total: number | null = null;
+    let how = '';
+    if (search && alive(c)) {
+      const bonus = Math.max(c.survival, c.passivePerception - 10) - 2 * c.exhaustion;
+      const r = d20('normal', ctx.rng);
+      total = r.value + bonus;
+      how = ` (Wisdom ${r.value} ${signed(bonus)} = ${total} against DC ${AMMO_SEARCH_DC})`;
+    }
     for (const it of c.inventory) {
       const spent = it.ammo?.spent ?? 0;
       if (!spent) continue;
-      const back = Math.floor(spent / 2);
+      const back = ammoRecovered(spent, total);
       it.qty += back;
       it.ammo = { spent: 0 };
-      lines.push(`${c.name} recovers ${back} of ${spent} ${it.name} (${it.qty} now)`);
+      lines.push(`${c.name} recovers ${back} of ${spent} ${it.name} (${it.qty} now)${how}`);
+      how = '';
     }
   }
   if (!lines.length) return;
@@ -8001,6 +8095,10 @@ function isWorn(c: Character, i: InventoryItem): boolean {
 }
 
 function addWear(s: State, c: Character, it: InventoryItem): boolean {
+  if (it.reinforced) {
+    delete it.reinforced; // an expert mend takes the first knock (table rule)
+    return false;
+  }
   it.wear = (it.wear ?? 0) + 1;
   if (it.wear < WEAR_LIMIT) return false;
   it.wear = 0;
@@ -8022,6 +8120,7 @@ function wearFromTravel(s: State, hours: number, atSea: boolean): void {
     s.travel.wearHours = (s.travel.wearHours ?? 0) - WEAR_HOURS;
     for (const c of s.characters) {
       if (c.kind === 'mount' || !alive(c)) continue;
+      if ((c.gearKeptUntil ?? 0) > absNow(s)) continue; // freshly kept gear holds up (table rule)
       const broke: string[] = [];
       const worn: string[] = [];
       for (const it of exposedGear(c)) {
@@ -8041,8 +8140,14 @@ export const maintainGear = act((d, ctx, charIds: string[]) => {
   const who = charIds.map((id) => charById(d, id)).filter((c): c is Character => !!c && alive(c));
   if (!who.length) return;
   advanceMut(d, ctx, MAINTAIN_MINUTES, 'camp');
-  for (const c of who) for (const i of c.inventory) if (i.wear) delete i.wear;
-  log(d, `${who.map((c) => c.name).join(', ')} spend${who.length > 1 ? '' : 's'} an hour cleaning, oiling and patching their gear: the wear is gone.`, 'good');
+  for (const c of who) {
+    for (const i of c.inventory) if (i.wear) delete i.wear;
+    c.gearKeptUntil = absNow(d) + KEPT_GEAR_MINUTES;
+  }
+  const ids = who.map((c) => c.id);
+  d.effects = d.effects.filter((e) => !(e.name === 'Well-kept gear' && e.targetIds.every((t) => ids.includes(t))));
+  d.effects.push({ id: uid(), name: 'Well-kept gear', kind: 'other', targetIds: ids, casterId: null, concentration: false, shelter: false, startedAt: absNow(d), endsAt: absNow(d) + KEPT_GEAR_MINUTES, notes: KEPT_GEAR_NOTE });
+  log(d, `${who.map((c) => c.name).join(', ')} spend${who.length > 1 ? '' : 's'} an hour cleaning, oiling and patching their gear: ${d.settings.gearWear ? 'the wear is gone, ' : ''}edges are keen and straps supple. For the next 24 hours: +1 to the first weapon damage roll in each fight${d.settings.gearWear ? ', and the gear takes no wear' : ''} (table rule).`, 'good');
 });
 
 /**

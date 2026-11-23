@@ -229,11 +229,11 @@ describe('travel and foraging', () => {
       d.characters[0].wisMod = 1;
     });
     const n = E.forage(s, HIGH, s.characters[0].id);
-    // A natural 20 also turns up nuts and berries (1d4 + 1 = 5 lb of safe food).
-    expect(n.stores).toMatchObject({ foodLb: 5, waterGal: 0, foodRawLb: 7, waterUnsafeGal: 7 });
+    // A natural 20 also turns up nuts and berries (1d4 + 1 = 5 lb of safe food), and beating the DC by 10+ adds 2d6 lb (table rules).
+    expect(n.stores).toMatchObject({ foodLb: 5, waterGal: 0, foodRawLb: 7 + 12, waterUnsafeGal: 7 });
     s.settings.wildNeedsPurifying = false;
     s.settings.rawFoodRisk = false;
-    expect(E.forage(s, HIGH, s.characters[0].id).stores).toMatchObject({ foodLb: 7 + 5, waterGal: 7 });
+    expect(E.forage(s, HIGH, s.characters[0].id).stores).toMatchObject({ foodLb: 7 + 12 + 5, waterGal: 7 });
   });
 });
 

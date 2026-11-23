@@ -216,6 +216,7 @@ function SkyLine() {
           Read the sky (Survival DC {({ clear: 10, overcast: 15, none: 20 } as const)[sky.view]})
         </button>
       </div>
+      <p className="small muted">Table rule: a success also hints at tomorrow&apos;s weather; beating the DC by 5 reads it exactly, and tomorrow holds to it.</p>
     </div>
   );
 }

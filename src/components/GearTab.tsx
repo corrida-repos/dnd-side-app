@@ -187,7 +187,7 @@ function AfterTheFight() {
   return (
     <Card title="After the fight" className="span-2">
       <p className="small">
-        Spent ammunition: {spent.map(({ c, i }) => `${c.name} ${i.ammo!.spent} ${i.name}`).join(', ')}. A minute of searching recovers half, rounded down.
+        Spent ammunition: {spent.map(({ c, i }) => `${c.name} ${i.ammo!.spent} ${i.name}`).join(', ')}. A minute of searching recovers half, rounded down (2024 PHB). Table rule: each searcher also rolls Wisdom (Perception or Survival) at DC 10 to find three quarters, or nine in ten by beating it by 5.
       </p>
       <button className="primary" onClick={() => dispatch((st, cx) => E.recoverAmmo(st, cx, s.characters.map((c) => c.id)))}>
         Search the area and recover ammunition (1 min)

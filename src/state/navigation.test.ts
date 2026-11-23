@@ -76,7 +76,7 @@ describe('telling the time by nature', () => {
   it('lets a character judge the hour with a Survival check', () => {
     const s = fresh((d) => (d.place.onRoute = true));
     const good = E.readTheSky(s, HIGH, s.characters[0].id);
-    expect(good.log[0].text).toContain('about 08:00 (right to within the hour)');
+    expect(good.log.find((l) => l.text.includes('reckon'))!.text).toContain('about 08:00 (right to within the hour)');
     const bad = E.readTheSky(s, LOW, s.characters[0].id);
     expect(bad.log[0].text).toContain("wrong: it's really about 08:00");
   });
