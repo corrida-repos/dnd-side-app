@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buyTotalNeeded, researchBonus, resolveActivity, resolveBuying, resolveSelling, sellOffers, sheetBonuses, weeksIn } from './downtimeOutcomes';
+import { buyBonus, buyTotalNeeded, offerShare, researchBonus, resolveActivity, resolveBuying, resolveSelling, sheetBonuses, weeksIn } from './downtimeOutcomes';
 import { newCharacter } from '../state/defaults';
 
 /** A fixed sequence of random numbers, repeating the last. */
@@ -9,8 +9,8 @@ const seq = (...v: number[]) => {
 };
 
 describe("Xanathar's downtime activities", () => {
-  it('research: +1 for every 100 GP beyond the first 100, max +6', () => {
-    expect([50, 100, 199, 200, 350, 2000].map(researchBonus)).toEqual([0, 0, 0, 1, 2, 6]);
+  it('research: +1 for every 50 GP beyond the first 50, max +6', () => {
+    expect([50, 99, 100, 200, 350, 2000].map(researchBonus)).toEqual([0, 0, 1, 3, 6, 6]);
   });
 
   it('rolls each workweek on its own', () => {
@@ -34,33 +34,41 @@ describe("Xanathar's downtime activities", () => {
     expect(resolveActivity('Research', { bonuses: [0], gp: 300, weeks: 2 }, () => 0.5).spent).toBe(600);
   });
 
+  it('crime: a complication on exactly one success, none on a clean job', () => {
+    expect(resolveActivity('Crime', { bonuses: [100, 100, 100], dc: 10 }, () => 0.5).complication).toBeUndefined();
+    expect(resolveActivity('Crime', { bonuses: [100, 0, 0], dc: 25 }, () => 0.5).complication).toBeDefined();
+  });
+
+  it('a reputation for laziness gives Disadvantage at work for the weeks that follow', () => {
+    const r = resolveActivity('Working a trade', { bonuses: [0], weeks: 2, lazyWeeks: 6 }, () => 0.5);
+    expect(r.lazyWeeks).toBe(4);
+    expect(r.text).toMatch(/Disadvantage/);
+  });
+
   it('a crime that ends in jail ends the stretch', () => {
     const r = resolveActivity('Crime', { bonuses: [0, 0, 0], dc: 25, weeks: 4 }, () => 0);
     expect(r.jailDays).toBe(280);
     expect(r.text).toMatch(/remaining 3 weeks/);
   });
 
-  it('buying a magic item: the total decides what can be found, and low totals pay half again', () => {
-    expect(buyTotalNeeded('rare', true)).toBe(11);
-    expect(buyTotalNeeded('rare', false)).toBe(31);
-    const found = resolveBuying({ bonus: 3, weeks: 1, rarity: 'uncommon', consumable: true }, () => 0.5);
-    expect(found.offers[0].gp).toBe(300);
+  it('buying a magic item: rarity sets the total needed, and the asking price is rolled', () => {
+    expect([buyTotalNeeded('common'), buyTotalNeeded('rare'), buyTotalNeeded('legendary')]).toEqual([10, 20, 30]);
+    expect(buyBonus(3, 400)).toBe(5);
+    expect(buyBonus(20, 2000)).toBe(10);
+    // d20 = 11, +5 = 16: an uncommon item is for sale at 1d6 × 100 (4 × 100), halved for a consumable.
+    const found = resolveBuying({ bonus: 5, weeks: 1, rarity: 'uncommon', consumable: true }, () => 0.5);
+    expect(found.offers[0].gp).toBe(200);
     expect(found.spent).toBe(100);
-    const none = resolveBuying({ bonus: 0, weeks: 1, rarity: 'rare', consumable: false }, () => 0.5);
-    expect(none.offers).toEqual([]);
-    const longSearch = resolveBuying({ bonus: 10, weeks: 20, rarity: 'rare', consumable: false }, () => 0.99);
-    expect(longSearch.offers[0].gp).toBe(4000);
-    expect(longSearch.spent).toBe(2000);
+    expect(found.text).toMatch(/Table D/);
+    expect(resolveBuying({ bonus: 0, weeks: 1, rarity: 'rare', consumable: false }, () => 0.5).offers).toEqual([]);
+    expect(resolveBuying({ bonus: 0, weeks: 1, rarity: 'rare', consumable: false, magic: 'high' }, () => 0.5).offers.length).toBe(1);
   });
 
-  it('selling a magic item: DC 20 to find a buyer, then the offer table', () => {
-    expect(sellOffers(15, 400).map((o) => o.gp)).toEqual([40]);
-    expect(sellOffers(60, 400).map((o) => o.gp)).toEqual([200, 400]);
-    expect(sellOffers(95, 400)[0]).toMatchObject({ gp: 600, shady: true });
-    expect(resolveSelling({ findBonus: 0, offerBonus: 0, weeks: 2, rarity: 'rare', consumable: false }, () => 0.1).offers).toEqual([]);
-    const sold = resolveSelling({ findBonus: 5, offerBonus: 0, weeks: 1, rarity: 'rare', consumable: false }, () => 0.9);
-    expect(sold.offers.length).toBeGreaterThan(0);
-    expect(sold.spent).toBe(25);
+  it('selling a magic item: Persuasion sets the offer at 50%, 100% or 150% of the base price', () => {
+    expect([1, 10, 11, 20, 21].map(offerShare)).toEqual([0.5, 0.5, 1, 1, 1.5]);
+    const sold = resolveSelling({ bonus: 5, weeks: 2, rarity: 'rare', consumable: false }, () => 0.5);
+    expect(sold.offers.map((o) => o.gp)).toEqual([4000, 4000]);
+    expect(sold.spent).toBe(50);
   });
 
   it('reads check bonuses from the character sheet', () => {

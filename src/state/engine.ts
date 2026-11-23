@@ -19,7 +19,7 @@ import { ALL_IS_WELL, BARRACK_ROOM, BASTION_CHARMS, CONSTRUCTS, CREATURE_ROOM, G
 import { knownValue, misjudged, priceOf, saleRate, sameStack, valueSecret, valueUnknown } from '../rules/shop';
 import { APPRAISE_MINUTES, JEWELER_TOOLS, appraiseCheck, misjudgedValue, valuableKind, type AppraiseMethod } from '../rules/appraise';
 import { groundDifficulty, meltInches, mudAfter, snowfallInches } from '../rules/ground';
-import { activityOf, COMPLICATIONS, resolveActivity, resolveBuying, resolveSelling, weeksIn, type ActivityOpts, type Complication } from '../rules/downtimeOutcomes';
+import { activityOf, bondCap, COMPLICATIONS, resolveActivity, resolveBuying, resolveSelling, weeksIn, type ActivityOpts, type Complication, type MagicLevel } from '../rules/downtimeOutcomes';
 import { GROUP_ASSISTANCE, PATRONS, type PatronKind } from '../rules/patrons';
 import { REGIONS, regionBand, type RegionKind } from '../rules/regions';
 import { CREDITOR_LABEL, DUE_DAYS, ESCALATION, LENIENT_GP, PRISON_LABOR_GP_PER_WEEK, SERVICE_CREDIT, WEEKLY_INTEREST, type CreditorKind, type Escalation } from '../rules/debts';
@@ -39,7 +39,7 @@ import { DIG_FIND_ON, isExceptional, poisonYield, rollFind, trophyFor, type Chor
 import { addCoins, COIN_GP, coinCount, coinsFor, emptyPurse, exchange, fmtPurse, purseValue, spend, type Denom, type Purse } from '../rules/coins';
 import { detectContainer } from '../rules/containers';
 import { FIRE_DAMAGE, RAT_BITE_DAMAGE, RELAXATION_NEEDS, SHAKEDOWN_DAMAGE, SHAKEDOWN_GP, SHAKEDOWN_RIVAL_ODDS, SHUNNED_AFTER_DAYS, SPOILED_FOOD_DC, TAINTED_POTION_ODDS, WATCH_FINE, WATCH_JAIL_DAYS, WEEKLY_ODDS, WRETCHED_STRESS, isLowLife } from '../rules/lowLife';
-import { BOILING_POT, CHARCOAL_WORDS, FRICTION_LIGHT_MINUTES, HIDE_WATERSKIN, LEAN_TO, BEDDING, MAKESHIFT_DC, MAKESHIFT_TORCH, POTS, POT_ALARM_DC, SNARE, SNARE_LINE, TINDERBOX, VINE_CORD, isBareback, leanToDC, ABILITY_LABEL, INK, INK_PAGES, PAPER, PERFUME, PERFUME_MINUTES, SIGNAL_WHISTLE, carriesTool, liquidCapacity, toolNamed, SPYGLASS, ALARM_LINE, ALARM_MINUTES, BELL, DIG_BY_HAND, DIG_LABEL, GATHER_MINUTES, HUNTING_TRAP, SCATTERABLE, SHOVEL, SHOVEL_MINUTES, STABLING_GP_PER_DAY, TENT, TENT_SLEEPS, TRAP_CATCH_ON, TRAP_MEAT_DICE, TRAP_SAVE_DC, needsExoticSaddle, type DigKind, MAGNIFYING_GLASS, hasSkill, proficientWith, PACKS, RATIONS, WATERSKIN, WATERSKIN_PINTS, packNamed, FUEL_LABEL, FUEL_MATCH, HEALERS_KIT, HEALERS_KIT_USES, OIL_MINUTES, VESSEL_MATCH, fuelFor, isHooded, isOilLight } from '../rules/gear';
+import { BOILING_POT, CHARCOAL_WORDS, FRICTION_LIGHT_MINUTES, HIDE_WATERSKIN, LEAN_TO, BEDDING, MAKESHIFT_DC, MAKESHIFT_TORCH, POTS, POT_ALARM_DC, SNARE, SNARE_LINE, TINDERBOX, VINE_CORD, isBareback, leanToDC, ABILITY_LABEL, INK, INK_PAGES, PAPER, PERFUME, PERFUME_MINUTES, SIGNAL_WHISTLE, carriesTool, liquidCapacity, toolNamed, SPYGLASS, ALARM_LINE, ALARM_MINUTES, BELL, DIG_BY_HAND, DIG_LABEL, GATHER_MINUTES, HUNTING_TRAP, SCATTERABLE, SHOVEL, SHOVEL_MINUTES, STABLING_GP_PER_DAY, TENT, TENT_SLEEPS, TRAP_CATCH_ON, TRAP_MEAT_DICE, TRAP_SAVE_DC, needsExoticSaddle, type DigKind, MAGNIFYING_GLASS, hasSkill, proficientWith, abilityScore, PACKS, RATIONS, WATERSKIN, WATERSKIN_PINTS, packNamed, FUEL_LABEL, FUEL_MATCH, HEALERS_KIT, HEALERS_KIT_USES, OIL_MINUTES, VESSEL_MATCH, fuelFor, isHooded, isOilLight } from '../rules/gear';
 import type { DdbImport } from '../rules/ddb';
 import { INN_STAY_GP, MEAL_GP, MEALS_PER_DAY, FEED_GP_PER_DAY, HIRELING_WAGE, magicItemValue, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset, type Lifestyle } from '../rules/money';
 import { STABLE_WAKE_DIE, STABILIZE_DC } from '../rules/upkeep';
@@ -2884,7 +2884,21 @@ export const resolveActivityProject = act((d, ctx, projectId: string, o: Activit
   const heat = id === 'Crime' && d.rivalHeat;
   if (heat) d.rivalHeat = false;
   const weeks = o.weeks ?? weeksIn(p.daysRequired);
-  const r = resolveActivity(id, { ...o, weeks, ...(heat ? { dc: Math.min(25, (o.dc ?? 10) + 5) } : {}) }, ctx.rng);
+  const r = resolveActivity(id, { ...o, weeks, lazyWeeks: c.workLazyWeeks ?? 0, ...(heat ? { dc: Math.min(25, (o.dc ?? 10) + 5) } : {}) }, ctx.rng);
+  if (id === 'Working a trade') c.workLazyWeeks = r.lazyWeeks || undefined;
+  // Xanathar's: unspecified allied contacts and unused temple favors are capped at 1 + Charisma modifier (minimum 1).
+  const cha = abilityScore(c, 'cha');
+  const cap = bondCap(cha == null ? 0 : abilityMod(cha));
+  for (const [re, what] of [[/^Allied contact/, 'allied contacts'], [/^Temple favor/, 'unused temple favors']] as const) {
+    const held = (c.notes ?? '').split('\n').filter((l) => re.test(l)).length;
+    const fresh = r.notes.filter((n) => re.test(n));
+    const room = Math.max(0, cap - held);
+    if (fresh.length > room) {
+      let drop = fresh.length - room;
+      r.notes = r.notes.filter((n) => !(re.test(n) && drop-- > 0));
+      log(d, `${c.name} can hold only ${cap} ${what} at a time (1 + Charisma modifier): ${fresh.length - room} more go${fresh.length - room === 1 ? 'es' : ''} to waste.`, 'warn');
+    }
+  }
   if (heat) log(d, 'Bribed officials are watching: the job is harder (+5 DC).', 'warn');
   p.resolvedFor = [...done, c.id];
   const alive = p.charIds.filter((x) => charById(d, x));
@@ -2912,11 +2926,13 @@ export const resolveActivityProject = act((d, ctx, projectId: string, o: Activit
 });
 
 export interface DealOpts {
-  /** Buying: Charisma (Persuasion). Selling: Intelligence (Investigation) to find a buyer. */
+  /** Charisma (Persuasion). */
   bonus: number;
-  /** Selling: Charisma (Persuasion) for the offer roll. */
-  offerBonus?: number;
   advantage?: boolean;
+  /** Buying: total gold spent on the search (100 GP minimum; each 100 beyond the first adds +1). */
+  gp?: number;
+  /** Buying: optional campaign magic level (−10 low, +10 high). */
+  magic?: MagicLevel;
 }
 
 /** Rolls a finished magic item search (Xanathar's): pays the search money and lays out any offers to accept or turn down. */
@@ -2929,20 +2945,20 @@ export const resolveDealProject = act((d, ctx, projectId: string, o: DealOpts) =
   const consumable = !!p.consumable;
   const r =
     p.kind === 'buyMagic'
-      ? resolveBuying({ bonus: o.bonus, weeks, rarity, consumable, advantage: o.advantage }, ctx.rng)
-      : resolveSelling({ findBonus: o.bonus, offerBonus: o.offerBonus ?? 0, weeks, rarity, consumable }, ctx.rng);
+      ? resolveBuying({ bonus: o.bonus, weeks, gp: o.gp, rarity, consumable, advantage: o.advantage, magic: o.magic }, ctx.rng)
+      : resolveSelling({ bonus: o.bonus, weeks, rarity, consumable, advantage: o.advantage }, ctx.rng);
   p.awaitingOutcome = false;
   p.outcome = r.text;
-  payGold(d, p.charIds, r.spent, `${p.kind === 'buyMagic' ? 'searching for a seller' : 'finding a buyer'} (${p.name})`);
+  payGold(d, p.charIds, r.spent, `${p.kind === 'buyMagic' ? 'searching for a seller' : 'spreading word of the sale'} (${p.name})`);
   log(d, `${c.name}'s ${p.name}: ${r.text}.`, r.offers.length ? 'good' : 'warn');
-  if (r.complication) applyComplication(d, ctx, c, r.complication);
+  for (const comp of r.complications) applyComplication(d, ctx, c, comp);
   if (r.offers.length) p.offers = r.offers;
   else log(d, 'No deal. Start a new search to try again.');
   rivalAdvances(d, ctx);
 });
 
 /** Takes one of a search's offers (by index), or turns them all down (null). */
-export const answerDeal = act((d, ctx, projectId: string, index: number | null) => {
+export const answerDeal = act((d, _ctx, projectId: string, index: number | null) => {
   const p = d.projects.find((x) => x.id === projectId);
   if (!p?.offers?.length) return;
   const offer = index == null ? null : p.offers[index];
@@ -2969,12 +2985,6 @@ export const answerDeal = act((d, ctx, projectId: string, index: number | null) 
         log(d, `${c.name} hands over the ${p.itemName}.`);
         break;
       }
-    }
-    // Table rule: a shady buyer doubles the complication chance, to 20%.
-    if (offer.shady && die(10, ctx.rng) === 1) {
-      const list = COMPLICATIONS['Selling a magic item'];
-      const c = charById(d, p.charIds[0]);
-      if (c) applyComplication(d, ctx, c, list[die(list.length, ctx.rng) - 1]);
     }
   }
 });
