@@ -14,7 +14,7 @@ import { POISON_HARVEST_DC } from '../rules/potions';
 import { ALCHEMIST, ALCHEMIST_FIRE_DC, IMPROVISED_COOK_DC, IMPROVISED_HARVEST_DC, IMPROVISED_TESTS, TEST_KIND_LABEL, toolTestsFor, type TestKind } from '../rules/tools';
 import { WaysAround } from './WaysAround';
 import { SRD_POOL } from '../rules/encounters';
-import { AID_LABEL, bigEnoughToRide, canBeSidekick, canTame, charmSpellsFor, NO_AIDS, sessionAttitude, STABLE_DAYS, TAMED_RULES, tameCheck, tameDC, TAME_MAX_FAILS, TAME_MAX_INT, TAMEABLE_TYPES, TRAINING_LABEL, trainingNeeded, trustCue, trustNeeded, type Attitude, type TameAids, type TameTraining } from '../rules/taming';
+import { AID_LABEL, bigEnoughToRide, canBeSidekick, canTame, charmSpellsFor, currentDC, NO_AIDS, TAME_MIN_DC, TRUST_PER_DAY_MAX, sessionAttitude, STABLE_DAYS, TAMED_RULES, tameCheck, tameDC, TAME_MAX_FAILS, TAME_MAX_INT, TAMEABLE_TYPES, TRAINING_LABEL, trainingNeeded, trustCue, trustNeeded, type Attitude, type TameAids, type TameTraining } from '../rules/taming';
 
 export function CampTab() {
   return (
@@ -703,6 +703,7 @@ function TameCard() {
   const [who, setWho] = useState('');
   const [helper, setHelper] = useState('');
   const [aids, setAids] = useState<TameAids>({ ...NO_AIDS, food: true });
+  const [team, setTeam] = useState<Record<string, string[]>>({});
   const tamer = tamers.find((c) => c.id === who) ?? tamers[0];
   const helpers = tamer ? E.tameHelpers(s, tamer.id) : [];
   const targets = s.taming ?? [];
@@ -728,7 +729,13 @@ function TameCard() {
         const doneToday = t.lastSessionDay === s.dayIndex;
         const sessionAids = { charmed: aids.charmed, speaking: aids.speaking, threatened: aids.threatened, stable: aids.stable, enhance: aids.enhance, guidance: aids.guidance, helped: a.helped };
         const att = sessionAttitude(t.trust, t.needed, t.stage === 'tamed');
-        const sc = tm ? tameCheck(E.tamerFacts(tm), t, { ...sessionAids, attitude: att, food: true, unwilling: false }) : null;
+        const shared = { attitude: att, food: true, unwilling: false, stable: aids.stable, threatened: aids.threatened };
+        const sc = tm ? tameCheck(E.tamerFacts(tm), t, { ...sessionAids, ...shared }) : null;
+        const others = tamers.filter((c) => c.id !== t.tamerId && c.id !== helper);
+        const crew = (team[t.id] ?? []).filter((cid) => others.some((c) => c.id === cid));
+        const dcNow = currentDC(t.int, t.cr, t.trust, t.training?.progress ?? 0);
+        const dcStart = tameDC(t.int, t.cr);
+        const rollTxt = (c: { skill: string; mode: string; bonus: number; dice: number[] }) => `${c.skill}${modeTxt(c.mode)} ${c.bonus >= 0 ? '+' : ''}${c.bonus}${c.dice.map((n) => ` +1d${n}`).join('')}`;
         return (
           <div key={t.id} className="calc">
             <b>{t.name}</b> ({t.size} {t.creature}, CR {t.cr}, Int {t.int}
@@ -755,11 +762,34 @@ function TameCard() {
               {t.stage === 'wary' && (t.retryAt && t.retryAt > now ? `It keeps its distance. Try the same way again in ${formatDuration(t.retryAt - now)}, or try another way (charm it, talk to it).` : 'It may let you near now: try the approach again below.')}
               {t.stage === 'bonding' && trustCue(t.creature, t.trust, t.needed)}
               {t.training && ` Training ${TRAINING_LABEL[t.training.kind]}: ${t.training.progress}/${t.training.needed}.`}
-              {(t.stage === 'bonding' || t.training) && sc?.ok && ` Next session: ${sc.skill}${modeTxt(sc.mode)} ${sc.bonus >= 0 ? '+' : ''}${sc.bonus}${sc.dice.map((n) => ` +1d${n}`).join('')}, DC ${tameDC(t.int, t.cr)}.`}
             </p>
+            {(t.stage === 'bonding' || t.training) && (
+              <>
+                <p className="small">
+                  <b>DC {dcNow}</b>
+                  {dcNow < dcStart ? ` (down from ${dcStart})` : ''}
+                  {dcNow > TAME_MIN_DC ? `: each trust point${t.training ? ' or training session' : ''} lowers it by 1, to DC ${TAME_MIN_DC}.` : ': as low as it goes.'}
+                  {t.stage === 'bonding' && att !== 'friendly' && ` At ${Math.ceil(t.needed / 2)} trust it turns Friendly: Advantage.`}
+                  {sc?.ok && ` ${tm?.name}: ${rollTxt(sc)}.`}
+                  {crew.map((cid) => {
+                    const c = others.find((o) => o.id === cid)!;
+                    const k = tameCheck(E.tamerFacts(c), t, { ...NO_AIDS, ...shared });
+                    return k.ok ? ` ${c.name}: ${rollTxt(k)}.` : '';
+                  })}
+                </p>
+                {others.length > 0 && (
+                  <div className="btn-row small">
+                    Also working with it:
+                    {others.map((c) => (
+                      <Toggle key={c.id} checked={crew.includes(c.id)} onChange={(v) => setTeam({ ...team, [t.id]: v ? [...crew, c.id] : crew.filter((x) => x !== c.id) })} label={c.name} />
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
             <div className="btn-row">
               {(t.stage === 'bonding' || t.training) && (
-                <button className="primary" disabled={doneToday} title={doneToday ? 'One session a day' : undefined} onClick={() => dispatch((st, cx) => E.tameSession(st, cx, t.id, sessionAids))}>
+                <button className="primary" disabled={doneToday} title={doneToday ? 'One session a day' : undefined} onClick={() => dispatch((st, cx) => E.tameSession(st, cx, t.id, sessionAids, crew))}>
                   {t.training ? 'Train' : 'Work with it'} (1 h){doneToday ? ': done today' : ''}
                 </button>
               )}
@@ -855,14 +885,14 @@ function TameCard() {
         PHB). Food gives Advantage; a hurt, cornered or hunted creature gives Disadvantage; fail by 5 or more and it attacks or flees for good (table rules). Only Intelligence {TAME_MAX_INT} or lower.
       </Rule>
       <Rule>
-        <b>Bonding:</b> one hour a day, the same check, feeding it a day's food from the camp stores (raw meat first). Success +1 trust, a natural 20 +2, failing by 5 or more −1. Halfway there it counts as Friendly (Advantage). Each day skipped costs 1 trust, and after {TAME_MAX_FAILS} bad
+        <b>Bonding:</b> one hour a day, the same check, feeding it a day's food from the camp stores (raw meat first). Success +1 trust, a natural 20 +2, failing by 5 or more −1. Each trust point lowers the DC by 1 (never below {TAME_MIN_DC}), and halfway there it counts as Friendly (Advantage). Others can work with it in the same hour: each rolls (the tamer's own spells and helper don't carry over), the results add up to at most +{TRUST_PER_DAY_MAX} a day, and a day is bad only if nobody succeeds. Each day skipped costs 1 trust, and after {TAME_MAX_FAILS} bad
         days in a row it slips away. At full trust (3 days for CR ¼ or lower, 5 to CR 1, 7 to CR 3, 10 to CR 5, 14 above; +2 for Intelligence 4–5; half if raised from young) it joins the party as a mount. A Beast kept {STABLE_DAYS} days in a Bastion Stable gives Advantage (2024 DMG).
       </Rule>
       <Rule>
         {TAMED_RULES.map((r) => (
           <span key={r}>{r} </span>
         ))}
-        Training takes half the taming time again; bad days never undo taming, but {TAME_MAX_FAILS} in a row lose a session of training. Optional rule (Tasha's Cauldron): a tamed creature of CR ½ or lower can join as a sidekick with the Warrior or Expert class at the party's
+        Training takes half the taming time again, starting from the tamed creature's low DC and dropping 1 per session learned; bad days never undo taming, but {TAME_MAX_FAILS} in a row lose a session of training. Optional rule (Tasha's Cauldron): a tamed creature of CR ½ or lower can join as a sidekick with the Warrior or Expert class at the party's
         average level.
       </Rule>
       <WaysAround topic={'taming'} />
