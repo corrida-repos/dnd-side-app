@@ -30,10 +30,10 @@ export const GAME_ANIMALS: Creature[] = [
   { name: 'Wolf', size: 'Medium', type: 'beast' },
   { name: 'Antelope', size: 'Medium', type: 'beast' },
   { name: 'Elk', size: 'Large', type: 'beast' },
-  { name: 'Black or brown bear', size: 'Large', type: 'beast' },
-  { name: 'Aurochs or wild ox', size: 'Large', type: 'beast' },
-  { name: 'Giant boar', size: 'Large', type: 'beast' },
-  { name: 'Mammoth', size: 'Huge', type: 'beast' },
+  { name: 'Black or brown bear', size: 'Large', type: 'beast', cr: '1' },
+  { name: 'Aurochs or wild ox', size: 'Large', type: 'beast', cr: '2' },
+  { name: 'Giant boar', size: 'Large', type: 'beast', cr: '2' },
+  { name: 'Mammoth', size: 'Huge', type: 'beast', cr: '6' },
   { name: 'Whale', size: 'Gargantuan', type: 'beast' },
 ];
 

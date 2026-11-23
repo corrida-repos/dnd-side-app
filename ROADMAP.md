@@ -391,6 +391,11 @@ The gear makes things automatic, faster or better; without it you can still try,
 - ✅ **Vine cord:** Survival DC 15, 1 hour, 10 feet, bursts at Strength DC 15.
 - Barren terrain (desert, arctic without snow, underground, at sea, in town) has nothing to make these from.
 
+### Chores that pay off ✅
+- ✅ **Harvested poison is the real thing** (2024 DMG): a wyvern gives Wyvern Poison (1,200 GP), a purple worm Purple Worm Poison (2,000 GP), a carrion crawler Carrion Crawler Mucus and a venomous snake Serpent Venom (200 GP each). The dose is priced, sellable and usable from the Poisons card. Table rule (switch *Rewarding chores*): any other venom works as Basic Poison (100 GP).
+- ✅ **Trophies** (table rule): a clean butchering job on a Medium or bigger beast, monstrosity or dragon keeps its antlers, horns, fangs or scales, worth 2/10/50/200 GP by size × Challenge Rating (at least 1).
+- ✅ **Lucky finds** (table rule): a natural 20, or beating the DC by 10, while foraging or gathering firewood turns up something worth having (healing herbs, honey, rare mushrooms, burl wood, a lost purse, a stone or ring worth appraising). Digging turns something up on a d20 roll of 20 (old coins, flint, clay, a fossil, a buried relic). Finds land in the purse, pack, stores or crafting stash.
+
 ## Phase 9: Random tables from the 2024 DMG 📋
 
 DMG random tables that fit life outside one adventure (from 5etools `book-xdmg.json`).
