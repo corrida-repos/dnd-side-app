@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import * as E from './engine';
 import { createDefaultState, newCharacter } from './defaults';
 import type { MagicItem, State } from './types';
+import { magicItemValue } from '../rules/money';
+import { playerSummary } from '../components/ItemKnowledge';
 
 const ctx = (v = 0.5): E.Ctx => ({ rng: () => v });
 const LOW = ctx(0);
@@ -71,5 +73,25 @@ describe('learning what an item does', () => {
     const attuned = E.shortRest(ided, ctx());
     expect(item(attuned).clues![2].known).toBe(true);
     expect(attuned.log.some((l) => l.text.includes('a curse makes itself known'))).toBe(true);
+  });
+
+  it('identifying (spell or a Short Rest of study) reveals rarity and the DMG price', () => {
+    const s = fresh();
+    const id = s.characters[0].id;
+    const ided = E.identifyBySpell(s, ctx(), id, 'r', null, false);
+    expect(ided.log.some((l) => l.text.includes('Rare: worth about 4000 GP'))).toBe(true);
+    expect(playerSummary(item(ided)).lines.some((l) => l.startsWith('Rare: worth about 4000 GP'))).toBe(true);
+    const s2 = fresh();
+    s2.characters[0].restFocus = { itemId: 'r', action: 'identify' };
+    const rested = E.shortRest(s2, ctx());
+    expect(item(rested).identified).toBe(true);
+    expect(rested.log.some((l) => l.text.includes('Rare: worth about 4000 GP'))).toBe(true);
+  });
+
+  it('DMG prices: consumables half, Spell Scrolls twice the scribing cost', () => {
+    expect(magicItemValue('Ring of Protection', 'rare').gp).toBe(4000);
+    expect(magicItemValue('Potion of Fire Breath', 'uncommon').gp).toBe(200);
+    expect(magicItemValue('Spell Scroll (level 3)', 'uncommon').gp).toBe(300);
+    expect(magicItemValue('Spell Scroll (cantrip)', 'common').gp).toBe(30);
   });
 });

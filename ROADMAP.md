@@ -334,6 +334,48 @@ An audit of the gameplay flow for places where the tracker stops at "make the ch
 
 ---
 
+## Phase 8: Tools and adventuring gear from the 5etools review ✅
+
+Every 2024 PHB tool and adventuring gear entry (5etools `items-base.json` / `items.json`, plus the chapter 6 rules for tools and crafting) checked against the tracker.
+
+### Fixes
+- ✅ **Map:** an accurate Map gives **+5** to Wisdom (Survival) checks to find the way there (was Advantage). "Map of X", "Map (X)" and "X map" all count.
+- ✅ **Crafting tools:** Manacles are made with Tinker's Tools; no 2024 tool names the Shield (the DM picks); Potion of Healing needs the Herbalism Kit; Spell Scrolls need Arcana *or* Calligrapher's Supplies.
+
+### Gear that gets used up (switch: *Torches, candles and lamp oil burn up*)
+- ✅ Lighting a Torch, Candle, Lamp or Lantern takes a Torch, Candle or flask of Oil from the inventory; a lamp needs the lamp itself.
+- ✅ Oil burns 6 hours in all: a Lamp or Lantern can be put out and relit, keeping what's left. A Hooded Lantern's hood can be lowered to Dim Light 5 ft.
+- ✅ A Healer's Kit has ten uses; stabilizing with it spends one.
+
+### Packs, supplies and proficiency
+- ✅ The seven equipment packs open into their 2024 contents, packed in their Backpack (typed, bought or imported from D&D Beyond).
+- ✅ Rations and Waterskins added by hand, bought or crafted go to the food and water trackers; a Bedroll or Blanket ticks cold-night cover. D&D Beyond lists can be moved over with one button.
+- ✅ Tool and skill proficiencies and ability scores per character, imported from D&D Beyond. Tool checks add the Proficiency Bonus and get Advantage when a skill also applies (2024 PHB). Navigator's Tools need both for their Advantage.
+- ✅ Crafting shows who working on a project is proficient and carries the tool.
+
+### Crafting
+- ✅ All ~130 items the 2024 tools can craft, by tool (Alchemist's Supplies to Woodcarver's Tools, focuses included).
+- ✅ Table rule (switch): cheap items are crafted in batches, so 20 days of Rations take one workday.
+
+### Camp, travel and town
+- ✅ A Tent sleeps two (switch): anyone without a place sleeps in the open.
+- ✅ Shovel: an hour per 5-ft hole (fire pit that shelters the campfire, latrine, cache, snow cave, grave, trench); by hand takes four times as long (table rule).
+- ✅ Hunting Traps set near camp catch small game overnight (table rule: d20 13+, 1d4 + 1 lb of raw meat); they're packed up when the party moves on.
+- ✅ Caltrops and Ball Bearings can be spread and take 10 minutes to gather up; anything left on the ground when the party moves on is lost.
+- ✅ A Bell on a String or Rope around camp (table rule): crossing it wakes the camp, so a resting party can't be surprised.
+- ✅ Stabling in settlements (switch): 5 SP and 5 CP a day per mount, fed and watered.
+- ✅ Saddles: flying and swimming mounts need an Exotic Saddle; a Military Saddle gives Advantage to stay mounted.
+
+### Handy gear
+- ✅ Magnifying Glass: Advantage on appraisals, and lights a fire in bright sunlight in 5 minutes.
+- ✅ Book: +5 to Research and to Arcana checks studying an item.
+- ✅ Spyglass: in daylight a lookout spots encounters at twice the distance (table rule).
+- ✅ Every tool's Utilize checks (artisan's tools, Disguise and Forgery Kits, gaming sets, instruments and the rest) with the sheet's bonus, in-world results, and timed results (reworked boots, a disguise, a scrap gadget). Without the tool: DC +5, twice the time (table rule).
+- ✅ Gaming Set with Insight, and Thieves' Tools with Sleight of Hand, give Advantage in downtime gambling and crime.
+- ✅ Perfume (1 hour of Advantage on Persuasion), Signal Whistle (600 ft) and Bell (60 ft).
+- ✅ Writing uses Paper or Parchment (about 250 words a sheet) and Ink (about 500 pages a bottle).
+- ✅ Barrels (40 gal), Jugs and Iron Pots (1 gal) set how much water the stores can hold.
+
 ## Verified correct ✅
 
 No change needed. These match the 2024 data:

@@ -6,12 +6,13 @@ import { fireThreat, precipKind, type Weather } from './weather';
  * table rules, each switchable or adjustable in Settings.
  */
 
-export type FireMethod = 'tinderbox' | 'friction' | 'alchemist' | 'spell';
+export type FireMethod = 'tinderbox' | 'friction' | 'alchemist' | 'magnifier' | 'spell';
 
 export const FIRE_METHODS: Record<FireMethod, { label: string; minutes: number; dcMod: number; note: string }> = {
   tinderbox: { label: 'Tinderbox', minutes: 1, dcMod: 0, note: 'Flint, fire steel and oiled tinder: 1 minute per try (PHB).' },
   friction: { label: 'No tinderbox (bow drill or flint and knife)', minutes: 10, dcMod: 5, note: 'Without a Tinderbox: 10 minutes per try and DC +5 (table rule).' },
   alchemist: { label: "Alchemist's Supplies", minutes: 1, dcMod: 5, note: "Alchemist's Supplies: start a fire with an Intelligence check, DC 15 (2024 PHB); proficiency adds your Proficiency Bonus." },
+  magnifier: { label: 'Magnifying Glass', minutes: 5, dcMod: 0, note: 'A Magnifying Glass lights a fire in light as bright as sunlight, with tinder, in about 5 minutes (2024 PHB).' },
   spell: { label: 'A spell', minutes: 0, dcMod: 0, note: 'Prestidigitation (a small campfire), Druidcraft or Fire Bolt lights it at once, with no roll.' },
 };
 

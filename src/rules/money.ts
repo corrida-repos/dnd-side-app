@@ -1,5 +1,5 @@
 import type { Size } from '../state/types';
-import type { Rarity } from './crafting';
+import { SCROLL_CRAFTING, type Rarity } from './crafting';
 
 export type Lifestyle = 'wretched' | 'squalid' | 'poor' | 'modest' | 'comfortable' | 'wealthy' | 'aristocratic';
 
@@ -65,3 +65,20 @@ export const MAGIC_ITEM_VALUE: Record<Rarity, number> = {
   veryRare: 40000,
   legendary: 200000,
 };
+
+/** Consumable magic items: the DMG halves their price. Spell Scrolls are priced separately. */
+export const CONSUMABLE = /\b(potions?|oils?|philters?|elixirs?|dusts?|beads?|ammunition|arrows?|bolts?|bullets?|needles?|candles?|incense|ointments?|salves?|feathers? token|tokens?)\b/i;
+
+/**
+ * A magic item's DMG price from its rarity: halved for consumables, and a Spell Scroll is worth twice its scribing cost.
+ * Selling usually fetches about half of this.
+ */
+export function magicItemValue(name: string, rarity: Rarity): { gp: number; note: string } {
+  const scroll = name.match(/spell scroll\s*\((?:level\s*)?(\d|cantrip)/i);
+  if (scroll) {
+    const lvl = scroll[1].toLowerCase() === 'cantrip' ? 0 : Number(scroll[1]);
+    return { gp: (SCROLL_CRAFTING.find((r) => r.level === lvl)?.gp ?? 0) * 2, note: 'a Spell Scroll is worth twice its scribing cost' };
+  }
+  if (CONSUMABLE.test(name)) return { gp: MAGIC_ITEM_VALUE[rarity] / 2, note: 'consumables are worth half' };
+  return { gp: MAGIC_ITEM_VALUE[rarity], note: '' };
+}

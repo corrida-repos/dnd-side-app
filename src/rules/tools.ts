@@ -80,8 +80,16 @@ export const IMPROVISED_MAP_DC = MAP_DC + IMPROVISED_DC;
 /** Table rule: an hour to survey and draw a small area. */
 export const MAP_MINUTES = 60;
 export const mapName = (place: string): string => `Map of ${place.trim() || 'this area'}`;
-/** The inventory name of a map of this place. */
-export const isMapOf = (itemName: string, place: string): boolean => itemName.trim().toLowerCase() === mapName(place).toLowerCase();
+/** 2024 PHB Map: consulting an accurate Map gives +5 to Wisdom (Survival) checks to find your way in the place it shows. */
+export const MAP_BONUS = 5;
+/** Is this inventory item a map of this place? Accepts "Map of X", "Map (X)", "Map: X" and "X map". */
+export function isMapOf(itemName: string, place: string): boolean {
+  const n = itemName.trim().toLowerCase().replace(/\s+/g, ' ');
+  const p = place.trim().toLowerCase().replace(/\s+/g, ' ');
+  if (n === mapName(place).toLowerCase()) return true;
+  if (!p) return false;
+  return n === `map (${p})` || n === `map: ${p}` || n === `${p} map` || n === `map of the ${p}`;
+}
 
 // ---------------------------------------------------------------- mending
 

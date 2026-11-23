@@ -15,6 +15,7 @@ import { ITEM_PRICES } from '../rules/itemPrices';
 import { valueUnknown, inStock, priceOf, RENOWN_DISCOUNT, saleRate, STOCK_LIMIT } from '../rules/shop';
 import { COMMON_SPELL_REQUESTS, PASSAGE, SPELL_SERVICES, spellServiceAvailable, type Settlement } from '../rules/services';
 import { WaysAround } from './WaysAround';
+import { SADDLE_LABEL, STABLING_GP_PER_DAY, needsExoticSaddle, type Saddle } from '../rules/gear';
 
 export function MoneyTab() {
   return (
@@ -248,6 +249,12 @@ function MountsCard() {
                 {(m.rationsLb / foodNeedLb(m)).toFixed(1)} days)
               </span>{' '}
               {m.exhaustion > 0 && <Pill tone="warn">Exhaustion {m.exhaustion}</Pill>}
+              {needsExoticSaddle(m) && <Pill tone="bad">needs an Exotic Saddle</Pill>}{' '}
+              <Select
+                value={m.saddle ?? 'riding'}
+                onChange={(v: Saddle) => edit((d) => void (d.characters.find((x) => x.id === m.id)!.saddle = v))}
+                options={(Object.keys(SADDLE_LABEL) as Saddle[]).map((k) => ({ value: k, label: SADDLE_LABEL[k].split(' (')[0] }))}
+              />
             </span>
             <button className="ghost small bad" aria-label={`Remove ${m.name}`} onClick={() => confirm(`Remove ${m.name}?`) && edit((d) => void (d.characters = d.characters.filter((x) => x.id !== m.id)))}>
               ✕
@@ -277,7 +284,13 @@ function MountsCard() {
       <button className="primary" onClick={() => (dispatch((st, cx) => E.addMount(st, cx, p, name.trim(), buyer === 'free' ? null : buyer)), setName(''))}>
         Add {name.trim() || p.name}
       </button>
-      <Rule>Mounts follow the same food, water, temperature and Exhaustion rules as everyone else. Party meals feed them from their feed, and town lifestyle doesn&apos;t cover them, so water them every day (for example with &quot;Top up today&apos;s water&quot;).</Rule>
+      <Rule>
+        Mounts follow the same food, water, temperature and Exhaustion rules as everyone else. Party meals feed them from their feed.{' '}
+        {s.settings.stabling
+          ? `In a settlement they're stabled and fed each day for ${fmtGp(STABLING_GP_PER_DAY + FEED_GP_PER_DAY)} each (2024 PHB: Stabling 5 SP, Feed 5 CP).`
+          : "Town lifestyle doesn't cover them, so water them every day (for example with \"Top up today's water\")."}{' '}
+        Saddles (2024 PHB): a Military Saddle gives Advantage on checks to stay mounted; flying and swimming mounts need an Exotic Saddle. Set how a mount moves on the Party tab.
+      </Rule>
       <WaysAround topic={'mounts'} />
     </Card>
   );

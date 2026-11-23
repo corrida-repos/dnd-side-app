@@ -17,6 +17,10 @@ export interface ActivityOpts {
   dc?: number;
   /** Carousing circle. */
   circle?: 'lower' | 'middle' | 'upper';
+  /** Advantage on each check, in order (2024 PHB: proficient with a tool and a skill that both apply, e.g. a Gaming Set with Insight). */
+  advantage?: boolean[];
+  /** Research: consulting an accurate Book on the topic (+5, 2024 PHB). */
+  book?: boolean;
 }
 
 export interface ActivityResult {
@@ -163,8 +167,10 @@ export const COMPLICATIONS: Record<string, Complication[]> = {
 const rolledDC = (rng: Rng) => 5 + rollDice(2, 10, rng);
 
 export function resolveActivity(id: ActivityId, o: ActivityOpts, rng: Rng): ActivityResult {
-  const check = (bonus: number, dc: number) => {
-    const r = d20('normal', rng).value + bonus;
+  const adv = (i: number) => (o.advantage?.[i] ? 'advantage' : 'normal') as 'advantage' | 'normal';
+  const roll = (i: number) => d20(adv(i), rng).value;
+  const check = (bonus: number, dc: number, i = 0) => {
+    const r = roll(i) + bonus;
     return { total: r, ok: r >= dc };
   };
   const b = (i: number) => o.bonuses[i] ?? 0;
@@ -176,7 +182,7 @@ export function resolveActivity(id: ActivityId, o: ActivityOpts, rng: Rng): Acti
   const complication = (key: string = id) => (die(10, rng) === 1 ? pickComplication(key) : undefined);
   switch (id) {
     case 'Carousing': {
-      const t = d20('normal', rng).value + b(0);
+      const t = roll(0) + b(0);
       const circle = o.circle ?? 'lower';
       const notes: string[] = [];
       let text: string;
@@ -193,7 +199,7 @@ export function resolveActivity(id: ActivityId, o: ActivityOpts, rng: Rng): Acti
     }
     case 'Crime': {
       const target = CRIME_TARGETS.find((x) => x.dc === o.dc) ?? CRIME_TARGETS[0];
-      const rolls = [0, 1, 2].map((i) => check(b(i), target.dc));
+      const rolls = [0, 1, 2].map((i) => check(b(i), target.dc, i));
       const ok = rolls.filter((r) => r.ok).length;
       const list = rolls.map((r) => r.total).join(', ');
       if (ok === 0) return { text: `${list} vs DC ${target.dc}: caught. Fined ${target.gp} GP and jailed ${Math.ceil(target.gp / 25)} week(s)`, gp: -target.gp, notes: [], jailDays: Math.ceil(target.gp / 25) * 7 };
@@ -205,7 +211,7 @@ export function resolveActivity(id: ActivityId, o: ActivityOpts, rng: Rng): Acti
       const stake = Math.max(10, Math.min(1000, o.gp ?? 10));
       const rolls = [0, 1, 2].map((i) => {
         const dc = rolledDC(rng);
-        const r = check(b(i), dc);
+        const r = check(b(i), dc, i);
         return `${r.total}/${dc}`;
       });
       const ok = rolls.filter((x) => Number(x.split('/')[0]) >= Number(x.split('/')[1])).length;
@@ -218,7 +224,7 @@ export function resolveActivity(id: ActivityId, o: ActivityOpts, rng: Rng): Acti
     case 'Pit fighting': {
       const rolls = [0, 1, 2].map((i) => {
         const dc = rolledDC(rng);
-        const r = check(b(i), dc);
+        const r = check(b(i), dc, i);
         return { ok: r.ok, t: `${r.total}/${dc}` };
       });
       const ok = rolls.filter((r) => r.ok).length;
@@ -228,19 +234,20 @@ export function resolveActivity(id: ActivityId, o: ActivityOpts, rng: Rng): Acti
     case 'Relaxation':
       return { text: 'a quiet week: Advantage on saves against a lingering disease or poison, and one effect that blocks healing can end', gp: 0, notes: [] };
     case 'Religious service': {
-      const t = d20('normal', rng).value + b(0);
+      const t = roll(0) + b(0);
       const n = t <= 10 ? 0 : t <= 20 ? 1 : 2;
       return { text: `${t}: ${n ? `${n} favor${n > 1 ? 's' : ''} earned with the temple` : 'no favors this time'}`, gp: 0, notes: Array.from({ length: n }, () => 'Temple favor owed'), complication: complication() };
     }
     case 'Research': {
       const spent = Math.max(50, o.gp ?? 50);
       const bonus = Math.min(6, Math.floor(Math.max(0, spent - 50) / 50));
-      const t = d20('normal', rng).value + b(0) + bonus;
+      const book = o.book ? 5 : 0;
+      const t = roll(0) + b(0) + bonus + book;
       const n = t <= 5 ? 0 : t <= 10 ? 1 : t <= 20 ? 2 : 3;
-      return { text: `${t}${bonus ? ` (+${bonus} for ${spent} GP spent)` : ''}: ${n ? `${n} piece${n > 1 ? 's' : ''} of lore (the DM supplies them)` : 'nothing useful'}`, gp: 0, notes: n ? [`Research: ${n} piece(s) of lore to collect from the DM`] : [], complication: complication() };
+      return { text: `${t}${bonus ? ` (+${bonus} for ${spent} GP spent)` : ''}${book ? ' (+5 from an accurate Book)' : ''}: ${n ? `${n} piece${n > 1 ? 's' : ''} of lore (the DM supplies them)` : 'nothing useful'}`, gp: 0, notes: n ? [`Research: ${n} piece(s) of lore to collect from the DM`] : [], complication: complication() };
     }
     case 'Working a trade': {
-      const t = d20('normal', rng).value + b(0);
+      const t = roll(0) + b(0);
       const comp = complication();
       const steps: Lifestyle[] = ['squalid', 'poor', 'modest', 'comfortable'];
       let i = t <= 9 ? 1 : t <= 14 ? 2 : 3;

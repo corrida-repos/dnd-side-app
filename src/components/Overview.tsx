@@ -617,7 +617,7 @@ function TravelCard() {
       {(navHasTools || hasMap) && nav.dc != null && (
         <div className="btn-row tight">
           {navHasTools && <Toggle checked={!!s.travel.navTools} onChange={(v) => edit((d) => void (d.travel.navTools = v))} label="Navigator uses Navigator's Tools (Advantage if proficient in Survival and the tools)" />}
-          {hasMap && <span className="small good-text">The party has a {mapName(s.place.name)}: Advantage on navigation here (table rule).</span>}
+          {hasMap && <span className="small good-text">The party has a {mapName(s.place.name)}: +5 to Survival checks to find the way here (2024 PHB).</span>}
         </div>
       )}
       {s.travel.lost && (
@@ -789,7 +789,7 @@ function MapLine() {
   const tooled = pcs.filter((c) => c.inventory.some((i) => CARTOGRAPHER.test(i.name)));
   const whoId = pcs.find((c) => c.id === who)?.id ?? tooled[0]?.id ?? pcs[0]?.id ?? '';
   const hasTools = tooled.some((c) => c.id === whoId);
-  if (E.partyHasMapHere(s)) return <p className="small good-text">The party carries a {mapName(s.place.name)}: Advantage on navigation here (table rule).</p>;
+  if (E.partyHasMapHere(s)) return <p className="small good-text">The party carries a {mapName(s.place.name)}: +5 to Survival checks to find the way here (2024 PHB).</p>;
   if (!hasTools && !s.settings.improvised) return null;
   return (
     <div className="btn-row tight">

@@ -7,6 +7,8 @@ import type { Purse } from './coins';
 import type { Recharge } from './upkeep';
 import { CLASSES } from './spells';
 import { detectContainer } from './containers';
+import { estimateWeight } from './encumbrance';
+import { PACKS, SKILLS, packNamed, toolNamed } from './gear';
 
 type J = Record<string, unknown>;
 const obj = (v: unknown): J => (v && typeof v === 'object' ? (v as J) : {});
@@ -54,6 +56,10 @@ export interface DdbImport {
   subclass: string;
   /** Chosen class options such as Eldritch Invocations. */
   features: string[];
+  /** Tool proficiencies by 2024 PHB name. */
+  toolProfs: string[];
+  /** Skill proficiencies (and expertise). */
+  skillProfs: string[];
   warnings: string[];
 }
 
@@ -160,6 +166,30 @@ export function parseDdbCharacter(raw: unknown): DdbImport {
     const me = inventory.find((x) => x.id === idMap.get(num(it.id)));
     if (me && parent && parent !== me.id) me.containerId = parent;
   }
+  // An equipment pack with nothing inside it is opened into its 2024 PHB contents, packed in its Backpack.
+  for (const packLine of [...inventory]) {
+    const pack = packNamed(packLine.name);
+    if (!pack || inventory.some((x) => x.containerId === packLine.id)) continue;
+    const at = inventory.indexOf(packLine);
+    const bagId = `${packLine.id}-bag`;
+    const hasBag = PACKS[pack].some((x) => /^backpack$/i.test(x.name));
+    const lines: InventoryItem[] = PACKS[pack].map((x, n) => {
+      const bag = /^backpack$/i.test(x.name);
+      const est = estimateWeight(x.name);
+      return {
+        id: bag ? bagId : `${packLine.id}-${n}`,
+        name: x.name,
+        qty: x.qty * packLine.qty,
+        weight: est.weight,
+        source: est.source,
+        containerId: bag ? packLine.containerId ?? null : hasBag ? bagId : (packLine.containerId ?? null),
+        container: detectContainer(x.name),
+        ammo: null,
+      };
+    });
+    inventory.splice(at, 1, ...lines);
+    warnings.push(`${pack} opened into its contents (2024 PHB).`);
+  }
 
   const cur = obj(d.currencies);
   const purse: Purse = { cp: num(cur.cp), sp: num(cur.sp), ep: num(cur.ep), gp: num(cur.gp), pp: num(cur.pp) };
@@ -222,6 +252,13 @@ export function parseDdbCharacter(raw: unknown): DdbImport {
   const options = obj(d.options);
   const features = [...new Set([...arr(options.class), ...arr(options.race), ...arr(options.feat)].map((o) => str(obj(o.definition).name)).filter(Boolean))];
 
+  // Tool and skill proficiencies come through as "proficiency" (or "expertise") modifiers.
+  const profNames = mods
+    .filter((m) => str(m.type) === 'proficiency' || str(m.type) === 'expertise')
+    .map((m) => str(m.friendlySubtypeName) || str(m.subType).replace(/-/g, ' '));
+  const toolProfs = [...new Set(profNames.map((n) => toolNamed(n)?.name).filter((n): n is string => !!n))];
+  const skillProfs = SKILLS.filter((sk) => profNames.some((n) => n.toLowerCase() === sk.toLowerCase()));
+
   return {
     ddbId: num(d.id),
     name: str(d.name, 'Imported character'),
@@ -254,6 +291,8 @@ export function parseDdbCharacter(raw: unknown): DdbImport {
     species,
     subclass,
     features,
+    toolProfs,
+    skillProfs,
     warnings,
   };
 }

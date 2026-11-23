@@ -12,7 +12,7 @@ import { MESSENGER_GP_PER_MILE } from '../rules/hirelings';
 import { COMMS, commCost, commDelay, type CommMethod } from '../rules/comms';
 import { CONTAGIONS, RECUPERATE_DAYS, RECUPERATE_DC, SIGHT_ROT_CURE_HOURS, type ContagionKind } from '../rules/contagion';
 import { neglectLimit } from '../rules/bastion';
-import { magicItemCrafting, nonmagicalCrafting, SCROLL_CRAFTING, type Rarity } from '../rules/crafting';
+import { RARITY_LABEL, magicItemCrafting, nonmagicalCrafting, SCROLL_CRAFTING, type Rarity } from '../rules/crafting';
 import { ALL_IS_WELL, BARRACK_ROOM, BASTION_CHARMS, CONSTRUCTS, CREATURE_ROOM, GROVE_ROOM, GROVE_UNITS, MUSEUM_ORIGINS, NECROPOLIS_ROOM, EVENT_PREFERENCE, FACILITY_OPTIONS, GARDEN_PRODUCTS, GUILDS, MENAGERIE_CREATURES, MENAGERIE_ROOM, SHIPS, TRAINERS, TREASURE_TABLE, facilityHirelings, stableMarkup, storehouseLimit, storehouseMarkup, type GardenType } from '../rules/bastionOrders';
 import { knownValue, misjudged, priceOf, saleRate, sameStack, valueSecret, valueUnknown } from '../rules/shop';
 import { APPRAISE_MINUTES, JEWELER_TOOLS, appraiseCheck, misjudgedValue, valuableKind, type AppraiseMethod } from '../rules/appraise';
@@ -25,7 +25,7 @@ import { RIVAL_ESCALATION, RIVAL_IDEAS, RIVAL_MOVES } from '../rules/rivals';
 import { componentFor, REVIVAL_LIMIT, TARGET_SPELLS, type CostlyComponent } from '../rules/components';
 import { POISONS, poisonByName, poisonItemName, type PoisonInfo } from '../rules/poisons';
 import { POISON_HARVEST_DC, POTION_MISCIBILITY } from '../rules/potions';
-import { ALCHEMIST, ALCHEMIST_FIRE_DC, IMPROVISED_COOK_DC, IMPROVISED_HARVEST_DC, IMPROVISED_OINTMENT_DC, IMPROVISED_TESTS, IMPROVISED_TIME, TEST_KIND_LABEL, TOOL_TESTS, type TestKind, NAVIGATOR, STARGAZE_DC, IMPROVISED_STARGAZE_DC, STARGAZE_MINUTES, CARTOGRAPHER, MAP_DC, IMPROVISED_MAP_DC, MAP_MINUTES, mapName, isMapOf, WEAVER, CLOTH, MEND_DC, IMPROVISED_MEND_DC, MEND_MINUTES, DECIPHER_DC, DECIPHER_MINUTES } from '../rules/tools';
+import { ALCHEMIST, ALCHEMIST_FIRE_DC, IMPROVISED_DC, IMPROVISED_COOK_DC, IMPROVISED_HARVEST_DC, IMPROVISED_OINTMENT_DC, IMPROVISED_TESTS, IMPROVISED_TIME, TEST_KIND_LABEL, TOOL_TESTS, type TestKind, NAVIGATOR, STARGAZE_DC, IMPROVISED_STARGAZE_DC, STARGAZE_MINUTES, CARTOGRAPHER, MAP_DC, IMPROVISED_MAP_DC, MAP_MINUTES, mapName, isMapOf, MAP_BONUS, WEAVER, CLOTH, MEND_DC, IMPROVISED_MEND_DC, MEND_MINUTES, DECIPHER_DC, DECIPHER_MINUTES } from '../rules/tools';
 import { AWAY_PROGRESS, BUILD_SPELLS, BUSINESS_DEBT_PENALTY, BUSINESS_MAX_DAYS, CREW_COST_SHARE, MAX_EXTRA_CREWS, buildPace, rollBusiness } from '../rules/business';
 import { HAZARDS, type GiftType, type HazardId } from '../rules/hazards';
 import { ARCANA_DC, STUDY_MINUTES, type StudyMethod } from '../rules/identify';
@@ -33,8 +33,9 @@ import { FEED_LB_PER_DAY, MOUNT_CAPACITY, carryingCapacity, COINS_PER_LB, estima
 import { BUTCHER_DC, BUTCHER_MINUTES, isEdible, MEAT_LB, STRANGE_TYPES, yieldsHide, type Creature } from '../rules/hunting';
 import { addCoins, COIN_GP, coinCount, coinsFor, emptyPurse, exchange, fmtPurse, purseValue, spend, type Denom, type Purse } from '../rules/coins';
 import { detectContainer } from '../rules/containers';
+import { ABILITY_LABEL, INK, INK_PAGES, PAPER, PERFUME, PERFUME_MINUTES, SIGNAL_WHISTLE, carriesTool, liquidCapacity, toolNamed, SPYGLASS, ALARM_LINE, ALARM_MINUTES, BELL, DIG_BY_HAND, DIG_LABEL, GATHER_MINUTES, HUNTING_TRAP, SCATTERABLE, SHOVEL, SHOVEL_MINUTES, STABLING_GP_PER_DAY, TENT, TENT_SLEEPS, TRAP_CATCH_ON, TRAP_MEAT_DICE, TRAP_SAVE_DC, needsExoticSaddle, type DigKind, MAGNIFYING_GLASS, hasSkill, proficientWith, PACKS, RATIONS, WATERSKIN, WATERSKIN_PINTS, packNamed, FUEL_LABEL, FUEL_MATCH, HEALERS_KIT, HEALERS_KIT_USES, OIL_MINUTES, VESSEL_MATCH, fuelFor, isHooded, isOilLight } from '../rules/gear';
 import type { DdbImport } from '../rules/ddb';
-import { FEED_GP_PER_DAY, HIRELING_WAGE, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset, type Lifestyle } from '../rules/money';
+import { FEED_GP_PER_DAY, HIRELING_WAGE, magicItemValue, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset, type Lifestyle } from '../rules/money';
 import { STABLE_WAKE_DIE, STABILIZE_DC } from '../rules/upkeep';
 import { RITUAL_EXTRA_MINUTES as RITUAL_TAG_MINUTES, spellInfo } from '../rules/rituals';
 import { maxWatchMinutes, slotTimes, watchMinutes, watchSight, type Sight } from '../rules/watch';
@@ -418,6 +419,14 @@ function dailyCosts(s: State): void {
       }
     }
     if (fed.length) log(s, `Town living covers meals and lodging for ${fed.join(', ')}.`);
+    if (s.settings.stabling) {
+      const stabled = s.characters.filter((m) => m.kind === 'mount' && alive(m));
+      for (const m of stabled) {
+        m.ateLbToday = Math.max(m.ateLbToday, foodNeedLb(m));
+        m.drankPintsToday = Math.max(m.drankPintsToday, waterNeedPints(m, false, false));
+      }
+      if (stabled.length) payGold(s, [], Math.round(stabled.length * (STABLING_GP_PER_DAY + FEED_GP_PER_DAY) * 100) / 100, `stabling and feed for ${stabled.map((m) => m.name).join(', ')}`);
+    }
   } else {
     for (const c of adventurers(s)) if (c.lifestyleOwed) settleLifestyle(s, c, 'lodgings and meals on leaving town');
     if (s.settings.hirelingsEat && s.settings.foodAndWater) hirelingsEat(s);
@@ -605,7 +614,7 @@ function campLitFor(s: State, endsIn: number): boolean {
   if (s.place.shelter === 'building') return true;
   if (s.fire.lit && s.fire.fuelHours * 60 >= endsIn) return true;
   const now = absNow(s);
-  return s.effects.some((e) => e.kind === 'light' && (e.endsAt == null || e.endsAt >= now + endsIn));
+  return s.effects.some((e) => e.kind === 'light' && e.pausedLeft == null && (e.endsAt == null || e.endsAt >= now + endsIn));
 }
 
 /** Darkvision right now: the character's own, an active Darkvision spell on them (150 ft), Goggles of Night (60 ft, or +60), and Devil's Sight. */
@@ -636,7 +645,7 @@ function obscuredNow(s: State, indoors: boolean): string | null {
 function lightNow(s: State, where: 'camp' | 'travel' | 'explore'): boolean {
   const now = absNow(s);
   if (where === 'camp' && (s.fire.lit || s.place.shelter === 'building')) return true;
-  return s.effects.some((e) => e.kind === 'light' && (e.endsAt == null || e.endsAt > now) && (where !== 'travel' || !/candle/i.test(e.name)));
+  return s.effects.some((e) => e.kind === 'light' && e.pausedLeft == null && (e.endsAt == null || e.endsAt > now) && (where !== 'travel' || !/candle/i.test(e.name)));
 }
 
 /** What a character can see right now, by the light, the weather and their senses. */
@@ -848,6 +857,8 @@ export const longRest = act((d, ctx, force = false) => {
     return;
   }
   log(d, 'The party settles in for a Long Rest (8 hours: at least 6 asleep, no more than 2 of light activity).');
+  const outside = tentShortfall(d);
+  if (outside.length) noticed(d, 'coldNight', outside, `Not enough tent space (a Tent sleeps two): ${outside.map((c) => c.name).join(', ')} sleep${outside.length > 1 ? '' : 's'} in the open tonight.`, 'warn');
   clearAppraiseTries(d);
   const watched = standWatches(d, ctx);
   d.restStart = absNow(d);
@@ -971,6 +982,10 @@ export interface InterruptOpts {
 
 /** Who is awake when a rest is interrupted: the watch, anyone the noise wakes, and the rest get shaken awake. */
 function wakeTheCamp(d: State, minutesIn: number, noise: 'loud' | 'quiet', dc: number): void {
+  if (noise === 'quiet' && d.place.alarm) {
+    noticed(d, 'wokenByNoise', [], 'The Bell on the alarm line jangles: something has crossed it (table rule).', 'warn');
+    noise = 'loud';
+  }
   const len = watchMinutes(d.watchPlan.count);
   const slot = Math.min(d.watchPlan.count - 1, Math.floor(minutesIn / len));
   const onWatch = new Set(d.watchPlan.slots[slot] ?? []);
@@ -1167,14 +1182,14 @@ export function currentNavigationDC(s: State): { dc: number | null; reasons: str
 function navigate(s: State, ctx: Ctx, nav: Character, pace: Pace): boolean | null {
   const { dc, reasons } = currentNavigationDC(s);
   if (dc == null) return null;
-  const tools = !!s.travel.navTools && nav.inventory.some((i) => NAVIGATOR.test(i.name));
+  // Advantage needs proficiency with the tools and in Survival (taken as given when the sheet doesn't record them).
+  const tools = !!s.travel.navTools && nav.inventory.some((i) => NAVIGATOR.test(i.name)) && proficientWith(nav, "Navigator's Tools") !== false && hasSkill(nav, 'Survival') !== false;
   const map = partyHasMapHere(s);
   let mode = combineModes(combineModes(pace === 'slow' ? 'advantage' : 'normal', pace === 'fast' ? 'disadvantage' : 'normal'), s.travel.reconAdvantage ? 'advantage' : 'normal');
-  // 2024 PHB: proficiency in a skill and a tool that both apply gives Advantage. Table rule: a map of the area does too.
+  // 2024 PHB: proficiency in a skill and a tool that both apply gives Advantage. An accurate Map of the place gives +5.
   if (tools) mode = combineModes(mode, 'advantage');
-  if (map) mode = combineModes(mode, 'advantage');
   const r = d20(mode, ctx.rng);
-  const mod = nav.survival - 2 * nav.exhaustion;
+  const mod = nav.survival - 2 * nav.exhaustion + (map ? MAP_BONUS : 0);
   const ok = r.value + mod >= dc;
   const aids = [...(tools ? ["with Navigator's Tools"] : []), ...(map ? [`using the ${mapName(s.place.name)}`] : [])];
   log(s, `${nav.name} navigates${aids.length ? ` ${aids.join(' and ')}` : ''}: Wisdom (Survival) ${r.rolls.join('/')} ${signed(mod)} = ${r.value + mod} against DC ${dc} (${reasons.join(', ')}). ${ok ? 'On course.' : 'The party strays off course without realising it.'}`, ok ? 'good' : 'warn');
@@ -1184,6 +1199,7 @@ function navigate(s: State, ctx: Ctx, nav: Character, pace: Pace): boolean | nul
 export const travel = act((d, ctx, o: TravelOpts) => travelMut(d, ctx, o));
 
 function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
+  breakCamp(d, ctx);
   const vessel = o.vesselId ? d.stashes.find((x) => x.id === o.vesselId && x.speedMph) : undefined;
   if (vessel) return sail(d, ctx, vessel, o);
   if (o.flying && o.difficult) o = { ...o, difficult: false };
@@ -1407,6 +1423,13 @@ export function fireSpellCasters(s: State): { c: Character; spell: string }[] {
   return out;
 }
 
+/** Sunlight bright enough to focus through a Magnifying Glass: daytime, outdoors, no rain or snow falling. */
+export function sunBright(s: State): boolean {
+  if (CLIMATES[s.weather.climate].noWeather || s.place.shelter === 'building' || s.place.shelter === 'cave') return false;
+  const phase = lightAt(s.minutes % MIN_PER_DAY, seasonOf(s)).phase;
+  return phase === 'Day' && s.weather.precip === 'none';
+}
+
 /** Does anyone in the party carry a Tinderbox? Null when nobody has an inventory recorded, so it can't be told. */
 /** Whether anyone carries Cook's Utensils; null when nobody's inventory is listed. */
 export function partyHasCooksUtensils(s: State): boolean | null {
@@ -1450,6 +1473,14 @@ export const lightFire = act((d, ctx, lighterId?: string, method: FireMethod = '
     return;
   }
   const m = FIRE_METHODS[method];
+  if (method === 'magnifier') {
+    const user = lighter && lighter.inventory.some((i) => MAGNIFYING_GLASS.test(i.name)) ? lighter : carrierOf(d, [], MAGNIFYING_GLASS)?.c;
+    if (!user) return void log(d, 'Nobody carries a Magnifying Glass.', 'warn');
+    if (!sunBright(d)) return void log(d, 'A Magnifying Glass needs light as bright as sunlight to start a fire: a clear day, outdoors.', 'warn');
+    advanceMut(d, ctx, m.minutes, 'camp');
+    d.fire.lit = true;
+    return void log(d, `${user.name} angles a Magnifying Glass at the tinder until a curl of smoke rises and the kindling catches (${m.minutes} min).`, 'good');
+  }
   if (method === 'alchemist') {
     if (!lighter) return;
     if (!lighter.inventory.some((i) => ALCHEMIST.test(i.name))) return void log(d, `${lighter.name} has no Alchemist's Supplies.`, 'warn');
@@ -2614,13 +2645,8 @@ export const buyItem = act((d, _ctx, charId: string, name: string, qty: number, 
   const cost = Math.round(unitGp * qty * (1 - discount) * 100) / 100;
   if (c.gp < cost) return void log(d, `${c.name} can't afford ${qty} × ${name} (${fmtGp(cost)}; has ${fmtGp(c.gp)}).`, 'warn');
   spendWealth(c, cost);
-  const same = c.inventory.find((i) => sameStack(i, { name, valueGp: unitGp }) && !i.containerId);
-  if (same) same.qty += qty;
-  else {
-    const est = estimateWeight(name);
-    c.inventory.push({ id: uid(), name, qty, weight: est.weight, source: est.source, valueGp: unitGp, container: detectContainer(name), ammo: isAmmo(name) ? { spent: 0 } : null });
-  }
-  log(d, `${c.name} buys ${qty} × ${name} for ${fmtGp(cost)}${discount ? ` (${Math.round(discount * 100)}% off)` : ''}.`, 'good');
+  const notes = stowItem(d, c, name, qty, packNamed(name) ? {} : { valueGp: unitGp }, true);
+  log(d, `${c.name} buys ${qty} × ${name} for ${fmtGp(cost)}${discount ? ` (${Math.round(discount * 100)}% off)` : ''}.${notes.length ? ` ${notes.join(' ')}` : ''}`, 'good');
 });
 
 /** Sells from the inventory: half price for equipment, full value for gems, art and trade goods (2024 PHB). */
@@ -4431,11 +4457,45 @@ function resolveDying(s: State, ctx: Ctx): void {
   }
 }
 
-/** Stabilize with a Wisdom (Medicine) check, or automatically (Healer's Kit, Spare the Dying). */
-export const stabilize = act((d, ctx, charId: string, helperId: string | null, method: 'medicine' | 'sure', medicineBonus?: number) => {
+/** Uses left in the Healer's Kits someone carries (ten per kit, 2024 PHB). */
+export function healerKitUses(c: Character): number {
+  return c.inventory.filter((i) => HEALERS_KIT.test(i.name) && i.qty > 0).reduce((a, i) => a + (i.uses ?? HEALERS_KIT_USES) + (i.qty - 1) * HEALERS_KIT_USES, 0);
+}
+
+/**
+ * Spends one use of a Healer's Kit, from the helper's own kit first. Returns a note for the log, or null
+ * (and logs why) when nobody has a kit with uses left.
+ */
+function useHealersKit(s: State, helperId: string | null): string | null {
+  if (!s.settings.trackGearUse || !inventoriesKept(s)) return '';
+  const got = carrierOf(s, helperId ? [helperId] : [], HEALERS_KIT);
+  if (!got) {
+    log(s, "Nobody has a Healer's Kit with uses left.", 'warn');
+    return null;
+  }
+  const { c, it } = got;
+  it.uses = (it.uses ?? HEALERS_KIT_USES) - 1;
+  if (it.uses <= 0) {
+    useUpOne(c, it);
+    if (it.qty > 0) it.uses = HEALERS_KIT_USES;
+    return ` ${c.name}'s Healer's Kit is used up${it.qty > 0 ? `; they open another (${it.qty} left)` : ''}.`;
+  }
+  return ` ${c.name}'s Healer's Kit has ${it.uses} use${it.uses === 1 ? '' : 's'} left.`;
+}
+
+/** Stabilize with a Wisdom (Medicine) check, with a Healer's Kit (one of its ten uses), or automatically (Spare the Dying). */
+export const stabilize = act((d, ctx, charId: string, helperId: string | null, method: 'medicine' | 'kit' | 'sure', medicineBonus?: number) => {
   const c = charById(d, charId);
   if (!c || !c.dying || c.diedAt != null) return;
   const helper = helperId ? actorById(d, helperId) : undefined;
+  if (method === 'kit') {
+    const note = useHealersKit(d, helperId && !helperId.startsWith('h:') ? helperId : null);
+    if (note === null) return;
+    const me = charById(d, charId)!;
+    makeStable(d, ctx, me, `${helper ? `${helper.name} used ` : ''}a Healer's Kit`);
+    if (note) log(d, note.trim());
+    return;
+  }
   if (method === 'medicine') {
     const mod = (medicineBonus ?? helper?.wisMod ?? 0) - 2 * (helper?.exhaustion ?? 0);
     const r = d20('normal', ctx.rng);
@@ -4446,7 +4506,7 @@ export const stabilize = act((d, ctx, charId: string, helperId: string | null, m
     }
     makeStable(d, ctx, c, `${helper?.name ?? 'someone'} succeeded on a DC ${STABILIZE_DC} Wisdom (Medicine) check with ${total}`);
   } else {
-    makeStable(d, ctx, c, `${helper ? `${helper.name} used ` : ''}a Healer's Kit or Spare the Dying`);
+    makeStable(d, ctx, c, `${helper ? `${helper.name} used ` : ''}Spare the Dying or another sure means`);
   }
 });
 
@@ -4521,10 +4581,61 @@ export interface NewEffect {
   minutes: number | null;
   targetIds: string[];
   casterId: string | null;
+  /** Light sources: take the Torch, Candle or flask of Oil from the inventory (default true when gear use is tracked). */
+  useGear?: boolean;
+}
+
+/** Whether anyone in the party has an inventory recorded, so missing gear can be told apart from an empty list. */
+const inventoriesKept = (s: State): boolean => s.characters.some((c) => c.kind === 'pc' && c.inventory.length > 0);
+
+/** Who carries a matching item, looking at these people first, then the rest of the party and the mounts. */
+function carrierOf(s: State, preferIds: string[], match: RegExp): { c: Character; it: InventoryItem } | null {
+  const order = [...preferIds.map((id) => charById(s, id)).filter((c): c is Character => !!c), ...s.characters];
+  for (const c of order) {
+    const it = c.inventory.find((i) => i.qty > 0 && !i.scattered && match.test(i.name.trim()));
+    if (it) return { c, it };
+  }
+  return null;
+}
+
+/** Uses up one of an item: drops the line when the last one is gone. */
+function useUpOne(c: Character, it: InventoryItem): number {
+  it.qty -= 1;
+  if (it.qty <= 0) c.inventory = c.inventory.filter((x) => x.id !== it.id);
+  return Math.max(0, it.qty);
+}
+
+/**
+ * Takes the fuel for a light source (2024 PHB: a Torch or Candle burns 1 hour; a flask of Oil burns 6 hours in a Lamp or Lantern).
+ * Returns a note for the log, or null (and logs why) when the fuel or the lamp is missing.
+ */
+function takeLightFuel(s: State, presetName: string, preferIds: string[]): string | null | '' {
+  const fuel = fuelFor(presetName);
+  if (!fuel || !s.settings.trackGearUse || !inventoriesKept(s)) return '';
+  if (fuel === 'oil') {
+    const vessel = VESSEL_MATCH.find((v) => v.preset.test(presetName));
+    if (vessel && !carrierOf(s, preferIds, vessel.item)) {
+      log(s, `Nobody carries ${vessel.label} to burn the Oil in. Add one to someone's inventory first.`, 'warn');
+      return null;
+    }
+  }
+  const got = carrierOf(s, preferIds, FUEL_MATCH[fuel]);
+  if (!got) {
+    log(s, `Nobody has ${FUEL_LABEL[fuel]} left. Buy more, or add them to an inventory.`, 'warn');
+    return null;
+  }
+  const left = useUpOne(got.c, got.it);
+  return ` ${got.c.name} uses ${FUEL_LABEL[fuel]} (${left} left).`;
 }
 
 export const addEffect = act((d, _ctx, ne: NewEffect) => {
   const now = absNow(d);
+  let fuelNote = '';
+  if (ne.preset.kind === 'light' && ne.useGear !== false) {
+    const took = takeLightFuel(d, ne.preset.name, [...ne.targetIds, ...(ne.casterId ? [ne.casterId] : [])]);
+    if (took === null) return;
+    fuelNote = took;
+  }
   const conc = !!ne.preset.concentration;
   if (conc && ne.casterId) {
     const dropped = d.effects.filter((e) => e.concentration && e.casterId === ne.casterId);
@@ -4548,7 +4659,50 @@ export const addEffect = act((d, _ctx, ne: NewEffect) => {
   };
   d.effects.push(e);
   const caster = ne.casterId ? charById(d, ne.casterId) : undefined;
-  log(d, `${caster ? `${caster.name}: ` : ''}${e.name}${effectWho(d, e)} begins${e.endsAt == null ? ' (until ended)' : `, lasting ${formatDuration(e.endsAt - now)}`}${conc ? ' (Concentration)' : ''}.`);
+  log(d, `${caster ? `${caster.name}: ` : ''}${e.name}${effectWho(d, e)} begins${e.endsAt == null ? ' (until ended)' : `, lasting ${formatDuration(e.endsAt - now)}`}${conc ? ' (Concentration)' : ''}.${fuelNote}`);
+});
+
+/** Tops up a Lamp or Lantern with a fresh flask of Oil: 6 more hours (2024 PHB). */
+export const refuelLight = act((d, _ctx, effectId: string) => {
+  const e = d.effects.find((x) => x.id === effectId);
+  if (!e || !isOilLight(e.name)) return;
+  let note = '';
+  if (d.settings.trackGearUse && inventoriesKept(d)) {
+    const got = carrierOf(d, e.targetIds, FUEL_MATCH.oil);
+    if (!got) return void log(d, 'Nobody has a flask of Oil left.', 'warn');
+    note = ` ${got.c.name} uses a flask of Oil (${useUpOne(got.c, got.it)} left).`;
+  }
+  if (e.pausedLeft != null) e.pausedLeft += OIL_MINUTES;
+  else if (e.endsAt != null) e.endsAt += OIL_MINUTES;
+  log(d, `${e.name}${effectWho(d, e)} gets a fresh flask of Oil: ${formatDuration(OIL_MINUTES)} more.${note}`);
+});
+
+/** Puts out a Lamp or Lantern, keeping the Oil left in it for later (2024 PHB: Oil burns 6 hours in all, not necessarily at once). */
+export const snuffLight = act((d, _ctx, effectId: string) => {
+  const e = d.effects.find((x) => x.id === effectId);
+  if (!e || !isOilLight(e.name) || e.endsAt == null) return;
+  e.pausedLeft = Math.max(0, e.endsAt - absNow(d));
+  e.endsAt = null;
+  noticed(d, 'lightOut', effectChars(d, e), `${e.name}${effectWho(d, e)} is put out, with ${formatDuration(e.pausedLeft)} of Oil left in it.`);
+});
+
+/** Relights a Lamp or Lantern that was put out (lighting it with a Tinderbox takes a Bonus Action). */
+export const relightLight = act((d, _ctx, effectId: string) => {
+  const e = d.effects.find((x) => x.id === effectId);
+  if (!e || e.pausedLeft == null) return;
+  const now = absNow(d);
+  e.startedAt = now;
+  e.endsAt = now + Math.max(1, e.pausedLeft);
+  delete e.pausedLeft;
+  log(d, `${e.name}${effectWho(d, e)} is lit again: ${formatDuration(e.endsAt - now)} of Oil left.`);
+});
+
+/** Lowers or raises a Hooded Lantern's hood (2024 PHB: lowered, it sheds only Dim Light in a 5-foot radius). */
+export const setHood = act((d, _ctx, effectId: string, lowered: boolean) => {
+  const e = d.effects.find((x) => x.id === effectId);
+  if (!e || !isHooded(e.name)) return;
+  e.dimmed = lowered;
+  log(d, lowered ? `The hood of the ${e.name.split(' (')[0]} is lowered: only Dim Light in a 5-foot radius now.` : `The hood of the ${e.name.split(' (')[0]} is raised: Bright Light 30 ft, Dim Light 30 ft more.`);
 });
 
 export const endEffect = act((d, _ctx, effectId: string) => {
@@ -4812,7 +4966,7 @@ export function currentAffinities(s: State): Affinity[] {
 
 // ---------------------------------------------------------------- navigation helpers and reading the sky
 
-/** Someone in the party carries a map of the current place (table rule: Advantage on navigation here). */
+/** Someone in the party carries a map of the current place (2024 PHB Map: +5 to Wisdom (Survival) checks to find the way there). */
 export function partyHasMapHere(s: State): boolean {
   return s.characters.some((c) => c.inventory.some((i) => isMapOf(i.name, s.place.name)));
 }
@@ -4847,7 +5001,7 @@ export const stargaze = act((d, ctx, charId: string, useTools: boolean, bonus: n
 
 /**
  * Drafting a map of the current small area. Cartographer's Tools, Wisdom DC 15 (2024 PHB), an hour (table rule);
- * without them, paper and charcoal at DC 20 and two hours (table rule). The map gives Advantage on navigation here (table rule).
+ * without them, paper and charcoal at DC 20 and two hours (table rule). The map gives +5 on navigation here (2024 PHB Map).
  */
 export const draftMap = act((d, ctx, charId: string, useTools: boolean, bonus: number) => {
   const c = charById(d, charId);
@@ -4864,7 +5018,7 @@ export const draftMap = act((d, ctx, charId: string, useTools: boolean, bonus: n
   if (r.value + mod < dc) return void log(d, `${c.name} sketches the lay of the land (${roll}), but the result is too muddled to steer by.`, 'warn');
   const me = charById(d, charId)!;
   me.inventory.push({ id: uid(), name, qty: 1, weight: 0, source: 'manual', valueGp: 1, container: null, ammo: null });
-  log(d, `${me.name} drafts a ${name} (${roll}). Navigating here now has Advantage (table rule).`, 'good');
+  log(d, `${me.name} drafts a ${name} (${roll}). Navigating here now gets +5 (2024 PHB Map).`, 'good');
 });
 
 /**
@@ -5073,6 +5227,262 @@ function groomTheMounts(s: State): void {
   if (tended.length) log(s, `${groom.name} feeds and waters the animals: ${tended.join(', ')}.`, tended.some((t) => t.includes('short')) ? 'warn' : 'info');
 }
 
+// ---------------------------------------------------------------- camp gear: tents, shovels, traps, alarms, caltrops
+
+/** Small and Medium people who'd sleep in tents tonight (living adventurers). */
+const tentSleepers = (s: State): Character[] => s.characters.filter((c) => c.kind !== 'mount' && alive(c) && (c.size === 'Small' || c.size === 'Medium' || c.size === 'Tiny'));
+
+/** Places in the party's tents: two Small or Medium creatures each (2024 PHB). */
+export function tentSpaces(s: State): number {
+  return s.characters.reduce((a, c) => a + c.inventory.filter((i) => TENT.test(i.name.trim()) && !i.scattered).reduce((n, i) => n + i.qty, 0), 0) * TENT_SLEEPS;
+}
+
+/** Camping in tents without enough of them: who sleeps in the open. Empty when inventories aren't kept or the rule is off. */
+export function tentShortfall(s: State): Character[] {
+  if (!s.settings.tentSpace || s.place.shelter !== 'tent' || !inventoriesKept(s)) return [];
+  const sleepers = tentSleepers(s);
+  const spaces = tentSpaces(s);
+  return sleepers.slice(spaces);
+}
+
+/** Digs with Shovels (2024 PHB: an hour per 5-foot hole each), or by hand at four times the time (table rule). */
+export const dig = act((d, ctx, diggerIds: string[], kind: DigKind) => {
+  const diggers = diggerIds.map((id) => charById(d, id)).filter((c): c is Character => !!c && alive(c));
+  if (!diggers.length) return;
+  const job = DIG_LABEL[kind];
+  if (kind === 'snowCave' && (d.place.ground?.snowIn ?? 0) < 24) return void log(d, 'There isn’t enough snow here for a snow cave (it takes drifts 2 feet deep or more).', 'warn');
+  const shovels = s_count(d, SHOVEL);
+  const withShovel = Math.min(diggers.length, shovels);
+  if (!withShovel && !d.settings.improvised) return void log(d, 'Nobody has a Shovel, and improvised attempts are off.', 'warn');
+  // Each digger with a shovel moves one 5-foot hole an hour; one without, a quarter of that.
+  const rate = withShovel + (diggers.length - withShovel) / DIG_BY_HAND;
+  const minutes = Math.ceil((job.holes * SHOVEL_MINUTES) / rate);
+  advanceMut(d, ctx, minutes, 'work');
+  const place = d.place;
+  place.dug = [...(place.dug ?? []).filter((x) => x !== job.label), job.label];
+  if (kind === 'firePit') d.fire.sheltered = true;
+  if (kind === 'snowCave') place.shelter = 'cave';
+  log(
+    d,
+    `${diggers.map((c) => c.name).join(', ')} dig${diggers.length > 1 ? '' : 's'} ${job.label.toLowerCase()} in ${formatDuration(minutes)}${withShovel ? ` with ${withShovel} Shovel${withShovel > 1 ? 's' : ''}` : ' by hand (table rule: four times as long)'}. ${job.note}`,
+    'good',
+  );
+});
+
+const s_count = (s: State, re: RegExp): number => s.characters.reduce((a, c) => a + c.inventory.filter((i) => re.test(i.name.trim()) && !i.scattered).reduce((n, i) => n + i.qty, 0), 0);
+
+/** Sets Hunting Traps on game trails near camp (2024 PHB: a Utilize action each, chained to a tree or spike). */
+export const setTraps = act((d, ctx, charId: string, qty: number) => {
+  const c = charById(d, charId);
+  if (!c) return;
+  const have = c.inventory.filter((i) => HUNTING_TRAP.test(i.name) && i.qty > 0);
+  const total = have.reduce((a, i) => a + i.qty, 0);
+  const n = Math.min(total, Math.max(1, Math.round(qty)));
+  if (!n) return void log(d, `${c.name} has no Hunting Trap.`, 'warn');
+  let left = n;
+  for (const it of have) {
+    const take = Math.min(left, it.qty);
+    it.qty -= take;
+    left -= take;
+  }
+  c.inventory = c.inventory.filter((i) => !(HUNTING_TRAP.test(i.name) && i.qty <= 0));
+  advanceMut(d, ctx, 10 * n, 'camp');
+  d.place.trapsSet = [...(d.place.trapsSet ?? []), { charId, qty: n, setAt: absNow(d) }];
+  log(d, `${c.name} sets ${n} Hunting Trap${n > 1 ? 's' : ''} along game trails near camp (${10 * n} min, table rule). Check them after a night: a creature that steps on one makes a DC ${TRAP_SAVE_DC} Dexterity save or is caught.`);
+});
+
+/** Checks and collects the traps. Table rule: each one left 8 hours or more catches small game on a d20 roll of 13+, worth 1d4 + 1 lb of raw meat. */
+function collectTraps(d: State, ctx: Ctx): void {
+  const traps = d.place.trapsSet ?? [];
+  if (!traps.length) return;
+  const now = absNow(d);
+  let meat = 0;
+  let caught = 0;
+  let early = 0;
+  for (const t of traps) {
+    const c = charById(d, t.charId) ?? d.characters.find((x) => x.kind === 'pc');
+    for (let i = 0; i < t.qty; i++) {
+      if (now - t.setAt < 8 * 60) early++;
+      else if (die(20, ctx.rng) >= TRAP_CATCH_ON) {
+        caught++;
+        meat += rollExpr(TRAP_MEAT_DICE, ctx.rng) ?? 2;
+      }
+    }
+    if (c) addLine(d, c, 'Hunting Trap', t.qty, {}, null, false);
+  }
+  d.place.trapsSet = [];
+  if (meat) d.stores.foodRawLb += meat;
+  const n = traps.reduce((a, t) => a + t.qty, 0);
+  log(
+    d,
+    caught
+      ? `The traps are checked and gathered: ${caught} of ${n} caught something, ${meat} lb of raw meat for the stores (table rule).`
+      : `The traps are checked and gathered: nothing caught${early ? ` (${early} hadn't been out a full night)` : ''}.`,
+    caught ? 'good' : 'info',
+  );
+}
+
+export const checkTraps = act((d, ctx) => {
+  if (!(d.place.trapsSet ?? []).length) return;
+  advanceMut(d, ctx, 10, 'camp');
+  collectTraps(d, ctx);
+});
+
+/** Hangs a Bell on a String or Rope around the camp (table rule): anything that crosses it rings the bell and wakes the camp. */
+export const rigAlarm = act((d, ctx, charId: string) => {
+  const c = charById(d, charId);
+  if (!c) return;
+  const bell = carrierOf(d, [charId], BELL);
+  const line = carrierOf(d, [charId], ALARM_LINE);
+  if (!bell || !line) return void log(d, `An alarm needs a Bell and a length of String, Rope or Chain${!bell ? '; nobody has a Bell' : '; nobody has String or Rope'}.`, 'warn');
+  advanceMut(d, ctx, ALARM_MINUTES, 'camp');
+  d.place.alarm = true;
+  log(d, `${c.name} strings a line around the camp at ankle height and hangs a Bell on it (${ALARM_MINUTES} min, table rule). Anything that crosses it will ring it, heard up to 60 feet away.`, 'good');
+});
+
+/** Spreads Caltrops or Ball Bearings as a Utilize action (2024 PHB). They stay on the ground until gathered up. */
+export const scatterItem = act((d, _ctx, charId: string, itemId: string) => {
+  const c = charById(d, charId);
+  const it = c?.inventory.find((i) => i.id === itemId);
+  if (!c || !it || it.scattered || !SCATTERABLE.test(it.name.trim())) return;
+  if (it.qty > 1) {
+    it.qty -= 1;
+    c.inventory.push({ ...it, id: uid(), qty: 1, scattered: true, containerId: null });
+  } else {
+    it.scattered = true;
+    it.containerId = null;
+  }
+  log(d, /caltrops/i.test(it.name)
+    ? `${c.name} spreads Caltrops over a 5-foot square: a creature entering it makes a DC 15 Dexterity save or takes 1 Piercing damage and stops.`
+    : `${c.name} spills Ball Bearings over a 10-foot square: a creature entering it makes a DC 10 Dexterity save or falls Prone.`);
+});
+
+/** Gathers up spread Caltrops and Ball Bearings: 10 minutes (2024 PHB). */
+export const gatherScattered = act((d, ctx, charIds: string[]) => {
+  const who = charIds.length ? charIds : d.characters.map((c) => c.id);
+  const items = d.characters.filter((c) => who.includes(c.id)).flatMap((c) => c.inventory.filter((i) => i.scattered).map((i) => ({ c, i })));
+  if (!items.length) return;
+  advanceMut(d, ctx, GATHER_MINUTES, 'camp');
+  for (const { c, i } of items) {
+    const me = charById(d, c.id)!;
+    me.inventory = me.inventory.filter((x) => x.id !== i.id);
+    addLine(d, me, i.name, i.qty, { valueGp: i.valueGp }, null, false);
+  }
+  log(d, `It takes ${GATHER_MINUTES} minutes to gather up ${items.map(({ i }) => i.name).join(' and ')} (2024 PHB).`);
+});
+
+/** Leaving camp: traps are checked and taken along, the alarm comes down, and anything still spread on the ground is left behind. */
+function breakCamp(d: State, ctx: Ctx): void {
+  if ((d.place.trapsSet ?? []).length) collectTraps(d, ctx);
+  if (d.place.alarm) d.place.alarm = false;
+  if (d.place.dug?.length) d.place.dug = [];
+  const lost: string[] = [];
+  for (const c of d.characters) {
+    const left = c.inventory.filter((i) => i.scattered);
+    if (left.length) {
+      lost.push(...left.map((i) => `${c.name}'s ${i.name}`));
+      c.inventory = c.inventory.filter((i) => !i.scattered);
+    }
+  }
+  if (lost.length) log(d, `Left behind on the ground: ${lost.join(', ')}.`, 'warn');
+  const unsaddled = d.characters.filter((m) => m.kind === 'mount' && alive(m) && needsExoticSaddle(m));
+  if (unsaddled.length) log(d, `${unsaddled.map((m) => m.name).join(', ')} can't be ridden without an Exotic Saddle (2024 PHB): flying and swimming mounts need one.`, 'warn');
+}
+
+// ---------------------------------------------------------------- tool checks, perfume, signals and writing
+
+/** Liquid the party's barrels, jugs and pots can hold, in gallons (2024 PHB capacities), counting stashes and vehicles. */
+export function waterContainers(s: State): number {
+  return liquidCapacity([...s.characters.flatMap((c) => c.inventory), ...s.stashes.flatMap((x) => x.items)]);
+}
+
+/**
+ * A tool's Utilize use (2024 PHB): ability check against the tool's DC, with the Proficiency Bonus if proficient and
+ * Advantage if a skill also applies. Without the tool, an improvised try at DC +5 and twice the time (table rule).
+ */
+export const useTool = act((d, ctx, charId: string, toolName: string, useIndex: number, bonus: number, advantage: boolean, what: string) => {
+  const c = charById(d, charId);
+  const tool = toolNamed(toolName);
+  const use = tool?.uses[useIndex];
+  if (!c || !tool || !use) return;
+  const has = carriesTool(c, tool.name);
+  if (!has && !d.settings.improvised) return void log(d, `${c.name} has no ${tool.name} (improvised attempts are off).`, 'warn');
+  const dc = use.dc + (has ? 0 : IMPROVISED_DC);
+  const minutes = (use.minutes ?? 0) * (has ? 1 : IMPROVISED_TIME);
+  if (minutes) advanceMut(d, ctx, minutes, 'camp');
+  const me = charById(d, charId)!;
+  const mode = advantage && has ? 'advantage' : 'normal';
+  const r = d20(mode, ctx.rng);
+  const mod = bonus - 2 * me.exhaustion;
+  const total = r.value + mod;
+  const on = what.trim() ? ` (${what.trim()})` : '';
+  const roll = `${ABILITY_LABEL[tool.ability]}${has ? ` with ${tool.name}` : `, improvised without ${tool.name}`} ${r.rolls.join('/')}${mode === 'advantage' ? ' with Advantage' : ''} ${signed(mod)} = ${total} against DC ${dc}${minutes ? `, ${formatDuration(minutes)}` : ''}`;
+  if (total >= dc) {
+    log(d, `${me.name} tries to ${use.text.charAt(0).toLowerCase()}${use.text.slice(1)}${on} and ${use.success}: ${roll}.`, 'good');
+    if (use.effect) {
+      const now = absNow(d);
+      d.effects.push({ id: uid(), name: `${use.effect.name} (${me.name})`, kind: 'other', targetIds: [me.id], casterId: null, concentration: false, shelter: false, startedAt: now, endsAt: now + use.effect.minutes, notes: use.effect.note });
+    }
+  } else log(d, `${me.name} tries to ${use.text.charAt(0).toLowerCase()}${use.text.slice(1)}${on}, but ${use.failure}: ${roll}.`, 'warn');
+});
+
+/** Dabs on Perfume: for 1 hour, Advantage on Charisma (Persuasion) checks to influence an Indifferent Humanoid within 5 feet (2024 PHB). */
+export const applyPerfume = act((d, _ctx, charId: string) => {
+  const c = charById(d, charId);
+  const it = c?.inventory.find((i) => PERFUME.test(i.name) && i.qty > 0);
+  if (!c || !it) return void log(d, `${c?.name ?? 'They'} has no Perfume.`, 'warn');
+  useUpOne(c, it);
+  const now = absNow(d);
+  d.effects.push({ id: uid(), name: `Perfume (${c.name})`, kind: 'other', targetIds: [c.id], casterId: null, concentration: false, shelter: false, startedAt: now, endsAt: now + PERFUME_MINUTES, notes: 'Advantage on Charisma (Persuasion) checks to influence an Indifferent Humanoid within 5 feet.' });
+  noticed(d, 'effectEnds', [c], `${c.name} dabs on Perfume; a pleasant scent lingers around them for the next hour.`, 'good');
+});
+
+/** Sounds a Signal Whistle (heard up to 600 feet) or a Bell (60 feet), 2024 PHB. */
+export const soundSignal = act((d, _ctx, charId: string, kind: 'whistle' | 'bell') => {
+  const c = charById(d, charId);
+  if (!c) return;
+  const re = kind === 'whistle' ? SIGNAL_WHISTLE : BELL;
+  if (!c.inventory.some((i) => re.test(i.name.trim()))) return void log(d, `${c.name} has no ${kind === 'whistle' ? 'Signal Whistle' : 'Bell'}.`, 'warn');
+  log(d, kind === 'whistle' ? `${c.name} blows a Signal Whistle: a shrill blast anyone within 600 feet can hear.` : `${c.name} rings a Bell, clear enough to be heard 60 feet away.`);
+});
+
+/**
+ * Writes pages: each sheet of Paper or Parchment holds about 250 words, and a bottle of Ink writes about 500 pages (2024 PHB).
+ * Table rule: a page takes about 10 minutes to write out by hand.
+ */
+export const writePages = act((d, ctx, charId: string, pages: number, what: string) => {
+  const c = charById(d, charId);
+  const n = Math.max(1, Math.round(pages));
+  if (!c) return;
+  const sheets = c.inventory.filter((i) => PAPER.test(i.name.trim()) && i.qty > 0);
+  const have = sheets.reduce((a, i) => a + i.qty, 0);
+  const ink = c.inventory.find((i) => INK.test(i.name.trim()) && i.qty > 0);
+  const pen = c.inventory.some((i) => /ink pen|quill/i.test(i.name));
+  if (have < n) return void log(d, `${c.name} needs ${n} sheet${n > 1 ? 's' : ''} of Paper or Parchment and has ${have}.`, 'warn');
+  if (!ink) return void log(d, `${c.name} has no Ink.`, 'warn');
+  if (!pen) return void log(d, `${c.name} has no Ink Pen to write with.`, 'warn');
+  advanceMut(d, ctx, n * 10, 'camp');
+  const me = charById(d, charId)!;
+  let left = n;
+  for (const it of me.inventory.filter((i) => PAPER.test(i.name.trim()) && i.qty > 0)) {
+    while (left > 0 && it.qty > 0) (it.qty -= 1), (left -= 1);
+  }
+  me.inventory = me.inventory.filter((i) => !(PAPER.test(i.name.trim()) && i.qty <= 0));
+  const bottle = me.inventory.find((i) => INK.test(i.name.trim()) && i.qty > 0)!;
+  let pagesLeft = (bottle.uses ?? INK_PAGES) - n;
+  let note = `${pagesLeft} pages of Ink left in the bottle`;
+  while (pagesLeft <= 0) {
+    if (useUpOne(me, bottle) <= 0) {
+      note = 'the Ink has run dry';
+      break;
+    }
+    pagesLeft += INK_PAGES;
+    note = `one bottle of Ink used up; ${pagesLeft} pages left in the next`;
+  }
+  bottle.uses = pagesLeft;
+  log(d, `${me.name} writes ${n} page${n > 1 ? 's' : ''}${what.trim() ? ` (${what.trim()})` : ''} in ${formatDuration(n * 10)}: about ${n * 250} words, ${note}.`);
+});
+
 // ---------------------------------------------------------------- learning what magic items do
 
 function addFinding(s: State, it: MagicItem, method: StudyMethod, text: string): void {
@@ -5088,8 +5498,11 @@ function revealAll(s: State, it: MagicItem, method: StudyMethod): void {
   for (const c of revealed) c.known = true;
   it.magicKnown = true;
   it.identified = true;
-  addFinding(s, it, method, `Identified as ${it.name}.${revealed.length ? ` Learned: ${revealed.map((c) => c.text).join('; ')}.` : ''}`);
-  if (before !== it.name) log(s, `${before[0].toUpperCase()}${before.slice(1)} turns out to be ${it.name}.`, 'good');
+  // Table rule: identifying also reveals rarity, and with it the item's DMG price.
+  const worth = it.rarity ? magicItemValue(it.name, it.rarity) : null;
+  const value = worth && it.rarity ? ` ${RARITY_LABEL[it.rarity]}: worth about ${fmtGp(worth.gp)} (DMG price${worth.note ? `; ${worth.note}` : ''}).` : ' Its rarity isn’t set yet (DM).';
+  addFinding(s, it, method, `Identified as ${it.name}.${revealed.length ? ` Learned: ${revealed.map((c) => c.text).join('; ')}.` : ''}${value}`);
+  log(s, `${before !== it.name ? `${before[0].toUpperCase()}${before.slice(1)} turns out to be ${it.name}.` : `${it.name} is identified.`}${value}`, 'good');
 }
 
 /** Studying an unknown item: Detect Magic, an Arcana check, or experimenting with it. */
@@ -5188,12 +5601,67 @@ export const addInventory = act((d, _ctx, charId: string, text: string) => {
   const c = charById(d, charId);
   if (!c) return;
   const parsed = parseInventory(text);
-  for (const p of parsed) {
-    const same = c.inventory.find((i) => sameStack(i, p) && !i.containerId);
-    if (same) same.qty += p.qty;
-    else c.inventory.push({ id: uid(), ...p, container: detectContainer(p.name), ammo: isAmmo(p.name) ? { spent: 0 } : null });
+  const notes: string[] = [];
+  for (const p of parsed) notes.push(...stowItem(d, c, p.name, p.qty, p, true));
+  if (parsed.length) log(d, `${c.name}'s inventory: added ${parsed.length} line(s), ${parsed.filter((p) => p.source === 'guess').length} with guessed weights.${notes.length ? ` ${notes.join(' ')}` : ''}`);
+});
+
+/**
+ * Puts an item in a character's inventory. An equipment pack is opened into its contents (2024 PHB), packed in its
+ * Backpack. With `supplies`, Rations and Waterskins go to the food and water trackers instead of the item list.
+ * A Bedroll or Blanket ticks the character's cold-night cover. Returns notes for the log.
+ */
+function stowItem(s: State, c: Character, name: string, qty: number, extra: Partial<InventoryItem> = {}, supplies = false, inside: string | null = null): string[] {
+  const notes: string[] = [];
+  const pack = packNamed(name);
+  if (pack) {
+    for (let n = 0; n < qty; n++) {
+      const bag = PACKS[pack].find((x) => /^backpack$/i.test(x.name)) ? addLine(s, c, 'Backpack', 1, {}, null, true) : null;
+      for (const x of PACKS[pack]) if (!/^backpack$/i.test(x.name)) notes.push(...stowItem(s, c, x.name, x.qty, {}, supplies, bag?.id ?? null));
+    }
+    notes.unshift(`Opened ${qty > 1 ? `${qty} × ` : ''}${pack} into its contents.`);
+    return notes;
   }
-  if (parsed.length) log(d, `${c.name}'s inventory: added ${parsed.length} line(s), ${parsed.filter((p) => p.source === 'guess').length} with guessed weights.`);
+  if (/^bedroll/i.test(name) && !c.bedroll) ((c.bedroll = true), notes.push(`${c.name} now has a Bedroll for cold nights.`));
+  if (/^blanket/i.test(name) && !c.blanket) ((c.blanket = true), notes.push(`${c.name} now has a Blanket for cold nights.`));
+  if (supplies && c.kind !== 'mount' && RATIONS.test(name.trim())) {
+    c.rationsLb = Math.round((c.rationsLb + qty * foodNeedLb(c)) * 100) / 100;
+    notes.push(`${qty} day${qty > 1 ? 's' : ''} of Rations go to ${c.name}'s food.`);
+    return notes;
+  }
+  if (supplies && c.kind !== 'mount' && WATERSKIN.test(name.trim())) {
+    c.waterCapacityPints += qty * WATERSKIN_PINTS;
+    c.waterPints += qty * WATERSKIN_PINTS;
+    notes.push(`${qty > 1 ? `${qty} full Waterskins go` : 'A full Waterskin goes'} to ${c.name}'s water.`);
+    return notes;
+  }
+  addLine(s, c, name, qty, extra, inside, false);
+  return notes;
+}
+
+function addLine(_s: State, c: Character, name: string, qty: number, extra: Partial<InventoryItem>, inside: string | null, fresh: boolean): InventoryItem {
+  const same = !fresh && c.inventory.find((i) => sameStack(i, { name, valueGp: extra.valueGp }) && (i.containerId ?? null) === inside && !i.scattered && !i.damaged);
+  if (same) {
+    same.qty += qty;
+    return same;
+  }
+  const est = estimateWeight(name);
+  const it: InventoryItem = { id: uid(), name, qty, weight: est.weight, source: est.source, ...extra, containerId: inside, container: detectContainer(name), ammo: isAmmo(name) ? { spent: 0 } : null };
+  c.inventory.push(it);
+  return it;
+}
+
+/** Moves Rations and Waterskins listed in the inventory (from D&D Beyond, say) to the food and water trackers. */
+export const suppliesToTrackers = act((d, _ctx, charId: string) => {
+  const c = charById(d, charId);
+  if (!c || c.kind === 'mount') return;
+  const notes: string[] = [];
+  for (const it of [...c.inventory]) {
+    if (!RATIONS.test(it.name.trim()) && !WATERSKIN.test(it.name.trim())) continue;
+    c.inventory = c.inventory.filter((x) => x.id !== it.id);
+    notes.push(...stowItem(d, c, it.name, it.qty, {}, true));
+  }
+  log(d, notes.length ? notes.join(' ') : `${c.name} has no Rations or Waterskins listed in the inventory.`, notes.length ? 'good' : 'info');
 });
 
 // ---------------------------------------------------------------- suffocation
@@ -5372,11 +5840,13 @@ export const appraiseItem = act((d, ctx, ownerId: string, itemId: string, method
   if (st.appraiseOneTry && it.appraiseTried?.includes(who.id)) return void log(d, `${who.name} has already tried to value the ${it.name}. They need a rest before trying again (table rule), or someone else can try.`, 'warn');
   if (st.appraiseTime) advanceMut(d, ctx, APPRAISE_MINUTES, 'camp');
   const mod = who.bonus ?? bonus;
-  const mode = advantage && check.canAdvantage ? 'advantage' : 'normal';
+  // 2024 PHB: a Magnifying Glass gives Advantage on checks to appraise or inspect a highly detailed item.
+  const glass = !who.id.startsWith('h:') && !!charById(d, who.id)?.inventory.some((i) => MAGNIFYING_GLASS.test(i.name));
+  const mode = (advantage && check.canAdvantage) || glass ? 'advantage' : 'normal';
   const r = d20(mode, ctx.rng);
   const total = r.value + mod - 2 * who.exhaustion;
   const secret = st.appraiseMisjudge;
-  const roll = secret ? '' : ` (${check.label}: ${r.rolls.join('/')}${mode === 'advantage' ? ' with Advantage' : ''} ${signed(mod)}${who.exhaustion ? ` −${2 * who.exhaustion} Exhaustion` : ''} = ${total} against DC ${check.dc})`;
+  const roll = secret ? '' : ` (${check.label}${glass ? ', with a Magnifying Glass' : ''}: ${r.rolls.join('/')}${mode === 'advantage' ? ' with Advantage' : ''} ${signed(mod)}${who.exhaustion ? ` −${2 * who.exhaustion} Exhaustion` : ''} = ${total} against DC ${check.dc})`;
   const studies = method === 'tools' ? `${who.name} studies the ${it.name} through a loupe${roll}` : `${who.name} looks the ${it.name} over carefully${roll}`;
   if (total >= check.dc) return reveal(`${studies} and judges its worth`);
   if (secret && total <= check.dc - 5 && it.valueGp != null) {
@@ -5434,12 +5904,8 @@ function deliverProduct(s: State, p: Project): void {
   if (magic) {
     c.items.push({ id: uid(), name, requiresAttunement: false, attuned: false, identified: true, charges: null, maxCharges: null, regain: 'all', regainAt: 'never', awaySince: null, notes: 'Crafted', magicKnown: true, clues: [], findings: [] });
   } else {
-    const same = c.inventory.find((i) => i.name.toLowerCase() === name.toLowerCase() && !i.containerId);
-    if (same) same.qty += qty;
-    else {
-      const est = estimateWeight(name);
-      c.inventory.push({ id: uid(), name, qty, weight: est.weight, source: est.source, valueGp, container: detectContainer(name), ammo: isAmmo(name) ? { spent: 0 } : null });
-    }
+    const notes = stowItem(s, c, name, qty, valueGp != null ? { valueGp } : {}, true);
+    if (notes.length) log(s, notes.join(' '));
   }
   log(s, `${c.name} now has ${qty > 1 ? `${qty} × ` : ''}${name}${magic ? ' (with their magic items)' : ' (in their inventory)'}.`, 'good');
 }
@@ -5489,6 +5955,9 @@ export const importDdb = act((d, _ctx, imp: DdbImport, parts: DdbParts) => {
       feats: imp.feats.length ? imp.feats : c.feats,
       chef: imp.feats.length ? imp.feats.some((f) => /^chef\b/i.test(f)) : c.chef,
       features: imp.features.length ? imp.features : c.features,
+      toolProfs: imp.toolProfs,
+      skillProfs: imp.skillProfs,
+      abilities: { str: imp.stats.strength, dex: imp.stats.dexterity, con: imp.stats.constitution, int: imp.stats.intelligence, wis: imp.stats.wisdom, cha: imp.stats.charisma },
     });
   }
   if (parts.inventory) {
@@ -5627,7 +6096,7 @@ const isUnderground = (s: State): boolean => !!CLIMATES[s.weather.climate].noWea
 /** The conditions that shift the encounter check right now. */
 export function encounterConditions(s: State, activity: CheckConditions['activity']): CheckConditions {
   const now = absNow(s);
-  const lightOn = s.fire.lit || s.effects.some((e) => e.kind === 'light' && (e.endsAt == null || e.endsAt > now));
+  const lightOn = s.fire.lit || s.effects.some((e) => e.kind === 'light' && e.pausedLeft == null && (e.endsAt == null || e.endsAt > now));
   const shelterSpell = s.effects.some((e) => e.shelter && (e.endsAt == null || e.endsAt > now));
   return {
     activity,
@@ -5695,6 +6164,7 @@ function surpriseCheck(s: State, ctx: Ctx, cr: string, hostile: boolean, activit
   const awake = activity === 'rest' ? watchers : s.characters.filter((c) => c.kind !== 'mount' && alive(c) && !c.dying && !c.stable);
   const pace = activity === 'travel' ? s.travel.pace : null;
   const stealth = d20('normal', ctx.rng).value + estimatedStealth(cr);
+  if (activity === 'rest' && s.place.alarm) return ' As they creep closer, someone or something crosses the alarm line and the Bell jangles: the camp wakes, and nobody is surprised (table rule).';
   if (!awake.length) return ` With nobody awake to notice, they approach unseen: the party is surprised (Disadvantage on Initiative).`;
   // Sight (light, Darkvision, heavy rain or snow) and pace each give Advantage or Disadvantage, which cancel and don't stack.
   const paceMode: RollMode = pace === 'fast' ? 'disadvantage' : pace === 'slow' ? 'advantage' : 'normal';
@@ -5725,6 +6195,12 @@ export function resolveEncounter(s: State, ctx: Ctx, activity: CheckConditions['
   const when = `${ACTIVITY_WHEN[activity]} at ${formatClock(s.minutes % MIN_PER_DAY)}`;
   const watchNote = activity === 'rest' ? (watchers.length ? ` On watch: ${watchers.map((c) => `${c.name} (passive Perception ${c.passivePerception})`).join(', ')}.` : ' Nobody is on watch.') : '';
   const head = `Random encounter ${when}${checkDetail ? ` (${checkDetail})` : ''}. d100 = ${res.roll}:`;
+  // Table rule: in daylight outdoors, someone awake with a Spyglass spots them at twice the distance.
+  const lookouts = (activity === 'rest' ? watchers : s.characters.filter((x) => x.kind !== 'mount' && alive(x) && !x.dying && !x.stable)).filter((x) => x.inventory.some((i) => SPYGLASS.test(i.name)));
+  if (lookouts.length && !night && !isUnderground(s)) {
+    res.distanceFt *= 2;
+    res.distanceExpr = `${res.distanceExpr}, doubled: ${lookouts[0].name} spots them through a Spyglass (table rule)`;
+  }
   if (res.row.kind === 'peaceful' || !res.row.creature) {
     log(s, `${head} ${res.row.text}. About ${res.distanceFt} feet away.${watchNote}`, 'info');
     return;

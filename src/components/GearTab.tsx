@@ -8,7 +8,7 @@ import { formatClock, formatDuration } from '../rules/calendar';
 import { Card, Meter, Num, Pill, Select, Text, Toggle, Rule } from './common';
 import type { Character, InventoryItem, MagicItem, Resource } from '../state/types';
 import { LOAD_LABEL, RATION_WEIGHT } from '../rules/encumbrance';
-import { fmtGp, MAGIC_ITEM_VALUE } from '../rules/money';
+import { fmtGp, magicItemValue } from '../rules/money';
 import { misjudged, valueSecret, valueUnknown } from '../rules/shop';
 import { APPRAISE_EYE_DC, APPRAISE_MINUTES, JEWELER_TOOLS, appraiseCheck } from '../rules/appraise';
 import { CLOTH, IMPROVISED_MEND_DC, MEND_DC, WEAVER } from '../rules/tools';
@@ -16,6 +16,8 @@ import { PartyKnowledgeCard, PlayerItemView } from './ItemKnowledge';
 import { ARCANA_DC, CLUE_KIND_LABEL, SCHOOLS_OF_MAGIC, STUDY_LABEL, STUDY_MINUTES, type ClueKind } from '../rules/identify';
 import { RARITY_LABEL, type Rarity } from '../rules/crafting';
 import { WaysAround } from './WaysAround';
+import { ToolsCard } from './ToolsCard';
+import { BOOK_BONUS, HEALERS_KIT, HEALERS_KIT_USES, RATIONS, SCATTERABLE, WATERSKIN } from '../rules/gear';
 
 const setChar = (id: string, fn: (c: Character) => void) =>
   edit((d) => {
@@ -33,6 +35,7 @@ export function GearTab() {
       <div className="grid wide">
         <MysteryOverview />
         <AfterTheFight />
+        <ToolsCard />
         <PartyKnowledgeCard />
         {s.characters.map((c) => (
           <Card key={c.id} title={`${c.name} · ${c.className} ${c.level}`}>
@@ -87,6 +90,7 @@ function KnowledgePanel({ c, it }: { c: Character; it: MagicItem }) {
   const [asPlayers, setAsPlayers] = useState(false);
   const [studier, setStudier] = useState(c.id);
   const [bonus, setBonus] = useState(0);
+  const [book, setBook] = useState(false);
   const [text, setText] = useState('');
   const [kind, setKind] = useState<ClueKind>('property');
   const setItem = (fn: (x: MagicItem) => void) => setChar(c.id, (x) => fn(x.items.find((i) => i.id === it.id)!));
@@ -147,7 +151,8 @@ function KnowledgePanel({ c, it }: { c: Character; it: MagicItem }) {
           Detect Magic
         </button>
         <Num value={bonus} onChange={(v) => setBonus(Math.round(v))} width={2} label="Arcana bonus" />
-        <button className="small" onClick={() => dispatch((st, cx) => E.studyItem(st, cx, c.id, it.id, 'arcana', studier, bonus))}>
+        <Toggle checked={book} onChange={setBook} label="With an accurate Book on it (+5)" />
+        <button className="small" onClick={() => dispatch((st, cx) => E.studyItem(st, cx, c.id, it.id, 'arcana', studier, bonus + (book ? BOOK_BONUS : 0)))}>
           Arcana check (DC {ARCANA_DC[it.rarity || 'unknown']}, {STUDY_MINUTES} min)
         </button>
         <button className="small ghost" onClick={() => dispatch((st, cx) => E.studyItem(st, cx, c.id, it.id, 'experiment', studier, 0))}>
@@ -266,6 +271,8 @@ function InventoryBlock({ c }: { c: Character }) {
                     </Pill>
                   )}
                   {i.damaged && <Pill tone="bad" title="Torn, cracked or broken: see Damaged gear below">damaged</Pill>}{' '}
+                  {HEALERS_KIT.test(i.name) && <Pill tone="info" title="A Healer's Kit has ten uses (2024 PHB)">{i.uses ?? HEALERS_KIT_USES}/{HEALERS_KIT_USES} uses</Pill>}{' '}
+                  {i.scattered && <Pill tone="warn" title="Spread on the ground: gather them up (10 minutes) before moving on, or they're left behind">on the ground</Pill>}{' '}
                   {valueUnknown(i) ? (
                     <Pill tone="warn" title={`Nobody in the party knows what ${i.qty > 1 ? 'these are' : 'it is'} worth yet.${i.valueGp != null ? ` DM: ${fmtGp(i.valueGp)} each.` : ' No value set.'}`}>
                       value unknown
@@ -280,6 +287,16 @@ function InventoryBlock({ c }: { c: Character }) {
                   </Pill>
                 </span>
                 <span className="btn-row tight">
+                  {SCATTERABLE.test(i.name.trim()) && !i.scattered && (
+                    <button className="ghost tiny" title="A Utilize action (2024 PHB). Gathering them up again takes 10 minutes." onClick={() => dispatch((st, cx) => E.scatterItem(st, cx, c.id, i.id))}>
+                      Spread
+                    </button>
+                  )}
+                  {i.scattered && (
+                    <button className="ghost tiny" onClick={() => dispatch((st, cx) => E.gatherScattered(st, cx, [c.id]))}>
+                      Gather (10 min)
+                    </button>
+                  )}
                   {!i.container && c.inventory.some((x) => x.container) && (
                     <Select
                       value={i.containerId ?? ''}
@@ -301,6 +318,14 @@ function InventoryBlock({ c }: { c: Character }) {
           </button>
         </details>
       )}
+      {c.kind !== 'mount' && c.inventory.some((i) => RATIONS.test(i.name.trim()) || WATERSKIN.test(i.name.trim())) && (
+        <p className="small">
+          Rations or Waterskins are listed as gear.{' '}
+          <button className="small ghost" onClick={() => dispatch((st, cx) => E.suppliesToTrackers(st, cx, c.id))}>
+            Move them to food and water
+          </button>
+        </p>
+      )}
       <AppraiseBlock c={c} />
       <DamageBlock c={c} />
       <textarea rows={3} value={text} onChange={(e) => setText(e.target.value)} placeholder={'Paste from D&D Beyond or type one item per line, e.g.\n2 Torches\nLongsword\nRope, hempen (50 feet)'} />
@@ -311,7 +336,7 @@ function InventoryBlock({ c }: { c: Character }) {
       </div>
       <Rule>
         No weights needed: each item is looked up in the 2024 PHB equipment list, guessed from its name, or set to 1 lb. A weight in the pasted text is used as is, and you can correct any line. Rations, water and
-        coins (50 to a pound) are added from the tracker. Add &quot;value unknown&quot; to a line (e.g. &quot;Diamond (300 GP, value unknown)&quot;) to keep its value from the party until it&apos;s appraised.
+        coins (50 to a pound) are added from the tracker. An equipment pack (Explorer&apos;s, Dungeoneer&apos;s and the rest) opens into its 2024 PHB contents, and Rations and Waterskins you add go straight to food and water. Add &quot;value unknown&quot; to a line (e.g. &quot;Diamond (300 GP, value unknown)&quot;) to keep its value from the party until it&apos;s appraised.
       </Rule>
     </>
   );
@@ -550,6 +575,7 @@ function DyingBlock({ c }: { c: Character }) {
   const h = helpers.find((x) => x.id === helper);
   const [bonus, setBonus] = useState<number | null>(null);
   const now = E.absNow(s);
+  const kitUses = s.characters.some((x) => x.kind === 'pc' && x.inventory.length) ? s.characters.reduce((a, x) => a + E.healerKitUses(x), 0) : null;
   if (c.diedAt != null) return <p className="bad-text small">Dead. See the World tab for resurrection time limits.</p>;
   if (c.stable)
     return (
@@ -575,8 +601,16 @@ function DyingBlock({ c }: { c: Character }) {
         <button className="small" onClick={() => dispatch((st, cx) => E.stabilize(st, cx, c.id, helper || null, 'medicine', bonus ?? h?.wisMod ?? 0))}>
           Medicine check (DC 10)
         </button>
+        <button
+          className="small ghost"
+          disabled={s.settings.trackGearUse && kitUses === 0}
+          title={s.settings.trackGearUse && kitUses === 0 ? "Nobody has a Healer's Kit with uses left" : undefined}
+          onClick={() => dispatch((st, cx) => E.stabilize(st, cx, c.id, helper || null, 'kit'))}
+        >
+          Healer&apos;s Kit{s.settings.trackGearUse && kitUses != null ? ` (${kitUses} use${kitUses === 1 ? '' : 's'} in the party)` : ''}
+        </button>
         <button className="small ghost" onClick={() => dispatch((st, cx) => E.stabilize(st, cx, c.id, helper || null, 'sure'))}>
-          Healer&apos;s Kit / Spare the Dying
+          Spare the Dying
         </button>
       </div>
       <Rule>Death saves: 10 or higher is a success and a 1 counts as two failures. A 20 brings them back with 1 HP. Three successes make them stable, and three failures kill them. Damage at 0 HP adds a failure.</Rule>
@@ -699,11 +733,11 @@ function ItemsBlock({ c }: { c: Character }) {
                   <b>{it.identified ? it.name : it.partyName || 'Unknown item'}</b>
                   {!it.identified && <span className="muted small"> (really: {it.name})</span>}{' '}
                   {it.identified && it.rarity ? (
-                    <span className="muted small" title="DMG magic item value by rarity. Selling usually fetches about half.">
-                      {RARITY_LABEL[it.rarity]}, worth about {fmtGp(MAGIC_ITEM_VALUE[it.rarity])}{' '}
+                    <span className="muted small" title={`DMG price by rarity${magicItemValue(it.name, it.rarity).note ? `; ${magicItemValue(it.name, it.rarity).note}` : ''}. Selling usually fetches about half.`}>
+                      {RARITY_LABEL[it.rarity]}, worth about {fmtGp(magicItemValue(it.name, it.rarity).gp)}{' '}
                     </span>
                   ) : (
-                    <Pill tone="warn" title={it.identified ? 'Set its rarity to see its DMG value.' : 'Identifying it reveals its rarity, and so roughly what it’s worth (DMG).'}>
+                    <Pill tone="warn" title={it.identified ? 'Set its rarity to see its DMG value.' : 'Identify or a Short Rest of study reveals its rarity, and so its DMG price (table rule).'}>
                       value unknown
                     </Pill>
                   )}{' '}
@@ -845,7 +879,7 @@ function ItemsBlock({ c }: { c: Character }) {
         </button>
       </details>
       <Rule>
-        Attuning takes a Short Rest focused on the item while touching it, with a maximum of {MAX_ATTUNED} items. Identifying works the same way, or with the Identify spell. Attunement ends if the item is more
+        Attuning takes a Short Rest focused on the item while touching it, with a maximum of {MAX_ATTUNED} items. Identifying works the same way, or with the Identify spell. Table rule: identifying also reveals the item&apos;s rarity, and so its DMG price (Common 100 GP, Uncommon 400, Rare 4,000, Very Rare 40,000, Legendary 200,000; consumables half; a Spell Scroll twice its scribing cost). Attunement ends if the item is more
         than 100 feet away for 24 hours, if you die, or if someone else attunes to it. Ending it voluntarily takes another Short Rest, and the attuning rest can&apos;t be the same one used to learn the item&apos;s properties. A cursed item&apos;s attunement can&apos;t be ended until the curse is broken (Remove Curse), and identifying doesn&apos;t reveal curses. Items that need a class or spellcasting can only be attuned by someone who qualifies. You can&apos;t attune to two copies of the same item.
       </Rule>
     </>

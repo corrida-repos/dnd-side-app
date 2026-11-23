@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
 import { fireThreat } from '../rules/weather';
+import { DIG_LABEL, HUNTING_TRAP, MAGNIFYING_GLASS, SHOVEL, TENT_SLEEPS, TRAP_CATCH_ON, type DigKind } from '../rules/gear';
 import { COOK_RAW_MINUTES, DEFAULT_FIRE_COLD_LIMIT_F, FIRE_LIGHT_DC, FIRE_METHODS, fireColdLimit, fireLighting, type FireMethod } from '../rules/campfire';
 import { GAME_ANIMALS, MEAT_LB, BUTCHER_MINUTES, BUTCHER_DC, isEdible, yieldsHide, STRANGE_TYPES } from '../rules/hunting';
 import { formatClock, formatDuration, lightAt } from '../rules/calendar';
@@ -24,6 +25,7 @@ export function CampTab() {
       <MealsCard />
       <ForageCard />
       <HuntCard />
+      <CampGearCard />
       <PoisonHarvestCard />
       <TestCard />
       <RulesCard />
@@ -70,6 +72,9 @@ function FireCard() {
     { value: 'tinderbox' as const, label: `Tinderbox (1 min a try)${tinderbox === false ? ' — nobody carries one' : ''}` },
     { value: 'friction' as const, label: 'No tinderbox (10 min a try, DC +5)' },
     ...(alchemists.length ? [{ value: 'alchemist' as const, label: `Alchemist's Supplies (Int, DC ${ALCHEMIST_FIRE_DC})` }] : []),
+    ...(pcs.some((c) => c.inventory.some((i) => MAGNIFYING_GLASS.test(i.name)))
+      ? [{ value: 'magnifier' as const, label: `Magnifying Glass (5 min, no roll${E.sunBright(s) ? '' : ' — needs bright sunlight'})` }]
+      : []),
   ];
   return (
     <Card title={<span>Campfire {s.fire.lit ? <Pill tone="good">Burning</Pill> : <Pill tone="muted">Out</Pill>}</span>} className="span-2 fire-card">
@@ -195,6 +200,8 @@ function FireCard() {
 
 function StoresCard() {
   const s = useGame();
+  const cap = E.waterContainers(s);
+  const stored = Math.round((s.stores.waterGal + s.stores.waterUnsafeGal) * 10) / 10;
   return (
     <Card title="Camp stores">
       <div className="form-row">
@@ -211,9 +218,21 @@ function StoresCard() {
           Refill all waterskins
         </button>
         <button disabled={!s.place.waterSource} onClick={() => dispatch((st, c) => E.fillBarrel(st, c, 5))}>
-          Fill a 5 gal barrel
+          Fill 5 gal
         </button>
+        {cap > 0 && (
+          <button disabled={!s.place.waterSource || stored >= cap} onClick={() => dispatch((st, c) => E.fillBarrel(st, c, Math.round((cap - stored) * 10) / 10))}>
+            Fill every barrel and jug ({Math.max(0, Math.round((cap - stored) * 10) / 10)} gal)
+          </button>
+        )}
       </div>
+      {cap > 0 ? (
+        <p className={`small ${stored > cap ? 'warn-text' : 'muted'}`}>
+          Barrels, jugs and pots the party carries or stores hold {cap} gal (2024 PHB: a Barrel holds 40 gallons, a Jug or Iron Pot 1). {stored > cap ? `The ${stored} gal in the stores needs more containers.` : ''}
+        </p>
+      ) : stored > 0 ? (
+        <p className="small muted">No Barrels or Jugs listed in any inventory or stash to hold the stored water (a Barrel holds 40 gallons).</p>
+      ) : null}
       <WaysAround topic={['food', 'water']} />
     </Card>
   );
@@ -768,6 +787,102 @@ function PoisonHarvestCard() {
         2024 DMG: from a venomous creature that is dead or Incapacitated, using a Poisoner&apos;s Kit. Success yields one dose, and nothing more can be taken from that creature. Failing by 5 or more exposes the harvester to the poison. Buying poison is often illegal: it means criminal contacts, inquiries and bribes.
       </Rule>
       <WaysAround topic={'poisonHarvest'} />
+    </Card>
+  );
+}
+
+/** Tents, shovels, hunting traps, an alarm line and anything spread on the ground. */
+function CampGearCard() {
+  const s = useGame();
+  const pcs = s.characters.filter((c) => c.kind !== 'mount' && E.alive(c));
+  const [diggers, setDiggers] = useState<string[]>([]);
+  const [kind, setKind] = useState<DigKind>('firePit');
+  const [trapper, setTrapper] = useState('');
+  const [traps, setTraps] = useState(1);
+  const [rigger, setRigger] = useState('');
+  const spaces = E.tentSpaces(s);
+  const outside = E.tentShortfall(s);
+  const shovels = s.characters.reduce((a, c) => a + c.inventory.filter((i) => SHOVEL.test(i.name.trim())).reduce((n, i) => n + i.qty, 0), 0);
+  const trappers = pcs.filter((c) => c.inventory.some((i) => HUNTING_TRAP.test(i.name) && i.qty > 0));
+  const trapperId = trappers.find((c) => c.id === trapper)?.id ?? trappers[0]?.id ?? '';
+  const set = s.place.trapsSet ?? [];
+  const scattered = s.characters.flatMap((c) => c.inventory.filter((i) => i.scattered).map((i) => `${c.name}'s ${i.name}`));
+  const who = diggers.length ? diggers : pcs[0] ? [pcs[0].id] : [];
+  const riggerId = pcs.find((c) => c.id === rigger)?.id ?? pcs[0]?.id ?? '';
+  return (
+    <Card title="Camp gear">
+      <h3>Tents</h3>
+      <p className="small">
+        {spaces ? `${spaces / TENT_SLEEPS} Tent${spaces > TENT_SLEEPS ? 's' : ''}: room for ${spaces}.` : 'No Tents in anyone\'s inventory.'}{' '}
+        {s.place.shelter === 'tent'
+          ? outside.length
+            ? <span className="warn-text">Not enough room: {outside.map((c) => c.name).join(', ')} sleep{outside.length > 1 ? '' : 's'} in the open.</span>
+            : <span className="good-text">Everyone has a place.</span>
+          : <span className="muted">Set the shelter to Tents (Overview) to camp in them.</span>}
+      </p>
+      <h3>Digging</h3>
+      <div className="form-row">
+        <Select label="Dig" value={kind} onChange={setKind} options={(Object.keys(DIG_LABEL) as DigKind[]).map((k) => ({ value: k, label: DIG_LABEL[k].label }))} />
+      </div>
+      <div className="chips">
+        {pcs.map((c) => (
+          <Toggle key={c.id} checked={who.includes(c.id)} onChange={(v) => setDiggers(v ? [...who, c.id] : who.filter((x) => x !== c.id))} label={c.name} />
+        ))}
+      </div>
+      <div className="btn-row tight">
+        <button className="small" disabled={!who.length || (!shovels && !s.settings.improvised)} onClick={() => dispatch((st, cx) => E.dig(st, cx, who, kind))}>
+          Dig ({shovels ? `${Math.min(shovels, who.length)} Shovel${Math.min(shovels, who.length) > 1 ? 's' : ''}` : 'by hand'})
+        </button>
+        {(s.place.dug ?? []).length > 0 && <span className="small muted">Dug here: {(s.place.dug ?? []).join(', ')}.</span>}
+      </div>
+      <p className="small muted">{DIG_LABEL[kind].note}</p>
+      <h3>Hunting Traps</h3>
+      {set.length > 0 && (
+        <div className="btn-row tight">
+          <span className="small">{set.reduce((a, t) => a + t.qty, 0)} set near camp since {formatClock(set[0].setAt % 1440)}.</span>
+          <button className="small" onClick={() => dispatch((st, cx) => E.checkTraps(st, cx))}>
+            Check and collect (10 min)
+          </button>
+        </div>
+      )}
+      {trappers.length ? (
+        <div className="btn-row tight">
+          <Select value={trapperId} onChange={setTrapper} options={trappers.map((c) => ({ value: c.id, label: c.name }))} />
+          <Num value={traps} onChange={(v) => setTraps(Math.max(1, Math.round(v)))} min={1} width={2} />
+          <button className="small" onClick={() => dispatch((st, cx) => E.setTraps(st, cx, trapperId, traps))}>
+            Set traps (10 min each)
+          </button>
+        </div>
+      ) : (
+        set.length === 0 && <p className="small muted">Nobody carries a Hunting Trap.</p>
+      )}
+      <h3>Alarm line</h3>
+      {s.place.alarm ? (
+        <p className="small good-text">A Bell hangs on a line around the camp: anything crossing it wakes everyone, so the camp can&apos;t be surprised while resting.</p>
+      ) : (
+        <div className="btn-row tight">
+          <Select value={riggerId} onChange={setRigger} options={pcs.map((c) => ({ value: c.id, label: c.name }))} />
+          <button className="small" disabled={!riggerId} onClick={() => dispatch((st, cx) => E.rigAlarm(st, cx, riggerId))}>
+            Rig a Bell on a line (10 min)
+          </button>
+        </div>
+      )}
+      {scattered.length > 0 && (
+        <>
+          <h3>On the ground</h3>
+          <div className="btn-row tight">
+            <span className="small warn-text">{scattered.join(', ')}</span>
+            <button className="small" onClick={() => dispatch((st, cx) => E.gatherScattered(st, cx, []))}>
+              Gather up (10 min)
+            </button>
+          </div>
+        </>
+      )}
+      <Rule>
+        2024 PHB: a Tent sleeps two Small or Medium creatures; a Shovel digs a 5-foot hole in an hour; a Hunting Trap holds whatever steps on it (DC 13 Dexterity save); Caltrops and Ball Bearings take 10 minutes to gather up. Table rules: digging by
+        hand takes four times as long; a trap left out overnight catches small game on a d20 roll of {TRAP_CATCH_ON}+ (1d4 + 1 lb of raw meat); a Bell on a String or Rope rings when crossed. Traps and the alarm are packed up when the party moves
+        on, and anything still on the ground is left behind.
+      </Rule>
     </Card>
   );
 }

@@ -66,6 +66,7 @@ export const MECHANICS: Mechanic[] = [
   // ---- Tier 1: rules that take work away, so even the lightest game keeps them.
   { key: 'deathSavesResolve', tier: 1, area: 'Rest', source: 'Table rule', label: 'Time can’t pass while someone is dying: their death saves roll at once', cost: 'Saves work: skipping time never leaves a character stuck at 0 HP waiting for rolls.' },
   { key: 'fireWarmsCamp', tier: 1, area: 'Camp', source: 'Table rule', label: 'A lit campfire protects the camp from extreme cold', cost: 'Saves work: no hourly cold saves at a camp with a fire.' },
+  { key: 'batchCrafting', tier: 1, area: 'Downtime', source: 'Table rule', label: 'Cheap items are crafted in batches: 20 days of Rations take one workday, not twenty', cost: 'Saves work: one project for a stack of arrows, torches or rations.' },
   { key: 'fallbackNavigator', tier: 1, area: 'Travel', source: 'Table rule', label: 'With no navigator able to act, the best Survival in the party finds the way', cost: 'Saves work: travel never stalls for want of a navigator.' },
 
   // ---- Tier 2: the 2024 rules as written. Mostly automatic, but each one creates consequences to manage.
@@ -76,6 +77,8 @@ export const MECHANICS: Mechanic[] = [
   { key: 'encumbrance', tier: 2, area: 'Gear', source: '2024 PHB', label: 'Carrying capacity: going over Strength × 15 slows the party', cost: 'Needs inventories kept up to date; matters mostly after big hauls of loot.' },
   { key: 'chargeCosts', tier: 2, area: 'Money', source: '2024 PHB', label: 'Charge costs to characters’ gold (crafting, construction, lifestyle, wages, feed)', cost: 'Purses change every day in town or with hirelings, and unpaid bills become debts.' },
   { key: 'trackComponents', tier: 2, area: 'Magic', source: '2024 PHB', label: 'Costly spell components must be carried and are used up', cost: 'Casters have to buy and carry diamonds, incense and the like before casting.' },
+  { key: 'trackGearUse', tier: 2, area: 'Gear', source: '2024 PHB', label: 'Torches, candles and lamp oil burn up, and Healer’s Kits run out after ten uses', cost: 'Lights and kits come out of the inventory, so they need restocking.' },
+  { key: 'stabling', tier: 2, area: 'Money', source: '2024 PHB', label: 'Mounts in town are stabled and fed: 5 SP and 5 CP a day each', cost: 'A small daily charge per animal in every settlement.' },
   { key: 'encounters', tier: 2, area: 'Travel', source: '2024 DMG', label: 'Random encounter checks by the location’s danger', cost: 'Checks roll by themselves, but every encounter they find is a scene to run.' },
 
   // ---- Tier 3: table and optional rules that add chores, saves and bookkeeping.
@@ -86,6 +89,7 @@ export const MECHANICS: Mechanic[] = [
   { key: 'rawFoodRisk', tier: 3, area: 'Survival', source: 'Table rule', label: 'Raw food can make you sick', cost: 'Foraged and hunted food has to be cooked, or it means a save.' },
   { key: 'wildNeedsPurifying', tier: 3, area: 'Survival', source: 'Table rule', label: 'Unpurified water can make you sick', cost: 'Water from the wild has to be boiled or purified, or it means a save.' },
   { key: 'hirelingsEat', tier: 3, area: 'Survival', source: 'Table rule', label: 'Hirelings eat and drink from the camp stores outside settlements', cost: 'Camp stores drain faster and need restocking.' },
+  { key: 'tentSpace', tier: 3, area: 'Camp', source: '2024 PHB', label: 'A Tent sleeps two: anyone without a place sleeps in the open', cost: 'Tents to count against the party when camping in them.' },
   { key: 'sleepDeprivation', tier: 3, area: 'Rest', source: "Xanathar's", label: 'Staying awake too long causes Exhaustion', cost: 'A save for everyone each 24 hours without a Long Rest. Rare unless the party pushes through the night.' },
   { key: 'poorVisibilityNav', tier: 3, area: 'Travel', source: 'Table rule', label: 'Heavy rain or snow, and darkness, each make navigating harder (+5 DC)', cost: 'More failed navigation checks in bad weather and at night.' },
   { key: 'nightTravelSlow', tier: 3, area: 'Travel', source: 'Table rule', label: 'Travelling at night without a light, if anyone lacks Darkvision, goes at a Slow pace', cost: 'Lights to carry and track for night travel.' },
