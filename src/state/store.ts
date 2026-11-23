@@ -18,7 +18,12 @@ function migrate(raw: unknown): State | null {
     ...parsed,
     version: SAVE_VERSION,
     // Saves made before weatherDamage defaulted off keep the value they had.
-    settings: { ...base.settings, weatherDamage: true, ...parsed.settings },
+    settings: (() => {
+      const st = { ...base.settings, weatherDamage: true, ...parsed.settings };
+      // Version 2 moved lingering injuries and madness to the Brutal tier: saves that only had them on by default turn them off.
+      if ((parsed.version ?? 1) < 2 && !st.gearWear) Object.assign(st, { lingeringInjuries: false, madness: false });
+      return st;
+    })(),
     travel: { ...base.travel, ...parsed.travel },
     fire: { ...base.fire, ...parsed.fire },
     stores: { ...base.stores, ...parsed.stores, foodRawLb: parsed.stores?.foodRawLb ?? (parsed.stores as { foodUnsafeLb?: number } | undefined)?.foodUnsafeLb ?? 0 },

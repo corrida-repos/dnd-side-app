@@ -22,10 +22,20 @@ describe('levels of detail', () => {
   it('ranks every rule once, and each tier includes everything below it', () => {
     expect(new Set(MECHANICS.map((m) => m.key)).size).toBe(MECHANICS.length);
     for (const t of TIERS.slice(1)) {
-      const lower = tierPreset((t.id - 1) as 1 | 2 | 3);
+      const lower = tierPreset((t.id - 1) as 1 | 2 | 3 | 4);
       const here = tierPreset(t.id);
       for (const m of MECHANICS) if (lower[m.key]) expect(here[m.key]).toBe(true);
     }
+  });
+
+  it('keeps injuries, madness and gear wear for Brutal, the hardest tier', () => {
+    for (const key of ['lingeringInjuries', 'madness', 'gearWear'] as const) {
+      expect(MECHANICS.find((m) => m.key === key)?.tier).toBe(5);
+      expect(tierPreset(4)[key]).toBe(false);
+      expect(tierPreset(5)[key]).toBe(true);
+    }
+    expect(createDefaultState(() => 0).settings).toMatchObject({ lingeringInjuries: false, madness: false, gearWear: false });
+    expect(matchTier(E.setDetailTier(fresh(), ctx(), 5).settings)).toBe(5);
   });
 
   it('starts new games at Gritty and recognises hand-made mixes', () => {

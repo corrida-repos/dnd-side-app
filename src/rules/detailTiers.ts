@@ -7,7 +7,7 @@ import type { Settings } from '../state/types';
  * how often it interrupts the scene, and how much inventory or ledger keeping it adds. A save the app rolls
  * by itself costs little; a chore someone has to remember every day, or a modifier on every damage die, costs a lot.
  */
-export type TierId = 1 | 2 | 3 | 4;
+export type TierId = 1 | 2 | 3 | 4 | 5;
 
 export interface Tier {
   id: TierId;
@@ -40,8 +40,14 @@ export const TIERS: Tier[] = [
   {
     id: 4,
     name: 'Hardcore',
-    tagline: 'Everything, including the fiddliest rules: weather modifying every damage die, secret and one-shot appraisals, armor that spoils sleep.',
+    tagline: 'The fiddliest rules on top of Gritty: weather modifying every damage die, secret and one-shot appraisals, armor that spoils sleep.',
     load: 'Adds work in combat and at every sale. For tables that enjoy the simulation.',
+  },
+  {
+    id: 5,
+    name: 'Brutal',
+    tagline: 'The hardest: wounds that linger for weeks, minds that break, and gear that wears out on the road.',
+    load: 'Injuries to heal, madness to play out and gear to keep up, on top of everything in Hardcore.',
   },
 ];
 
@@ -105,8 +111,6 @@ export const MECHANICS: Mechanic[] = [
   { key: 'regionDailyRoll', tier: 3, area: 'World', source: 'Table rule', label: 'Supernatural regions roll their table each dawn', cost: 'A daily roll and its effect while in a supernatural region.' },
   { key: 'appraiseCrafts', tier: 3, area: 'Money', source: 'Table rule', label: 'Jeweler’s Tools also value jewelry; History values art objects at DC 15', cost: 'More appraisal rolls before selling treasure.' },
   { key: 'improvised', tier: 3, area: 'Gear', source: 'Table rule', label: 'Improvised attempts without the right tool: DC +5, twice as long', cost: 'More checks become possible without the proper kit, each slower and harder.' },
-  { key: 'lingeringInjuries', tier: 3, area: 'Rest', source: '2014 DMG', label: 'Lingering injuries (d20 table) from dropping to 0 HP, failing a death save by 5 or more, or a critical hit', cost: 'An injury to heal over days, with a daily Medicine check for a festering wound.' },
-  { key: 'madness', tier: 3, area: 'World', source: '2014 DMG', label: 'Madness: short-term, long-term and indefinite madness when the DM calls for it', cost: 'Only when the DM uses it: a madness to play for minutes, hours or until cured.' },
   { key: 'duesAndTaxes', tier: 3, area: 'Money', source: 'Table rule', label: 'Taxes, tithes, rent and guild dues are charged when due; unpaid ones become debts', cost: 'Recurring charges to set up and pay.' },
   { key: 'notoriety', tier: 3, area: 'World', source: 'Table rule', label: 'Crimes raise heat with the law in a place; the watch may recognise the party there; heat cools week by week', cost: 'A daily recognition roll while in a place where the party is wanted.' },
   { key: 'contactsFade', tier: 3, area: 'World', source: 'Table rule', label: 'Friendly contacts cool after 60 days without word, and won’t do a second favor within 30 days', cost: 'Letters and visits to keep contacts warm.' },
@@ -118,10 +122,14 @@ export const MECHANICS: Mechanic[] = [
   { key: 'sleepInArmorPenalty', tier: 4, area: 'Rest', source: "Xanathar's", label: 'Sleeping in Medium or Heavy armor spoils the Long Rest', cost: 'Armor to take off and put on around every rest, and the minutes that takes.' },
   { key: 'doubleWaterInHeat', tier: 4, area: 'Survival', source: '2014 rule', label: 'Double water needs on days of 100 °F or hotter', cost: 'Twice the water to carry and log on hot days.' },
   { key: 'prestigeRenownMin', tier: 4, area: 'World', source: 'Table rule', label: 'Factions and rulers refuse titles (knight 10, lord or count 25, duke 50) and fortifications (25) below these renown scores', cost: 'Renown to check before each faction grant.' },
-  { key: 'gearWear', tier: 4, area: 'Gear', source: 'Table rule', label: 'Hard travel, heavy rain and salt water wear gear down until it is damaged; storms and long voyages wear ships', cost: 'An hour of upkeep every few days of hard travel, and repairs to pay for.' },
   { key: 'appraiseOneTry', tier: 4, area: 'Money', source: 'Table rule', label: 'One appraisal try per person until a rest', cost: 'Tracking who has tried which item.' },
   { key: 'appraiseTime', tier: 4, area: 'Money', source: 'Table rule', label: 'A careful appraisal takes 10 minutes', cost: 'The clock moves for each appraisal.' },
   { key: 'appraiseMisjudge', tier: 4, area: 'Money', source: 'Table rule', label: 'Secret appraisal rolls; failing by 5 or more gives a wrong value', cost: 'Secret rolls and values the party can’t trust.' },
+
+  // ---- Tier 5: the hardest, with lasting harm to body, mind and gear.
+  { key: 'lingeringInjuries', tier: 5, area: 'Rest', source: '2014 DMG', label: 'Lingering injuries (d20 table) from dropping to 0 HP, failing a death save by 5 or more, or a critical hit', cost: 'An injury to heal over days, with a daily Medicine check for a festering wound.' },
+  { key: 'madness', tier: 5, area: 'World', source: '2014 DMG', label: 'Madness: short-term, long-term and indefinite madness when the DM calls for it', cost: 'Only when the DM uses it: a madness to play for minutes, hours or until cured.' },
+  { key: 'gearWear', tier: 5, area: 'Gear', source: 'Table rule', label: 'Hard travel, heavy rain and salt water wear gear down until it is damaged; storms and long voyages wear ships', cost: 'An hour of upkeep every few days of hard travel, and repairs to pay for.' },
 ];
 
 /** Built in at every tier: they run on the clock and need no rolls or entries beyond what play already gives. */

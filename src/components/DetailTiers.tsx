@@ -59,6 +59,7 @@ const TIER_BLURB: Record<TierId, string> = {
   2: 'The 2024 rules as written.',
   3: 'Table and optional rules that add chores and saves.',
   4: 'The fiddliest rules: work in combat and at every sale.',
+  5: 'The hardest: lasting injuries, madness and gear that wears out.',
 };
 
 /** Pick how much detail the app tracks, and see every switchable mechanic ranked by how much it slows play. */

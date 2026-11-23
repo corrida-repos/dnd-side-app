@@ -18,7 +18,7 @@ const ctx = (v = 0.5): E.Ctx => ({ rng: () => v });
 function fresh(patch: (s: State) => void = () => {}): State {
   const s = createDefaultState(() => 0);
   s.weather = { ...s.weather, high: 60, low: 45, wind: 'light', precip: 'none' };
-  Object.assign(s.settings, { encounters: false, foodAndWater: false, extremeWeather: false, sleepDeprivation: false, coldNights: false, forcedMarch: false, navigation: false, lifestyleRisks: false, stabling: false, hirelingsEat: false });
+  Object.assign(s.settings, { encounters: false, foodAndWater: false, extremeWeather: false, sleepDeprivation: false, coldNights: false, forcedMarch: false, navigation: false, lifestyleRisks: false, stabling: false, hirelingsEat: false, lingeringInjuries: true, madness: true });
   s.characters = [newCharacter({ id: 'a', name: 'Ash', tasks: [], maxHp: 20, hp: 20, gp: 100, purse: coinsFor(100) }), newCharacter({ id: 'b', name: 'Bree', tasks: [], maxHp: 20, hp: 20, gp: 100, purse: coinsFor(100) })];
   s.place = { ...s.place, name: 'Wilds', terrain: 'grassland', onRoute: true, settlement: false, waterSource: true, region: null };
   s.minutes = 8 * 60;
