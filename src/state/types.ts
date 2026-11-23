@@ -848,7 +848,7 @@ export interface Settings {
   lifestyleRisks: boolean;
   /** Table rule: Marks of Prestige carry obligations (land income and trouble, title upkeep, unpaid fortifications) and can be revoked. */
   prestigeRules: boolean;
-  /** Optional table rule: a faction expects a minimum renown before granting a title or fortification. */
+  /** Optional table rule: a faction (or ruler tracked as one) refuses to grant a title or fortification below a minimum renown. */
   prestigeRenownMin: boolean;
   /** Optional Xanathar's rules resolve downtime activities with checks and tables. */
   downtimeOutcomes: boolean;

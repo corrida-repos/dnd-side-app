@@ -213,12 +213,27 @@ describe('faction renown (2024 DMG) and its ties to marks', () => {
     expect(s.factions[0].renown).toBe(3);
   });
 
-  it('table rule: granting below the expected renown warns but still grants', () => {
+  it('table rule: a faction or ruler refuses titles and fortifications below the renown it expects', () => {
     let s = withFaction(5);
     s.settings.prestigeRenownMin = true;
-    s = E.grantMark(s, ctx(), { kind: 'title', name: 'Baron', holderIds: [s.characters[0].id], grantor: '', rank: 'lord', factionId: 'f' });
-    expect(s.marks).toHaveLength(1);
-    expect(s.log.some((l) => /below the 25/.test(l.text))).toBe(true);
+    const a = s.characters[0].id;
+    s = E.grantMark(s, ctx(), { kind: 'title', name: 'Baron', holderIds: [a], grantor: '', rank: 'lord', factionId: 'f' });
+    expect(s.marks).toHaveLength(0);
+    expect(s.log.at(-1)?.text).toMatch(/will not grant Baron yet: that takes renown 25/);
+    s = E.grantMark(s, ctx(), { kind: 'land', name: 'Fenwick', holderIds: [a], grantor: '', land: 'farmland', factionId: 'f' });
+    s = E.grantMark(s, ctx(), { kind: 'title', name: 'Sir Ada', holderIds: [a], grantor: '', rank: 'knight', factionId: 'f' });
+    expect(s.marks.map((m) => m.name)).toEqual(['Fenwick']);
+    s = E.factionMission(s, ctx(), 'f', 4);
+    s = E.factionMission(s, ctx(), 'f', 1);
+    s = E.grantMark(s, ctx(), { kind: 'title', name: 'Sir Ada', holderIds: [a], grantor: '', rank: 'knight', factionId: 'f' });
+    expect(s.marks).toHaveLength(2);
+    // A new ruler starts at renown 0: no fortification, and no faction created by the refused grant.
+    s = E.grantMark(s, ctx(), { kind: 'fortification', name: 'Keep', holderIds: [a], grantor: 'King Boranel', fort: 'keep', rulerAsFaction: true });
+    expect(s.marks).toHaveLength(2);
+    expect(s.factions.some((f) => f.name === 'King Boranel')).toBe(false);
+    // A one-off reward, not tied to a faction, is never refused.
+    s = E.grantMark(s, ctx(), { kind: 'fortification', name: 'Keep', holderIds: [a], grantor: 'King Boranel', fort: 'keep' });
+    expect(s.marks).toHaveLength(3);
   });
 });
 

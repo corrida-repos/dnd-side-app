@@ -6895,11 +6895,20 @@ function rulerFaction(s: State, name: string): Faction | null {
 }
 
 export const grantMark = act((d, _ctx, g: MarkGrant) => {
+  // Table rule: a faction (or ruler) won't grant a title or fortification below the renown its members expect.
+  if (d.settings.prestigeRenownMin) {
+    const named = g.factionId ? d.factions.find((x) => x.id === g.factionId) : g.rulerAsFaction && g.grantor.trim() ? d.factions.find((f) => f.name.trim().toLowerCase() === g.grantor.trim().toLowerCase()) : undefined;
+    const tracked = !!named || (!g.factionId && !!g.rulerAsFaction && !!g.grantor.trim());
+    const need = renownMinimum(g.kind, g.rank);
+    const have = named?.renown ?? 0;
+    if (tracked && need > have) {
+      log(d, `${named?.name ?? g.grantor.trim()} will not grant ${g.name.trim() || MARK_LABEL[g.kind]} yet: that takes renown ${need}, and the party has ${have} (table rule).`, 'warn');
+      return;
+    }
+  }
   const fac = (g.factionId ? d.factions.find((x) => x.id === g.factionId) : undefined) ?? (g.rulerAsFaction ? rulerFaction(d, g.grantor) ?? undefined : undefined);
   const base = { id: uid(), name: g.name.trim() || MARK_LABEL[g.kind], holderIds: g.holderIds, grantor: g.grantor.trim() || fac?.name || '', grantedDay: d.dayIndex, trust: TRUST_MAX, notes: g.notes ?? '', ...(fac ? { factionId: fac.id } : {}) };
   const m: Mark = { ...base, kind: g.kind };
-  const need = fac && d.settings.prestigeRenownMin ? renownMinimum(g.kind, g.rank) : 0;
-  if (fac && need > fac.renown) log(d, `${fac.name} grants this with the party at renown ${fac.renown}, below the ${need} its members would expect (table rule). Some will grumble about favoritism.`, 'warn');
   const who = holderNames(d, m);
   const from = m.grantor ? ` by ${m.grantor}` : '';
   if (g.kind === 'fortification') {
