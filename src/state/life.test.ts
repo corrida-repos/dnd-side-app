@@ -3,6 +3,7 @@ import * as E from './engine';
 import { createDefaultState, newCharacter } from './defaults';
 import type { InventoryItem, State } from './types';
 import { injuryFor, healsInjury } from '../rules/injuries';
+import { madnessEffect } from '../rules/madness';
 import { ageStage, bodyAge, lifespanFor } from '../rules/aging';
 import { materialOf, repairCost } from '../rules/wear';
 import { heatLevel } from '../rules/notoriety';
@@ -68,6 +69,14 @@ describe('lingering injuries', () => {
     expect(s.characters[0].injuries![0].restDays).toBe(0);
   });
 
+  it('failing a death save by 5 or more also leaves an injury', () => {
+    const dying = fresh((d) => Object.assign(d.characters[0], { hp: 0, dying: true }));
+    const bad = E.deathSave(dying, ctx(0.1), 'a');
+    expect(bad.characters[0].injuries?.[0].why).toMatch(/by 7/);
+    const near = E.deathSave(dying, ctx(0.3), 'a');
+    expect(near.characters[0].injuries ?? []).toHaveLength(0);
+  });
+
   it('only Regenerate restores a lost eye; Heal removes a horrible scar', () => {
     expect(healsInjury('eye', 'heal')).toBe(false);
     expect(healsInjury('eye', 'regenerate')).toBe(true);
@@ -77,14 +86,21 @@ describe('lingering injuries', () => {
 });
 
 describe('madness', () => {
-  it('Stress reaching 6 calls for a Wisdom save; failing brings long-term madness that runs its course', () => {
-    let s = fresh((d) => (d.characters[0].stress = 5));
-    s = E.adjustTrack(s, ctx(0), 'a', 'stress', 1, 'the crypt');
+  it('strikes only when the DM applies it, rolls d100 on the 5e tables, and runs its course', () => {
+    expect(madnessEffect('short', 1)).toMatch(/Paralyzed/);
+    expect(madnessEffect('long', 100)).toMatch(/Unconscious/);
+    expect(madnessEffect('indefinite', 15)).toMatch(/drunk/);
+    // Stress and Fear are separate trackers: no madness from them.
+    const stressed = E.adjustTrack(fresh((d) => (d.characters[0].stress = 5)), ctx(0), 'a', 'stress', 3, 'the crypt');
+    expect(stressed.characters[0].madness ?? []).toHaveLength(0);
+    let s = E.addMadness(fresh(), ctx(0), 'a', 'long', 'the Far Realm');
     const m = s.characters[0].madness![0];
-    expect(m.tier).toBe('long');
-    expect(m.endsAt).toBeGreaterThan(E.absNow(s));
-    s = E.advance(s, ctx(), m.endsAt! - E.absNow(s));
+    expect(m.effect).toMatch(/repeat a specific activity/);
+    expect(m.endsAt! - E.absNow(s)).toBe(10 * 60);
+    s = E.advance(s, ctx(), 10 * 60);
     expect(s.characters[0].madness).toHaveLength(0);
+    const off = E.addMadness(fresh((d) => (d.settings.madness = false)), ctx(), 'a', 'short', 'x');
+    expect(off.characters[0].madness ?? []).toHaveLength(0);
   });
 
   it('Lesser Restoration ends long-term madness but not indefinite madness', () => {

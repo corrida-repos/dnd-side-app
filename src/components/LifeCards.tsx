@@ -6,7 +6,7 @@ import type { Character, Stash } from '../state/types';
 import { formatDuration } from '../rules/calendar';
 import { fmtGp } from '../rules/money';
 import { FESTERING_MEDICINE_DC, INJURIES, INJURY_MEDICINE_SUCCESSES, INJURY_REST_DAYS, type InjuryKind } from '../rules/injuries';
-import { MADNESS, MADNESS_SAVE_DC, DEFAULT_MADNESS_THRESHOLD, type MadnessTier } from '../rules/madness';
+import { MADNESS, DEPENDS_ON_SOURCE, type MadnessTier } from '../rules/madness';
 import { MAGIC_AGING, STAGE_LABEL } from '../rules/aging';
 import { HULL_LIMIT, hullRepair } from '../rules/wear';
 import { DUE_PRESETS, PERIOD_LABEL, type DueKind, type DuePeriod } from '../rules/dues';
@@ -83,16 +83,17 @@ export function InjuryCard() {
         )}
       </ul>
       <h3>New injury</h3>
+      {!s.settings.lingeringInjuries && <p className="small warn-text">Lingering injuries are switched off (Settings → Level of detail).</p>}
       <div className="form-row">
         <Select label="Who" value={whoId} onChange={setWho} options={people.map((c) => ({ value: c.id, label: c.name }))} />
         <Select label="Injury" value={kind} onChange={setKind} options={[{ value: 'roll' as const, label: 'Roll d20' }, ...(Object.keys(INJURIES) as InjuryKind[]).map((k) => ({ value: k, label: `${INJURIES[k].range[0]}${INJURIES[k].range[1] !== INJURIES[k].range[0] ? `–${INJURIES[k].range[1]}` : ''}: ${INJURIES[k].label}` }))]} />
-        <Text label="From" value={why} onChange={setWhy} placeholder="a critical hit, a failed death save" />
+        <Text label="From" value={why} onChange={setWhy} placeholder="a critical hit" />
       </div>
-      <button className="small" disabled={!whoId} onClick={() => dispatch((st, cx) => E.addInjury(st, cx, whoId, kind === 'roll' ? null : kind, why.trim()))}>
+      <button className="small" disabled={!whoId || !s.settings.lingeringInjuries} onClick={() => dispatch((st, cx) => E.addInjury(st, cx, whoId, kind === 'roll' ? null : kind, why.trim()))}>
         {kind === 'roll' ? 'Roll an injury' : 'Add injury'}
       </button>
       <Rule>
-        Optional rule from the 2014 DMG (switch: {s.settings.lingeringInjuries ? 'on' : 'off'} in Settings → Level of detail). {s.settings.lingeringInjuries ? 'Dropping to 0 HP without dying rolls an injury automatically. ' : ''}A critical hit or failing a death save by 5 or more can also call for one, at the DM&apos;s choice. A day of rest is a Long Rest after a day without travel. Cure Wounds, Healing Word and other healing spells cast on the character end injuries that magical healing cures; Heal and Regenerate end more.
+        Optional rule from the 2014 DMG (switch: {s.settings.lingeringInjuries ? 'on' : 'off'} in Settings → Level of detail). A creature gets a lingering injury when it takes a critical hit, drops to 0 HP, or fails a death save by 5 or more. Dropping to 0 HP and death saves of 4 or lower roll one automatically; roll a critical hit here. &quot;Ten days doing nothing but resting&quot; counts a day as a Long Rest after a day without travel. Cure Wounds, Healing Word and other healing spells cast on the character end the injuries that magical healing cures; Heal and Regenerate (6th level or higher) also remove scars, and Regenerate restores lost limbs and eyes.
       </Rule>
       <WaysAround topic="injuries" />
     </Card>
@@ -126,9 +127,9 @@ export function MadnessCard() {
               <p className="small">{m.effect}</p>
               <p className="small muted">{MADNESS[m.tier].cure}</p>
               <div className="btn-row tight">
-                {(['Lesser Restoration', 'Greater Restoration', 'Remove Curse'] as const).map((sp) => (
-                  <button key={sp} className="small" onClick={() => dispatch((st, cx) => E.spellOnTarget(st, cx, sp, c.id))}>
-                    {sp}
+                {(m.tier === 'indefinite' ? ['Greater Restoration', 'Remove Curse', 'Dispel Evil and Good'] : ['Lesser Restoration', 'Greater Restoration']).map((sp) => (
+                  <button key={sp} className={DEPENDS_ON_SOURCE.includes(sp) ? 'small ghost' : 'small'} title={DEPENDS_ON_SOURCE.includes(sp) ? 'Only if the source of the madness allows it (the DM decides)' : undefined} onClick={() => dispatch((st, cx) => E.spellOnTarget(st, cx, sp, c.id))}>
+                    {sp}{DEPENDS_ON_SOURCE.includes(sp) ? ' (if the source allows)' : ''}
                   </button>
                 ))}
                 <button className="small ghost" onClick={() => dispatch((st, cx) => E.cureMadness(st, cx, c.id, m.id, ''))}>
@@ -140,17 +141,18 @@ export function MadnessCard() {
         )}
       </ul>
       <h3>Madness strikes</h3>
+      {!s.settings.madness && <p className="small warn-text">Madness is switched off (Settings → Level of detail).</p>}
       <div className="form-row">
         <Select label="Who" value={whoId} onChange={setWho} options={people.map((c) => ({ value: c.id, label: c.name }))} />
         <Select label="Kind" value={tier} onChange={setTier} options={(Object.keys(MADNESS) as MadnessTier[]).map((t) => ({ value: t, label: `${MADNESS[t].label} (${MADNESS[t].durationText})` }))} />
         <Text label="Cause" value={why} onChange={setWhy} placeholder="a glimpse of the Far Realm" />
       </div>
-      <Text label="Effect (blank: roll d10)" value={effect} onChange={setEffect} wide placeholder={MADNESS[tier].effects[0]} />
-      <button className="small" disabled={!whoId} onClick={() => (dispatch((st, cx) => E.addMadness(st, cx, whoId, tier, why.trim(), effect.trim() || undefined)), setEffect(''))}>
+      <Text label="Effect (blank: roll d100 on the table)" value={effect} onChange={setEffect} wide placeholder={MADNESS[tier].effects[0].text} />
+      <button className="small" disabled={!whoId || !s.settings.madness} onClick={() => (dispatch((st, cx) => E.addMadness(st, cx, whoId, tier, why.trim(), effect.trim() || undefined)), setEffect(''))}>
         Apply madness
       </button>
       <Rule>
-        Optional rule from the 2014 DMG; the effect lists are the app&apos;s own. {s.settings.madness ? `Table rule (on): when Stress or Fear reaches ${DEFAULT_MADNESS_THRESHOLD}, the character makes a DC ${MADNESS_SAVE_DC} Wisdom save or suffers long-term madness. ` : ''}Short-term madness lasts minutes, long-term madness hours, indefinite madness until cured. Calm Emotions suppresses madness while it lasts.
+        Optional rule from the 2014 DMG (also in the SRD 5.1), switch: {s.settings.madness ? 'on' : 'off'}. The DM decides when madness strikes, usually after a failed save against a madness-inducing effect. Short-term madness lasts 1d10 minutes, long-term madness 1d10 × 10 hours, indefinite madness until cured; effects are rolled on the d100 tables. Lesser Restoration ends short- and long-term madness, Greater Restoration ends indefinite madness, and Remove Curse or Dispel Evil and Good may work depending on the source. Calm Emotions suppresses madness while it lasts.
       </Rule>
       <WaysAround topic="madness" />
     </Card>

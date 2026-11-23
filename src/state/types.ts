@@ -961,9 +961,9 @@ export interface Settings {
   workWhileMarching: boolean;
   /** Table rule: uncharted journey stages have a guessed distance, and a mapper can chart them on the way. */
   unchartedLand: boolean;
-  /** Optional 2014 DMG rule: dropping to 0 HP without dying leaves a lingering injury. */
+  /** Optional 2014 DMG rule: lingering injuries from dropping to 0 HP, failing a death save by 5 or more, or a critical hit. */
   lingeringInjuries: boolean;
-  /** Optional 2014 DMG rule (table rule trigger): Stress or Fear reaching 6 calls for a Wisdom save against long-term madness. */
+  /** Optional 2014 DMG rule: madness (short-term, long-term, indefinite), applied when the DM calls for it. */
   madness: boolean;
   /** Table rule: hard travel, rain and salt water wear gear down until it is damaged; storms wear ships. */
   gearWear: boolean;

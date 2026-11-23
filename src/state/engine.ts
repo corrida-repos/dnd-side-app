@@ -77,7 +77,7 @@ import { sense, type SenseKey } from '../rules/senses';
 import { buildTable, checkModifiers, DANGER, DIFFICULTY_LABEL, firstSign, rollOnTable, SRD_POOL, BOOK_POOL, type CheckConditions, type Danger, type EncounterCreature, type EncounterTable, type Party } from '../rules/encounters';
 import type { TerrainType } from '../rules/terrain';
 import { FESTERING_MEDICINE_DC, INJURIES, INJURY_MEDICINE_SUCCESSES, INJURY_REST_DAYS, INJURY_SPELLS, healsInjury, injuryFor, type InjuryKind } from '../rules/injuries';
-import { MADNESS, MADNESS_SAVE_DC, MADNESS_SPELLS, DEFAULT_MADNESS_THRESHOLD, madnessEffect, type MadnessTier } from '../rules/madness';
+import { MADNESS, MADNESS_SPELLS, madnessEffect, type MadnessTier } from '../rules/madness';
 import { MAGIC_AGING, SLOW_AGING_FACTOR, STAGE_LABEL, STAGE_SENSE, ageStage, bodyAge, lifespanFor, longevityBackfire } from '../rules/aging';
 import { HULL_LIMIT, DAMAGED_HULL_SPEED, MAINTAIN_MINUTES, REPAIR_DC, REPAIR_MINUTES, REPAIR_TOOL, WEAR_HOURS, WEAR_LIMIT, hullRepair, materialOf, repairCost, wearCauses } from '../rules/wear';
 import { DUE_PRESETS, GUILD_EXPULSION, PERIOD_DAYS, dueAmount, type DueKind, type DuePeriod } from '../rules/dues';
@@ -5008,6 +5008,8 @@ function rollDeathSave(d: State, ctx: Ctx, c: Character): void {
     status(d, c, 'wakesFromStable', `${c.name} rolls a 20 on the death save and is back on their feet with 1 HP!`, 'good');
     return;
   }
+  // 2014 DMG lingering injuries: failing a death save by 5 or more (a roll of 4 or lower against DC 10).
+  if (r <= 4 && d.settings.lingeringInjuries) addInjuryMut(d, c, injuryFor(die(20, ctx.rng)), `failing a death save by ${10 - r}`);
   if (r === 1) return addDeathFailures(d, c, 2, 'a natural 1 on a death save');
   if (r >= 10) {
     c.deathSuccesses += 1;
@@ -5399,14 +5401,12 @@ export const butcher = act((d, ctx, o: ButcherOpts) => {
 export type Track = 'renown' | 'fear' | 'stress';
 const TRACK_LABEL: Record<Track, string> = { renown: 'Renown', fear: 'Fear', stress: 'Stress' };
 
-export const adjustTrack = act((d, ctx, charId: string, track: Track, delta: number, reason: string) => {
+export const adjustTrack = act((d, _ctx, charId: string, track: Track, delta: number, reason: string) => {
   const c = charById(d, charId);
   if (!c || !delta) return;
   c[track] = track === 'renown' ? c[track] + delta : Math.max(0, c[track] + delta);
   const tone: Tone = track === 'renown' ? (delta > 0 ? 'good' : 'warn') : delta > 0 ? 'warn' : 'good';
   status(d, c, (`${track}${delta > 0 ? 'Up' : 'Down'}` as SenseKey), `${c.name}'s ${TRACK_LABEL[track]} ${delta > 0 ? 'rises' : 'falls'} by ${Math.abs(delta)} to ${c[track]}${reason ? ` (${reason})` : ''}.`, tone);
-  const before = c[track] - delta;
-  if (d.settings.madness && track !== 'renown' && delta > 0 && before < DEFAULT_MADNESS_THRESHOLD && c[track] >= DEFAULT_MADNESS_THRESHOLD) madnessCheck(d, ctx, c, `${TRACK_LABEL[track]} reaching ${c[track]}`);
 });
 
 export const addMount = act((d, _ctx, preset: MountPreset, name: string, buyerId: string | null) => {
@@ -7538,7 +7538,8 @@ function addInjuryMut(s: State, c: Character, kind: InjuryKind, why: string): vo
 export const addInjury = act((d, ctx, charId: string, kind: InjuryKind | null, why: string) => {
   const c = charById(d, charId);
   if (!c) return;
-  addInjuryMut(d, c, kind ?? injuryFor(die(20, ctx.rng)), why || 'a grievous wound');
+  if (!d.settings.lingeringInjuries) return void log(d, 'Lingering injuries are switched off (Settings → Level of detail).', 'warn');
+  addInjuryMut(d, c, kind ?? injuryFor(die(20, ctx.rng)), why || 'a critical hit');
 });
 
 function endInjury(s: State, c: Character, id: string, how: string): void {
@@ -7622,25 +7623,18 @@ export const treatInjury = act((d, ctx, charId: string, injuryId: string, healer
 function addMadnessMut(s: State, ctx: Ctx, c: Character, tier: MadnessTier, why: string, effect?: string): void {
   const info = MADNESS[tier];
   const now = absNow(s);
-  const length = tier === 'short' ? (rollExpr(info.duration, ctx.rng) ?? 5) : tier === 'long' ? (rollExpr(info.duration, ctx.rng) ?? 50) * 60 : null;
-  const text = effect || madnessEffect(tier, die(10, ctx.rng));
+  // Short: 1d10 minutes. Long: 1d10 × 10 hours.
+  const length = tier === 'short' ? die(10, ctx.rng) : tier === 'long' ? die(10, ctx.rng) * 10 * 60 : null;
+  const text = effect || madnessEffect(tier, die(100, ctx.rng));
   (c.madness ??= []).push({ id: uid(), tier, effect: text, at: now, endsAt: length == null ? null : now + length, why });
   status(s, c, 'madness', `${c.name} is gripped by ${info.label.toLowerCase()} (${why}) ${length == null ? 'until cured' : `for ${formatDuration(length)}`}: ${text}`, 'bad');
 }
 
 export const addMadness = act((d, ctx, charId: string, tier: MadnessTier, why: string, effect?: string) => {
   const c = charById(d, charId);
+  if (!d.settings.madness) return void log(d, 'Madness is switched off (Settings → Level of detail).', 'warn');
   if (c) addMadnessMut(d, ctx, c, tier, why || 'something no mind should face', effect);
 });
-
-/** Stress or Fear hits the threshold: a DC 15 Wisdom save or long-term madness (table rule trigger). */
-function madnessCheck(s: State, ctx: Ctx, c: Character, why: string): void {
-  const r = d20('normal', ctx.rng);
-  const total = r.value + c.wisMod - 2 * c.exhaustion;
-  if (total >= MADNESS_SAVE_DC) return void log(s, `${c.name} holds on to their wits after ${why}: Wisdom save ${total} against DC ${MADNESS_SAVE_DC}.`, 'good');
-  log(s, `${c.name} breaks under ${why}: Wisdom save ${total} against DC ${MADNESS_SAVE_DC}.`, 'bad');
-  addMadnessMut(s, ctx, c, 'long', why);
-}
 
 function endMadness(s: State, c: Character, id: string, why: string): void {
   const m = (c.madness ?? []).find((x) => x.id === id);
