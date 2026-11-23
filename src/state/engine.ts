@@ -291,7 +291,7 @@ export function recoverExhaustion(c: Character): ExhaustionCause | null {
   return null;
 }
 
-function applySaveResult(s: State, c: Character, p: Omit<PendingSave, 'id' | 'stamp'>, passed: boolean, detail: string): void {
+function applySaveResult(s: State, ctx: Ctx, c: Character, p: Omit<PendingSave, 'id' | 'stamp'>, passed: boolean, detail: string): void {
   log(s, `${c.name}: Constitution save, DC ${p.dc}, against ${p.reason}. ${detail}${passed ? 'Success.' : 'Failure.'}`, passed ? 'good' : 'warn');
   if (!passed) {
     if (p.kind === 'tainted' || p.kind === 'raw') {
@@ -308,6 +308,8 @@ function applySaveResult(s: State, c: Character, p: Omit<PendingSave, 'id' | 'st
           : `${c.name} is Sick from ${p.reason}: Poisoned (Disadvantage on attack rolls and ability checks) until they finish a Long Rest.`,
         'bad',
       );
+      // Only a new bout counts: drinking more while already Sick doesn't.
+      if (p.kind === 'tainted' && !was) waterborneIllness(s, ctx, c);
       return;
     }
     if (p.kind === 'malnutrition') c.malnourished = true;
@@ -338,7 +340,7 @@ function requestSave(s: State, ctx: Ctx, c: Character, kind: SaveKind, dc: numbe
   const spec = { charId: c.id, kind, dc, mode, reason };
   if (s.settings.autoRollSaves) {
     const r = rollSave(c, dc, mode, ctx.rng);
-    applySaveResult(s, c, spec, r.passed, r.detail);
+    applySaveResult(s, ctx, c, spec, r.passed, r.detail);
   } else {
     s.pending.push({ ...spec, id: uid(), stamp: stamp(s) });
   }
@@ -352,8 +354,8 @@ export const resolvePending = act((d, ctx, id: string, outcome: 'roll' | 'pass' 
   if (!c) return;
   if (outcome === 'roll') {
     const r = rollSave(c, p.dc, p.mode, ctx.rng);
-    applySaveResult(d, c, p, r.passed, r.detail);
-  } else applySaveResult(d, c, p, outcome === 'pass', 'Entered by hand. ');
+    applySaveResult(d, ctx, c, p, r.passed, r.detail);
+  } else applySaveResult(d, ctx, c, p, outcome === 'pass', 'Entered by hand. ');
 });
 
 // ---------------------------------------------------------------- the clock
@@ -2163,14 +2165,14 @@ function lifestyleRisks(s: State, ctx: Ctx): void {
       case 'wretched':
         if (bestRenown(s) >= 3) break;
         if (r === 1) steal('1d6');
-        else if (r === 2) Object.assign(s, exposeContagion(s, ctx, c.id, 'sewer', true));
+        else if (r === 2) foulWaterBout(s, ctx, c, 'from the gutters and public wells');
         else if (r === 3) {
           log(s, `${c.name} is roughed up sleeping rough on the street (table rule).`, 'warn');
           Object.assign(s, changeHp(s, ctx, c.id, -die(4, ctx.rng)));
         }
         break;
       case 'squalid':
-        if (r === 1) Object.assign(s, exposeContagion(s, ctx, c.id, 'sewer', true));
+        if (r === 1) foulWaterBout(s, ctx, c, 'in a squalid tenement');
         else if (r === 2) steal('1d6');
         break;
       case 'poor':
@@ -3003,7 +3005,34 @@ function endContagion(s: State, c: Character, id: string, why: string): void {
 }
 
 /** Exposure to a contagion: optionally roll the save to resist, otherwise infect. */
-export const exposeContagion = act((d, ctx, charId: string, kind: ContagionKind, rollToResist: boolean) => {
+export const exposeContagion = act((d, ctx, charId: string, kind: ContagionKind, rollToResist: boolean) => exposeContagionMut(d, ctx, charId, kind, rollToResist));
+
+/**
+ * Table rule: Sewer Plague doesn't strike out of nowhere. Each bout of illness from bad water wears a character down,
+ * and after enough of them (Settings, default 3) their next exposure is a DC 11 Con save against Sewer Plague.
+ * The count starts again after that save, whatever its result.
+ */
+function waterborneIllness(s: State, ctx: Ctx, c: Character): void {
+  const after = s.settings.sewerPlagueAfter ?? 3;
+  if (after <= 0) return;
+  c.waterborneIllnesses = (c.waterborneIllnesses ?? 0) + 1;
+  if (c.waterborneIllnesses < after) return;
+  c.waterborneIllnesses = 0;
+  if (c.contagions.some((x) => x.kind === 'sewer')) return;
+  noticed(s, 'contagionWorse', [c], `Bout after bout of foul water has worn ${c.name} down (${after} water-borne illnesses, table rule): their gut cramps and their joints ache in a way that feels like more than a passing sickness.`, 'bad');
+  exposeContagionMut(s, ctx, c.id, 'sewer', true);
+}
+
+/** Squalid or wretched living in town (table rule): a bout of sickness from foul water, counting toward Sewer Plague. */
+function foulWaterBout(s: State, ctx: Ctx, c: Character, why: string): void {
+  const was = c.sick;
+  c.sick = true;
+  c.sickFrom = was && c.sickFrom && c.sickFrom !== 'unpurified water' ? 'raw food and unpurified water' : 'unpurified water';
+  status(s, c, 'waterIllness', `${c.name} is Sick from foul water ${why}: Poisoned until they finish a Long Rest (table rule).`, 'bad');
+  if (!was) waterborneIllness(s, ctx, c);
+}
+
+function exposeContagionMut(d: State, ctx: Ctx, charId: string, kind: ContagionKind, rollToResist: boolean): void {
   const c = charById(d, charId);
   if (!c || !alive(c)) return;
   const info = CONTAGIONS[kind];
@@ -3021,7 +3050,7 @@ export const exposeContagion = act((d, ctx, charId: string, kind: ContagionKind,
   c.contagions.push({ id: uid(), kind, infectedAt: now, onsetAt, onset: false, successes: 0 });
   if (info.incubates) log(d, `${c.name} carries ${info.name}. Symptoms start in ${formatDuration(onsetAt - now)} (1d4 days); the player doesn't know yet.`, 'warn');
   tickContagions(d);
-});
+}
 
 /** Starts symptoms when incubation ends, and counts Sight Rot ointment time. */
 function tickContagions(s: State): void {

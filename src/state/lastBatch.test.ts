@@ -27,14 +27,48 @@ describe('mixed potions, renown and lifestyle', () => {
     expect(s.factions[0].renown).toBe(6);
   });
 
-  it('squalid living in town can expose a character to Sewer Plague at the week’s end', () => {
+  it('squalid living in town brings a bout of foul-water sickness, which counts toward Sewer Plague', () => {
+    const week = (after: number) => {
+      let s = createDefaultState(() => 0);
+      s.settings.sleepDeprivation = false;
+      s.settings.sewerPlagueAfter = after;
+      s.place.settlement = true;
+      s.characters = [newCharacter({ name: 'A', gp: 100, lifestyle: 'squalid', conSave: -10 })];
+      s.dayIndex = 6;
+      s.minutes = 23 * 60;
+      return E.advance(s, ctx(0.01), 120);
+    };
+    const s = week(3);
+    expect(s.characters[0].sick).toBe(true);
+    expect(s.characters[0].waterborneIllnesses).toBe(1);
+    expect(s.characters[0].contagions.some((x) => x.kind === 'sewer')).toBe(false);
+    expect(week(1).characters[0].contagions.some((x) => x.kind === 'sewer')).toBe(true);
+  });
+
+  it('Sewer Plague only threatens after repeated illness from unpurified water', () => {
     let s = createDefaultState(() => 0);
     s.settings.sleepDeprivation = false;
-    s.place.settlement = true;
-    s.characters = [newCharacter({ name: 'A', gp: 100, lifestyle: 'squalid', conSave: -10 })];
-    s.dayIndex = 6;
-    s.minutes = 23 * 60;
-    s = E.advance(s, ctx(0.01), 120);
+    s.characters = [newCharacter({ name: 'A', conSave: -10, needsWater: true })];
+    s.stores.waterGal = 0;
+    s.stores.waterUnsafeGal = 20;
+    const id = s.characters[0].id;
+    const bout = () => {
+      s = E.drink(s, ctx(0.01), id, 1, 'stores');
+      s.characters[0].sick = false; // as if a Long Rest passed
+    };
+    s = E.drink(s, ctx(0.01), id, 1, 'stores');
+    s = E.drink(s, ctx(0.01), id, 1, 'stores'); // already Sick: doesn't count again
+    expect(s.characters[0].waterborneIllnesses).toBe(1);
+    s.characters[0].sick = false; // as if a Long Rest passed
+    bout();
+    expect(s.characters[0].waterborneIllnesses).toBe(2);
+    expect(s.characters[0].contagions).toHaveLength(0);
+    bout();
     expect(s.characters[0].contagions.some((x) => x.kind === 'sewer')).toBe(true);
+    expect(s.characters[0].waterborneIllnesses).toBe(0);
+    s.settings.sewerPlagueAfter = 0;
+    s.characters[0].contagions = [];
+    for (let i = 0; i < 5; i++) bout();
+    expect(s.characters[0].contagions).toHaveLength(0);
   });
 });

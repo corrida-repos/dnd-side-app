@@ -329,6 +329,8 @@ export interface Character {
   sickFrom?: string;
   /** Absolute minute an Antitoxin's Advantage on saves against poison runs out (PHB: 1 hour). */
   antitoxinUntil?: number | null;
+  /** Bouts of illness from bad water since the last Sewer Plague check (table rule). */
+  waterborneIllnesses?: number;
   /** Magical contagions (2024 DMG): Cackle Fever, Sewer Plague, Sight Rot. */
   contagions: Contagion[];
   /** Languages and tools learned through downtime training. */
@@ -731,6 +733,8 @@ export interface Settings {
   /** Table rule: eating raw food calls for a Con save, or the creature is Sick (Poisoned until a Long Rest). */
   rawFoodRisk: boolean;
   rawFoodDC: number;
+  /** Table rule: water-borne illnesses before the next one brings a save against Sewer Plague (0 = never from water). */
+  sewerPlagueAfter: number;
   /** Table rule: sleeping out at or below coldNightF without warm cover risks Exhaustion. */
   coldNights: boolean;
   coldNightF: number;
