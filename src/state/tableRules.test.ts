@@ -86,6 +86,7 @@ describe('table rules for edge cases', () => {
   it('drops a character in debt to a cheaper lifestyle', () => {
     const s = fresh((d) => {
       d.place.settlement = true;
+      d.townMode = "downtime";
       d.minutes = 23 * 60;
       Object.assign(d.characters[0], { lifestyle: 'modest', gp: 0, purse: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } });
     });

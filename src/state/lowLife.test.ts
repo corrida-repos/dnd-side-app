@@ -12,6 +12,7 @@ function town(lifestyle: Lifestyle, extra: Parameters<typeof newCharacter>[0] = 
   s.settings.sleepDeprivation = false;
   s.settings.encounters = false;
   s.place.settlement = true;
+  s.townMode = 'downtime';
   s.place.shelter = 'building';
   s.weather = { ...s.weather, high: 60, low: 45, wind: 'none', precip: 'none' };
   s.characters = [newCharacter({ name: 'Rook', gp: 100, lifestyle, conSave: -10, hp: 30, maxHp: 30, ...extra })];
@@ -106,5 +107,59 @@ describe('Squalid and Wretched living (table rules)', () => {
     s.minutes = 23 * 60;
     s = E.advance(s, NONE, 120);
     expect(s.effects.some((e) => e.name === 'Shunned by respectable folk')).toBe(false);
+  });
+});
+
+describe('day-to-day play in town: no lifestyle expenses (2024 PHB)', () => {
+  const active = (extra: Parameters<typeof newCharacter>[0] = {}) => {
+    const s = town('modest', { needsFood: true, needsWater: true, ...extra });
+    s.townMode = 'active';
+    return s;
+  };
+
+  it('charges no lifestyle and provides no meals; rooms and meals are bought at PHB prices', () => {
+    let s = active();
+    const id = s.characters[0].id;
+    s = E.rentRooms(s, ctx(), [id], 'modest', 2);
+    expect(s.characters[0].gp).toBeCloseTo(99);
+    s = E.buyMeals(s, ctx(), [id], 'modest', 3);
+    expect(s.characters[0].gp).toBeCloseTo(98.7);
+    expect(s.characters[0].ateLbToday).toBeGreaterThanOrEqual(1);
+    s.minutes = 23 * 60;
+    s = E.advance(s, NONE, 120);
+    expect(said(s, 'Modest living')).toBe(false);
+    expect(s.characters[0].gp).toBeCloseTo(98.7);
+  });
+
+  it('a rented room keeps the weather out; without one a character sleeps rough', () => {
+    let s = active();
+    const party = E.exposure(s, 'rest');
+    expect(E.personalExposure(s, s.characters[0], 'rest', party).cold).toBe(true);
+    s = E.rentRooms(s, ctx(), [s.characters[0].id], 'poor', 1);
+    expect(E.personalExposure(s, s.characters[0], 'rest', party).cold).toBe(false);
+    expect(E.livingOf(s, s.characters[0])).toBe('poor');
+  });
+
+  it('a squalid room brings the cistern water; sleeping rough day to day means drinking your own', () => {
+    let s = active();
+    s = E.rentRooms(s, ctx(), [s.characters[0].id], 'squalid', 3);
+    s.dayIndex = 2;
+    s.minutes = 23 * 60;
+    s = E.advance(s, NONE, 120);
+    expect(said(s, 'tenement cistern')).toBe(true);
+    let r = active();
+    r.dayIndex = 2;
+    r.minutes = 23 * 60;
+    r = E.advance(r, NONE, 120);
+    expect(r.log.some((l) => l.text.includes('gutter water'))).toBe(false);
+  });
+
+  it('working on a downtime project switches to downtime; leaving town switches back', () => {
+    let s = active();
+    s.projects = [{ id: 'p', name: 'Rope', kind: 'nonmagical', charIds: [s.characters[0].id], daysRequired: 3, daysDone: 0, costGp: 0, notes: '', done: false }];
+    s = E.workOnProjects(s, ctx(), ['p']);
+    expect(s.townMode).toBe('downtime');
+    s = E.travel(s, ctx(0), { hours: 1, pace: 'normal', difficult: false, foragerIds: [] });
+    expect(s.townMode).toBe('active');
   });
 });

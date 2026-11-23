@@ -95,6 +95,7 @@ describe('special rights', () => {
     expect(sameCommunity('', 'Greywater')).toBe(false);
     let s = fresh((d) => {
       d.place = { ...d.place, settlement: true, name: 'Greywater' };
+      d.townMode = 'downtime';
       d.characters[0].lifestyle = 'comfortable';
       d.characters[1].lifestyle = 'wealthy';
     });

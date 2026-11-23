@@ -37,7 +37,7 @@ import { detectContainer } from '../rules/containers';
 import { FIRE_DAMAGE, RAT_BITE_DAMAGE, RELAXATION_NEEDS, SHAKEDOWN_DAMAGE, SHAKEDOWN_GP, SHAKEDOWN_RIVAL_ODDS, SHUNNED_AFTER_DAYS, SIGHT_ROT_MARGIN, SPOILED_FOOD_DC, TAINTED_POTION_ODDS, WATCH_FINE, WATCH_JAIL_DAYS, WEEKLY_ODDS, WRETCHED_STRESS, isLowLife } from '../rules/lowLife';
 import { BOILING_POT, CHARCOAL_WORDS, FRICTION_LIGHT_MINUTES, HIDE_WATERSKIN, LEAN_TO, BEDDING, MAKESHIFT_DC, MAKESHIFT_TORCH, POTS, POT_ALARM_DC, SNARE, SNARE_LINE, TINDERBOX, VINE_CORD, isBareback, leanToDC, ABILITY_LABEL, INK, INK_PAGES, PAPER, PERFUME, PERFUME_MINUTES, SIGNAL_WHISTLE, carriesTool, liquidCapacity, toolNamed, SPYGLASS, ALARM_LINE, ALARM_MINUTES, BELL, DIG_BY_HAND, DIG_LABEL, GATHER_MINUTES, HUNTING_TRAP, SCATTERABLE, SHOVEL, SHOVEL_MINUTES, STABLING_GP_PER_DAY, TENT, TENT_SLEEPS, TRAP_CATCH_ON, TRAP_MEAT_DICE, TRAP_SAVE_DC, needsExoticSaddle, type DigKind, MAGNIFYING_GLASS, hasSkill, proficientWith, PACKS, RATIONS, WATERSKIN, WATERSKIN_PINTS, packNamed, FUEL_LABEL, FUEL_MATCH, HEALERS_KIT, HEALERS_KIT_USES, OIL_MINUTES, VESSEL_MATCH, fuelFor, isHooded, isOilLight } from '../rules/gear';
 import type { DdbImport } from '../rules/ddb';
-import { FEED_GP_PER_DAY, HIRELING_WAGE, magicItemValue, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset, type Lifestyle } from '../rules/money';
+import { INN_STAY_GP, MEAL_GP, MEALS_PER_DAY, FEED_GP_PER_DAY, HIRELING_WAGE, magicItemValue, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset, type Lifestyle } from '../rules/money';
 import { STABLE_WAKE_DIE, STABILIZE_DC } from '../rules/upkeep';
 import { FORT_NEGLECT_DAYS, FORT_UPKEEP, LAND, LODGING_CAP, MARK_LABEL, PRIZE_CROWN_SHARE, RIGHTS, TITLE_RANK, TRUST_LABEL, TRUST_MAX, lifestyleBelow, lowerLifestyle, monthDue, rollLandIncome, rollLandTrouble, sameCommunity, TRAINING_KIND_LABEL } from '../rules/prestige';
 import { RITUAL_EXTRA_MINUTES as RITUAL_TAG_MINUTES, spellInfo } from '../rules/rituals';
@@ -241,18 +241,34 @@ export function exposure(s: State, activity: Activity, tempF: number = tempNow(s
   return { cold: true, heat: true, reason: activity === 'travel' ? 'On the road' : s.place.shelter === 'tent' ? 'In a tent (still exposed to temperature)' : 'In the open' };
 }
 
+/** Whether the party is in downtime in a settlement, where lifestyle expenses cover lodging and meals. */
+export const inDowntime = (s: State): boolean => s.place.settlement && s.townMode === 'downtime';
+
+/** A rented room still valid right now. */
+export const hasRoom = (s: State, c: Character): boolean => !!c.lodging && c.lodging.until > absNow(s);
+
+/**
+ * The standard of living that sets a character's risks in town: their lifestyle during downtime; in day-to-day play,
+ * the quality of the room they rented, or Wretched (sleeping rough) without one.
+ */
+export function livingOf(s: State, c: Character): Lifestyle {
+  if (inDowntime(s)) return c.lifestyle;
+  return hasRoom(s, c) ? c.lodging!.tier : 'wretched';
+}
+
 /** Sleeping rough in town (table rule): Wretched characters face the weather as if camping, unless Renown 3+ finds them shelter. */
 export function sleepsRough(s: State, c: Character): boolean {
-  return s.settings.lifestyleRisks && s.place.settlement && c.kind !== 'mount' && c.lifestyle === 'wretched' && bestRenown(s) < 3;
+  return s.settings.lifestyleRisks && s.place.settlement && c.kind !== 'mount' && livingOf(s, c) === 'wretched' && bestRenown(s) < 3;
 }
 
 /** Squalid lodgings are drafty (table rule): a cold night still bites without a Blanket or Bedroll. */
 function draftyLodgings(s: State, c: Character): boolean {
-  return s.settings.lifestyleRisks && s.place.settlement && c.kind !== 'mount' && c.lifestyle === 'squalid';
+  return s.settings.lifestyleRisks && s.place.settlement && c.kind !== 'mount' && livingOf(s, c) === 'squalid';
 }
 
 /** One character's exposure: the party's, unless they're sleeping rough on the street. */
 export function personalExposure(s: State, c: Character, activity: Activity, partyExp: Exposure): Exposure {
+  if (s.place.settlement && !inDowntime(s) && hasRoom(s, c) && activity !== 'travel') return { cold: false, heat: false, reason: 'In a rented room' };
   if (!sleepsRough(s, c) || s.effects.some((e) => e.shelter && activity !== 'travel')) return partyExp;
   return { cold: true, heat: true, reason: 'Sleeping rough on the street' };
 }
@@ -417,7 +433,14 @@ function tickHour(s: State, ctx: Ctx, activity: Activity): void {
 }
 
 function dailyCosts(s: State): void {
-  if (s.place.settlement) {
+  if (s.place.settlement && !inDowntime(s)) {
+    // Day to day in town: no lifestyle expenses (2024 PHB). Meals and rooms are bought as they go.
+    for (const c of adventurers(s)) {
+      if (c.lifestyleOwed) settleLifestyle(s, c, 'downtime lodgings and meals');
+      if (c.lodging && c.lodging.until <= absNow(s)) c.lodging = null;
+    }
+  }
+  if (inDowntime(s)) {
     const fed: string[] = [];
     for (const c of adventurers(s)) {
       if (c.lifestyle !== 'wretched' || Math.max(0, ...s.factions.map((f) => f.renown)) >= 3) {
@@ -443,22 +466,69 @@ function dailyCosts(s: State): void {
       }
     }
     if (fed.length) log(s, `Town living covers meals and lodging for ${fed.join(', ')}.`);
-    if (s.settings.stabling) {
-      const stabled = s.characters.filter((m) => m.kind === 'mount' && alive(m));
-      for (const m of stabled) {
-        m.ateLbToday = Math.max(m.ateLbToday, foodNeedLb(m));
-        m.drankPintsToday = Math.max(m.drankPintsToday, waterNeedPints(m, false, false));
-      }
-      if (stabled.length) payGold(s, [], Math.round(stabled.length * (STABLING_GP_PER_DAY + FEED_GP_PER_DAY) * 100) / 100, `stabling and feed for ${stabled.map((m) => m.name).join(', ')}`);
-    }
-  } else {
+    if (s.settings.stabling) stableMounts(s);
+  } else if (!s.place.settlement) {
     for (const c of adventurers(s)) if (c.lifestyleOwed) settleLifestyle(s, c, 'lodgings and meals on leaving town');
     if (s.settings.hirelingsEat && s.settings.foodAndWater) hirelingsEat(s);
   }
+  if (s.place.settlement && s.settings.stabling && !inDowntime(s)) stableMounts(s);
   for (const h of s.hirelings) {
     if (h.active && h.wageGp > 0) payGold(s, h.payer === 'party' ? [] : [h.payer], h.wageGp, `${h.name}'s daily wage`);
   }
 }
+
+/** Stables and feeds the mounts in a settlement (2024 PHB: Stabling 5 SP, Feed 5 CP a day). */
+function stableMounts(s: State): void {
+  const stabled = s.characters.filter((m) => m.kind === 'mount' && alive(m));
+  for (const m of stabled) {
+    m.ateLbToday = Math.max(m.ateLbToday, foodNeedLb(m));
+    m.drankPintsToday = Math.max(m.drankPintsToday, waterNeedPints(m, false, false));
+  }
+  if (stabled.length) payGold(s, [], Math.round(stabled.length * (STABLING_GP_PER_DAY + FEED_GP_PER_DAY) * 100) / 100, `stabling and feed for ${stabled.map((m) => m.name).join(', ')}`);
+}
+
+/** Switches between downtime (lifestyle covers lodging and meals) and day-to-day play (buy them as you go). */
+function setTownModeMut(s: State, mode: 'downtime' | 'active', why = ''): void {
+  if ((s.townMode ?? 'active') === mode) return;
+  s.townMode = mode;
+  if (mode === 'active') for (const c of adventurers(s)) if (c.lifestyleOwed) settleLifestyle(s, c, 'downtime lodgings and meals');
+  log(
+    s,
+    mode === 'downtime'
+      ? `${why}Downtime in ${s.place.name || 'town'}: each character's lifestyle now covers lodging, meals and upkeep (2024 PHB).`
+      : `${why}Day-to-day play: no lifestyle expenses. Buy meals and rent rooms as you go, or live off rations.`,
+  );
+}
+
+export const setTownMode = act((d, _ctx, mode: 'downtime' | 'active') => setTownModeMut(d, mode));
+
+/** Rents rooms at an inn (2024 PHB Inn Stay per Day). A room keeps the weather out and sets the quality of town life. */
+export const rentRooms = act((d, _ctx, charIds: string[], tier: Exclude<Lifestyle, 'wretched'>, nights: number) => {
+  const who = charIds.map((id) => charById(d, id)).filter((c): c is Character => !!c && c.kind !== 'mount');
+  const n = Math.max(1, Math.round(nights));
+  if (!who.length || !d.place.settlement) return;
+  const now = absNow(d);
+  // A night's stay runs to midday after the last night.
+  const checkout = (d.dayIndex + n) * MIN_PER_DAY + 12 * 60;
+  for (const c of who) {
+    payGold(d, [c.id], Math.round(INN_STAY_GP[tier] * n * 100) / 100, `${n} night${n > 1 ? 's' : ''} at a ${LIFESTYLE_LABEL[tier].toLowerCase()} inn`);
+    c.lodging = { tier, until: Math.max(now + 60, checkout) };
+  }
+  log(d, `${who.map((c) => c.name).join(', ')} take${who.length > 1 ? '' : 's'} ${LIFESTYLE_LABEL[tier].toLowerCase()} rooms for ${n} night${n > 1 ? 's' : ''}.`, 'good');
+});
+
+/** Buys meals at an inn or tavern (2024 PHB Meal prices). Three meals make a day's food and drink. */
+export const buyMeals = act((d, _ctx, charIds: string[], tier: Exclude<Lifestyle, 'wretched'>, meals: number) => {
+  const who = charIds.map((id) => charById(d, id)).filter((c): c is Character => !!c && c.kind !== 'mount');
+  const n = Math.max(1, Math.round(meals));
+  if (!who.length || !d.place.settlement) return;
+  for (const c of who) {
+    payGold(d, [c.id], Math.round(MEAL_GP[tier] * n * 100) / 100, `${n} ${LIFESTYLE_LABEL[tier].toLowerCase()} meal${n > 1 ? 's' : ''}`);
+    c.ateLbToday = round2(c.ateLbToday + (foodNeedLb(c) * n) / MEALS_PER_DAY);
+    c.drankPintsToday = round2(c.drankPintsToday + (waterNeedPints(c, false, false) * n) / MEALS_PER_DAY);
+  }
+  log(d, `${who.map((c) => c.name).join(', ')} ${who.length > 1 ? 'eat' : 'eats'} ${n === MEALS_PER_DAY ? "a day's" : n} ${LIFESTYLE_LABEL[tier].toLowerCase()} meal${n > 1 ? 's' : ''}, food and drink included.`);
+});
 
 function settleLifestyle(s: State, c: Character, what: string): void {
   const owed = Math.round((c.lifestyleOwed ?? 0) * 100) / 100;
@@ -1236,6 +1306,8 @@ export const travel = act((d, ctx, o: TravelOpts) => travelMut(d, ctx, o));
 
 function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
   breakCamp(d, ctx);
+  if (d.townMode === 'downtime') setTownModeMut(d, 'active', 'Downtime is over. ');
+  for (const c of d.characters) if (c.lodging) c.lodging = null;
   const vessel = o.vesselId ? d.stashes.find((x) => x.id === o.vesselId && x.speedMph) : undefined;
   if (vessel) return sail(d, ctx, vessel, o);
   if (o.flying && o.difficult) o = { ...o, difficult: false };
@@ -1954,6 +2026,7 @@ export const finishPreparation = act((d, _ctx, charId: string) => {
 export const workOnProjects = act((d, ctx, projectIds: string[]) => {
   const projects = d.projects.filter((p) => projectIds.includes(p.id) && !p.done);
   if (!projects.length) return;
+  if (d.place.settlement) setTownModeMut(d, 'downtime', 'The party settles in to work. ');
   advanceMut(d, ctx, 8 * 60, 'work');
   for (const p of projects) progress(d, p, ctx);
 });
@@ -2208,9 +2281,9 @@ function lifestyleRisks(s: State, ctx: Ctx): void {
       const gp = Math.min(who.gp, rollExpr(dice, ctx.rng) ?? 1);
       if (gp <= 0) return;
       spendWealth(who, gp);
-      log(s, `${who.name} notices their purse is lighter: ${fmtGp(gp)} gone, lifted while living ${LIFESTYLE_LABEL[who.lifestyle].toLowerCase()} (table rule).`, 'warn');
+      log(s, `${who.name} notices their purse is lighter: ${fmtGp(gp)} gone, lifted while living ${LIFESTYLE_LABEL[livingOf(s, who)].toLowerCase()} (table rule).`, 'warn');
     };
-    switch (c.lifestyle) {
+    switch (livingOf(s, c)) {
       case 'wretched': {
         if (bestRenown(s) >= 3) break;
         const o = WEEKLY_ODDS.wretched;
@@ -2343,7 +2416,8 @@ function tenementFire(s: State, ctx: Ctx, id: string): void {
 /** Counts days of low living in town; after 30, respectable folk shun the character until they live better (table rule). */
 function trackLowLife(s: State): void {
   for (const c of adventurers(s)) {
-    const low = isLowLife(c.lifestyle) && !(c.lifestyle === 'wretched' && bestRenown(s) >= 3);
+    const life = livingOf(s, c);
+    const low = isLowLife(life) && !(life === 'wretched' && bestRenown(s) >= 3);
     const shunned = s.effects.find((e) => e.name === 'Shunned by respectable folk' && e.targetIds.includes(c.id));
     if (!low) {
       c.lowLifeDays = 0;
@@ -2356,7 +2430,7 @@ function trackLowLife(s: State): void {
     c.lowLifeDays = (c.lowLifeDays ?? 0) + 1;
     if (c.lowLifeDays >= SHUNNED_AFTER_DAYS && !shunned) {
       s.effects.push({ id: uid(), name: 'Shunned by respectable folk', kind: 'other', targetIds: [c.id], casterId: null, concentration: false, shelter: false, startedAt: absNow(s), endsAt: null, notes: 'Disadvantage on Charisma checks with the upper classes, and respectable factions may think less of them. Ends when they live Poor or better.' });
-      status(s, c, 'lifestyleDrops', `After a month living ${LIFESTYLE_LABEL[c.lifestyle].toLowerCase()}, ${c.name} looks and smells it: respectable folk cross the street (table rule: Disadvantage on Charisma checks with the upper classes).`, 'warn');
+      status(s, c, 'lifestyleDrops', `After a month living ${LIFESTYLE_LABEL[life].toLowerCase()}, ${c.name} looks and smells it: respectable folk cross the street (table rule: Disadvantage on Charisma checks with the upper classes).`, 'warn');
     }
   }
 }
@@ -2851,7 +2925,7 @@ export const buyItem = act((d, _ctx: Ctx, charId: string, name: string, qty: num
   if (c.gp < cost) return void log(d, `${c.name} can't afford ${qty} × ${name} (${fmtGp(cost)}; has ${fmtGp(c.gp)}).`, 'warn');
   spendWealth(c, cost);
   // Table rule: buying potions on the cheap while living Squalid or Wretched, one in six comes from a backstreet hawker and is tainted.
-  const tainted = d.settings.lifestyleRisks && d.place.settlement && isLowLife(c.lifestyle) && /potion|elixir|tonic/i.test(name) && die(TAINTED_POTION_ODDS, _ctx.rng) === 1;
+  const tainted = d.settings.lifestyleRisks && d.place.settlement && isLowLife(livingOf(d, c)) && /potion|elixir|tonic/i.test(name) && die(TAINTED_POTION_ODDS, _ctx.rng) === 1;
   const notes = tainted ? [] : stowItem(d, c, name, qty, packNamed(name) ? {} : { valueGp: unitGp }, true);
   if (tainted) {
     c.inventory.push({ id: uid(), name, qty, weight: estimateWeight(name).weight, source: 'book', valueGp: unitGp, container: null, ammo: null, tainted: true });
@@ -3208,10 +3282,13 @@ function waterborneIllness(s: State, ctx: Ctx, c: Character): void {
 function cityWater(s: State, ctx: Ctx): void {
   if (!s.settings.lifestyleRisks || !s.settings.wildNeedsPurifying || !s.place.settlement) return;
   for (const c of adventurers(s)) {
-    if (c.lifestyle !== 'squalid' && c.lifestyle !== 'wretched') continue;
-    if (c.lifestyle === 'wretched' && bestRenown(s) >= 3) continue;
-    const dc = CITY_WATER_DC[c.lifestyle]!;
-    const reason = c.lifestyle === 'wretched' ? 'gutter water and the dregs of public wells' : 'foul water from a tenement cistern';
+    const life = livingOf(s, c);
+    if (life !== 'squalid' && life !== 'wretched') continue;
+    if (life === 'wretched' && bestRenown(s) >= 3) continue;
+    // Day to day, someone sleeping rough drinks from their own waterskin; only a squalid inn serves cistern water.
+    if (life === 'wretched' && !inDowntime(s)) continue;
+    const dc = CITY_WATER_DC[life]!;
+    const reason = life === 'wretched' ? 'gutter water and the dregs of public wells' : 'foul water from a tenement cistern';
     if (!s.settings.autoRollSaves) {
       requestSave(s, ctx, c, 'tainted', dc, 'normal', reason);
       continue;

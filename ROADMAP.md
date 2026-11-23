@@ -423,6 +423,11 @@ Table rules under "Lifestyle risks in town". Renown 3+ spares the Wretched, as b
 - ✅ **No real rest:** the Relaxation downtime activity gives nothing below a Modest lifestyle (*Xanathar's*).
 - ✅ **Shunned:** after 30 days of low living in town, Disadvantage on Charisma checks with the upper classes until they live Poor or better.
 
+### Lifestyle is for downtime ✅
+- ✅ 2024 PHB: lifestyle expenses cover lodging, meals and upkeep, and are meant for downtime. In town the party is either in **Downtime** (lifestyle charged and covers everything) or playing **Day to day** (no lifestyle charge: rent rooms at the PHB's Inn Stay prices and buy meals, three to a day, or live off rations).
+- ✅ Working on a downtime project in town switches to Downtime; leaving town switches back to day to day.
+- ✅ Day to day, the room a character rented sets the risks of town life and keeps the weather out; no room means sleeping rough. Mounts are still stabled and fed.
+
 ## Not planned
 
 - Nothing at the moment. (The 2024 DMG contagions, Cackle Fever, Sewer Plague and Sight Rot, are tracked on the Effects tab.)
