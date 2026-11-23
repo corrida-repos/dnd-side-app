@@ -16,6 +16,8 @@ import { PartyKnowledgeCard, PlayerItemView } from './ItemKnowledge';
 import { ARCANA_DC, CLUE_KIND_LABEL, SCHOOLS_OF_MAGIC, STUDY_LABEL, STUDY_MINUTES, type ClueKind } from '../rules/identify';
 import { RARITY_LABEL, type Rarity } from '../rules/crafting';
 import { WaysAround } from './WaysAround';
+import { MaintainGear } from './LifeCards';
+import { REPAIR_DC, REPAIR_TOOL, materialOf, repairCost, wearLabel } from '../rules/wear';
 import { ToolsCard } from './ToolsCard';
 import { BOOK_BONUS, HEALERS_KIT, HEALERS_KIT_USES, RATIONS, SCATTERABLE, WATERSKIN } from '../rules/gear';
 
@@ -271,6 +273,7 @@ function InventoryBlock({ c }: { c: Character }) {
                     </Pill>
                   )}
                   {i.damaged && <Pill tone="bad" title="Torn, cracked or broken: see Damaged gear below">damaged</Pill>}{' '}
+                  {!i.damaged && (i.wear ?? 0) > 0 && <Pill tone="warn" title="Wear from hard use (table rule): at 3 it is damaged. An hour of upkeep clears it.">{wearLabel(i.wear ?? 0)}</Pill>}{' '}
                   {HEALERS_KIT.test(i.name) && <Pill tone="info" title="A Healer's Kit has ten uses (2024 PHB)">{i.uses ?? HEALERS_KIT_USES}/{HEALERS_KIT_USES} uses</Pill>}{' '}
                   {i.tainted && <Pill tone="muted" title="DM only: tainted (bought from a backstreet hawker). Whoever drinks it makes a DC 10 Con save against Cackle Fever: use Expose on the Effects tab.">cheap</Pill>}{' '}
                   {i.scattered && <Pill tone="warn" title="Spread on the ground: gather them up (10 minutes) before moving on, or they're left behind">on the ground</Pill>}{' '}
@@ -360,6 +363,10 @@ function DamageBlock({ c }: { c: Character }) {
   const mender = pcs.find((x) => x.id === whoId);
   const cloth = !!it && CLOTH.test(it.name);
   const go = (m: 'mending' | 'tools' | 'improvised') => dispatch((st, cx) => E.mendItem(st, cx, c.id, it!.id, whoId, m, bonus));
+  const mat = it ? materialOf(it.name) : null;
+  const repairTool = mat ? REPAIR_TOOL[mat] : null;
+  const hasRepairTool = !!repairTool && !!mender?.inventory.some((i) => repairTool.match.test(i.name));
+  const repair = (m: 'tools' | 'improvised' | 'artisan') => dispatch((st, cx) => E.repairItem(st, cx, c.id, it!.id, m, whoId, bonus));
   if (!c.inventory.length) return null;
   return (
     <details open={damaged.length > 0}>
@@ -372,7 +379,7 @@ function DamageBlock({ c }: { c: Character }) {
           <div className="btn-row tight">
             <Select value={it.id} onChange={setItemId} options={damaged.map((i) => ({ value: i.id, label: i.name }))} />
             <Select value={whoId} onChange={setWho} options={pcs.map((x) => ({ value: x.id, label: `${x.name}${menders.includes(x) ? ' (Mending)' : weavers.includes(x) ? ' (Weaver’s Tools)' : ''}` }))} />
-            {cloth && <Num label="Dex bonus" value={bonus} onChange={(v) => setBonus(Math.round(v))} width={2} />}
+            <Num label={cloth ? 'Dex bonus' : 'Tool check bonus'} value={bonus} onChange={(v) => setBonus(Math.round(v))} width={2} />
           </div>
           <div className="btn-row tight">
             <button className="small" disabled={!mender || !menders.includes(mender)} title={mender && menders.includes(mender) ? undefined : "Needs someone who knows Mending"} onClick={() => go('mending')}>
@@ -388,13 +395,27 @@ function DamageBlock({ c }: { c: Character }) {
                 Needle and thread (DC {IMPROVISED_MEND_DC}, 20 min)
               </button>
             )}
+            {!cloth && repairTool && (
+              <button className="small" disabled={!hasRepairTool} title={hasRepairTool ? 'Table rule' : `Needs ${repairTool.label}`} onClick={() => repair('tools')}>
+                {repairTool.label} (DC {REPAIR_DC}, 1 h)
+              </button>
+            )}
+            {!cloth && repairTool && s.settings.improvised && (
+              <button className="small ghost" title="Table rule: makeshift tools, DC +5, twice as long" onClick={() => repair('improvised')}>
+                Makeshift repair (DC {REPAIR_DC + 5}, 2 h)
+              </button>
+            )}
+            <button className="small" disabled={!s.place.settlement} title={s.place.settlement ? 'Table rule: a tenth of its price' : 'Needs a settlement'} onClick={() => repair('artisan')}>
+              Pay an artisan ({fmtGp(repairCost(it.name, it.valueGp))})
+            </button>
             <button className="small ghost" onClick={() => dispatch((st, cx) => E.setDamaged(st, cx, c.id, it.id, false))}>
               Repaired elsewhere
             </button>
           </div>
-          {!cloth && <p className="small muted">Not cloth: Mending fixes it, or a smith or other crafter in town.</p>}
+          {!cloth && <p className="small muted">Not cloth: Mending fixes it{repairTool ? `, or ${repairTool.label}` : ''}, or a smith or other crafter in town.</p>}
         </>
       )}
+      <MaintainGear c={c} />
       <div className="btn-row tight">
         <Select value={markId || sound[0]?.id || ''} onChange={setMarkId} options={sound.map((i) => ({ value: i.id, label: i.name }))} />
         <button className="small ghost" disabled={!sound.length} onClick={() => (dispatch((st, cx) => E.setDamaged(st, cx, c.id, markId || sound[0].id, true)), setMarkId(''))}>
@@ -403,8 +424,9 @@ function DamageBlock({ c }: { c: Character }) {
       </div>
       <Rule>
         Mending repairs a single break or tear up to 1 foot, with no roll. Weaver&apos;s Tools mend a tear in cloth with a Dexterity check, DC 10 (2024 PHB).{' '}
-        {s.settings.improvised ? 'Table rule: needle and thread at DC 15 and twice the time. ' : ''}Damage has no game effect on its own; the DM decides what a torn tent or cracked shield means.
+        {s.settings.improvised ? 'Table rule: needle and thread at DC 15 and twice the time. ' : ''}Table rule: other gear is repaired with the matching artisan&apos;s tools (Smith&apos;s, Leatherworker&apos;s, Woodcarver&apos;s) at DC 10 in an hour, or by an artisan in town for a tenth of its price.{s.settings.gearWear ? ' Wear (table rule, on): each 8 hours of hard going, heavy rain or salt spray adds wear to exposed gear that suffers from it; at 3 the item is damaged.' : ''} Damage has no game effect on its own; the DM decides what a torn tent or cracked shield means.
       </Rule>
+      {s.settings.gearWear && <WaysAround topic="wear" />}
     </details>
   );
 }

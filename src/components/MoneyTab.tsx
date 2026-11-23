@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { DuesCard } from './LifeCards';
 import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
 import { uid } from '../state/defaults';
@@ -27,6 +28,7 @@ export function MoneyTab() {
       <MountsCard />
       <ShopCard />
       <DebtsCard />
+      <DuesCard />
       <ServicesCard />
     </div>
   );

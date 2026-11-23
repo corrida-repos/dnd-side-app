@@ -10,6 +10,10 @@ import { RESURRECTION_SPELLS } from '../rules/longterm';
 import { LOAD_LABEL } from '../rules/encumbrance';
 import { fmtGp } from '../rules/money';
 import { formatDuration } from '../rules/calendar';
+import { INJURIES, INJURY_MEDICINE_SUCCESSES, INJURY_REST_DAYS } from '../rules/injuries';
+import { MADNESS } from '../rules/madness';
+import { WEAR_LIMIT } from '../rules/wear';
+import { heatLevel } from '../rules/notoriety';
 
 export interface PlayerItem {
   id: string;
@@ -52,6 +56,13 @@ export function playerItems(s: State, c: Character): PlayerItem[] {
     else status('bad', `${info.name}${x.kind === 'cackle' ? ` (${x.successes}/3 saves)` : ''}${x.kind === 'sightRot' ? (x.suppressedUntil && x.suppressedUntil > now ? ' (held off by ointment)' : ': Blinded') : ''}`, info.fighting, 'effects', `con-${x.id}`);
     if (!x.onset) out[out.length - 1].dmOnly = true;
   }
+  for (const x of c.injuries ?? []) {
+    const info = INJURIES[x.kind];
+    if (x.kind === 'minorScar') continue;
+    const progress = info.cure === 'magicOrRest' ? ` (${x.restDays}/${INJURY_REST_DAYS} days of rest)` : x.kind === 'festering' ? ` (HP max −${x.hpLost}, ${x.medicine}/${INJURY_MEDICINE_SUCCESSES} tended)` : '';
+    status(x.kind === 'festering' ? 'bad' : 'warn', `${info.label}${progress}`, `${info.effect} ${info.cureText}${x.kind === 'festering' && x.lastTreatedDay !== s.dayIndex ? ' Not tended today.' : ''}`, 'effects', `inj-${x.id}`);
+  }
+  for (const m of c.madness ?? []) status('bad', `${MADNESS[m.tier].label}${m.endsAt != null ? ` (${formatDuration(Math.max(0, m.endsAt - now))} left)` : ''}: ${m.effect}`, MADNESS[m.tier].cure, 'effects', `mad-${m.id}`);
   for (const t of c.poisonTimers ?? []) {
     if (t.name === 'Midnight Tears') add({ kind: 'status', tone: 'info', text: 'Midnight Tears waiting in their blood', fix: 'Strikes at midnight unless Poisoned is ended first.', tab: 'effects', dmOnly: true, id: `mt-${t.id}` });
     else status('bad', `${t.name}: ${t.successes}/7 daily saves`, 'Damage can’t be healed while Poisoned; Lesser Restoration ends it.', 'effects', `pt-${t.id}`);
@@ -90,6 +101,17 @@ export function playerItems(s: State, c: Character): PlayerItem[] {
   if (ammo.length) upkeep('info', `Ammunition to recover: ${ammo.map((i) => `${i.ammo!.spent} ${i.name}`).join(', ')}`, 'Half can be found with a minute’s search after the fight.', 'gear', 'ammo');
   for (const e of s.effects.filter((x) => x.targetIds.includes(c.id) && x.kind === 'gift' && x.endsAt != null && x.endsAt - now < 24 * 60 && x.endsAt > now)) upkeep('info', `${e.name} fades in ${formatDuration(e.endsAt! - now)}`, 'Use it or lose it.', 'effects', `gift-${e.id}`);
   for (const d of s.debts.filter((x) => x.debtorId === c.id)) upkeep(d.dueDay < s.dayIndex ? 'bad' : 'warn', `Owes ${d.creditor} ${fmtGp(d.owed)}${d.dueDay < s.dayIndex ? ' (overdue)' : `, due in ${d.dueDay - s.dayIndex} day(s)`}`, 'Pay on the Money & Shop tab.', 'money', `debt-${d.id}`);
+  if (s.settings.duesAndTaxes) {
+    for (const d of (s.dues ?? []).filter((x) => x.active && (x.payerId === c.id || x.payerId === 'party') && x.nextDay - s.dayIndex <= 3)) upkeep('info', `${d.label} due in ${Math.max(0, d.nextDay - s.dayIndex)} day(s)`, `Paid to ${d.collector} at midnight; whatever can’t be covered becomes a debt.`, 'money', `due-${d.id}`);
+  }
+  if (s.settings.notoriety) {
+    for (const n of (s.notoriety ?? []).filter((x) => x.heat > 0 && (x.charIds.length === 0 || x.charIds.includes(c.id)))) upkeep(heatLevel(n.heat).level === 'suspected' ? 'warn' : 'bad', `${heatLevel(n.heat).label} in ${n.place} (bounty ${fmtGp(n.bountyGp)})`, 'Stay away, go disguised, bribe officials, pay the fine or surrender.', 'world', `heat-${n.id}`);
+  }
+  if (s.settings.gearWear) {
+    const failing = c.inventory.filter((i) => !i.damaged && (i.wear ?? 0) >= WEAR_LIMIT - 1);
+    if (failing.length) upkeep('warn', `Badly worn: ${failing.map((i) => i.name).join(', ')}`, 'An hour of upkeep clears the wear before it breaks.', 'gear', 'wear');
+  }
+  for (const l of (s.letters ?? []).filter((x) => !x.delivered && x.direction === 'in' && x.charId === c.id && x.sentAt <= now)) upkeep('info', `A letter from ${l.correspondent} is on its way`, `Arrives in ${formatDuration(Math.max(1, l.arrivesAt - now))}.`, 'world', `letter-${l.id}`);
   for (const p of s.projects.filter((x) => x.charIds.includes(c.id) && x.awaitingOutcome)) upkeep('warn', `${p.name} is done: roll the outcome`, undefined, 'downtime', `proj-${p.id}`);
 
   // ---- inventory that needs dealing with

@@ -75,6 +75,14 @@ import { newCharacter, uid } from './defaults';
 import { sense, type SenseKey } from '../rules/senses';
 import { buildTable, checkModifiers, DANGER, DIFFICULTY_LABEL, firstSign, rollOnTable, SRD_POOL, BOOK_POOL, type CheckConditions, type Danger, type EncounterCreature, type EncounterTable, type Party } from '../rules/encounters';
 import type { TerrainType } from '../rules/terrain';
+import { FESTERING_MEDICINE_DC, INJURIES, INJURY_MEDICINE_SUCCESSES, INJURY_REST_DAYS, INJURY_SPELLS, healsInjury, injuryFor, type InjuryKind } from '../rules/injuries';
+import { MADNESS, MADNESS_SAVE_DC, MADNESS_SPELLS, DEFAULT_MADNESS_THRESHOLD, madnessEffect, type MadnessTier } from '../rules/madness';
+import { MAGIC_AGING, SLOW_AGING_FACTOR, STAGE_LABEL, STAGE_SENSE, ageStage, bodyAge, lifespanFor, longevityBackfire } from '../rules/aging';
+import { HULL_LIMIT, DAMAGED_HULL_SPEED, MAINTAIN_MINUTES, REPAIR_DC, REPAIR_MINUTES, REPAIR_TOOL, WEAR_HOURS, WEAR_LIMIT, hullRepair, materialOf, repairCost, wearCauses } from '../rules/wear';
+import { DUE_PRESETS, GUILD_EXPULSION, PERIOD_DAYS, dueAmount, type DueKind, type DuePeriod } from '../rules/dues';
+import { BRIBE_GP_PER_HEAT, CRIMES, HEAT_DECAY_PER_WEEK, RECOGNISE_ON, heatLevel, jailDaysFor, samePlace, type CrimeSeverity } from '../rules/notoriety';
+import { FAVOR_COOLDOWN_DAYS, NEGLECT_DAYS, attitudeOf, clampBond, favorDC } from '../rules/contacts';
+import { REPLY_DIE, newsDelay, type NewsRoute } from '../rules/letters';
 
 export interface Ctx {
   rng: Rng;
@@ -143,6 +151,7 @@ export function gainWealth(c: Character, gp: number): void {
   const toPurse = Math.max(0, gp - debt);
   c.purse = addCoins(c.purse, coinsFor(toPurse));
   c.gp = Math.round((c.gp + gp) * 100) / 100;
+  if (gp > 0) c.earnedGp = Math.round(((c.earnedGp ?? 0) + gp) * 100) / 100;
 }
 
 /** Charges gold to one or more characters, split evenly. Does nothing when charging costs is switched off. */
@@ -569,8 +578,12 @@ function endOfDay(s: State, ctx: Ctx): void {
   patronDaily(s);
   lifestyleRisks(s, ctx);
   cityWater(s, ctx);
+  duesDaily(s);
   purseDebts(s);
   if ((s.dayIndex + 1) % 7 === 0) debtsWeekly(s, ctx);
+  festeringWounds(s);
+  notorietyDaily(s, ctx);
+  contactsDaily(s);
   groomTheMounts(s);
   checkRituals(s);
   const hotDay = s.weather.high >= 100;
@@ -618,6 +631,7 @@ function endOfDay(s: State, ctx: Ctx): void {
   progressBusinesses(s);
   prestigeDaily(s, ctx);
   log(s, `A new day begins: ${formatDate(s.calendar, s.startYear, s.dayIndex)}.`);
+  birthdays(s);
   newWeather(s, ctx);
 }
 
@@ -845,6 +859,9 @@ function checkSleepDeprivation(s: State, ctx: Ctx, before: number): void {
 function expireConditions(s: State): void {
   const now = absNow(s);
   for (const c of s.characters) {
+    for (const m of c.madness ?? []) {
+      if (m.endsAt != null && now >= m.endsAt) endMadness(s, c, m.id, 'it runs its course');
+    }
     if (c.poisonedUntil != null && now >= c.poisonedUntil) {
       c.poisonedUntil = null;
       status(s, c, 'waterIllnessEnds', `${c.name} is no longer Poisoned.`, 'good');
@@ -879,6 +896,8 @@ export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activi
     checkItemsLeftBehind(s);
     tickEffects(s, before);
     deliverDispatches(s);
+    deliverLetters(s, ctx);
+    deliverNews(s);
     tickContagions(s);
     tickPoisons(s, ctx);
     if (s.minutes % 60 === 0) tickHour(s, ctx, activity);
@@ -976,6 +995,7 @@ export const longRest = act((d, ctx, force = false) => {
 
 /** Everything that happens when a Long Rest finishes. */
 function completeLongRest(d: State, ctx: Ctx, watched: Record<string, number>): void {
+  injuryRestDay(d, d.travel.hoursToday === 0);
   d.lastLongRestEnd = absNow(d);
   d.travel.gallopUsed = false;
   d.travel.hoursToday = 0;
@@ -1287,6 +1307,10 @@ export function vesselSpeed(s: State, v: Stash, o: { againstWind?: boolean; down
     mph += 3;
     notes.push('+3 mph with the current');
   }
+  if (s.settings.gearWear && v.hullDamaged) {
+    mph *= DAMAGED_HULL_SPEED;
+    notes.push('half speed with a damaged hull (table rule)');
+  }
   return { mph: Math.round(mph * 10) / 10, note: notes.join('; ') };
 }
 
@@ -1411,6 +1435,7 @@ function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
   d.travel.milesToday += miles;
   if (d.travel.lost) d.travel.milesOffCourse += offCourse;
   if (offCourse > 0 && d.travel.lost) log(d, `${+offCourse.toFixed(1)} of those miles went the wrong way. The party is still lost.`, 'warn');
+  wearFromTravel(d, o.hours, false);
   log(d, `Covered ${+miles.toFixed(1)} miles. That makes ${+d.travel.milesToday.toFixed(1)} miles and ${d.travel.hoursToday} travel hour(s) since the last Long Rest.`);
   workOnTheMarch(d, ctx, o.hours, d.travel.navigatorId, o.foragerIds);
   // One foraging roll per 8 hours on the road, with a shorter leg finding a share of a day's food.
@@ -1447,6 +1472,8 @@ function sail(d: State, ctx: Ctx, v: Stash, o: TravelOpts): number {
   }
   d.travel.milesToday += miles;
   log(d, `The ${v.name} covers ${miles} miles.`);
+  wearFromTravel(d, o.hours, true);
+  hullWear(d, v, o.hours, d.weather.wind === 'strong' && d.weather.precip === 'heavy');
   return miles;
 }
 
@@ -2687,6 +2714,11 @@ export const resolveActivityProject = act((d, ctx, projectId: string, o: Activit
   if (r.debt) addDebtMut(d, c.id, 'The gambling house', 'criminal', r.debt);
   if (r.notes.length) c.notes = [c.notes, ...r.notes.map((n) => `${n} (${stamp(d)})`)].filter(Boolean).join('\n');
   if (r.jailDays) d.effects.push({ id: uid(), name: 'In jail', kind: 'other', targetIds: [c.id], casterId: null, concentration: false, shelter: false, startedAt: absNow(d), endsAt: absNow(d) + r.jailDays * MIN_PER_DAY, notes: 'Serving time for a crime.' });
+  if (r.jailDays && id === 'Crime' && d.settings.notoriety) addHeatMut(d, d.place.name, 'serious', [c.id], 'caught at a crime');
+  for (const n of r.notes) {
+    const m = /^(Allied|Hostile) contact/.exec(n);
+    if (m) addContactMut(d, { name: `New ${m[1].toLowerCase()} contact (${p.name})`, role: 'Other', place: d.place.name, bond: m[1] === 'Allied' ? 1 : -1, knownBy: [c.id], notes: n });
+  }
   if (r.complication) applyComplication(d, ctx, c, r.complication);
   rivalAdvances(d, ctx);
 });
@@ -3192,6 +3224,8 @@ function applySpellTo(s: State, ctx: Ctx, spell: string, targetId: string): void
     const x = (t.contagions ?? []).find((k) => k.kind === 'sightRot');
     if (x) endContagion(s, t, x.id, spell);
   };
+  healInjuriesBySpell(s, t, spell);
+  madnessBySpell(s, t, spell);
   switch (spell) {
     case 'Lesser Restoration': {
       const poisoned = t.sick || t.poisonedUntil != null || (t.poisonTimers ?? []).length > 0 || s.effects.some((e) => e.name.startsWith('Poisoned') && e.targetIds.includes(t.id));
@@ -4856,7 +4890,7 @@ export const spendHitDie = act((d, ctx, charId: string) => {
   status(d, c, 'hitDie', `${c.name} spends a Hit Point Die: d${c.hitDie} = ${roll} ${signed(mod)} = ${healed}. HP ${before} → ${c.hp}/${c.maxHp} (${c.level - c.hitDiceSpent} dice left).`, 'good');
 });
 
-export const changeHp = act((d, _ctx, charId: string, amount: number) => {
+export const changeHp = act((d, ctx, charId: string, amount: number) => {
   const c = charById(d, charId);
   if (!c) return;
   if (amount < 0) {
@@ -4874,6 +4908,7 @@ export const changeHp = act((d, _ctx, charId: string, amount: number) => {
       } else {
         Object.assign(c, { dying: true, stable: false, deathSuccesses: 0, deathFailures: 0, wakesAt: null });
         status(d, c, 'dying', `${c.name} falls Unconscious and is dying. Roll death saves.`, 'bad');
+        if (d.settings.lingeringInjuries) addInjuryMut(d, c, injuryFor(die(20, ctx.rng)), 'dropping to 0 HP');
       }
     } else if (!wasUp && dmg > 0 && c.diedAt == null) {
       // Damage at 0 HP: a death save failure (the stable stop being stable).
@@ -5321,12 +5356,14 @@ export const butcher = act((d, ctx, o: ButcherOpts) => {
 export type Track = 'renown' | 'fear' | 'stress';
 const TRACK_LABEL: Record<Track, string> = { renown: 'Renown', fear: 'Fear', stress: 'Stress' };
 
-export const adjustTrack = act((d, _ctx, charId: string, track: Track, delta: number, reason: string) => {
+export const adjustTrack = act((d, ctx, charId: string, track: Track, delta: number, reason: string) => {
   const c = charById(d, charId);
   if (!c || !delta) return;
   c[track] = track === 'renown' ? c[track] + delta : Math.max(0, c[track] + delta);
   const tone: Tone = track === 'renown' ? (delta > 0 ? 'good' : 'warn') : delta > 0 ? 'warn' : 'good';
   status(d, c, (`${track}${delta > 0 ? 'Up' : 'Down'}` as SenseKey), `${c.name}'s ${TRACK_LABEL[track]} ${delta > 0 ? 'rises' : 'falls'} by ${Math.abs(delta)} to ${c[track]}${reason ? ` (${reason})` : ''}.`, tone);
+  const before = c[track] - delta;
+  if (d.settings.madness && track !== 'renown' && delta > 0 && before < DEFAULT_MADNESS_THRESHOLD && c[track] >= DEFAULT_MADNESS_THRESHOLD) madnessCheck(d, ctx, c, `${TRACK_LABEL[track]} reaching ${c[track]}`);
 });
 
 export const addMount = act((d, _ctx, preset: MountPreset, name: string, buyerId: string | null) => {
@@ -7335,3 +7372,629 @@ export const releaseTame = act((d, _ctx, id: string) => {
   d.taming = d.taming!.filter((x) => x !== t);
   if (t.stage !== 'tamed') log(d, `The party leaves the ${t.creature} to the wild.`);
 });
+
+// ---------------------------------------------------------------- lingering injuries (2014 DMG optional rule)
+
+function addInjuryMut(s: State, c: Character, kind: InjuryKind, why: string): void {
+  const info = INJURIES[kind];
+  (c.injuries ??= []).push({ id: uid(), kind, at: absNow(s), why, restDays: 0, medicine: 0, hpLost: 0 });
+  status(s, c, 'injured', `${c.name} suffers a lingering injury from ${why}: ${info.label}. ${info.effect} ${info.cureText}`, kind === 'minorScar' ? 'info' : 'bad');
+}
+
+/** A lingering injury, rolled on the d20 table or chosen. */
+export const addInjury = act((d, ctx, charId: string, kind: InjuryKind | null, why: string) => {
+  const c = charById(d, charId);
+  if (!c) return;
+  addInjuryMut(d, c, kind ?? injuryFor(die(20, ctx.rng)), why || 'a grievous wound');
+});
+
+function endInjury(s: State, c: Character, id: string, how: string): void {
+  const x = (c.injuries ?? []).find((i) => i.id === id);
+  if (!x) return;
+  c.injuries = (c.injuries ?? []).filter((i) => i.id !== id);
+  if (x.hpLost) {
+    c.maxHp += x.hpLost;
+    c.hp = Math.min(c.maxHp, c.hp);
+  }
+  status(s, c, 'injuryHeals', `${c.name}'s ${INJURIES[x.kind].label.toLowerCase()} heals (${how})${x.hpLost ? `, and their HP maximum is restored by ${x.hpLost}` : ''}.`, 'good');
+}
+
+function healInjuriesBySpell(s: State, c: Character, spell: string): void {
+  const how = INJURY_SPELLS[spell];
+  if (!how) return;
+  for (const x of [...(c.injuries ?? [])]) if (healsInjury(x.kind, how)) endInjury(s, c, x.id, spell);
+}
+
+/** Ends an injury by magic, a prosthetic, or the DM's say-so. */
+export const healInjury = act((d, _ctx, charId: string, injuryId: string, how: 'magic' | 'heal' | 'regenerate' | 'dm') => {
+  const c = charById(d, charId);
+  const x = c?.injuries?.find((i) => i.id === injuryId);
+  if (!c || !x) return;
+  if (how !== 'dm' && !healsInjury(x.kind, how)) return void log(d, `${INJURIES[x.kind].label} needs stronger magic: ${INJURIES[x.kind].cureText}`, 'warn');
+  endInjury(d, c, x.id, how === 'magic' ? 'magical healing' : how === 'heal' ? 'Heal' : how === 'regenerate' ? 'Regenerate' : 'the DM rules it healed');
+});
+
+/** A Long Rest after a day without travel counts as a day of rest toward internal injuries and broken ribs. */
+function injuryRestDay(s: State, rested: boolean): void {
+  for (const c of s.characters) {
+    if (!alive(c)) continue;
+    for (const x of [...(c.injuries ?? [])]) {
+      if (INJURIES[x.kind].cure !== 'magicOrRest') continue;
+      if (!rested) {
+        if (x.restDays > 0) log(s, `${c.name} travelled today, so the rest toward healing their ${INJURIES[x.kind].label.toLowerCase()} starts over.`, 'warn');
+        x.restDays = 0;
+        continue;
+      }
+      x.restDays += 1;
+      if (x.restDays >= INJURY_REST_DAYS) endInjury(s, c, x.id, `${INJURY_REST_DAYS} days of rest`);
+    }
+  }
+}
+
+/** A festering wound costs 1 HP maximum every 24 hours. */
+function festeringWounds(s: State): void {
+  for (const c of s.characters) {
+    if (!alive(c)) continue;
+    for (const x of c.injuries ?? []) {
+      if (x.kind !== 'festering') continue;
+      x.hpLost += 1;
+      c.maxHp = Math.max(0, c.maxHp - 1);
+      c.hp = Math.min(c.hp, c.maxHp);
+      if (c.maxHp <= 0) return void killOutright(s, c, 'a festering wound');
+      status(s, c, 'injuryWorse', `${c.name}'s festering wound worsens: HP maximum −1 (now ${c.maxHp}). ${x.medicine}/${INJURY_MEDICINE_SUCCESSES} Medicine successes so far.`, 'warn');
+    }
+  }
+}
+
+/** Tending a festering wound: a DC 15 Wisdom (Medicine) check once a day; ten successes heal it. */
+export const treatInjury = act((d, ctx, charId: string, injuryId: string, healerId: string, bonus: number) => {
+  const c = charById(d, charId);
+  const x = c?.injuries?.find((i) => i.id === injuryId);
+  const h = charById(d, healerId);
+  if (!c || !x || !h || x.kind !== 'festering') return;
+  if (x.lastTreatedDay === d.dayIndex) return void log(d, `${c.name}'s wound has already been tended today.`, 'warn');
+  x.lastTreatedDay = d.dayIndex;
+  advanceMut(d, ctx, 10, 'camp');
+  const r = d20('normal', ctx.rng);
+  const total = r.value + bonus - 2 * h.exhaustion;
+  if (total >= FESTERING_MEDICINE_DC) {
+    x.medicine += 1;
+    log(d, `${h.name} cleans and dresses ${c.name}'s wound: Wisdom (Medicine) ${total} against DC ${FESTERING_MEDICINE_DC}, a success (${x.medicine}/${INJURY_MEDICINE_SUCCESSES}).`, 'good');
+    if (x.medicine >= INJURY_MEDICINE_SUCCESSES) endInjury(d, c, x.id, `${INJURY_MEDICINE_SUCCESSES} days of good care`);
+  } else log(d, `${h.name} tends ${c.name}'s wound but it stays angry: Wisdom (Medicine) ${total} against DC ${FESTERING_MEDICINE_DC}.`, 'warn');
+});
+
+// ---------------------------------------------------------------- madness (2014 DMG optional rule)
+
+function addMadnessMut(s: State, ctx: Ctx, c: Character, tier: MadnessTier, why: string, effect?: string): void {
+  const info = MADNESS[tier];
+  const now = absNow(s);
+  const length = tier === 'short' ? (rollExpr(info.duration, ctx.rng) ?? 5) : tier === 'long' ? (rollExpr(info.duration, ctx.rng) ?? 50) * 60 : null;
+  const text = effect || madnessEffect(tier, die(10, ctx.rng));
+  (c.madness ??= []).push({ id: uid(), tier, effect: text, at: now, endsAt: length == null ? null : now + length, why });
+  status(s, c, 'madness', `${c.name} is gripped by ${info.label.toLowerCase()} (${why}) ${length == null ? 'until cured' : `for ${formatDuration(length)}`}: ${text}`, 'bad');
+}
+
+export const addMadness = act((d, ctx, charId: string, tier: MadnessTier, why: string, effect?: string) => {
+  const c = charById(d, charId);
+  if (c) addMadnessMut(d, ctx, c, tier, why || 'something no mind should face', effect);
+});
+
+/** Stress or Fear hits the threshold: a DC 15 Wisdom save or long-term madness (table rule trigger). */
+function madnessCheck(s: State, ctx: Ctx, c: Character, why: string): void {
+  const r = d20('normal', ctx.rng);
+  const total = r.value + c.wisMod - 2 * c.exhaustion;
+  if (total >= MADNESS_SAVE_DC) return void log(s, `${c.name} holds on to their wits after ${why}: Wisdom save ${total} against DC ${MADNESS_SAVE_DC}.`, 'good');
+  log(s, `${c.name} breaks under ${why}: Wisdom save ${total} against DC ${MADNESS_SAVE_DC}.`, 'bad');
+  addMadnessMut(s, ctx, c, 'long', why);
+}
+
+function endMadness(s: State, c: Character, id: string, why: string): void {
+  const m = (c.madness ?? []).find((x) => x.id === id);
+  if (!m) return;
+  c.madness = (c.madness ?? []).filter((x) => x.id !== id);
+  status(s, c, 'madnessEnds', `${c.name}'s ${MADNESS[m.tier].label.toLowerCase()} ends: ${why}.`, 'good');
+}
+
+function madnessBySpell(s: State, c: Character, spell: string): void {
+  const sp = MADNESS_SPELLS[spell];
+  if (!sp) return;
+  for (const m of [...(c.madness ?? [])]) {
+    if (sp.ends.includes(m.tier)) endMadness(s, c, m.id, spell);
+    else if (sp.suppress) {
+      m.suppressedUntil = absNow(s) + 1;
+      log(s, `${spell} holds ${c.name}'s madness at bay for as long as the caster concentrates (up to 1 minute).`, 'good');
+    }
+  }
+}
+
+export const cureMadness = act((d, _ctx, charId: string, madnessId: string, why: string) => {
+  const c = charById(d, charId);
+  if (c) endMadness(d, c, madnessId, why || 'the DM rules it over');
+});
+
+// ---------------------------------------------------------------- ages and birthdays
+
+/** A character's age, life stage and lifespan right now, or null if their birth isn't recorded. */
+export function characterAge(s: State, c: Character) {
+  if (c.birthYear == null) return null;
+  const date = dateFromIndex(s.calendar, s.startYear, s.dayIndex);
+  const bd = c.birthday ?? { monthIndex: 0, day: 1 };
+  const passed = date.monthIndex > bd.monthIndex || (date.monthIndex === bd.monthIndex && date.day >= bd.day);
+  const age = bodyAge({ birthYear: c.birthYear, magicYears: c.magicYears, slowSinceYear: c.slowAgingSince, slowFactor: SLOW_AGING_FACTOR }, date.year, passed);
+  const base = lifespanFor(c.species);
+  const life = c.lifespanOverride ? { ...base, span: c.lifespanOverride, guessed: false } : base;
+  return { age, stage: ageStage(age, life), life, birthdayToday: date.monthIndex === bd.monthIndex && date.day === bd.day };
+}
+
+/** Records a character's age today and their birthday. */
+export const setBirth = act((d, _ctx, charId: string, age: number, monthIndex: number, day: number) => {
+  const c = charById(d, charId);
+  if (!c) return;
+  const date = dateFromIndex(d.calendar, d.startYear, d.dayIndex);
+  const passed = date.monthIndex > monthIndex || (date.monthIndex === monthIndex && date.day >= day);
+  c.birthday = { monthIndex, day };
+  c.birthYear = date.year - Math.max(0, Math.round(age)) - (passed ? 0 : 1) - (c.magicYears ?? 0);
+  c.slowAgingSince = c.slowAgingSince ?? null;
+  log(d, `${c.name} is ${Math.round(age)}, with a birthday on ${day} ${d.calendar.months[monthIndex]?.name ?? ''}.`);
+});
+
+function birthdays(s: State): void {
+  for (const c of s.characters) {
+    if (c.kind === 'mount' || !alive(c)) continue;
+    const a = characterAge(s, c);
+    if (!a?.birthdayToday) continue;
+    const before = ageStage(a.age - 1, a.life);
+    status(s, c, 'birthday', `It is ${c.name}'s birthday: they turn ${a.age}${c.slowAgingSince != null ? ' in years, though their body barely changes' : ''}.`, 'good');
+    if (before !== a.stage) noticed(s, 'birthday', [c], `${c.name} is now ${STAGE_LABEL[a.stage].toLowerCase()} for a ${a.life.name.toLowerCase()} (lifespan about ${a.life.span}): ${c.name} ${STAGE_SENSE[a.stage]}.`, 'info');
+  }
+}
+
+/** Magical aging or rejuvenation. */
+export const ageByMagic = act((d, ctx, charId: string, kind: string, customYears: number) => {
+  const c = charById(d, charId);
+  const preset = MAGIC_AGING.find((m) => m.id === kind);
+  if (!c || !preset) return;
+  let years = kind === 'custom' ? Math.round(customYears) : 0;
+  if (kind === 'visage') years = (rollExpr('1d4', ctx.rng) ?? 2) * 10;
+  if (kind === 'longevity') {
+    const earlier = c.longevityPotions ?? 0;
+    c.longevityPotions = earlier + 1;
+    const amount = rollExpr('1d6+6', ctx.rng) ?? 9;
+    const backfire = ctx.rng() < longevityBackfire(earlier);
+    years = backfire ? amount : -amount;
+    if (backfire) log(d, `The Potion of Longevity turns on ${c.name} (${Math.round(longevityBackfire(earlier) * 100)}% chance after ${earlier} earlier potion${earlier > 1 ? 's' : ''}).`, 'bad');
+  }
+  if (!years) return;
+  c.magicYears = (c.magicYears ?? 0) + years;
+  const a = characterAge(d, c);
+  status(d, c, years > 0 ? 'agedByMagic' : 'youngerByMagic', `${preset.label}: ${c.name} ${years > 0 ? 'ages' : 'grows younger by'} ${Math.abs(years)} year${Math.abs(years) > 1 ? 's' : ''}${a ? `, and is now ${a.age} in body (${STAGE_LABEL[a.stage].toLowerCase()})` : ''}.`, years > 0 ? 'bad' : 'good');
+});
+
+/** Starts or stops slowed aging (Archdruid: a year per ten). */
+export const setSlowAging = act((d, _ctx, charId: string, on: boolean) => {
+  const c = charById(d, charId);
+  if (!c) return;
+  if (on && c.birthYear != null) {
+    // Fold the years so far into the birth year so the age doesn't jump.
+    const year = dateFromIndex(d.calendar, d.startYear, d.dayIndex).year;
+    c.slowAgingSince = year;
+  } else if (!on && c.slowAgingSince != null && c.birthYear != null) {
+    const year = dateFromIndex(d.calendar, d.startYear, d.dayIndex).year;
+    const lost = (year - c.slowAgingSince) * (1 - SLOW_AGING_FACTOR);
+    c.birthYear = Math.round(c.birthYear + lost);
+    c.slowAgingSince = null;
+  } else c.slowAgingSince = on ? dateFromIndex(d.calendar, d.startYear, d.dayIndex).year : null;
+  log(d, on ? `${c.name} now ages only a year for every ten that pass.` : `${c.name} ages normally again.`);
+});
+
+// ---------------------------------------------------------------- wear and repair (table rule)
+
+/** Gear on the body, not packed away: what weather and hard going get at. */
+function exposedGear(c: Character): InventoryItem[] {
+  return c.inventory.filter((i) => !i.containerId && !i.damaged && !i.scattered && i.qty > 0 && materialOf(i.name) != null);
+}
+
+function isWorn(c: Character, i: InventoryItem): boolean {
+  if (c.armorWorn && c.armorName && i.name.toLowerCase().includes(c.armorName.toLowerCase())) return true;
+  if (c.shieldWorn && /shield/i.test(i.name)) return true;
+  return /boots|cloth|cloak|robe|tunic|garb|gloves|belt|pack/i.test(i.name);
+}
+
+function addWear(s: State, c: Character, it: InventoryItem): boolean {
+  it.wear = (it.wear ?? 0) + 1;
+  if (it.wear < WEAR_LIMIT) return false;
+  it.wear = 0;
+  if (it.qty > 1) {
+    it.qty -= 1;
+    c.inventory.push({ ...it, id: uid(), qty: 1, damaged: true, wear: 0 });
+  } else it.damaged = true;
+  void s;
+  return true;
+}
+
+/** Hard travel, rain and salt water wear down the gear that suffers from them (table rule). */
+function wearFromTravel(s: State, hours: number, atSea: boolean): void {
+  if (!s.settings.gearWear || hours <= 0) return;
+  const causes = wearCauses({ terrain: atSea ? 'waterborne' : s.place.terrain, precip: s.weather.precip, atSea: atSea || s.place.terrain === 'waterborne' });
+  if (!causes.length) return;
+  s.travel.wearHours = (s.travel.wearHours ?? 0) + hours;
+  while ((s.travel.wearHours ?? 0) >= WEAR_HOURS) {
+    s.travel.wearHours = (s.travel.wearHours ?? 0) - WEAR_HOURS;
+    for (const c of s.characters) {
+      if (c.kind === 'mount' || !alive(c)) continue;
+      const broke: string[] = [];
+      const worn: string[] = [];
+      for (const it of exposedGear(c)) {
+        const mat = materialOf(it.name)!;
+        if (!causes.some((k) => k.materials.includes(mat) && (!k.wornOnly || isWorn(c, it)))) continue;
+        if (addWear(s, c, it)) broke.push(it.name);
+        else if ((it.wear ?? 0) >= WEAR_LIMIT - 1) worn.push(it.name);
+      }
+      if (broke.length) status(s, c, 'gearWorn', `${causes.map((k) => k.label).join(' and ')} take their toll on ${c.name}'s gear: ${broke.join(', ')} ${broke.length > 1 ? 'are' : 'is'} now damaged (table rule; repair on the Gear tab).`, 'warn');
+      else if (worn.length) status(s, c, 'gearWorn', `${c.name}'s ${worn.join(', ')} ${worn.length > 1 ? 'are' : 'is'} badly worn from ${causes.map((k) => k.label).join(' and ')}: an hour of upkeep would save ${worn.length > 1 ? 'them' : 'it'}.`, 'info');
+    }
+  }
+}
+
+/** An hour of cleaning, oiling and patching clears the wear on the characters' gear. */
+export const maintainGear = act((d, ctx, charIds: string[]) => {
+  const who = charIds.map((id) => charById(d, id)).filter((c): c is Character => !!c && alive(c));
+  if (!who.length) return;
+  advanceMut(d, ctx, MAINTAIN_MINUTES, 'camp');
+  for (const c of who) for (const i of c.inventory) if (i.wear) delete i.wear;
+  log(d, `${who.map((c) => c.name).join(', ')} spend${who.length > 1 ? '' : 's'} an hour cleaning, oiling and patching their gear: the wear is gone.`, 'good');
+});
+
+/**
+ * Repairing a damaged item: with the right artisan's tools (DC 10, 1 hour; improvised DC 15, 2 hours) or by paying
+ * a smith or other artisan in a settlement a tenth of its price (table rule).
+ */
+export const repairItem = act((d, ctx, ownerId: string, itemId: string, method: 'tools' | 'improvised' | 'artisan', repairerId: string, bonus: number) => {
+  const owner = charById(d, ownerId);
+  const it = owner?.inventory.find((i) => i.id === itemId);
+  if (!owner || !it || !it.damaged) return;
+  const mat = materialOf(it.name) ?? 'metal';
+  const tool = REPAIR_TOOL[mat];
+  const done = () => {
+    delete it.damaged;
+    delete it.wear;
+  };
+  if (method === 'artisan') {
+    if (!d.place.settlement) return void log(d, 'There is no smith or artisan here: repairs for hire need a settlement.', 'warn');
+    const gp = repairCost(it.name, it.valueGp);
+    payGold(d, [ownerId], gp, `repairing the ${it.name}`);
+    done();
+    return void log(d, `A local artisan repairs the ${it.name} for ${fmtGp(gp)}, ready by the end of the day.`, 'good');
+  }
+  const m = charById(d, repairerId);
+  if (!m) return;
+  if (method === 'tools' && !m.inventory.some((i) => tool.match.test(i.name))) return void log(d, `${m.name} has no ${tool.label}.`, 'warn');
+  if (method === 'improvised' && !d.settings.improvised) return void log(d, `${m.name} needs ${tool.label} (improvised attempts are off).`, 'warn');
+  const proper = method === 'tools';
+  advanceMut(d, ctx, REPAIR_MINUTES * (proper ? 1 : IMPROVISED_TIME), 'camp');
+  const dc = REPAIR_DC + (proper ? 0 : IMPROVISED_DC);
+  const r = d20('normal', ctx.rng);
+  const total = r.value + bonus - 2 * m.exhaustion;
+  const roll = `${proper ? tool.label : 'makeshift tools'} ${r.value} ${signed(bonus - 2 * m.exhaustion)} = ${total} against DC ${dc}`;
+  if (total < dc) return void log(d, `${m.name} works on the ${it.name} (${roll}), but the repair won't hold.`, 'warn');
+  done();
+  log(d, `${m.name} repairs the ${it.name} (${roll}).`, 'good');
+});
+
+/** Storms and long voyages wear a ship's hull; enough wear leaves it damaged (half speed) until docked and repaired. */
+function hullWear(s: State, v: Stash, hours: number, storm: boolean): void {
+  if (!s.settings.gearWear || /airship/i.test(v.name)) return;
+  const before = Math.floor(v.hullWear ?? 0);
+  v.hullWear = Math.round(((v.hullWear ?? 0) + hours / 72 + (storm ? 1 : 0)) * 100) / 100;
+  if (!v.hullDamaged && v.hullWear >= HULL_LIMIT) {
+    v.hullDamaged = true;
+    log(s, `The ${v.name} is taking water and her rigging is frayed: she makes half speed until repaired at a dock (table rule).`, 'bad');
+  } else if (Math.floor(v.hullWear) > before) log(s, `The ${v.name} shows the strain of the voyage (hull wear ${Math.floor(v.hullWear)}/${HULL_LIMIT}).`, 'warn');
+}
+
+export const repairHull = act((d, _ctx, stashId: string, payerIds: string[]) => {
+  const v = d.stashes.find((x) => x.id === stashId);
+  if (!v) return;
+  if (!d.place.settlement) return void log(d, `The ${v.name} needs a dock or shipyard: repairs happen in a settlement.`, 'warn');
+  const pts = Math.ceil(v.hullWear ?? 0);
+  if (pts <= 0 && !v.hullDamaged) return void log(d, `The ${v.name} is sound.`);
+  const { gp, days } = hullRepair(v.name, pts);
+  payGold(d, payerIds, gp, `repairing the ${v.name}`);
+  v.hullWear = 0;
+  v.hullDamaged = false;
+  log(d, `Shipwrights work on the ${v.name} for ${days} day${days > 1 ? 's' : ''} and she is sound again.`, 'good');
+});
+
+// ---------------------------------------------------------------- taxes, tithes and dues (table rule)
+
+export const addDue = act((d, _ctx, o: { kind: DueKind; label: string; payerId: string; gp: number; share?: number; period: DuePeriod; firstInDays: number; collector: string; notes: string }) => {
+  (d.dues ??= []).push({ id: uid(), kind: o.kind, label: o.label || DUE_PRESETS[o.kind].label, payerId: o.payerId, gp: Math.max(0, o.gp), share: o.share, period: o.period, nextDay: d.dayIndex + Math.max(1, Math.round(o.firstInDays)), collector: o.collector || DUE_PRESETS[o.kind].collector, missed: 0, active: true, notes: o.notes });
+  log(d, `${o.label || DUE_PRESETS[o.kind].label} set up: ${o.share ? `${Math.round(o.share * 100)}% of income` : fmtGp(o.gp)} every ${o.period}, first due in ${Math.max(1, Math.round(o.firstInDays))} day(s).`);
+});
+
+export const removeDue = act((d, _ctx, id: string) => {
+  d.dues = (d.dues ?? []).filter((x) => x.id !== id);
+});
+
+function duesDaily(s: State): void {
+  if (!s.settings.duesAndTaxes) return;
+  const today = s.dayIndex + 1;
+  for (const due of s.dues ?? []) {
+    if (!due.active || due.nextDay > today) continue;
+    due.nextDay += PERIOD_DAYS[due.period];
+    const payers = due.payerId === 'party' ? adventurers(s) : [charById(s, due.payerId)].filter((c): c is Character => !!c && alive(c));
+    if (!payers.length) continue;
+    const earned = payers.reduce((a, c) => a + (c.earnedGp ?? 0), 0);
+    const amount = dueAmount(due, earned);
+    if (due.share) for (const c of payers) c.earnedGp = 0;
+    if (amount <= 0) {
+      log(s, `${due.label} falls due, but there's nothing owed this time.`);
+      continue;
+    }
+    if (!s.settings.chargeCosts) {
+      log(s, `${due.label} falls due: ${fmtGp(amount)} to ${due.collector}.`);
+      continue;
+    }
+    const share = Math.round((amount / payers.length) * 100) / 100;
+    let short = false;
+    for (const c of payers) {
+      const can = Math.min(share, Math.max(0, c.gp));
+      if (can > 0) spendWealth(c, can);
+      if (can < share) {
+        short = true;
+        addDebtMut(s, c.id, due.collector, DUE_PRESETS[due.kind].creditor, Math.round((share - can) * 100) / 100);
+      }
+    }
+    if (!short) {
+      due.missed = 0;
+      log(s, `${payers.map((c) => c.name).join(', ')} pay${payers.length > 1 ? '' : 's'} ${due.label.toLowerCase()}: ${fmtGp(amount)} to ${due.collector} (table rule).`);
+      continue;
+    }
+    due.missed += 1;
+    log(s, `${due.label} can't be paid in full: the rest is owed to ${due.collector}. ${DUE_PRESETS[due.kind].missed}`, 'warn');
+    if (due.kind === 'guild' && due.missed >= GUILD_EXPULSION) {
+      due.active = false;
+      log(s, `${due.collector} expels ${payers.map((c) => c.name).join(', ')} after ${GUILD_EXPULSION} missed payments: the guild's perks are lost.`, 'bad');
+    }
+  }
+}
+
+// ---------------------------------------------------------------- notoriety with the law (table rule)
+
+function addHeatMut(s: State, place: string, severity: CrimeSeverity, charIds: string[], why: string): void {
+  const name = place.trim() || 'this place';
+  const crime = CRIMES[severity];
+  let rec = (s.notoriety ??= []).find((n) => samePlace(n.place, name));
+  if (!rec) {
+    rec = { id: uid(), place: name, heat: 0, bountyGp: 0, charIds: [], lastCrimeDay: s.dayIndex, lastDecayDay: s.dayIndex, crimes: [] };
+    s.notoriety.push(rec);
+  }
+  const before = heatLevel(rec.heat).level;
+  rec.heat += crime.heat;
+  rec.bountyGp += crime.bountyGp;
+  rec.lastCrimeDay = s.dayIndex;
+  rec.lastDecayDay = s.dayIndex;
+  rec.crimes.unshift(`${stamp(s)}: ${why} (${crime.label.toLowerCase()})`);
+  for (const id of charIds) if (!rec.charIds.includes(id)) rec.charIds.push(id);
+  const lvl = heatLevel(rec.heat);
+  log(s, `The law in ${name} wants answers for ${why}: heat ${rec.heat} (${lvl.label}), bounty ${fmtGp(rec.bountyGp)} (table rule). ${lvl.level !== before ? lvl.text : ''}`, lvl.level === 'hunted' || lvl.level === 'wanted' ? 'bad' : 'warn');
+}
+
+export const addCrime = act((d, _ctx, place: string, severity: CrimeSeverity, charIds: string[], why: string) => {
+  addHeatMut(d, place, severity, charIds, why || CRIMES[severity].label.toLowerCase() + ' crime');
+});
+
+function wantedChars(s: State, n: { charIds: string[] }): Character[] {
+  return n.charIds.length ? n.charIds.map((id) => charById(s, id)).filter((c): c is Character => !!c && alive(c)) : adventurers(s);
+}
+
+function notorietyDaily(s: State, ctx: Ctx): void {
+  if (!s.settings.notoriety) return;
+  const today = s.dayIndex + 1;
+  for (const n of s.notoriety ?? []) {
+    const here = s.place.settlement && samePlace(n.place, s.place.name);
+    const every = here ? 7 : 4;
+    if (n.heat > 0 && today - n.lastCrimeDay >= 7 && today - n.lastDecayDay >= every) {
+      n.lastDecayDay = today;
+      n.heat = Math.max(0, n.heat - HEAT_DECAY_PER_WEEK);
+      if (n.heat === 0) {
+        n.bountyGp = 0;
+        log(s, `The law in ${n.place} has moved on to other troubles: the party is no longer sought there.`, 'good');
+      } else log(s, `Heat in ${n.place} cools to ${n.heat} (${heatLevel(n.heat).label}).`);
+    }
+    if (!here || n.heat <= 0) continue;
+    const lvl = heatLevel(n.heat);
+    const roll = n.disguised ? Math.max(die(20, ctx.rng), die(20, ctx.rng)) : die(20, ctx.rng);
+    if (roll > RECOGNISE_ON[lvl.level]) continue;
+    const who = wantedChars(s, n);
+    noticed(s, 'recognised', who, `${who.map((c) => c.name).join(', ')} ${who.length > 1 ? 'are' : 'is'} recognised in ${n.place} (${lvl.label}). ${lvl.level === 'suspected' ? 'A patrol stops and questions them for an hour.' : lvl.level === 'wanted' ? 'The watch moves to arrest them: surrender, pay the bounty as a fine, talk their way out or run.' : 'Bounty hunters are closing in: a hostile encounter on their terms.'}`, lvl.level === 'suspected' ? 'warn' : 'bad');
+  }
+  s.notoriety = (s.notoriety ?? []).filter((n) => n.heat > 0);
+}
+
+/** Bribing officials: 25 GP per point of current heat removes one point (table rule). */
+export const bribeOfficials = act((d, _ctx, id: string, payerIds: string[]) => {
+  const n = (d.notoriety ?? []).find((x) => x.id === id);
+  if (!n || n.heat <= 0) return;
+  const gp = BRIBE_GP_PER_HEAT * n.heat;
+  payGold(d, payerIds, gp, `bribes in ${n.place}`);
+  n.heat -= 1;
+  n.lastDecayDay = d.dayIndex;
+  log(d, `Coin changes hands in ${n.place}: heat falls to ${n.heat} (${heatLevel(n.heat).label}).`, 'good');
+  if (n.heat <= 0) d.notoriety = (d.notoriety ?? []).filter((x) => x.id !== id);
+});
+
+/** Paying the bounty as a fine clears the party's name there. */
+export const payBounty = act((d, _ctx, id: string, payerIds: string[]) => {
+  const n = (d.notoriety ?? []).find((x) => x.id === id);
+  if (!n) return;
+  payGold(d, payerIds, n.bountyGp, `fines in ${n.place}`);
+  d.notoriety = (d.notoriety ?? []).filter((x) => x.id !== id);
+  log(d, `The fines are paid and the magistrate of ${n.place} considers the matter closed.`, 'good');
+});
+
+/** Surrendering: a day in jail per 10 GP of bounty, and the slate is clean. */
+export const surrender = act((d, _ctx, id: string) => {
+  const n = (d.notoriety ?? []).find((x) => x.id === id);
+  if (!n) return;
+  const days = jailDaysFor(n.bountyGp);
+  const who = wantedChars(d, n);
+  for (const c of who) {
+    d.effects.push({ id: uid(), name: 'In jail', kind: 'other', targetIds: [c.id], casterId: null, concentration: false, shelter: false, startedAt: absNow(d), endsAt: absNow(d) + days * MIN_PER_DAY, notes: `Serving time in ${n.place}.` });
+    status(d, c, 'jailed', `${c.name} surrenders to the watch in ${n.place}: ${days} day${days > 1 ? 's' : ''} in the cells, then a clean slate (table rule).`, 'bad');
+  }
+  d.notoriety = (d.notoriety ?? []).filter((x) => x.id !== id);
+});
+
+// ---------------------------------------------------------------- contacts and relationships
+
+function addContactMut(d: State, o: { name: string; role: string; place: string; bond: number; knownBy: string[]; notes: string; distanceMiles?: number }): void {
+  (d.contacts ??= []).push({ id: uid(), name: o.name || 'Someone', role: o.role, place: o.place, distanceMiles: o.distanceMiles ?? 0, bond: clampBond(o.bond), knownBy: o.knownBy, lastHeardDay: d.dayIndex, owesParty: 0, partyOwes: 0, notes: o.notes });
+}
+
+export const addContact = act((d, _ctx, o: { name: string; role: string; place: string; bond: number; knownBy: string[]; notes: string; distanceMiles: number }) => {
+  addContactMut(d, o);
+  log(d, `${o.name || 'A new contact'} (${o.role}${o.place ? `, ${o.place}` : ''}) joins the party's acquaintances.`);
+});
+
+function contactsDaily(s: State): void {
+  if (!s.settings.contactsFade) return;
+  const today = s.dayIndex + 1;
+  for (const k of s.contacts ?? []) {
+    if (k.bond >= 1 && today - k.lastHeardDay >= NEGLECT_DAYS) {
+      k.bond -= 1;
+      k.lastHeardDay = today;
+      const knowers = k.knownBy.map((id) => charById(s, id)).filter((c): c is Character => !!c);
+      noticed(s, 'contactCools', knowers, `${k.name} hasn't heard from the party in ${NEGLECT_DAYS} days and cools toward them: now ${attitudeOf(k.bond)} (table rule).`, 'warn');
+    }
+  }
+}
+
+/** A visit, a drink or a letter delivered: the contact has heard from the party. */
+export const keepInTouch = act((d, _ctx, id: string) => {
+  const k = (d.contacts ?? []).find((x) => x.id === id);
+  if (!k) return;
+  k.lastHeardDay = d.dayIndex;
+  log(d, `The party catches up with ${k.name}.`);
+});
+
+/** Doing something for a contact: the bond grows and they owe the party a favor. */
+export const doFavorFor = act((d, _ctx, id: string) => {
+  const k = (d.contacts ?? []).find((x) => x.id === id);
+  if (!k) return;
+  if (k.partyOwes > 0) k.partyOwes -= 1;
+  else k.owesParty += 1;
+  k.bond = clampBond(k.bond + 1);
+  k.lastHeardDay = d.dayIndex;
+  log(d, `The party does ${k.name} a good turn: now ${attitudeOf(k.bond)}${k.owesParty ? `, owing the party ${k.owesParty} favor${k.owesParty > 1 ? 's' : ''}` : ''}.`, 'good');
+});
+
+export const adjustBond = act((d, _ctx, id: string, delta: number) => {
+  const k = (d.contacts ?? []).find((x) => x.id === id);
+  if (!k) return;
+  k.bond = clampBond(k.bond + delta);
+  log(d, `${k.name} is now ${attitudeOf(k.bond)} (bond ${signed(k.bond)}).`);
+});
+
+/**
+ * Calling in a favor: automatic if they owe one, otherwise an Influence check (2024 DMG DCs: 10 Friendly,
+ * 15 Indifferent, +5 for a big ask; Hostile contacts refuse). Afterward they won't help again for 30 days (table rule).
+ */
+export const callFavor = act((d, ctx, id: string, askerId: string, bonus: number, big: boolean, what: string) => {
+  const k = (d.contacts ?? []).find((x) => x.id === id);
+  const c = charById(d, askerId);
+  if (!k || !c) return;
+  const ask = what || 'a favor';
+  if (d.settings.contactsFade && k.cooldownUntilDay != null && k.cooldownUntilDay > d.dayIndex) return void log(d, `${k.name} helped only recently and won't stick their neck out again for ${k.cooldownUntilDay - d.dayIndex} more day(s) (table rule).`, 'warn');
+  const cool = () => {
+    k.lastHeardDay = d.dayIndex;
+    if (d.settings.contactsFade) k.cooldownUntilDay = d.dayIndex + FAVOR_COOLDOWN_DAYS;
+  };
+  if (k.owesParty > 0) {
+    k.owesParty -= 1;
+    cool();
+    return void log(d, `${k.name} repays a favor owed: ${ask}.`, 'good');
+  }
+  const attitude = attitudeOf(k.bond);
+  const dc = favorDC(attitude, big);
+  if (dc == null) return void log(d, `${k.name} is Hostile and won't help ${c.name}.`, 'warn');
+  const r = d20('normal', ctx.rng);
+  const total = r.value + bonus - 2 * c.exhaustion;
+  if (total >= dc) {
+    k.partyOwes += 1;
+    cool();
+    return void log(d, `${k.name} agrees to ${ask} (Influence ${total} against DC ${dc}). The party now owes them one.`, 'good');
+  }
+  if (total <= dc - 5) k.bond = clampBond(k.bond - 1);
+  log(d, `${k.name} won't help with ${ask} (Influence ${total} against DC ${dc})${total <= dc - 5 ? `, and is put out by the asking: now ${attitudeOf(k.bond)}` : ''}.`, 'warn');
+});
+
+// ---------------------------------------------------------------- letters and news
+
+export const sendLetter = act((d, ctx, o: { charId: string; contactId: string | null; correspondent: string; miles: number; method: CommMethod; text: string; expectsReply: boolean }) => {
+  const c = charById(d, o.charId);
+  if (!c) return;
+  const k = o.contactId ? (d.contacts ?? []).find((x) => x.id === o.contactId) : undefined;
+  const to = k?.name ?? (o.correspondent.trim() || 'a friend');
+  const miles = Math.max(0, o.miles);
+  const info = COMMS[o.method];
+  const delay = commDelay(o.method, miles);
+  if (delay == null) return void log(d, `${info.label} can't carry a letter ${miles} miles (at most ${info.maxMiles}).`, 'warn');
+  if (info.needs && info.needs !== 'messenger') {
+    if (!c.spells.some((x) => x.name.toLowerCase() === info.needs!.toLowerCase())) return void log(d, `${c.name} doesn't know ${info.needs}.`, 'warn');
+    const ritual = o.method === 'animal';
+    if (!ritual && info.slotLevel && !useSlot(d, c, info.slotLevel, info.needs)) return;
+    advanceMut(d, ctx, ritual ? 11 : 1, 'camp');
+  }
+  // Without a messenger of their own, a letter goes with a paid carrier at the messenger rate.
+  const gp = o.method === 'courier' ? commCost('messenger', miles) : commCost(o.method, miles);
+  const now = absNow(d);
+  (d.letters ??= []).push({ id: uid(), direction: 'out', contactId: k?.id ?? null, correspondent: to, charId: c.id, method: o.method, miles, sentAt: now, arrivesAt: now + delay, costGp: gp, text: o.text, delivered: false, expectsReply: o.expectsReply });
+  if (gp > 0) payGold(d, [c.id], gp, `a letter to ${to}`);
+  log(d, `${c.name} sends a letter to ${to} by ${info.label.toLowerCase()} (${miles} miles): ${delay === 0 ? 'it arrives at once' : `it should arrive in ${formatDuration(delay)}`}.`);
+  deliverLetters(d, ctx);
+});
+
+function deliverLetters(s: State, ctx: Ctx): void {
+  const now = absNow(s);
+  for (const l of [...(s.letters ?? [])]) {
+    if (l.delivered || l.arrivesAt > now) continue;
+    l.delivered = true;
+    const k = l.contactId ? (s.contacts ?? []).find((x) => x.id === l.contactId) : undefined;
+    const c = charById(s, l.charId);
+    if (k) k.lastHeardDay = s.dayIndex;
+    if (l.direction === 'out') {
+      log(s, `${c?.name ?? 'The party'}'s letter reaches ${l.correspondent}${l.method === 'sending' || l.method === 'dream' ? '' : ` after ${formatDuration(Math.max(1, now - l.sentAt))}`}.`);
+      if (l.expectsReply) {
+        const back = commDelay(l.method === 'animal' || l.method === 'dream' ? 'courier' : l.method, l.miles) ?? 0;
+        const writing = l.method === 'sending' ? 0 : die(REPLY_DIE, ctx.rng) * MIN_PER_DAY;
+        (s.letters ??= []).push({ id: uid(), direction: 'in', contactId: l.contactId, correspondent: l.correspondent, charId: l.charId, method: l.method === 'animal' || l.method === 'dream' ? 'courier' : l.method, miles: l.miles, sentAt: now + writing, arrivesAt: now + writing + back, costGp: 0, text: '', delivered: false });
+      }
+    } else if (c) {
+      status(s, c, 'letterArrives', `A letter from ${l.correspondent} reaches ${c.name}${l.text ? `: ${l.text}` : ' (the DM writes what it says)'}.`, 'good');
+    }
+  }
+  s.letters = (s.letters ?? []).filter((l) => !l.delivered || now - l.arrivesAt < 60 * MIN_PER_DAY);
+}
+
+/** Something happened far away: word of it travels toward the party (table rule speed). */
+export const addNews = act((d, _ctx, o: { text: string; place: string; miles: number; route: NewsRoute; daysAgo: number }) => {
+  const now = absNow(d);
+  const happenedAt = now - Math.max(0, o.daysAgo) * MIN_PER_DAY;
+  const arrivesAt = d.settings.newsTravels ? happenedAt + newsDelay(o.route, Math.max(0, o.miles)) : happenedAt;
+  (d.news ??= []).push({ id: uid(), text: o.text, place: o.place, miles: Math.max(0, o.miles), route: o.route, happenedAt, arrivesAt, delivered: false });
+  if (arrivesAt > now) log(d, `DM note: news from ${o.place || 'afar'} will reach the party in ${formatDuration(arrivesAt - now)}.`);
+  deliverNews(d);
+});
+
+function deliverNews(s: State): void {
+  const now = absNow(s);
+  for (const n of s.news ?? []) {
+    if (n.delivered || n.arrivesAt > now) continue;
+    n.delivered = true;
+    const age = now - n.happenedAt;
+    noticed(s, 'newsArrives', [], `News from ${n.place || 'afar'}${age >= MIN_PER_DAY ? `, ${formatDuration(age)} old` : ''}: ${n.text}`, 'info');
+  }
+  s.news = (s.news ?? []).filter((n) => !n.delivered || now - n.arrivesAt < 60 * MIN_PER_DAY);
+}

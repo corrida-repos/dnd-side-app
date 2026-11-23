@@ -86,6 +86,10 @@ export const TOPIC_PLACES: Record<TopicId, { tab: string; tabLabel: string; card
   downtime: { tab: 'downtime', tabLabel: 'Downtime', card: 'New downtime project' },
   building: { tab: 'downtime', tabLabel: 'Downtime', card: 'Running a business' },
   messages: { tab: 'bastions', tabLabel: 'Bastions', card: 'Running a Bastion from afar' },
+  injuries: { tab: 'effects', tabLabel: 'Effects & Lights', card: 'Lingering injuries' },
+  madness: { tab: 'effects', tabLabel: 'Effects & Lights', card: 'Madness' },
+  wanted: { tab: 'world', tabLabel: 'World', card: 'Wanted by the law' },
+  wear: { tab: 'gear', tabLabel: 'Gear & Resources', card: 'Damaged gear' },
   bastionEvents: { tab: 'bastions', tabLabel: 'Bastions', card: 'Bastion rules at a glance' },
 };
 

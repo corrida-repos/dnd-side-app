@@ -10,6 +10,7 @@ import { Card, Meter, Num, Pill, Select, Text, Toggle, Rule } from './common';
 import { POISONS, poisonByName } from '../rules/poisons';
 import { CONTAGIONS, RECUPERATE_DAYS, RECUPERATE_DC, type ContagionKind } from '../rules/contagion';
 import { WaysAround } from './WaysAround';
+import { InjuryCard, MadnessCard } from './LifeCards';
 import { FUEL_LABEL, fuelFor, isHooded, isOilLight } from '../rules/gear';
 
 export function EffectsTab() {
@@ -21,6 +22,8 @@ export function EffectsTab() {
       <BreathCard />
       <HazardCard />
       <ContagionCard />
+      <InjuryCard />
+      <MadnessCard />
       <PotionMixCard />
       <PoisonCard />
     </div>

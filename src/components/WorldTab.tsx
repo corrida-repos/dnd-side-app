@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ContactsCard, LettersCard, NotorietyCard } from './LifeCards';
 import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
 import { uid } from '../state/defaults';
@@ -22,6 +23,9 @@ export function WorldTab() {
       <FactionsCard />
       <MarksCard />
       <RivalsCard />
+      <NotorietyCard />
+      <ContactsCard />
+      <LettersCard />
       <PatronCard />
       <RegionCard />
       <RitualsCard />

@@ -8,6 +8,7 @@ import { misjudged, valueUnknown } from '../rules/shop';
 import { Card, Meter, Num, Pill, Select, Text, Rule } from './common';
 import type { Stash } from '../state/types';
 import { WaysAround } from './WaysAround';
+import { HullBlock } from './LifeCards';
 
 export function StorageTab() {
   const s = useGame();
@@ -104,6 +105,7 @@ function StashCard({ st }: { st: Stash }) {
       <p className="small muted">
         {st.location || 'Somewhere in the world'} · {load} lb{st.capacityLb ? ` of ${st.capacityLb.toLocaleString()} lb` : ''} · worth about {fmtGp(value)} · {fmtPurse(st.purse)}
       </p>
+      <HullBlock st={st} />
       {st.capacityLb ? <Meter value={load} max={st.capacityLb} tone={load > st.capacityLb ? 'bad' : 'good'} /> : null}
       {st.items.length === 0 && <p className="muted small">Empty.</p>}
       <ul className="plain small">

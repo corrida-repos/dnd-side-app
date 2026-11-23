@@ -428,6 +428,16 @@ Table rules under "Lifestyle risks in town". Renown 3+ spares the Wretched, as b
 - ✅ Working on a downtime project in town switches to Downtime; leaving town switches back to day to day.
 - ✅ Day to day, the room a character rented sets the risks of town life and keeps the weather out; no room means sleeping rough. Mounts are still stabled and fed.
 
+### Life beyond the adventure ✅
+- ✅ **Lingering injuries** (2014 DMG optional rule, switch): rolled on dropping to 0 HP; festering wounds cost HP maximum daily; rest, Medicine or magic heal them.
+- ✅ **Madness** (2014 DMG optional rule): short-term, long-term and indefinite, with cures by spell; table-rule trigger when Stress or Fear reaches 6.
+- ✅ **Ages and birthdays**: lifespans by species, birthdays on the calendar, life stages, magical aging and slowed aging.
+- ✅ **Wear and repair** (table rule, Hardcore): hard travel, rain and salt water wear gear and hulls; upkeep, tools, artisans and docks repair them.
+- ✅ **Taxes, tithes and dues** (table rule): recurring charges that become debts when unpaid.
+- ✅ **Notoriety with the law** (table rule): heat and bounties by place, daily recognition, cooling, bribes, fines and surrender.
+- ✅ **Contacts and relationships**: bonds and attitudes, favors with 2024 DMG Influence DCs; table rule for neglect and the wait between favors.
+- ✅ **Letters and news**: personal letters by the Bastion message methods with replies; distant news that travels at a table-rule speed.
+
 ## Not planned
 
 - Nothing at the moment. (The 2024 DMG contagions, Cackle Fever, Sewer Plague and Sight Rot, are tracked on the Effects tab.)

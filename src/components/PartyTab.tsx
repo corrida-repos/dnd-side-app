@@ -7,6 +7,7 @@ import { SIZES, exhaustionSummary, foodNeedLb, WATER_GAL_PER_DAY, proficiencyBon
 import { Card, Num, Select, Text, Toggle, Rule } from './common';
 import { Debuffs } from './Debuffs';
 import { DdbImportCard } from './DdbImport';
+import { AgeCard } from './LifeCards';
 import { senseText } from './senseView';
 import type { ArmorKind, Character, ClassName, ExhaustionCause, Resist, Size } from '../state/types';
 import * as E2 from '../state/engine';
@@ -34,6 +35,7 @@ export function PartyTab() {
         {s.characters.map((c) => (
           <CharacterCard key={c.id} c={c} />
         ))}
+        <AgeCard />
       </div>
     </div>
   );

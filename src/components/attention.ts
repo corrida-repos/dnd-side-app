@@ -4,6 +4,8 @@ import { foodNeedLb, waterNeedPints } from '../rules/survival';
 import { CONTAGIONS } from '../rules/contagion';
 import { fmtGp } from '../rules/money';
 import { formatDuration } from '../rules/calendar';
+import { heatLevel } from '../rules/notoriety';
+import { attitudeOf, NEGLECT_DAYS } from '../rules/contacts';
 
 export interface AttentionItem {
   id: string;
@@ -73,6 +75,25 @@ export function attentionItems(s: State): AttentionItem[] {
     else if (left <= 3) add({ id: `debt-${d.id}`, tone: 'warn', text: `${c?.name}'s debt to ${d.creditor} is due in ${left} day(s)`, tab: 'money' });
   }
 
+  for (const c of s.characters) {
+    if (c.diedAt != null) continue;
+    for (const x of c.injuries ?? []) if (x.kind === 'festering' && x.lastTreatedDay !== s.dayIndex) add({ id: `fester-${x.id}`, tone: 'warn', text: `${c.name}'s festering wound hasn't been tended today (HP max −${x.hpLost})`, tab: 'effects' });
+    for (const m of c.madness ?? []) if (m.tier === 'indefinite') add({ id: `mad-${m.id}`, tone: 'warn', text: `${c.name} suffers indefinite madness`, tab: 'effects' });
+  }
+  if (s.settings.duesAndTaxes) {
+    for (const d of s.dues ?? []) if (d.active && d.nextDay - s.dayIndex <= 1) add({ id: `due-${d.id}`, tone: 'info', text: `${d.label} falls due at midnight`, tab: 'money' });
+  }
+  if (s.settings.notoriety) {
+    for (const n of s.notoriety ?? []) {
+      const here = s.place.settlement && n.place.trim().toLowerCase() === s.place.name.trim().toLowerCase();
+      if (here && n.heat > 0) add({ id: `heat-${n.id}`, tone: 'bad', text: `The party is ${heatLevel(n.heat).label.toLowerCase()} here in ${n.place}`, tab: 'world' });
+    }
+  }
+  if (s.settings.contactsFade) {
+    for (const k of s.contacts ?? []) if (attitudeOf(k.bond) === 'friendly' && s.dayIndex - k.lastHeardDay >= NEGLECT_DAYS - 7) add({ id: `contact-${k.id}`, tone: 'info', text: `${k.name} hasn't heard from the party in ${s.dayIndex - k.lastHeardDay} days`, tab: 'world' });
+  }
+  for (const v of s.stashes) if (s.settings.gearWear && v.hullDamaged) add({ id: `hull-${v.id}`, tone: 'warn', text: `The ${v.name} is damaged: half speed until repaired at a dock`, tab: 'storage' });
+  for (const n of s.news ?? []) if (!n.delivered && n.arrivesAt - now <= 24 * 60) add({ id: `news-${n.id}`, tone: 'info', text: `News from ${n.place || 'afar'} reaches the party in ${formatDuration(Math.max(1, n.arrivesAt - now))}`, tab: 'world', dmOnly: true });
   for (const r of s.rivals) if (r.active && r.pressure >= 3) add({ id: `rival-${r.id}`, tone: r.pressure >= 6 ? 'bad' : 'warn', text: `${r.name} is ready to act in person (pressure ${r.pressure})`, tab: 'world' });
 
   // Secrets only the DM should see.

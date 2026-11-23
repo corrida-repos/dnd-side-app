@@ -20,6 +20,10 @@ import type { ClueKind, StudyMethod } from '../rules/identify';
 import type { WeightSource } from '../rules/encumbrance';
 import type { FortType, LandKind, MarkKind, RightKind, TitleRank, TrainingKind } from '../rules/prestige';
 import type { Purse } from '../rules/coins';
+import type { InjuryKind } from '../rules/injuries';
+import type { MadnessTier } from '../rules/madness';
+import type { DueKind, DuePeriod } from '../rules/dues';
+import type { NewsRoute } from '../rules/letters';
 
 export type Season = 'winter' | 'spring' | 'summer' | 'autumn';
 export type Size = 'Tiny' | 'Small' | 'Medium' | 'Large' | 'Huge' | 'Gargantuan';
@@ -136,6 +140,8 @@ export interface InventoryItem {
   scattered?: boolean;
   /** DM secret: a cheap potion bought while living rough is tainted (table rule): drinking it risks Cackle Fever. */
   tainted?: boolean;
+  /** Wear from hard use (table rule): at 3 the item is damaged. */
+  wear?: number;
 }
 
 export interface Stash {
@@ -150,6 +156,9 @@ export interface Stash {
   items: InventoryItem[];
   purse: Purse;
   notes: string;
+  /** Hull wear from storms and long voyages (table rule), and whether the vessel is damaged (half speed). */
+  hullWear?: number;
+  hullDamaged?: boolean;
 }
 
 export interface Resource {
@@ -390,6 +399,50 @@ export interface Character {
   swapsLeft: number;
   tasks: Task[];
   notes: string;
+  /** Lingering injuries (2014 DMG optional rule, table rule here). */
+  injuries?: Injury[];
+  /** Madness (2014 DMG optional rule, table rule here). */
+  madness?: Madness[];
+  /** Year of birth on the campaign calendar, and the birthday. */
+  birthYear?: number | null;
+  birthday?: { monthIndex: number; day: number } | null;
+  /** Years added (or removed, if negative) by magic. */
+  magicYears?: number;
+  /** Ages only a year per ten (Archdruid) since this calendar year. */
+  slowAgingSince?: number | null;
+  /** Lifespan in years, overriding the species default. */
+  lifespanOverride?: number | null;
+  /** Potions of Longevity drunk so far (each later one may backfire). */
+  longevityPotions?: number;
+  /** Gold earned since the last tithe was paid (for tithes that take a share). */
+  earnedGp?: number;
+}
+
+export interface Injury {
+  id: string;
+  kind: InjuryKind;
+  /** Absolute minute it happened, and how. */
+  at: number;
+  why: string;
+  /** Days of rest so far (internal injury, broken ribs). */
+  restDays: number;
+  /** Successful Medicine checks so far, and the day of the last attempt (festering wound). */
+  medicine: number;
+  lastTreatedDay?: number;
+  /** HP maximum lost to a festering wound, given back when it heals. */
+  hpLost: number;
+}
+
+export interface Madness {
+  id: string;
+  tier: MadnessTier;
+  effect: string;
+  at: number;
+  /** Absolute minute it ends, or null until cured (indefinite). */
+  endsAt: number | null;
+  /** Calm Emotions holds it off until this minute. */
+  suppressedUntil?: number;
+  why: string;
 }
 
 export interface Place {
@@ -904,6 +957,20 @@ export interface Settings {
   workWhileMarching: boolean;
   /** Table rule: uncharted journey stages have a guessed distance, and a mapper can chart them on the way. */
   unchartedLand: boolean;
+  /** Optional 2014 DMG rule: dropping to 0 HP without dying leaves a lingering injury. */
+  lingeringInjuries: boolean;
+  /** Optional 2014 DMG rule (table rule trigger): Stress or Fear reaching 6 calls for a Wisdom save against long-term madness. */
+  madness: boolean;
+  /** Table rule: hard travel, rain and salt water wear gear down until it is damaged; storms wear ships. */
+  gearWear: boolean;
+  /** Table rule: taxes, tithes, rent and dues are charged when they fall due, and unpaid ones become debts. */
+  duesAndTaxes: boolean;
+  /** Table rule: crimes raise heat in a place, the watch may recognise the party there, and heat cools with time. */
+  notoriety: boolean;
+  /** Table rule: Friendly contacts cool when neglected, and favors need a wait between them. */
+  contactsFade: boolean;
+  /** Table rule: news of distant events reaches the party only as fast as word travels. */
+  newsTravels: boolean;
 }
 
 /** A wild creature someone is trying to tame or train (table rule). */
@@ -962,6 +1029,8 @@ export interface Travel {
   gallopUsed: boolean;
   /** The journey stage being run, so a map of it counts while travelling it. */
   stageName?: string;
+  /** Hours of hard travel toward the next point of gear wear (table rule). */
+  wearHours?: number;
 }
 
 export interface JourneyStage {
@@ -996,6 +1065,95 @@ export interface Obstacle {
   condition?: string;
   minutes?: number;
   resolved?: 'passed' | 'failed';
+}
+
+/** A tax, tithe, rent or dues that falls due regularly (table rule). */
+export interface Due {
+  id: string;
+  kind: DueKind;
+  label: string;
+  /** Who pays: a character's id, or "party" to split it. */
+  payerId: string;
+  /** Fixed amount per period, or a share of gold earned (tithes). */
+  gp: number;
+  share?: number;
+  period: DuePeriod;
+  /** Day index it next falls due. */
+  nextDay: number;
+  collector: string;
+  /** Payments missed in a row. */
+  missed: number;
+  active: boolean;
+  notes: string;
+}
+
+/** The party's standing with the law in one place (table rule). */
+export interface Notoriety {
+  id: string;
+  place: string;
+  heat: number;
+  bountyGp: number;
+  /** Characters the law is after (empty: the whole party). */
+  charIds: string[];
+  lastCrimeDay: number;
+  /** Day heat last cooled. */
+  lastDecayDay: number;
+  crimes: string[];
+  /** The party goes about in disguise here. */
+  disguised?: boolean;
+}
+
+/** Someone the party knows. */
+export interface Contact {
+  id: string;
+  name: string;
+  role: string;
+  place: string;
+  /** Miles from where the party usually is, for letters. */
+  distanceMiles: number;
+  /** −3 to +3; the attitude follows from it. */
+  bond: number;
+  /** Party members who know them (empty: everyone). */
+  knownBy: string[];
+  /** Day the party last saw or heard from them. */
+  lastHeardDay: number;
+  /** Favors they owe the party, and the party owes them. */
+  owesParty: number;
+  partyOwes: number;
+  /** No more favors until this day (table rule). */
+  cooldownUntilDay?: number;
+  notes: string;
+}
+
+/** A letter on its way to or from someone. */
+export interface Letter {
+  id: string;
+  direction: 'out' | 'in';
+  contactId: string | null;
+  correspondent: string;
+  /** The party member writing or receiving. */
+  charId: string;
+  method: CommMethod;
+  miles: number;
+  sentAt: number;
+  arrivesAt: number;
+  costGp: number;
+  text: string;
+  delivered: boolean;
+  /** Outgoing: the recipient will write back. */
+  expectsReply?: boolean;
+}
+
+/** News of something that happened far away, travelling toward the party. */
+export interface NewsItem {
+  id: string;
+  text: string;
+  place: string;
+  miles: number;
+  route: NewsRoute;
+  happenedAt: number;
+  arrivesAt: number;
+  delivered: boolean;
 }
 
 export interface State {
@@ -1073,4 +1231,14 @@ export interface State {
   encounterSourcesOff: string[];
   /** When the current Long Rest began (absolute minute), so encounters know who is on watch. */
   restStart: number | null;
+  /** Taxes, tithes, rent and dues (table rule). */
+  dues?: Due[];
+  /** Heat with the law, by place (table rule). */
+  notoriety?: Notoriety[];
+  /** People the party knows. */
+  contacts?: Contact[];
+  /** Letters on their way, and recent ones. */
+  letters?: Letter[];
+  /** News travelling toward the party, and recent news. */
+  news?: NewsItem[];
 }

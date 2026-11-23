@@ -59,7 +59,20 @@ export type SenseKey =
   | 'groundHeavy'
   | 'groundClear'
   | 'robbed'
-  | 'jailed';
+  | 'jailed'
+  | 'injured'
+  | 'injuryWorse'
+  | 'injuryHeals'
+  | 'madness'
+  | 'madnessEnds'
+  | 'birthday'
+  | 'agedByMagic'
+  | 'youngerByMagic'
+  | 'gearWorn'
+  | 'recognised'
+  | 'letterArrives'
+  | 'newsArrives'
+  | 'contactCools';
 
 /** How the change reaches the character: felt in the body, noticed with the senses, or not noticed at all. */
 export type Awareness = 'feels' | 'notices' | 'unaware';
@@ -130,6 +143,19 @@ export const SENSES: Record<SenseKey, SenseDef> = {
   heal: F('feels warmth spread and the pain recede'),
   hurt: F('feels pain lance through them'),
   hitDie: F('feels some strength return after catching their breath and binding wounds'),
+  injured: F('feels something deep inside give way, a hurt that won’t simply close up', 'feels a pain that is more than bruising, the kind that will linger'),
+  injuryWorse: F('feels the wound throb hot and angry, weaker than yesterday', 'feels the skin around the bandage burn, red and swollen'),
+  injuryHeals: F('feels the old hurt finally ease, moving freely again', 'feels whole again, the wound no more than a memory'),
+  madness: F('feels the world tilt, thoughts sliding out of reach', 'feels something in their mind come loose'),
+  madnessEnds: F('feels their thoughts settle, clear and their own again', 'feels a fog lift from their mind'),
+  birthday: N('notices another year has turned', 'is reminded, by someone or by habit, that it is their birthday'),
+  agedByMagic: F('feels years pour into their bones, joints stiffening and skin loosening', 'feels suddenly stiff and slow, hands spotted and hair gone grey'),
+  youngerByMagic: F('feels years fall away, limbs light and supple', 'feels a spring in their step they had long forgotten'),
+  gearWorn: N('notices fraying straps, rust spots and seams starting to go', 'notices their gear creaking and chafing more than it should'),
+  recognised: N('notices a guard look twice, then reach for a whistle', 'notices their own face on a poster by the gate'),
+  letterArrives: N('notices a familiar hand on a folded, travel-worn letter', 'is handed a letter, its seal a little cracked from the road'),
+  newsArrives: N('hears travellers talking of events far away', 'notices a crowd gathered round a crier with fresh news'),
+  contactCools: U('has no idea an old acquaintance has stopped thinking of them fondly', 'doesn’t know a contact has drifted away'),
   encounter: N('notices movement at the edge of sight', 'hears something approaching'),
 };
 

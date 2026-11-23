@@ -91,7 +91,11 @@ export type TopicId =
   | 'bastionEvents'
   | 'timekeeping'
   | 'poison'
-  | 'shopping';
+  | 'shopping'
+  | 'injuries'
+  | 'madness'
+  | 'wanted'
+  | 'wear';
 
 export interface Topic {
   id: TopicId;
@@ -1072,17 +1076,63 @@ export const TOPICS: Topic[] = [
       spell('Sending', 'Ask a merchant or contact in another town whether they have it before you make the trip.'),
     ],
   },
+  {
+    id: 'injuries',
+    title: 'Lingering injuries',
+    problem: 'Optional rule (2014 DMG): dropping to 0 HP can leave a limp, broken ribs, an internal injury or a festering wound that eats HP maximum daily, or worse: a lost eye or limb.',
+    ways: [
+      spell('Cure Wounds', 'Any magical healing ends a limp, broken ribs, an internal injury or a festering wound.', ['Not scars or lost limbs.']),
+      spell('Healing Word', 'Magical healing at range, as a Bonus Action: the cheapest way to end most injuries.'),
+      feature('Paladin', 1, 'Lay on Hands', 'Magical healing from the pool: even 1 HP ends a limp or festering wound.'),
+      item('Potion of Healing', 'common', false, 'Drinking one is magical healing.'),
+      spell('Heal', 'Also removes a horrible scar.'),
+      spell('Regenerate', 'Regrows a lost eye, hand, arm, foot or leg.'),
+    ],
+  },
+  {
+    id: 'madness',
+    title: 'Madness',
+    problem: 'Optional rule (2014 DMG): long-term madness lasts hours; indefinite madness lasts until cured, and only strong magic cures it.',
+    ways: [
+      spell('Calm Emotions', 'Suppresses the madness for as long as you concentrate.'),
+      spell('Lesser Restoration', 'Ends short-term and long-term madness.'),
+      spell('Remove Curse', 'May end indefinite madness that a curse caused (the DM decides).'),
+      spell('Greater Restoration', 'Ends any madness, indefinite included.'),
+    ],
+  },
+  {
+    id: 'wanted',
+    title: 'Wanted by the law',
+    problem: 'Table rule: crimes raise heat where they happen. While the party is sought there, the watch may recognise them each day.',
+    ways: [
+      spell('Disguise Self', 'Look like someone else for an hour: the watch rolls twice to recognise you and keeps the better result for you.'),
+      spell('Alter Self', 'Change your appearance (Concentration, up to 1 hour), with the same effect as a disguise.'),
+      { ...gear('Disguise Kit', 'A proper disguise for days in town: the watch rolls twice.'), source: 'Table rule' },
+      spell('Charm Person', 'A charmed guard is Friendly toward you: talk your way out of an arrest (it knows it was charmed afterwards).'),
+    ],
+  },
+  {
+    id: 'wear',
+    title: 'Worn and damaged gear',
+    problem: 'Table rule: hard going, heavy rain and salt spray wear gear down until it breaks; repairs take tools and time, or coin.',
+    ways: [
+      spell('Mending', 'Repairs a single break or tear up to 1 foot in a minute, with no roll.'),
+      spell('Fabricate', 'Make a replacement from raw materials in 10 minutes.'),
+      { ...gear("Smith's Tools", 'Repair metal armor and weapons yourself (DC 10, 1 hour) instead of paying a smith.'), source: 'Table rule' },
+      { ...gear('Oil and rags', 'An hour of upkeep every few days clears the wear before anything breaks.'), source: 'Table rule' },
+    ],
+  },
 ];
 
 /** How the topics are grouped on the Ways Around tab. */
 export const TOPIC_GROUPS: { title: string; topics: TopicId[] }[] = [
   { title: 'Food, water, poison and illness', topics: ['food', 'water', 'foraging', 'hunting', 'taming', 'tainted', 'poison', 'disease', 'poisonHarvest'] },
   { title: 'Weather and the wild', topics: ['cold', 'heat', 'weather', 'altitude', 'breath', 'hazards'] },
-  { title: 'Rest, recovery and saves', topics: ['shortRest', 'longRest', 'watch', 'exhaustion', 'saves', 'dying', 'death', 'fear'] },
+  { title: 'Rest, recovery and saves', topics: ['shortRest', 'longRest', 'watch', 'exhaustion', 'saves', 'dying', 'injuries', 'death', 'fear', 'madness'] },
   { title: 'Travel and exploration', topics: ['march', 'lost', 'tracking', 'encounters', 'exploration', 'mounts', 'timekeeping'] },
-  { title: 'Camp and gear', topics: ['fire', 'light', 'armor', 'carrying', 'ammo'] },
+  { title: 'Camp and gear', topics: ['fire', 'light', 'armor', 'carrying', 'ammo', 'wear'] },
   { title: 'Magic', topics: ['rituals', 'concentration', 'identify', 'attunement', 'divination', 'dailyCasting'] },
-  { title: 'Money, downtime and Bastions', topics: ['lifestyle', 'shopping', 'hirelings', 'services', 'crafting', 'spellbook', 'downtime', 'messages', 'building', 'bastionEvents'] },
+  { title: 'Money, downtime and Bastions', topics: ['lifestyle', 'wanted', 'shopping', 'hirelings', 'services', 'crafting', 'spellbook', 'downtime', 'messages', 'building', 'bastionEvents'] },
 ];
 
 /** The sections options are sorted into, in display order. */
