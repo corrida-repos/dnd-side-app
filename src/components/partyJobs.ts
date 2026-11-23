@@ -3,7 +3,7 @@ import type { Character, State } from '../state/types';
 import { watchCapacity, watchMinutes } from '../rules/watch';
 import { HUNTING_TRAP } from '../rules/gear';
 import { NAVIGATOR } from '../rules/tools';
-import { PROJECT_KIND_LABEL } from '../rules/crafting';
+import { PROJECT_KIND_LABEL, isSoloWork } from '../rules/crafting';
 import { MARCH_WRITING_DC, marchWork } from '../rules/marchWork';
 
 /** Where the party is, which decides which jobs make sense right now. */
@@ -163,7 +163,7 @@ export function jobBoard(s: State): JobBoard {
         what: `${marchWork(p).why[0].toUpperCase()}${marchWork(p).why.slice(1)}, so it goes on while walking: each marching hour counts as half an hour of work. ${p.daysDone}/${p.daysRequired} workdays${p.marchWorkHours ? ` and ${p.marchWorkHours} h toward the next` : ''}.${marchWork(p).concentration ? ` Each writer makes a DC ${MARCH_WRITING_DC} Constitution save per leg, as for Concentration, or that leg’s work is spoiled; nobody holding a Concentration spell can write.` : ''}${away.length ? ` ${away.map(name).join(', ')} can’t work it now (navigating, foraging${marchWork(p).concentration ? ' or concentrating on a spell' : ''}).` : ''}`,
         source: 'Table rule',
         status: on.length ? 'covered' : 'optional',
-        shared: !p.learnKind,
+        shared: !p.learnKind && !isSoloWork(p.kind),
         holders: on.map((c) => ({ id: c.id, name: c.name })),
         picks: [],
         blocked: on.length ? undefined : 'Nobody on it is free to work while walking.',
@@ -313,7 +313,7 @@ export function jobBoard(s: State): JobBoard {
   when = 'town';
   if (town) {
     for (const p of s.projects.filter((x) => !x.done)) {
-      const sharable = p.kind === 'nonmagical' || p.kind === 'scroll' || p.kind === 'potion' || p.kind === 'magic';
+      const sharable = p.kind === 'nonmagical' || p.kind === 'potion' || p.kind === 'magic';
       const on = p.charIds.filter((id) => duties.has(id));
       jobs.push({
         id: `proj-${p.id}`,

@@ -14,7 +14,7 @@ import { COMMS, commCost, commDelay, type CommMethod } from '../rules/comms';
 import { CONTAGIONS, RECUPERATE_DAYS, RECUPERATE_DC, SIGHT_ROT_CURE_HOURS, type ContagionKind } from '../rules/contagion';
 import { neglectLimit } from '../rules/bastion';
 import { MARCH_WRITING_DC, marchWork } from '../rules/marchWork';
-import { RARITY_LABEL, magicItemCrafting, nonmagicalCrafting, SCROLL_CRAFTING, type Rarity } from '../rules/crafting';
+import { isSoloWork, RARITY_LABEL, magicItemCrafting, nonmagicalCrafting, SCROLL_CRAFTING, type Rarity } from '../rules/crafting';
 import { ALL_IS_WELL, BARRACK_ROOM, BASTION_CHARMS, CONSTRUCTS, CREATURE_ROOM, GROVE_ROOM, GROVE_UNITS, MUSEUM_ORIGINS, NECROPOLIS_ROOM, EVENT_PREFERENCE, FACILITY_OPTIONS, GARDEN_PRODUCTS, GUILDS, MENAGERIE_CREATURES, MENAGERIE_ROOM, SHIPS, TRAINERS, TREASURE_TABLE, facilityHirelings, stableMarkup, storehouseLimit, storehouseMarkup, type GardenType } from '../rules/bastionOrders';
 import { knownValue, misjudged, priceOf, saleRate, sameStack, valueSecret, valueUnknown } from '../rules/shop';
 import { APPRAISE_MINUTES, JEWELER_TOOLS, appraiseCheck, misjudgedValue, valuableKind, type AppraiseMethod } from '../rules/appraise';
@@ -2097,9 +2097,11 @@ export const WORKDAY_HOURS = 8;
 /** Who could work a hand-held project while walking: conscious and doing nothing but marching. */
 export function marchWorkers(s: State, p: Project, navigatorId: string | null | undefined, foragerIds: string[]): Character[] {
   const writing = !!marchWork(p).concentration;
-  return p.charIds
+  const who = p.charIds
     .map((id) => charById(s, id))
     .filter((c): c is Character => !!c && c.kind === 'pc' && alive(c) && !c.dying && !c.stable && c.hp > 0 && c.id !== navigatorId && !foragerIds.includes(c.id) && !(writing && holdsConcentration(s, c)));
+  // Writing is a one-person job (table rule): the first free writer holds the pen.
+  return isSoloWork(p.kind) ? who.slice(0, 1) : who;
 }
 
 /** Concentrating on a spell right now. */
@@ -2129,7 +2131,7 @@ function workOnTheMarch(s: State, ctx: Ctx, hours: number, navigatorId: string |
       if (!who.length) continue;
     }
     // Same helper limit as a day at the workbench; training is time with the trainer, so trainees don't add up.
-    const workers = p.learnKind ? 1 : s.settings.extraCraftHelpers ? who.length : Math.min(2, who.length);
+    const workers = p.learnKind || isSoloWork(p.kind) ? 1 : s.settings.extraCraftHelpers ? who.length : Math.min(2, who.length);
     const got = hours * MARCH_WORK_RATE * workers;
     let bank = (p.marchWorkHours ?? 0) + got;
     const days = Math.min(p.daysRequired - p.daysDone, Math.floor(bank / WORKDAY_HOURS));
@@ -2156,7 +2158,7 @@ function progress(s: State, p: Project, ctx?: Ctx): void {
     }).length + hired;
   if (hired > 0) payGold(s, p.charIds, hired * HIRELING_WAGE.skilled, `${hired} hired artisan${hired > 1 ? 's' : ''} on ${p.name}`);
   // Normally only one other character can help (the DM can allow more). Training is time with the trainer: trainees don't speed each other up.
-  const amount = p.learnKind ? 1 : Math.max(1, s.settings.extraCraftHelpers ? crafters : Math.min(2, crafters));
+  const amount = p.learnKind || isSoloWork(p.kind) ? 1 : Math.max(1, s.settings.extraCraftHelpers ? crafters : Math.min(2, crafters));
   p.daysDone = Math.min(p.daysRequired, p.daysDone + amount);
   if (p.daysDone >= p.daysRequired) progressFinish(s, p, ctx);
   else log(s, `A day's work on ${p.name}: ${p.daysDone}/${p.daysRequired} workdays.`);

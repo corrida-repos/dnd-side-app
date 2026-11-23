@@ -19,6 +19,7 @@ import {
   SCROLL_CRAFTING,
   type ProjectKind,
   type Rarity,
+  isSoloWork,
 } from '../rules/crafting';
 import { Card, Meter, Num, Select, Text, Toggle, Rule } from './common';
 import { MAGIC_ITEM_VALUE, fmtGp } from '../rules/money';
@@ -51,7 +52,7 @@ export function DowntimeTab() {
                 <Meter value={p.daysDone} max={p.daysRequired} tone="good" />
                 <span className="small">
                   {p.daysDone}/{p.daysRequired} workdays · {p.costGp.toLocaleString()} GP ·{' '}
-                  {p.charIds.map((id) => E.charById(s, id)?.name).filter(Boolean).join(', ') || 'nobody assigned'} · about {calendarDays(p.daysRequired - p.daysDone, p.charIds.length + (E.ARTISAN_KINDS.includes(p.kind) ? (p.hiredArtisans ?? 0) : 0), s.settings.extraCraftHelpers)} more day(s)
+                  {p.charIds.map((id) => E.charById(s, id)?.name).filter(Boolean).join(', ') || 'nobody assigned'} · about {calendarDays(p.daysRequired - p.daysDone, isSoloWork(p.kind) ? 1 : p.charIds.length + (E.ARTISAN_KINDS.includes(p.kind) ? (p.hiredArtisans ?? 0) : 0), s.settings.extraCraftHelpers)} more day(s)
                 </span>
                 {p.notes && <span className="muted small">{p.notes}</span>}
                 {p.materialsUsed && p.materialsUsed.length > 0 && <span className="muted small">Materials: {p.materialsUsed.map((u) => `${u.qty} × ${u.name}`).join(', ')}</span>}
@@ -263,7 +264,8 @@ function NewProject() {
   // Table rule: crafting a nonmagical item or a potion without proficiency, with the tool on hand, takes twice the workdays.
   const canUntrained = s.settings.improvised && (kind === 'nonmagical' || kind === 'potion');
   if (canUntrained && untrained) calc = { ...calc, days: calc.days * 2, note: `${calc.note} Not proficient: twice the workdays (table rule; the 2024 PHB needs proficiency with the tool).` };
-  const cal = calendarDays(calc.days, crafters.length, s.settings.extraCraftHelpers);
+  const solo = isSoloWork(kind);
+  const cal = calendarDays(calc.days, solo ? 1 : crafters.length, s.settings.extraCraftHelpers);
   const productFor = (): { name: string; qty: number; magic?: boolean; valueGp?: number } | undefined => {
     if (kind === 'nonmagical') {
       const item = GEAR_CATALOG.find((g) => g.name === gear);
@@ -404,10 +406,10 @@ function NewProject() {
         )}
       </div>
       <div className="field">
-        <span className="field-label">Who works on it</span>
+        <span className="field-label">{solo ? 'Who writes it (one person: writing can’t be shared, table rule)' : 'Who works on it'}</span>
         <div className="chips">
           {pcs.map((c) => (
-            <Toggle key={c.id} checked={crafters.includes(c.id)} onChange={(v) => setCrafters(v ? [...crafters, c.id] : crafters.filter((x) => x !== c.id))} label={c.name} />
+            <Toggle key={c.id} checked={crafters.includes(c.id)} onChange={(v) => setCrafters(v ? (solo ? [c.id] : [...crafters, c.id]) : crafters.filter((x) => x !== c.id))} label={c.name} />
           ))}
         </div>
       </div>
@@ -431,7 +433,7 @@ function NewProject() {
         {(() => {
           const v = Object.entries(useMats).reduce((a, [id, q]) => a + q * (s.materials.find((m) => m.id === id)?.valueGp ?? 0), 0);
           return v > 0 ? ` (${fmtGp(v)} covered by materials, ${fmtGp(Math.max(0, calc.gp - v))} in gold)` : '';
-        })()} · {cal} calendar day(s) with {Math.max(1, crafters.length)} crafter(s)
+        })()} · {cal} calendar day(s) with {solo ? 1 : Math.max(1, crafters.length)} {solo ? 'writer' : 'crafter(s)'}
       </p>
       {kind === 'nonmagical' && (() => {
         const item = GEAR_CATALOG.find((g) => g.name === gear);
@@ -463,7 +465,7 @@ function NewProject() {
             id: uid(),
             name: calc.label,
             kind,
-            charIds: crafters,
+            charIds: solo ? crafters.slice(0, 1) : crafters,
             daysRequired: calc.days,
             daysDone: 0,
             costGp: trade ? 0 : calc.gp,

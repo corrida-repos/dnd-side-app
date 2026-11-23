@@ -46,6 +46,10 @@ export function magicItemCrafting(rarity: Rarity, consumable: boolean): { days: 
 /** Calendar days needed when several crafters with the required proficiency share the work. */
 export const calendarDays = (workDays: number, crafters: number, extraHelpers = true): number => Math.ceil(workDays / Math.max(1, extraHelpers ? crafters : Math.min(2, crafters)));
 
+/** Table rule: writing is a one-person job. A scroll or a spellbook page has one hand on the pen, so helpers don't speed it up. */
+export const SOLO_KINDS: ProjectKind[] = ['scroll', 'spellcopy'];
+export const isSoloWork = (kind: ProjectKind): boolean => SOLO_KINDS.includes(kind);
+
 export type ProjectKind = 'nonmagical' | 'scroll' | 'potion' | 'magic' | 'activity' | 'buyMagic' | 'sellMagic' | 'spellcopy';
 
 export const PROJECT_KIND_LABEL: Record<ProjectKind, string> = {

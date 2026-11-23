@@ -153,4 +153,15 @@ describe('working on projects while marching (table rule)', () => {
     expect(fumbled.log.some((l) => /loses concentration on Spell Scroll/.test(l.text))).toBe(true);
     expect(scroll(0.9, true).projects[0].marchWorkHours ?? 0).toBe(0);
   });
+
+  it('keeps writing a one-person job, at the desk and on the march', () => {
+    const s = fresh((st) => {
+      st.settings.forcedMarch = false;
+      st.settings.extraCraftHelpers = true;
+      st.projects = [{ id: 'p', name: 'Copy Fireball', kind: 'spellcopy', charIds: st.characters.map((c) => c.id), daysRequired: 6, daysDone: 0, costGp: 1, notes: '', done: false }];
+    });
+    expect(E.marchWorkers(s, s.projects[0], null, [])).toHaveLength(1);
+    expect(E.travel(s, ctx(0.9), { ...go, hours: 4 }).projects[0].marchWorkHours).toBe(2);
+    expect(E.workOnProjects(s, ctx(), ['p']).projects[0].daysDone).toBe(1);
+  });
 });
