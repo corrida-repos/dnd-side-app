@@ -1411,6 +1411,7 @@ function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
   if (d.travel.lost) d.travel.milesOffCourse += offCourse;
   if (offCourse > 0 && d.travel.lost) log(d, `${+offCourse.toFixed(1)} of those miles went the wrong way. The party is still lost.`, 'warn');
   log(d, `Covered ${+miles.toFixed(1)} miles. That makes ${+d.travel.milesToday.toFixed(1)} miles and ${d.travel.hoursToday} travel hour(s) since the last Long Rest.`);
+  workOnTheMarch(d, ctx, o.hours, d.travel.navigatorId, o.foragerIds);
   // One foraging roll per 8 hours on the road, with a shorter leg finding a share of a day's food.
   for (const id of o.foragerIds) {
     const c = charById(d, id);
@@ -2086,6 +2087,40 @@ export const workOnProjects = act((d, ctx, projectIds: string[]) => {
   advanceMut(d, ctx, 8 * 60, 'work');
   for (const p of projects) progress(d, p, ctx);
 });
+
+/** Table rule: marching hours count at half rate toward a hand-held project. */
+export const MARCH_WORK_RATE = 0.5;
+/** Hours of work in a workday (2024 PHB: crafting progresses in 8-hour days). */
+export const WORKDAY_HOURS = 8;
+
+/** Who could work a hand-held project while walking: conscious and doing nothing but marching. */
+export function marchWorkers(s: State, p: Project, navigatorId: string | null | undefined, foragerIds: string[]): Character[] {
+  return p.charIds
+    .map((id) => charById(s, id))
+    .filter((c): c is Character => !!c && c.kind === 'pc' && alive(c) && !c.dying && !c.stable && c.hp > 0 && c.id !== navigatorId && !foragerIds.includes(c.id));
+}
+
+/** Table rule: crafters who are only marching keep working on projects they can carry in their hands, at half rate. */
+function workOnTheMarch(s: State, ctx: Ctx, hours: number, navigatorId: string | null | undefined, foragerIds: string[]): void {
+  if (!s.settings.workWhileMarching || hours <= 0) return;
+  for (const p of s.projects.filter((x) => x.onTheMove && !x.done && !x.awaitingOutcome)) {
+    const who = marchWorkers(s, p, navigatorId, foragerIds);
+    if (!who.length) continue;
+    // Same helper limit as a day at the workbench; training is time with the trainer, so trainees don't add up.
+    const workers = p.learnKind ? 1 : s.settings.extraCraftHelpers ? who.length : Math.min(2, who.length);
+    const got = hours * MARCH_WORK_RATE * workers;
+    let bank = (p.marchWorkHours ?? 0) + got;
+    const days = Math.min(p.daysRequired - p.daysDone, Math.floor(bank / WORKDAY_HOURS));
+    bank -= days * WORKDAY_HOURS;
+    p.daysDone += days;
+    p.marchWorkHours = p.daysDone >= p.daysRequired ? 0 : Math.round(bank * 100) / 100;
+    log(
+      s,
+      `${who.map((c) => c.name).join(' and ')} work${who.length > 1 ? '' : 's'} on ${p.name} while marching: ${+got.toFixed(2)} hour(s) of work at half rate (table rule). ${p.daysDone}/${p.daysRequired} workdays${p.marchWorkHours ? ` and ${p.marchWorkHours} h toward the next` : ''}.`,
+    );
+    if (p.daysDone >= p.daysRequired) progressFinish(s, p, ctx);
+  }
+}
 
 /** Project kinds that are hands-on work hired artisans can help with. */
 export const ARTISAN_KINDS: Project['kind'][] = ['nonmagical', 'potion'];

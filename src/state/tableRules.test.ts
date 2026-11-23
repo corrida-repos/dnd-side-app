@@ -103,3 +103,37 @@ describe('table rules for edge cases', () => {
     expect(E.travel(s, ctx(), { ...go, hours: 2, foragerIds: [s.characters[1].id] }).stores.foodLb).toBe(2);
   });
 });
+
+describe('working on projects while marching (table rule)', () => {
+  const withProject = (onTheMove: boolean) =>
+    fresh((s) => {
+      s.settings.forcedMarch = false;
+      s.projects = [{ id: 'p', name: 'Wooden flute', kind: 'nonmagical', charIds: [s.characters[0].id], daysRequired: 3, daysDone: 0, costGp: 1, notes: '', done: false, onTheMove }];
+    });
+
+  it('counts marching hours at half rate toward hand-held projects', () => {
+    const s = E.travel(withProject(true), ctx(), { ...go, hours: 8 });
+    expect(s.projects[0].daysDone).toBe(0);
+    expect(s.projects[0].marchWorkHours).toBe(4);
+    const t = E.travel(s, ctx(), { ...go, hours: 8 });
+    expect(t.projects[0].daysDone).toBe(1);
+    expect(t.projects[0].marchWorkHours).toBe(0);
+  });
+
+  it('skips projects that need a workbench, crafters who navigate or forage, and the switch when off', () => {
+    expect(E.travel(withProject(false), ctx(), { ...go, hours: 8 }).projects[0].marchWorkHours ?? 0).toBe(0);
+    const s = withProject(true);
+    expect(E.travel(s, ctx(), { ...go, hours: 8, navigatorId: s.characters[0].id }).projects[0].marchWorkHours ?? 0).toBe(0);
+    expect(E.travel(s, ctx(), { ...go, hours: 8, foragerIds: [s.characters[0].id] }).projects[0].marchWorkHours ?? 0).toBe(0);
+    s.settings.workWhileMarching = false;
+    expect(E.travel(s, ctx(), { ...go, hours: 8 }).projects[0].marchWorkHours ?? 0).toBe(0);
+  });
+
+  it('finishes the project on the road', () => {
+    const s = withProject(true);
+    s.projects[0].daysDone = 2;
+    s.projects[0].marchWorkHours = 6;
+    const t = E.travel(s, ctx(), { ...go, hours: 4 });
+    expect(t.projects[0].done).toBe(true);
+  });
+});

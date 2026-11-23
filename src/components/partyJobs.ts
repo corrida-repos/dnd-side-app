@@ -100,6 +100,10 @@ export function jobBoard(s: State): JobBoard {
   const foragers = (s.travel.foragerIds ?? []).filter((id) => able.some((c) => c.id === id));
   for (const id of foragers) addDuty(id, 'Foraging on the road', 'road');
 
+  // Hand-held projects worked on the march (table rule): only for those doing nothing but walking.
+  const marching = s.settings.workWhileMarching && (!town || journey) ? s.projects.filter((p) => p.onTheMove && !p.done && !p.awaitingOutcome) : [];
+  for (const p of marching) for (const c of E.marchWorkers(s, p, navId, foragers)) addDuty(c.id, `${p.name || PROJECT_KIND_LABEL[p.kind]} while marching`, 'road');
+
   // ---- camp: watches
   const load = E.watchLoad(s);
   const watchLen = watchMinutes(s.watchPlan.count);
@@ -146,6 +150,23 @@ export function jobBoard(s: State): JobBoard {
         picks: rank(able, (c) => c.survival - 2 * c.exhaustion + (tools(c) ? 2 : 0), (c) => `${survivalNote(c)}${tools(c) ? ", Navigator's Tools" : ''}`),
         blocked: able.length ? undefined : 'Nobody is able to.',
         tab: 'travel',
+      });
+    }
+    for (const p of marching) {
+      const on = E.marchWorkers(s, p, navId, foragers);
+      const away = p.charIds.filter((id) => !on.some((c) => c.id === id) && able.some((c) => c.id === id));
+      jobs.push({
+        id: `march-${p.id}`,
+        group: 'road',
+        title: `${p.name || PROJECT_KIND_LABEL[p.kind]} on the march`,
+        what: `Worked in the hands while walking: each marching hour counts as half an hour of work. ${p.daysDone}/${p.daysRequired} workdays${p.marchWorkHours ? ` and ${p.marchWorkHours} h toward the next` : ''}.${away.length ? ` ${away.map(name).join(', ')} can’t work it while navigating or foraging.` : ''}`,
+        source: 'Table rule',
+        status: on.length ? 'covered' : 'optional',
+        shared: !p.learnKind,
+        holders: on.map((c) => ({ id: c.id, name: c.name })),
+        picks: [],
+        blocked: on.length ? undefined : 'Nobody on it is free to work while walking.',
+        tab: 'downtime',
       });
     }
     if (s.settings.foodAndWater) {

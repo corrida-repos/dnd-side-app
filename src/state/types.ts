@@ -498,6 +498,10 @@ export interface Project {
   outcome?: string;
   /** Skilled hirelings with the right tools assisting the work, paid 2 GP each per workday. */
   hiredArtisans?: number;
+  /** The work can be done while walking, holding it in the hands (table rule: worked on the march at half rate). */
+  onTheMove?: boolean;
+  /** Hours of work done on the march toward the next workday (8 hours make one). */
+  marchWorkHours?: number;
 }
 
 export interface Construction {
@@ -898,6 +902,8 @@ export interface Settings {
   batchCrafting: boolean;
   /** Table rule: taming a wild Beast or Monstrosity of low Intelligence with daily Animal Handling sessions. */
   taming: boolean;
+  /** Table rule: crafters who are only marching keep working on hand-held projects, at half rate. */
+  workWhileMarching: boolean;
   /** Table rule: uncharted journey stages have a guessed distance, and a mapper can chart them on the way. */
   unchartedLand: boolean;
 }
