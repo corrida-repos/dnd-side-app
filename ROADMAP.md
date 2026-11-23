@@ -433,6 +433,20 @@ Builds on the rolled-up town (Phase 9): its buildings and the people who run the
 - 📋 **Animals at sea:** a ship carries mounts in stalls for a fare per animal per day, and they arrive with a level of Exhaustion after a long voyage.
 - 📋 **Thieves and the watch:** a stable with a watchman keeps mounts safe; a mount tied up outside an inn overnight may be stolen 1 time in 20 in a town and 1 in 10 in a city, which the watch may help recover.
 
+### Keeping valuables safe
+- 📋 **Storage belongs to a place:** a stash, vault or rented room can only be reached while the party is there (and, for a bank, during opening hours). Today anything stored is reachable from anywhere.
+- 📋 **Where to keep things, cheapest and riskiest first:**
+  - **Their room at the inn:** included in the rent; a locked chest helps (Lock Quality DC). Squalid lodgings already bring theft.
+  - **A trusted contact:** free, as a favor; safe while the bond holds.
+  - **A pawnshop or moneylender:** pawn an item for a loan of half its value and buy it back later; unclaimed after the term, it's sold.
+  - **A temple's keeping:** a donation, safe for the faithful; the priests won't hold anything stolen or unholy.
+  - **A warehouse or guildhall locker:** a fee by the month, for bulky goods, trade goods and cargo.
+  - **A bank vault:** a fee by the month, guarded day and night (the bank's Guards); deposits can travel as a letter of credit to banks in other cities.
+  - **Their own house or Bastion:** no fee beyond upkeep; a Bastion's defenders guard it. (2024 DMG Bastions)
+- 📋 **Theft by safety level:** each week, unguarded storage may be robbed (an inn room 1 in 20, a warehouse 1 in 50); a guarded vault only by a planned heist the DM runs. A thief takes the most valuable things first.
+- 📋 **Magic protection:** Arcane Lock (gold dust worth 25 GP) adds 10 to the DC to open a locked door or chest; Glyph of Warding (diamond dust worth 200 GP) leaves a trap. Either can be cast by a hired caster. (2024 PHB spells)
+- 📋 **Lighter purses:** change coins for platinum or gems at a moneylender or jeweler for a fee, or buy trade bars, so a hoard is easier to carry and hide. (2024 PHB: 50 coins to the pound; 2024 DMG Trade Bars)
+
 ### Healing and the temple
 - 📋 **Temple stock and charity:** Potions of Healing (1d4 a day), Remove Curse (300 GP) and Greater Restoration (3,200 GP) scrolls (1d3 each), free Cure Wounds and Lesser Restoration at a kindly temple, half price after serving it, and a Teleportation Circle (2,000 GP) in cities. (2024 DMG Greyhawk temples)
 - 📋 **Spell Scrolls over the counter:** cantrip 30 GP, level 1 50 GP, from a scribe, temple or magic shop; higher levels by commission. (2024 PHB Adventuring Gear)
@@ -469,12 +483,13 @@ Builds on the rolled-up town (Phase 9): its buildings and the people who run the
 ### Build order
 1. Services follow the buildings, and the right buyer.
 2. Stables and mounts in town: where each mount is, boarding while away, rest and care, barding.
-3. Temple stock, Spell Scrolls and healer's care.
-4. Hiring from the town and trainers.
-5. Magic shop, commissions and limited stock.
-6. The law and the gate.
-7. Money, mail and property.
-8. A town that changes; then haggling and picking an inn.
+3. Keeping valuables safe: storage tied to its place, fees, theft by safety level.
+4. Temple stock, Spell Scrolls and healer's care.
+5. Hiring from the town and trainers.
+6. Magic shop, commissions and limited stock.
+7. The law and the gate.
+8. Money, mail and property.
+9. A town that changes; then haggling and picking an inn.
 
 ---
 
