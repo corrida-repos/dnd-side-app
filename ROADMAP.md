@@ -398,6 +398,14 @@ Always on, not a switch: realistic work earns realistic rewards.
 - ✅ **Harvested poison is the real thing** (2024 DMG): a wyvern gives Wyvern Poison (1,200 GP), a purple worm Purple Worm Poison (2,000 GP), a carrion crawler Carrion Crawler Mucus and a venomous snake Serpent Venom (200 GP each). The dose is priced, sellable and usable from the Poisons card. Table rule: any other venom works as Basic Poison (100 GP).
 - ✅ **Trophies** (table rule): a clean butchering job on a Medium or bigger beast, monstrosity or dragon keeps its antlers, horns, fangs or scales, worth 2/10/50/200 GP by size × Challenge Rating (at least 1).
 - ✅ **Lucky finds** (table rule): a natural 20, or beating the DC by 5, while foraging or gathering firewood turns up something worth having (healing herbs, honey, rare mushrooms, burl wood, a lost purse, a stone or ring worth appraising). Digging turns something up on a d20 roll of 19 or 20 (old coins, flint, clay, a fossil, a buried relic). Finds land in the purse, pack, stores or crafting stash.
+- ✅ **Rest that restores** (table rule): a week of Relaxation clears all Stress and Fear; carousing eases Stress by 2 a week; religious service eases Stress and Fear by 1 a week.
+- ✅ **Pelts and hides** (table rule): every trap or snare catch leaves a small pelt (2 SP), 1 in 6 a fine fur (2 GP). Hides are worth 5/15/50/150 GP by size. Anything in the crafting stash sells at full value as trade goods.
+- ✅ **A productive watch** (table rule): a quiet watch at a wild camp lets the best watcher work a line or snare: Survival DC 13 brings in 1d4 lb of fish or small game.
+- ✅ **Kept gear** (table rule): an hour of upkeep gives +1 to the first weapon damage roll each fight for 24 hours, and the gear takes no wear meanwhile.
+- ✅ **Reading the sky** (table rule): a success hints at tomorrow's weather; beating the DC by 5 reads it exactly, and tomorrow holds to it.
+- ✅ **Recovering ammunition** (table rule on top of the 2024 half): Wisdom (Perception or Survival) DC 10 finds three quarters, beating it by 5 nine in ten.
+- ✅ **Mending** (table rule): a successful mend also clears wear; beating the DC by 5 reinforces the item against the next wear. Mending the spell clears wear too.
+- ✅ **Foraging** (table rule): each full 5 points over the DC adds another 1d6 lb of food.
 - ✅ **Cooking** (table rule): any hot meal gives 8 hours of Advantage on saves against extreme cold and cold nights. A tasty meal also gives Advantage on forced-march saves, Stress −2 and Temporary HP equal to the cook's Proficiency Bonus. A feast (natural 20 or beating the DC by 5) gives Temporary HP equal to the cook's level plus Wisdom modifier, Stress −3 and Fear −1. Smoking meat over the fire (4 hours, Survival or Cook's Utensils DC 10) turns every 3 lb from the stores into a day of Rations that keep and sell for 5 SP (half on a failure, up to 30 lb a batch).
 
 ## Phase 9: Random tables from the 2024 DMG 📋

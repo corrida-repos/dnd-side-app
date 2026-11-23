@@ -1162,7 +1162,7 @@ function CampGearCard() {
       )}
       <Rule>
         2024 PHB: a Tent sleeps two Small or Medium creatures; a Shovel digs a 5-foot hole in an hour; a Hunting Trap holds whatever steps on it (DC 13 Dexterity save); Caltrops and Ball Bearings take 10 minutes to gather up. Table rules: digging by
-        hand takes four times as long; a trap left out overnight catches small game on a d20 roll of {TRAP_CATCH_ON}+ (1d4 + 1 lb of raw meat); a Bell on a String or Rope rings when crossed. Traps and the alarm are packed up when the party moves
+        hand takes four times as long; a trap left out overnight catches small game on a d20 roll of {TRAP_CATCH_ON}+ (1d4 + 1 lb of raw meat, and a pelt worth 2 SP, or 1 time in 6 a fine fur worth 2 GP); a Bell on a String or Rope rings when crossed. Traps and the alarm are packed up when the party moves
         on, and anything still on the ground is left behind.
       </Rule>
     </Card>

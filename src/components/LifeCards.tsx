@@ -237,12 +237,15 @@ export function AgeCard() {
 
 export function MaintainGear({ c }: { c: Character }) {
   const s = useGame();
-  if (!s.settings.gearWear) return null;
   const worn = c.inventory.filter((i) => (i.wear ?? 0) > 0);
+  const kept = (c.gearKeptUntil ?? 0) > E.absNow(s);
   return (
     <div className="btn-row tight">
-      <span className="small">{worn.length ? `Worn: ${worn.map((i) => `${i.name} (${i.wear}/3)`).join(', ')}.` : 'No wear on their gear.'}</span>
-      <button className="small" disabled={!worn.length} onClick={() => dispatch((st, cx) => E.maintainGear(st, cx, [c.id]))}>
+      <span className="small">
+        {s.settings.gearWear ? (worn.length ? `Worn: ${worn.map((i) => `${i.name} (${i.wear}/3)`).join(', ')}. ` : 'No wear on their gear. ') : ''}
+        {kept ? 'Gear freshly kept: +1 to the first weapon damage roll each fight.' : 'An hour of upkeep gives +1 to the first weapon damage roll each fight for 24 hours (table rule).'}
+      </span>
+      <button className="small" onClick={() => dispatch((st, cx) => E.maintainGear(st, cx, [c.id]))}>
         Keep gear up (1 h)
       </button>
       <button className="small ghost" onClick={() => dispatch((st, cx) => E.maintainGear(st, cx, pcsOf(st.characters).map((x) => x.id)))}>

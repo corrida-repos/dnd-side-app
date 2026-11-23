@@ -27,9 +27,20 @@ describe('ammunition', () => {
     s = E.fireAmmo(s, ctx(), id, arrows().id, 7);
     expect(arrows()).toMatchObject({ qty: 13, ammo: { spent: 7 } });
     const before = s.minutes;
-    s = E.recoverAmmo(s, ctx(), [id]);
+    s = E.recoverAmmo(s, ctx(), [id], false);
     expect(arrows()).toMatchObject({ qty: 16, ammo: { spent: 0 } });
     expect(s.minutes).toBe(before + 1);
+  });
+
+  it('a good search finds three quarters, or nine in ten (table rule)', () => {
+    let s = fresh();
+    const id = s.characters[0].id;
+    const arrows = () => s.characters[0].inventory.find((i) => i.name === 'Arrows')!;
+    s = E.fireAmmo(s, ctx(), id, arrows().id, 12);
+    const searched = E.recoverAmmo(s, ctx(0.99), [id]);
+    expect(searched.characters[0].inventory.find((i) => i.name === 'Arrows')!.qty).toBe(8 + 10);
+    const sloppy = E.recoverAmmo(s, ctx(0.01), [id]);
+    expect(sloppy.characters[0].inventory.find((i) => i.name === 'Arrows')!.qty).toBe(8 + 6);
   });
 });
 

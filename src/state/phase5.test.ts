@@ -41,7 +41,7 @@ describe('travel terrain', () => {
     s.settings.rawFoodRisk = false;
     s.settings.wildNeedsPurifying = false;
     const trip = E.travel(s, HIGH, { hours: 16, pace: 'normal', difficult: false, foragerIds: [s.characters[0].id] });
-    expect(trip.stores.foodLb).toBe(14 + 2 * 5); // (6 + 1) per day for 2 days, plus a 5 lb find on each natural 20
+    expect(trip.stores.foodLb).toBe(2 * (6 + 1 + 6) + 2 * 5); // (6 + 1) per day, +1d6 for beating the DC by 5, plus a 5 lb find on each natural 20
   });
 });
 

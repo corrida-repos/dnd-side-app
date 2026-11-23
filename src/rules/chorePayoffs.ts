@@ -138,3 +138,60 @@ export function rollFind(chore: Chore, rng: () => number): Find {
   const t = CHORE_FINDS[chore];
   return t[Math.min(t.length - 1, Math.floor(rng() * t.length))];
 }
+
+// ---------------------------------------------------------------- downtime that restores (table rules)
+
+/** Relaxation: a week of true rest clears all Stress and Fear. Carousing and religious service ease them each workweek. */
+export const CAROUSING_STRESS_PER_WEEK = 2;
+export const SERVICE_FEAR_PER_WEEK = 1;
+export const SERVICE_STRESS_PER_WEEK = 1;
+
+// ---------------------------------------------------------------- pelts from traps and snares
+
+/** Each small animal caught leaves a pelt (rabbit, squirrel, muskrat), worth 2 SP. */
+export const SMALL_PELT = { name: 'Small pelt', valueGp: 0.2, weight: 0.5 };
+/** One catch in six is a prized fur (fox, marten, mink), worth 2 GP. */
+export const FINE_FUR = { name: 'Fine fur (fox or marten)', valueGp: 2, weight: 1 };
+export const FINE_FUR_ODDS = 6;
+
+// ---------------------------------------------------------------- hides
+
+/** Raw hide value by size, in GP: trade goods, sold at full value or put toward leatherwork. */
+export const HIDE_GP: Partial<Record<Size, number>> = { Medium: 5, Large: 15, Huge: 50, Gargantuan: 150 };
+
+// ---------------------------------------------------------------- the night watch
+
+/** A quiet watch: the watcher works a line or a snare at the camp's edge. Wisdom (Survival) at this DC brings in small game or fish. */
+export const WATCH_CATCH_DC = 13;
+export const WATCH_CATCH_DICE = '1d4';
+
+// ---------------------------------------------------------------- gear upkeep
+
+/** Freshly kept gear takes no wear and gives an edge for this long, in minutes. */
+export const KEPT_GEAR_MINUTES = 24 * 60;
+export const KEPT_GEAR_NOTE = 'Table rule: blades honed, strings waxed, straps oiled. +1 to the first weapon damage roll in each fight, and the gear takes no wear.';
+
+// ---------------------------------------------------------------- reading the sky
+
+/** Beating the DC by this much also reads tomorrow's weather. A success alone gives a vaguer hint. */
+export const FORECAST_MARGIN = 5;
+
+// ---------------------------------------------------------------- recovering ammunition
+
+/** Searching after a fight: Wisdom (Perception or Survival). A success recovers three quarters, beating it by 5 nine in ten. Without a check, half (2024 PHB). */
+export const AMMO_SEARCH_DC = 10;
+export function ammoRecovered(spent: number, total: number | null): number {
+  if (total == null || total < AMMO_SEARCH_DC) return Math.floor(spent / 2);
+  return Math.floor(spent * (total >= AMMO_SEARCH_DC + 5 ? 0.9 : 0.75));
+}
+
+// ---------------------------------------------------------------- mending
+
+/** A mend that beats the DC by this much reinforces the item: the next wear it would take is shrugged off. */
+export const REINFORCE_MARGIN = 5;
+
+// ---------------------------------------------------------------- foraging
+
+/** Each full 5 points by which a forager beats the DC adds another 1d6 lb of food. */
+export const FORAGE_BONUS_STEP = 5;
+export const forageBonusDice = (total: number, dc: number): number => Math.max(0, Math.floor((total - dc) / FORAGE_BONUS_STEP));

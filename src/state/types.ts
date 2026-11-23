@@ -127,6 +127,8 @@ export interface InventoryItem {
   valueBelieved?: number;
   /** Torn, cracked or broken: needs mending (Mending, Weaver's Tools for cloth, or improvised sewing). */
   damaged?: boolean;
+  /** Table rule: expertly mended, it shrugs off the next wear it would take. */
+  reinforced?: boolean;
   /** Who has already tried and failed to appraise it since the last rest (optional table rule). */
   appraiseTried?: string[];
   /** The inventory item this is packed inside, if any. */
@@ -295,6 +297,8 @@ export interface Character {
   stress: number;
   /** Table rule: a hot meal's warmth (Advantage against cold) until this absolute minute; hearty adds forced marches. */
   mealBuff?: { until: number; hearty: boolean } | null;
+  /** Table rule: gear freshly maintained until this absolute minute takes no wear. */
+  gearKeptUntil?: number;
   /** At 0 HP and making death saves. */
   dying: boolean;
   /** At 0 HP but stable: no more death saves, and wakes with 1 HP at `wakesAt`. */
@@ -1181,6 +1185,8 @@ export interface State {
   place: Place;
   weather: Weather;
   weatherHistory: Weather[];
+  /** Tomorrow's weather, read from the sky ahead of time (table rule); used when that day comes if the climate matches. */
+  forecast?: Weather | null;
   fire: Fire;
   stores: Stores;
   characters: Character[];

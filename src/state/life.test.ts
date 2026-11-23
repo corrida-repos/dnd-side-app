@@ -168,6 +168,10 @@ describe('wear and repair', () => {
     expect(s.characters[0].inventory[0].wear).toBe(1);
     s = E.maintainGear(s, ctx(), ['a']);
     expect(s.characters[0].inventory[0].wear).toBeUndefined();
+    // Freshly kept gear takes no wear for 24 hours (table rule).
+    s = E.travel(s, ctx(), { pace: 'slow', difficult: false, foragerIds: [], hours: 8 });
+    expect(s.characters[0].inventory[0].wear).toBeUndefined();
+    s = E.advance(s, ctx(), 16 * 60);
     for (let i = 0; i < 3; i++) s = E.travel(s, ctx(), { pace: 'slow', difficult: false, foragerIds: [], hours: 8 });
     expect(s.characters[0].inventory[0].damaged).toBe(true);
     const off = E.travel(fresh((d) => (setup(d), (d.settings.gearWear = false))), ctx(), { pace: 'slow', difficult: false, foragerIds: [], hours: 24 });
