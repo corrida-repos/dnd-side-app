@@ -31,7 +31,7 @@ function ActiveCard() {
   const s = useGame();
   const now = E.absNow(s);
   const sorted = [...s.effects].sort((a, b) => (a.endsAt ?? Infinity) - (b.endsAt ?? Infinity));
-  const concentrating = s.characters.filter((c) => s.effects.some((e) => e.concentration && e.casterId === c.id));
+  const concentrating = s.characters.filter((c) => s.effects.some((e) => e.concentration && E.concentrators(e).includes(c.id)));
   return (
     <Card title={`Active effects and lights (${s.effects.length})`} className="span-2">
       {sorted.length === 0 && <p className="muted">Nothing is burning or active. Light a torch or cast a spell on the right.</p>}
@@ -46,7 +46,14 @@ function ActiveCard() {
               <div className="armor-row">
                 <span>
                   <b>{e.name}</b> <Pill tone="muted">{EFFECT_KIND_LABEL[e.kind]}</Pill>
-                  {e.concentration && <Pill tone="info">Concentration{caster ? `: ${caster}` : ''}</Pill>}
+                  {e.concentration && <Pill tone="info">Concentration{e.concentrationIds?.length ? `: ${e.concentrationIds.map((id) => E.charById(s, id)?.name ?? '?').join(', ')}` : caster ? `: ${caster}` : ''}</Pill>}
+                  {e.concentration &&
+                    (e.concentrationIds?.length ?? 0) > 1 &&
+                    e.concentrationIds!.map((id) => (
+                      <button key={id} className="ghost tiny" title="Damage, a failed save or being Incapacitated: the others keep the spell going" onClick={() => dispatch((st, cx) => E.loseConcentration(st, cx, e.id, id))}>
+                        {E.charById(s, id)?.name ?? '?'} loses it
+                      </button>
+                    ))}
                   {e.shelter && <Pill tone="good">Shelter</Pill>}
                   {who && <span className="muted small"> on {who}</span>}
                 </span>

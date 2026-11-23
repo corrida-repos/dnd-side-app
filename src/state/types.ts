@@ -173,6 +173,8 @@ export interface ActiveEffect {
   targetIds: string[];
   casterId: string | null;
   concentration: boolean;
+  /** Circle Magic's Distribute: every caster who holds this Concentration; the effect lasts while any of them does. */
+  concentrationIds?: string[];
   shelter: boolean;
   startedAt: number;
   /** Absolute minute it ends, or null if it lasts until ended. */
