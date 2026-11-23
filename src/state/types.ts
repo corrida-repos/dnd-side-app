@@ -308,6 +308,8 @@ export interface Character {
   bedroll: boolean;
   /** PHB: while wrapped in a Blanket you have Advantage on saves against extreme cold. */
   blanket: boolean;
+  /** A makeshift bed of boughs or leaves at this camp (table rule): counts as a Blanket until the party moves on. */
+  bedding?: boolean;
   /** Coldest temperature felt while sleeping without warm cover during the current Long Rest. */
   nightChill: number | null;
   /** Heavy clothing (armor is tracked separately): Disadvantage on extreme heat saves. */
@@ -398,10 +400,12 @@ export interface Place {
   region?: RegionKind | null;
   /** Snow on the ground and days of mud (table rule). */
   ground?: { snowIn: number; mudDays: number };
-  /** A Bell strung on a line around the camp (table rule): something crossing it wakes everyone. */
-  alarm?: boolean;
-  /** Hunting Traps set on game trails here, checked when the party breaks camp or after a Long Rest. */
-  trapsSet?: { charId: string; qty: number; setAt: number }[];
+  /** An alarm line around the camp (table rule): a Bell wakes everyone; pots and cans only if the intruder isn't careful. */
+  alarm?: boolean | 'pots';
+  /** Hunting Traps (or snares) set on game trails here, checked when the party breaks camp. */
+  trapsSet?: { charId: string; qty: number; setAt: number; snare?: boolean }[];
+  /** Lean-tos built here (table rule): each sleeps two, like a Tent. */
+  leanTos?: number;
   /** Holes dug here with a Shovel (or by hand): fire pit, latrine, snow cave and the like. */
   dug?: string[];
 }

@@ -7,6 +7,7 @@ import { GEAR_CATALOG, batchCrafting, craftableWith, gearByName } from '../rules
 import { PACKS, liquidCapacity, packNamed, proficientWith, toolCheck, toolNamed, TOOLS } from '../rules/gear';
 import { isMapOf as isMapOfPlace } from '../rules/tools';
 import { parseDdbCharacter } from '../rules/ddb';
+import { BOIL_MINUTES } from '../rules/survival';
 
 const ctx = (v = 0.5): E.Ctx => ({ rng: () => v });
 const HIGH = ctx(0.999);
@@ -302,5 +303,113 @@ describe('handy gear', () => {
 
   it('barrels and jugs hold water: 40 gallons a Barrel', () => {
     expect(liquidCapacity([{ name: 'Barrel', qty: 2 }, { name: 'Jug', qty: 1 }])).toBe(81);
+  });
+});
+
+describe('doing without the proper gear (table rules)', () => {
+  const forest = () => {
+    const s = camp();
+    s.place.terrain = 'forest';
+    return s;
+  };
+
+  it('lighting a torch: free with a Tinderbox or from the campfire, 10 minutes of friction without', () => {
+    let s = forest();
+    const t0 = E.absNow(s);
+    s = E.addEffect(s, ctx(), { preset: preset('Torch'), minutes: 60, targetIds: [], casterId: null });
+    expect(E.absNow(s) - t0).toBe(10);
+    expect(said(s, 'bow drill')).toBe(true);
+    s.characters[1].inventory.push(item('Tinderbox'));
+    const t1 = E.absNow(s);
+    s = E.addEffect(s, ctx(), { preset: preset('Torch'), minutes: 60, targetIds: [], casterId: null });
+    expect(E.absNow(s) - t1).toBe(0);
+    s = forest();
+    s.settings.improvised = false;
+    s = E.addEffect(s, ctx(), { preset: preset('Torch'), minutes: 60, targetIds: [], casterId: null });
+    expect(s.effects).toHaveLength(0);
+    expect(qty(s, 0, 'Torch')).toBe(2);
+  });
+
+  it('a makeshift torch is made from what grows here and burns 30 minutes', () => {
+    let s = forest();
+    s = E.makeshift(s, ctx(0.5), s.characters[1].id, 'torch', 0); // 11 vs 10
+    expect(qty(s, 1, 'Makeshift Torch')).toBe(1);
+    s.characters[1].inventory.push(item('Tinderbox'));
+    s = E.addEffect(s, ctx(), { preset: preset('Makeshift Torch'), minutes: 30, targetIds: [s.characters[1].id], casterId: null });
+    expect(qty(s, 1, 'Makeshift Torch')).toBe(0);
+    s = camp();
+    s.place.terrain = 'desert';
+    s = E.makeshift(s, HIGH, s.characters[1].id, 'torch', 5);
+    expect(said(s, 'nothing to make a torch from')).toBe(true);
+  });
+
+  it('a lean-to sleeps two like a Tent, and a bed of boughs counts as a Blanket, until the party moves on', () => {
+    let s = forest();
+    s = E.makeshift(s, HIGH, s.characters[0].id, 'leanTo', 0);
+    expect(s.place.shelter).toBe('tent');
+    expect(E.tentSpaces(s)).toBe(2);
+    s = E.makeshift(s, HIGH, s.characters[1].id, 'bedding', 0);
+    expect(E.hasWarmCover({ ...s.characters[1], bedroll: false, blanket: false, coldWeatherGear: false })).toBe(true);
+    s = E.travel(s, ctx(0), { hours: 1, pace: 'normal', difficult: false, foragerIds: [] });
+    expect(E.tentSpaces(s)).toBe(0);
+    expect(s.characters[1].bedding).toBe(false);
+  });
+
+  it('a hide becomes a waterskin, and vines become cord', () => {
+    let s = forest();
+    s.materials.push({ id: 'h', name: 'Hide (Deer)', qty: 1, unit: 'hide', valueGp: 1 });
+    const cap = s.characters[1].waterCapacityPints;
+    s = E.makeshift(s, HIGH, s.characters[1].id, 'waterskin', 0);
+    expect(s.characters[1].waterCapacityPints).toBe(cap + 4);
+    expect(s.materials.some((m) => m.id === 'h')).toBe(false);
+    s = E.makeshift(s, HIGH, s.characters[1].id, 'cord', 0);
+    expect(s.characters[1].inventory.some((i) => i.name.startsWith('Vine cord'))).toBe(true);
+  });
+
+  it('snares of cord need a Survival check to set and catch on 16+', () => {
+    let s = forest();
+    s = E.setTraps(s, ctx(0.3), s.characters[1].id, 1, true, 0); // 7 vs 15
+    expect(s.place.trapsSet ?? []).toHaveLength(0);
+    s = E.setTraps(s, HIGH, s.characters[1].id, 1, true, 0);
+    expect(s.place.trapsSet?.[0].snare).toBe(true);
+    s = E.advance(s, ctx(), 8 * 60, 'camp');
+    const raw = s.stores.foodRawLb;
+    s = E.checkTraps(s, HIGH);
+    expect(s.stores.foodRawLb).toBeGreaterThan(raw);
+    expect(qty(s, 1, 'Hunting Trap')).toBe(0);
+    expect(qty(s, 1, 'Rope')).toBe(1);
+  });
+
+  it('pots on a line catch only a careless intruder', () => {
+    let s = forest();
+    s.characters[1].inventory.push(item('Iron Pot'));
+    s = E.rigAlarm(s, ctx(), s.characters[1].id);
+    expect(s.place.alarm).toBe('pots');
+    const loud = E.interruptedRest(s, ctx(), { kind: 'long', after: 60, reason: 'disturbance', noise: 'quiet', dc: 8, resume: false });
+    expect(loud.log.some((l) => l.text.includes('Pots clatter'))).toBe(true);
+    const sly = E.interruptedRest(s, ctx(), { kind: 'long', after: 60, reason: 'disturbance', noise: 'quiet', dc: 18, resume: false });
+    expect(sly.log.some((l) => l.text.includes('without a sound'))).toBe(true);
+  });
+
+  it('without a pot, hot stones boil half the water in twice the time', () => {
+    let s = forest();
+    s.fire = { lit: true, fuelHours: 5, sheltered: false };
+    s.stores.waterUnsafeGal = 4;
+    const t0 = E.absNow(s);
+    s = E.boilWater(s, ctx());
+    expect(s.stores.waterUnsafeGal).toBe(2);
+    expect(E.absNow(s) - t0).toBe(2 * BOIL_MINUTES);
+    s.characters[0].inventory.push(item('Iron Pot'));
+    s = E.boilWater(s, ctx());
+    expect(s.stores.waterUnsafeGal).toBe(0);
+  });
+
+  it('charcoal notes need no paper or ink; bareback mounts can’t gallop', () => {
+    let s = forest();
+    s = E.writePages(s, ctx(), s.characters[1].id, 1, 'a warning');
+    expect(said(s, 'in charcoal on bark')).toBe(true);
+    s.characters.push(newCharacter({ name: 'Nag', kind: 'mount', size: 'Large', saddle: 'none' }));
+    s = E.travel(s, ctx(0), { hours: 1, pace: 'normal', difficult: false, foragerIds: [], gallop: true });
+    expect(said(s, "can't gallop")).toBe(true);
   });
 });

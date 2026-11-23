@@ -376,6 +376,21 @@ Every 2024 PHB tool and adventuring gear entry (5etools `items-base.json` / `ite
 - ✅ Writing uses Paper or Parchment (about 250 words a sheet) and Ink (about 500 pages a bottle).
 - ✅ Barrels (40 gal), Jugs and Iron Pots (1 gal) set how much water the stores can hold.
 
+### Doing without (table rules, under the improvised switch)
+The gear makes things automatic, faster or better; without it you can still try, with a check, more time or a worse result.
+- ✅ **Lighting a torch or lamp:** a Tinderbox, the campfire or a spell lights it at once; otherwise 10 minutes of friction.
+- ✅ **Makeshift torch:** Survival DC 10, 10 minutes, burns 30 minutes.
+- ✅ **Lean-to** (or a snow trench in deep snow): Survival DC 10–15 by terrain, 1 hour, sleeps two like a Tent.
+- ✅ **Bed of boughs:** Survival DC 10, 30 minutes, counts as a Blanket tonight.
+- ✅ **Snares** of String, Rope or vine cord: Survival DC 15 to set, catch on 16+ (a Hunting Trap catches on 13+).
+- ✅ **Alarm of pots and cans:** wakes the camp unless the intruder makes Stealth 12+ (a Bell always rings).
+- ✅ **Hot stones** instead of a pot: twice as long, half the water each time.
+- ✅ **Charcoal on bark** instead of Paper, Ink and Pen: a short note, about 50 words.
+- ✅ **Bareback:** Disadvantage on checks to stay mounted, and no galloping.
+- ✅ **Hide waterskin** from a hunted hide: Survival DC 12, 1 hour, 4 pints.
+- ✅ **Vine cord:** Survival DC 15, 1 hour, 10 feet, bursts at Strength DC 15.
+- Barren terrain (desert, arctic without snow, underground, at sea, in town) has nothing to make these from.
+
 ## Verified correct ✅
 
 No change needed. These match the 2024 data:

@@ -77,12 +77,12 @@ export function ToolsCard() {
           </button>
         )}
       </div>
-      {(paper > 0 || ink) && (
+      {(paper > 0 || ink || s.settings.improvised) && (
         <div className="btn-row tight">
           <Num label="Pages to write" value={pages} onChange={(v) => setPages(Math.max(1, Math.round(v)))} min={1} width={3} />
           <Text value={writing} onChange={setWriting} placeholder="A letter, a copy of the map notes…" />
           <button className="small" onClick={() => dispatch((st, cx) => E.writePages(st, cx, c.id, pages, writing))}>
-            Write ({pages * 10} min)
+            {paper >= pages && ink && c.inventory.some((i) => /ink pen|quill/i.test(i.name)) ? `Write (${pages * 10} min)` : s.settings.improvised ? 'Scratch a note in charcoal (10 min)' : `Write (${pages * 10} min)`}
           </button>
           <span className="small muted">
             {paper} sheet{paper === 1 ? '' : 's'} · {ink ? `Ink: ${ink.uses ?? INK_PAGES} pages left${ink.qty > 1 ? ` (+${ink.qty - 1} bottles)` : ''}` : 'no Ink'}

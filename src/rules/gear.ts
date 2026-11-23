@@ -7,6 +7,7 @@
 import { abilityMod } from './upkeep';
 import { proficiencyBonus } from './survival';
 import type { Character } from '../state/types';
+import type { TerrainType } from './terrain';
 
 // ---------------------------------------------------------------- packs
 
@@ -464,14 +465,15 @@ export function toolCheck(c: Character, tool: string, ability?: AbilityKey, skil
 
 // ---------------------------------------------------------------- light and fuel
 
-export type LightFuel = 'torch' | 'candle' | 'oil';
+export type LightFuel = 'torch' | 'makeshift' | 'candle' | 'oil';
 
 export const FUEL_MATCH: Record<LightFuel, RegExp> = {
   torch: /^torch(?:es)?$/i,
+  makeshift: /^makeshift torch(?:es)?$/i,
   candle: /^candles?$/i,
   oil: /^(?:oil|oil \(flask\)|flasks? of oil|lamp oil)$/i,
 };
-export const FUEL_LABEL: Record<LightFuel, string> = { torch: 'a Torch', candle: 'a Candle', oil: 'a flask of Oil' };
+export const FUEL_LABEL: Record<LightFuel, string> = { torch: 'a Torch', makeshift: 'a Makeshift Torch', candle: 'a Candle', oil: 'a flask of Oil' };
 
 /** Oil burns 6 hours in a Lamp or Lantern, and can be put out and relit until it has burned 6 hours in all (2024 PHB). */
 export const OIL_MINUTES = 6 * 60;
@@ -484,6 +486,7 @@ export const VESSEL_MATCH: { preset: RegExp; item: RegExp; label: string }[] = [
 /** Which fuel a light preset burns. */
 export function fuelFor(presetName: string): LightFuel | null {
   if (/^torch/i.test(presetName)) return 'torch';
+  if (/^makeshift torch/i.test(presetName)) return 'makeshift';
   if (/^candle/i.test(presetName)) return 'candle';
   if (VESSEL_MATCH.some((v) => v.preset.test(presetName))) return 'oil';
   return null;
@@ -561,7 +564,7 @@ export const PERFUME_MINUTES = 60;
 export const SIGNAL_WHISTLE = /signal whistle/i;
 export const BELL = /^bells?$/i;
 /** Table rule: a Bell hung on String or Rope around the camp rings when something crosses the line, waking the camp. */
-export const ALARM_LINE = /^(?:string|rope|rope, hempen|rope, silk|chain)/i;
+export const ALARM_LINE = /^(?:string|rope|rope, hempen|rope, silk|chain|vine cord)/i;
 export const ALARM_MINUTES = 10;
 
 /** Objects seen through a Spyglass are magnified to twice their size (2024 PHB). Table rule: the watch spots things twice as far off. */
@@ -598,3 +601,62 @@ export function liquidCapacity(items: { name: string; qty: number }[]): number {
 /** Gaming Set proficiency in downtime gambling (2024 PHB skill-and-tool rule): Advantage on the Insight check. */
 export const isGamingSet = (name: string): boolean => toolNamed(name)?.category === 'gaming';
 export const isInstrument = (name: string): boolean => toolNamed(name)?.category === 'instrument';
+
+// ---------------------------------------------------------------- doing without (table rules, under the improvised switch)
+
+
+/** Table rule: lighting a torch or lamp with no Tinderbox and no fire to hand: friction, 10 minutes. */
+export const FRICTION_LIGHT_MINUTES = 10;
+export const TINDERBOX = /tinderbox/i;
+
+/** Where wood, brush and leaves can be gathered for makeshift gear, and how hard it is (Wisdom (Survival)). */
+export const MAKESHIFT_DC: Record<TerrainType, number | null> = {
+  forest: 10,
+  swamp: 10,
+  coastal: 10,
+  grassland: 15,
+  hill: 15,
+  mountain: 15,
+  arctic: null,
+  desert: null,
+  underdark: null,
+  urban: null,
+  waterborne: null,
+};
+
+/** Table rule: a makeshift torch (branch and rags or dry grass), Survival DC 10, 10 minutes, burns 30 minutes. */
+export const MAKESHIFT_TORCH = { dc: 10, minutes: 10, burns: 30, name: 'Makeshift Torch' };
+export const MAKESHIFT_TORCH_MATCH = /^makeshift torch(?:es)?$/i;
+
+/** Table rule: a lean-to of branches (or a trench in deep snow), 1 hour, sleeps two like a Tent. */
+export const LEAN_TO = { minutes: 60, sleeps: 2, snowDC: 15, snowInches: 12 };
+export function leanToDC(terrain: TerrainType, snowIn: number): number | null {
+  if (snowIn >= LEAN_TO.snowInches) return LEAN_TO.snowDC;
+  return MAKESHIFT_DC[terrain];
+}
+
+/** Table rule: a bed of pine boughs or leaf litter, Survival DC 10, 30 minutes: counts as a Blanket tonight. */
+export const BEDDING = { dc: 10, minutes: 30 };
+
+/** Table rule: a snare of String or Rope, Survival DC 15 to set; catches small game on a d20 roll of 16+. */
+export const SNARE = { dc: 15, catchOn: 16 };
+export const SNARE_LINE = /^(?:string|rope|rope, hempen|rope, silk|vine cord.*)$/i;
+
+/** Table rule: an Iron Pot, Bucket or cans hung on a line: intruders who beat Stealth DC 12 cross it quietly. */
+export const POTS = /^(?:iron pots?|pots?|buckets?|pans?|cans?|mess kits?|kettles?)$/i;
+export const POT_ALARM_DC = 12;
+
+/** Something to boil water in. Table rule: without one, hot stones in a hide or bowl take twice as long and do half as much. */
+export const BOILING_POT = /\b(?:iron pot|pot|kettle|cauldron|cook'?s utensils|mess kit)\b/i;
+
+/** Table rule: charcoal on bark or hide, no Ink or Paper: a short note of a few lines, smudged by rain. */
+export const CHARCOAL_WORDS = 50;
+
+/** Table rule: riding bareback means Disadvantage on checks to stay mounted, and no galloping. */
+export const isBareback = (m: Pick<Character, 'saddle'>): boolean => m.saddle === 'none';
+
+/** Table rule: a waterskin sewn from a hunted hide, Survival DC 12, 1 hour. */
+export const HIDE_WATERSKIN = { dc: 12, minutes: 60 };
+
+/** Table rule: 10 feet of vine or bark cord, Survival DC 15, 1 hour; bursts at Strength DC 15 instead of Rope's 20. */
+export const VINE_CORD = { dc: 15, minutes: 60, name: 'Vine cord (10 ft, bursts at DC 15)' };

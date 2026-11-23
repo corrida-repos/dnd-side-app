@@ -32,7 +32,7 @@ import { FEED_LB_PER_DAY, MOUNT_CAPACITY, carryingCapacity, COINS_PER_LB, estima
 import { BUTCHER_DC, BUTCHER_MINUTES, isEdible, MEAT_LB, STRANGE_TYPES, yieldsHide, type Creature } from '../rules/hunting';
 import { addCoins, COIN_GP, coinCount, coinsFor, emptyPurse, exchange, fmtPurse, purseValue, spend, type Denom, type Purse } from '../rules/coins';
 import { detectContainer } from '../rules/containers';
-import { ABILITY_LABEL, INK, INK_PAGES, PAPER, PERFUME, PERFUME_MINUTES, SIGNAL_WHISTLE, carriesTool, liquidCapacity, toolNamed, SPYGLASS, ALARM_LINE, ALARM_MINUTES, BELL, DIG_BY_HAND, DIG_LABEL, GATHER_MINUTES, HUNTING_TRAP, SCATTERABLE, SHOVEL, SHOVEL_MINUTES, STABLING_GP_PER_DAY, TENT, TENT_SLEEPS, TRAP_CATCH_ON, TRAP_MEAT_DICE, TRAP_SAVE_DC, needsExoticSaddle, type DigKind, MAGNIFYING_GLASS, hasSkill, proficientWith, PACKS, RATIONS, WATERSKIN, WATERSKIN_PINTS, packNamed, FUEL_LABEL, FUEL_MATCH, HEALERS_KIT, HEALERS_KIT_USES, OIL_MINUTES, VESSEL_MATCH, fuelFor, isHooded, isOilLight } from '../rules/gear';
+import { BOILING_POT, CHARCOAL_WORDS, FRICTION_LIGHT_MINUTES, HIDE_WATERSKIN, LEAN_TO, BEDDING, MAKESHIFT_DC, MAKESHIFT_TORCH, POTS, POT_ALARM_DC, SNARE, SNARE_LINE, TINDERBOX, VINE_CORD, isBareback, leanToDC, ABILITY_LABEL, INK, INK_PAGES, PAPER, PERFUME, PERFUME_MINUTES, SIGNAL_WHISTLE, carriesTool, liquidCapacity, toolNamed, SPYGLASS, ALARM_LINE, ALARM_MINUTES, BELL, DIG_BY_HAND, DIG_LABEL, GATHER_MINUTES, HUNTING_TRAP, SCATTERABLE, SHOVEL, SHOVEL_MINUTES, STABLING_GP_PER_DAY, TENT, TENT_SLEEPS, TRAP_CATCH_ON, TRAP_MEAT_DICE, TRAP_SAVE_DC, needsExoticSaddle, type DigKind, MAGNIFYING_GLASS, hasSkill, proficientWith, PACKS, RATIONS, WATERSKIN, WATERSKIN_PINTS, packNamed, FUEL_LABEL, FUEL_MATCH, HEALERS_KIT, HEALERS_KIT_USES, OIL_MINUTES, VESSEL_MATCH, fuelFor, isHooded, isOilLight } from '../rules/gear';
 import type { DdbImport } from '../rules/ddb';
 import { FEED_GP_PER_DAY, HIRELING_WAGE, magicItemValue, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset, type Lifestyle } from '../rules/money';
 import { STABLE_WAKE_DIE, STABILIZE_DC } from '../rules/upkeep';
@@ -245,7 +245,7 @@ export function coldProtection(c: Character, activity: Activity = 'camp', gearCo
 }
 
 /** Warm cover for a cold night: automatic protection, or a Blanket. */
-export const hasWarmCover = (c: Character): boolean => !!coldProtection(c, 'rest', true) || c.blanket;
+export const hasWarmCover = (c: Character): boolean => !!coldProtection(c, 'rest', true) || c.blanket || !!c.bedding;
 
 export function hasDrinkableWater(s: State, c: Character, activity: Activity): boolean {
   return c.waterPints > 0 || s.place.waterSource || (activity !== 'travel' && s.stores.waterGal + s.stores.waterUnsafeGal > 0);
@@ -377,8 +377,8 @@ function tickHour(s: State, ctx: Ctx, activity: Activity): void {
   for (const c of s.characters) {
     if (!alive(c)) continue;
     if (s.settings.extremeWeather && exp.cold && temp <= 0 && !coldProtection(c, activity, s.settings.coldGear2014)) {
-      const wrapped = c.blanket && activity === 'rest';
-      requestSave(s, ctx, c, 'cold', 10, wrapped ? 'advantage' : 'normal', `extreme cold (${temp}°F)${wrapped ? ', wrapped in a Blanket' : ''}`);
+      const wrapped = (c.blanket || !!c.bedding) && activity === 'rest';
+      requestSave(s, ctx, c, 'cold', 10, wrapped ? 'advantage' : 'normal', `extreme cold (${temp}°F)${wrapped ? (c.blanket ? ', wrapped in a Blanket' : ', on a bed of boughs') : ''}`);
     } else if (activity === 'rest' && exp.cold && s.settings.coldNights && temp <= s.settings.coldNightF && !hasWarmCover(c)) {
       c.nightChill = c.nightChill == null ? temp : Math.min(c.nightChill, temp);
     }
@@ -940,9 +940,14 @@ export interface InterruptOpts {
 
 /** Who is awake when a rest is interrupted: the watch, anyone the noise wakes, and the rest get shaken awake. */
 function wakeTheCamp(d: State, minutesIn: number, noise: 'loud' | 'quiet', dc: number): void {
-  if (noise === 'quiet' && d.place.alarm) {
+  if (noise === 'quiet' && d.place.alarm === true) {
     noticed(d, 'wokenByNoise', [], 'The Bell on the alarm line jangles: something has crossed it (table rule).', 'warn');
     noise = 'loud';
+  } else if (noise === 'quiet' && d.place.alarm === 'pots') {
+    if (dc < POT_ALARM_DC) {
+      noticed(d, 'wokenByNoise', [], 'Pots clatter on the alarm line: something has stumbled into it (table rule).', 'warn');
+      noise = 'loud';
+    } else log(d, `Whatever it is steps over the line of pots without a sound (Stealth DC ${dc} against ${POT_ALARM_DC}, table rule).`);
   }
   const len = watchMinutes(d.watchPlan.count);
   const slot = Math.min(d.watchPlan.count - 1, Math.floor(minutesIn / len));
@@ -1201,6 +1206,11 @@ function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
   const mounts = d.characters.filter((c) => c.kind === 'mount' && alive(c)).length;
   const riders = d.characters.filter((c) => c.kind !== 'mount' && alive(c)).length;
   let gallop = !!o.gallop;
+  const bareback = d.characters.filter((m) => m.kind === 'mount' && alive(m) && isBareback(m));
+  if (gallop && bareback.length) {
+    log(d, `${bareback.map((m) => m.name).join(', ')} ${bareback.length > 1 ? 'have' : 'has'} no saddle, so the party can't gallop (table rule).`, 'warn');
+    gallop = false;
+  }
   if (gallop && (mounts < riders || d.travel.gallopUsed)) {
     log(d, mounts < riders ? 'Not everyone has a mount, so the party can’t gallop.' : 'The mounts need a Short or Long Rest before they can gallop again.', 'warn');
     gallop = false;
@@ -1749,22 +1759,44 @@ export const purifySpell = act((d, ctx, casterId: string | null, mode: 'ritual' 
   log(d, `${who} ${PURIFY_SPELL}${mode === 'ritual' ? ' as a ritual (10 minutes, no spell slot)' : ' with a level 1 spell slot (an action)'}. Purified: ${purifyAll(d)}.`, 'good');
 });
 
+/** Whether the party has a pot to boil water in; null when nobody's inventory is listed. */
+export function partyHasPot(s: State): boolean | null {
+  if (!inventoriesKept(s)) return null;
+  return s.characters.some((c) => c.inventory.some((i) => BOILING_POT.test(i.name)));
+}
+
 export const boilWater = act((d, ctx) => {
   if (!d.fire.lit) {
-    log(d, 'You need a lit fire and a pot to boil water.', 'warn');
+    log(d, 'You need a lit fire to boil water.', 'warn');
     return;
   }
-  const water = d.stores.waterUnsafeGal;
-  const skins = d.characters.filter((c) => c.waterUnsafe).length;
-  if (!water && !skins) {
+  const allWater = d.stores.waterUnsafeGal;
+  const dirtySkins = d.characters.filter((c) => c.waterUnsafe);
+  if (!allWater && !dirtySkins.length) {
     log(d, 'There is no unpurified water to boil.');
     return;
   }
-  advanceMut(d, ctx, BOIL_MINUTES, 'camp');
+  // Table rule: no pot means hot stones dropped in a hide or wooden bowl: twice as long, half as much water each time.
+  const stones = partyHasPot(d) === false;
+  if (stones && !d.settings.improvised) return void log(d, 'There is no pot to boil water in, and improvised attempts are off.', 'warn');
+  const water = stones ? round2(allWater / 2) : allWater;
+  const skins = stones ? dirtySkins.slice(0, Math.ceil(dirtySkins.length / 2)) : dirtySkins;
+  const minutes = BOIL_MINUTES * (stones ? 2 : 1);
+  advanceMut(d, ctx, minutes, 'camp');
   d.stores.waterGal = round2(d.stores.waterGal + water);
-  d.stores.waterUnsafeGal = 0;
-  for (const c of d.characters) c.waterUnsafe = false;
-  log(d, `The party boils water over the campfire (${BOIL_MINUTES} minutes, table rule): ${water ? `${water} gal of stores` : ''}${water && skins ? ' and ' : ''}${skins ? `${skins} waterskin(s)` : ''} now safe to drink.`, 'good');
+  d.stores.waterUnsafeGal = round2(d.stores.waterUnsafeGal - water);
+  for (const c of skins) {
+    const me = charById(d, c.id);
+    if (me) me.waterUnsafe = false;
+  }
+  const what = `${water ? `${water} gal of stores` : ''}${water && skins.length ? ' and ' : ''}${skins.length ? `${skins.length} waterskin(s)` : ''}`;
+  log(
+    d,
+    stones
+      ? `With no pot, the party drops fire-heated stones into a hide and a hollowed log until the water seethes (${minutes} minutes, table rule): ${what} now safe to drink. Half is left to do.`
+      : `The party boils water over the campfire (${minutes} minutes, table rule): ${what} now safe to drink.`,
+    'good',
+  );
 });
 
 // ---------------------------------------------------------------- armor
@@ -4580,14 +4612,35 @@ function takeLightFuel(s: State, presetName: string, preferIds: string[]): strin
   return ` ${got.c.name} uses ${FUEL_LABEL[fuel]} (${left} left).`;
 }
 
+/**
+ * Something to light a torch, candle or lamp with: a Tinderbox (a Bonus Action, 2024 PHB), the campfire, or a spell.
+ * Without any, friction takes 10 minutes (table rule, under the improvised switch). Null (and a log line) when it can't be lit.
+ */
+function ignition(s: State, presetName: string, preferIds: string[]): { minutes: number; note: string } | null {
+  if (!fuelFor(presetName) || !s.settings.trackGearUse || !inventoriesKept(s)) return { minutes: 0, note: '' };
+  if (carrierOf(s, preferIds, TINDERBOX)) return { minutes: 0, note: '' };
+  if (s.fire.lit) return { minutes: 0, note: ' Lit from the campfire.' };
+  const caster = s.characters.find((c) => alive(c) && c.spells.some((x) => /^(prestidigitation|produce flame|elementalism|druidcraft|fire bolt)$/i.test(x.name)));
+  if (caster) return { minutes: 0, note: ` ${caster.name} lights it with a spark of magic.` };
+  if (!s.settings.improvised) {
+    log(s, 'Nobody has a Tinderbox, and there is no fire to light it from.', 'warn');
+    return null;
+  }
+  return { minutes: FRICTION_LIGHT_MINUTES, note: ` With no Tinderbox, it takes ${FRICTION_LIGHT_MINUTES} minutes of striking flint or working a bow drill to get a flame (table rule).` };
+}
+
 export const addEffect = act((d, _ctx, ne: NewEffect) => {
-  const now = absNow(d);
   let fuelNote = '';
   if (ne.preset.kind === 'light' && ne.useGear !== false) {
-    const took = takeLightFuel(d, ne.preset.name, [...ne.targetIds, ...(ne.casterId ? [ne.casterId] : [])]);
+    const who = [...ne.targetIds, ...(ne.casterId ? [ne.casterId] : [])];
+    const spark = ignition(d, ne.preset.name, who);
+    if (spark === null) return;
+    const took = takeLightFuel(d, ne.preset.name, who);
     if (took === null) return;
-    fuelNote = took;
+    fuelNote = took + spark.note;
+    if (spark.minutes) advanceMut(d, _ctx, spark.minutes, 'camp');
   }
+  const now = absNow(d);
   const conc = !!ne.preset.concentration;
   if (conc && ne.casterId) {
     const dropped = d.effects.filter((e) => e.concentration && e.casterId === ne.casterId);
@@ -5186,7 +5239,8 @@ const tentSleepers = (s: State): Character[] => s.characters.filter((c) => c.kin
 
 /** Places in the party's tents: two Small or Medium creatures each (2024 PHB). */
 export function tentSpaces(s: State): number {
-  return s.characters.reduce((a, c) => a + c.inventory.filter((i) => TENT.test(i.name.trim()) && !i.scattered).reduce((n, i) => n + i.qty, 0), 0) * TENT_SLEEPS;
+  const tents = s.characters.reduce((a, c) => a + c.inventory.filter((i) => TENT.test(i.name.trim()) && !i.scattered).reduce((n, i) => n + i.qty, 0), 0);
+  return tents * TENT_SLEEPS + (s.place.leanTos ?? 0) * LEAN_TO.sleeps;
 }
 
 /** Camping in tents without enough of them: who sleeps in the open. Empty when inventories aren't kept or the rule is off. */
@@ -5224,9 +5278,23 @@ export const dig = act((d, ctx, diggerIds: string[], kind: DigKind) => {
 const s_count = (s: State, re: RegExp): number => s.characters.reduce((a, c) => a + c.inventory.filter((i) => re.test(i.name.trim()) && !i.scattered).reduce((n, i) => n + i.qty, 0), 0);
 
 /** Sets Hunting Traps on game trails near camp (2024 PHB: a Utilize action each, chained to a tree or spike). */
-export const setTraps = act((d, ctx, charId: string, qty: number) => {
+export const setTraps = act((d, ctx, charId: string, qty: number, snare: boolean = false, bonus: number = 0) => {
   const c = charById(d, charId);
   if (!c) return;
+  if (snare) {
+    if (!d.settings.improvised) return void log(d, 'Snares are an improvised attempt, and those are off.', 'warn');
+    const lines = c.inventory.filter((i) => SNARE_LINE.test(i.name.trim()) && i.qty > 0).reduce((a, i) => a + i.qty, 0);
+    const n = Math.min(lines, Math.max(1, Math.round(qty)));
+    if (!n) return void log(d, `${c.name} needs String or Rope (or vine cord) to make a snare.`, 'warn');
+    advanceMut(d, ctx, 15 * n, 'camp');
+    const me = charById(d, charId)!;
+    const r = d20('normal', ctx.rng);
+    const mod = bonus - 2 * me.exhaustion;
+    const roll = `Wisdom (Survival) ${r.value} ${signed(mod)} = ${r.value + mod} against DC ${SNARE.dc}`;
+    if (r.value + mod < SNARE.dc) return void log(d, `${me.name} tries to rig ${n > 1 ? `${n} snares` : 'a snare'} on a game trail (${roll}), but the loops won't sit right; anything would brush past (table rule).`, 'warn');
+    d.place.trapsSet = [...(d.place.trapsSet ?? []), { charId, qty: n, setAt: absNow(d), snare: true }];
+    return void log(d, `${me.name} rigs ${n > 1 ? `${n} snares` : 'a snare'} of cord along a game trail (${roll}, ${15 * n} min, table rule). Check after a night: each catches on a d20 roll of ${SNARE.catchOn}+.`, 'good');
+  }
   const have = c.inventory.filter((i) => HUNTING_TRAP.test(i.name) && i.qty > 0);
   const total = have.reduce((a, i) => a + i.qty, 0);
   const n = Math.min(total, Math.max(1, Math.round(qty)));
@@ -5255,12 +5323,12 @@ function collectTraps(d: State, ctx: Ctx): void {
     const c = charById(d, t.charId) ?? d.characters.find((x) => x.kind === 'pc');
     for (let i = 0; i < t.qty; i++) {
       if (now - t.setAt < 8 * 60) early++;
-      else if (die(20, ctx.rng) >= TRAP_CATCH_ON) {
+      else if (die(20, ctx.rng) >= (t.snare ? SNARE.catchOn : TRAP_CATCH_ON)) {
         caught++;
         meat += rollExpr(TRAP_MEAT_DICE, ctx.rng) ?? 2;
       }
     }
-    if (c) addLine(d, c, 'Hunting Trap', t.qty, {}, null, false);
+    if (c && !t.snare) addLine(d, c, 'Hunting Trap', t.qty, {}, null, false);
   }
   d.place.trapsSet = [];
   if (meat) d.stores.foodRawLb += meat;
@@ -5286,7 +5354,14 @@ export const rigAlarm = act((d, ctx, charId: string) => {
   if (!c) return;
   const bell = carrierOf(d, [charId], BELL);
   const line = carrierOf(d, [charId], ALARM_LINE);
-  if (!bell || !line) return void log(d, `An alarm needs a Bell and a length of String, Rope or Chain${!bell ? '; nobody has a Bell' : '; nobody has String or Rope'}.`, 'warn');
+  const pots = carrierOf(d, [charId], POTS);
+  if (!line) return void log(d, 'An alarm line needs a length of String, Rope, Chain or vine cord.', 'warn');
+  if (!bell) {
+    if (!pots || !d.settings.improvised) return void log(d, `An alarm needs a Bell${d.settings.improvised ? ', or an Iron Pot, Bucket or cans to rattle,' : ''} on the line.`, 'warn');
+    advanceMut(d, ctx, ALARM_MINUTES, 'camp');
+    d.place.alarm = 'pots';
+    return void log(d, `${c.name} strings a line around the camp and hangs the ${pots.it.name.toLowerCase()} and anything else that rattles on it (${ALARM_MINUTES} min, table rule). A careless intruder will set it clanking; a careful one (Stealth ${POT_ALARM_DC}+) might not.`, 'good');
+  }
   advanceMut(d, ctx, ALARM_MINUTES, 'camp');
   d.place.alarm = true;
   log(d, `${c.name} strings a line around the camp at ankle height and hangs a Bell on it (${ALARM_MINUTES} min, table rule). Anything that crosses it will ring it, heard up to 60 feet away.`, 'good');
@@ -5328,6 +5403,8 @@ function breakCamp(d: State, ctx: Ctx): void {
   if ((d.place.trapsSet ?? []).length) collectTraps(d, ctx);
   if (d.place.alarm) d.place.alarm = false;
   if (d.place.dug?.length) d.place.dug = [];
+  if (d.place.leanTos) d.place.leanTos = 0;
+  for (const c of d.characters) if (c.bedding) c.bedding = false;
   const lost: string[] = [];
   for (const c of d.characters) {
     const left = c.inventory.filter((i) => i.scattered);
@@ -5340,6 +5417,77 @@ function breakCamp(d: State, ctx: Ctx): void {
   const unsaddled = d.characters.filter((m) => m.kind === 'mount' && alive(m) && needsExoticSaddle(m));
   if (unsaddled.length) log(d, `${unsaddled.map((m) => m.name).join(', ')} can't be ridden without an Exotic Saddle (2024 PHB): flying and swimming mounts need one.`, 'warn');
 }
+
+// ---------------------------------------------------------------- doing without: makeshift gear (table rules)
+
+export type MakeshiftKind = 'torch' | 'leanTo' | 'bedding' | 'waterskin' | 'cord';
+
+/** What a makeshift job needs here: its DC and time, or why it can't be done. */
+export function makeshiftJob(s: State, kind: MakeshiftKind): { dc: number; minutes: number; label: string } | { why: string } {
+  const veg = MAKESHIFT_DC[s.place.terrain];
+  const t = TERRAIN[s.place.terrain].label.toLowerCase();
+  switch (kind) {
+    case 'torch':
+      return veg == null ? { why: `there's nothing to make a torch from in ${t} terrain` } : { dc: MAKESHIFT_TORCH.dc, minutes: MAKESHIFT_TORCH.minutes, label: 'a makeshift torch' };
+    case 'leanTo': {
+      const dc = leanToDC(s.place.terrain, s.place.ground?.snowIn ?? 0);
+      return dc == null ? { why: `there's nothing to build a shelter from in ${t} terrain` } : { dc, minutes: LEAN_TO.minutes, label: (s.place.ground?.snowIn ?? 0) >= LEAN_TO.snowInches ? 'a snow trench' : 'a lean-to' };
+    }
+    case 'bedding':
+      return veg == null ? { why: `there are no boughs or leaves to sleep on in ${t} terrain` } : { dc: BEDDING.dc, minutes: BEDDING.minutes, label: 'a bed of boughs and leaves' };
+    case 'cord':
+      return veg == null ? { why: `there are no vines or bark to twist into cord in ${t} terrain` } : { dc: VINE_CORD.dc, minutes: VINE_CORD.minutes, label: '10 feet of vine cord' };
+    case 'waterskin':
+      return s.materials.some((m) => /^hide\b/i.test(m.name) && m.qty > 0) ? { dc: HIDE_WATERSKIN.dc, minutes: HIDE_WATERSKIN.minutes, label: 'a waterskin from a hide' } : { why: 'there is no hide to work (butcher a hunted animal first)' };
+  }
+}
+
+/**
+ * Making do without the proper gear (table rules, under the improvised switch): a Wisdom (Survival) check to make a
+ * makeshift torch, a lean-to, a bed of boughs, a hide waterskin or vine cord from what's around.
+ */
+export const makeshift = act((d, ctx, charId: string, kind: MakeshiftKind, bonus: number) => {
+  const c = charById(d, charId);
+  if (!c) return;
+  if (!d.settings.improvised) return void log(d, 'Makeshift gear is an improvised attempt, and those are off.', 'warn');
+  const job = makeshiftJob(d, kind);
+  if ('why' in job) return void log(d, `${c.name} can't: ${job.why}.`, 'warn');
+  advanceMut(d, ctx, job.minutes, 'camp');
+  const me = charById(d, charId)!;
+  const r = d20('normal', ctx.rng);
+  const mod = bonus - 2 * me.exhaustion;
+  const roll = `Wisdom (Survival) ${r.value} ${signed(mod)} = ${r.value + mod} against DC ${job.dc}, ${formatDuration(job.minutes)}`;
+  if (r.value + mod < job.dc) {
+    if (kind === 'waterskin') {
+      const hide = d.materials.find((m) => /^hide\b/i.test(m.name) && m.qty > 0)!;
+      hide.qty -= 1;
+      d.materials = d.materials.filter((m) => m.qty > 0);
+    }
+    return void log(d, `${me.name} works at ${job.label} (${roll}) but it won't hold together${kind === 'waterskin' ? ', and the hide is spoiled' : ''} (table rule).`, 'warn');
+  }
+  switch (kind) {
+    case 'torch':
+      addLine(d, me, MAKESHIFT_TORCH.name, 1, {}, null, false);
+      return void log(d, `${me.name} binds dry grass and rags to a stout branch: a makeshift torch that will burn about ${MAKESHIFT_TORCH.burns} minutes (${roll}, table rule).`, 'good');
+    case 'leanTo':
+      d.place.leanTos = (d.place.leanTos ?? 0) + 1;
+      if (d.place.shelter === 'none') d.place.shelter = 'tent';
+      return void log(d, `${me.name} builds ${job.label}, room for ${LEAN_TO.sleeps} (${roll}, table rule). It counts as a Tent until the party moves on.`, 'good');
+    case 'bedding':
+      me.bedding = true;
+      return void log(d, `${me.name} heaps up a springy bed of boughs and leaves (${roll}, table rule): it counts as a Blanket tonight.`, 'good');
+    case 'waterskin': {
+      const hide = d.materials.find((m) => /^hide\b/i.test(m.name) && m.qty > 0)!;
+      hide.qty -= 1;
+      d.materials = d.materials.filter((m) => m.qty > 0);
+      me.waterCapacityPints += WATERSKIN_PINTS;
+      return void log(d, `${me.name} scrapes and sews the ${hide.name.toLowerCase()} into a rough waterskin (${roll}, table rule): ${WATERSKIN_PINTS} more pints to fill.`, 'good');
+    }
+    case 'cord':
+      addLine(d, me, VINE_CORD.name, 1, {}, null, false);
+      return void log(d, `${me.name} twists vines and bark strips into 10 feet of cord (${roll}, table rule). It bursts at Strength DC 15, not Rope's 20.`, 'good');
+  }
+});
 
 // ---------------------------------------------------------------- tool checks, perfume, signals and writing
 
@@ -5410,9 +5558,13 @@ export const writePages = act((d, ctx, charId: string, pages: number, what: stri
   const have = sheets.reduce((a, i) => a + i.qty, 0);
   const ink = c.inventory.find((i) => INK.test(i.name.trim()) && i.qty > 0);
   const pen = c.inventory.some((i) => /ink pen|quill/i.test(i.name));
-  if (have < n) return void log(d, `${c.name} needs ${n} sheet${n > 1 ? 's' : ''} of Paper or Parchment and has ${have}.`, 'warn');
-  if (!ink) return void log(d, `${c.name} has no Ink.`, 'warn');
-  if (!pen) return void log(d, `${c.name} has no Ink Pen to write with.`, 'warn');
+  if (have < n || !ink || !pen) {
+    // Table rule: charcoal on bark or hide, a short note at most.
+    if (!d.settings.improvised) return void log(d, `${c.name} needs ${n} sheet${n > 1 ? 's' : ''} of Paper or Parchment (has ${have}), Ink and an Ink Pen.`, 'warn');
+    advanceMut(d, ctx, 10, 'camp');
+    const missing = [have < n && 'paper', !ink && 'ink', !pen && 'a pen'].filter(Boolean).join(', ');
+    return void log(d, `With no ${missing}, ${c.name} scratches a short note${what.trim() ? ` (${what.trim()})` : ''} in charcoal on bark: a few lines, about ${CHARCOAL_WORDS} words at most, that rain will smudge (table rule).`);
+  }
   advanceMut(d, ctx, n * 10, 'camp');
   const me = charById(d, charId)!;
   let left = n;
@@ -6118,7 +6270,8 @@ function surpriseCheck(s: State, ctx: Ctx, cr: string, hostile: boolean, activit
   const adj = pace === 'fast' ? -5 : pace === 'slow' ? 5 : 0;
   const best = awake.length ? Math.max(...awake.map((c) => c.passivePerception)) + adj : -Infinity;
   const stealth = d20('normal', ctx.rng).value + estimatedStealth(cr);
-  if (activity === 'rest' && s.place.alarm) return ' As they creep closer, someone or something crosses the alarm line and the Bell jangles: the camp wakes, and nobody is surprised (table rule).';
+  if (activity === 'rest' && s.place.alarm === true) return ' As they creep closer, someone or something crosses the alarm line and the Bell jangles: the camp wakes, and nobody is surprised (table rule).';
+  if (activity === 'rest' && s.place.alarm === 'pots' && stealth < POT_ALARM_DC) return ` As they creep closer (Stealth ${stealth}), they blunder into the line of pots and set it clanking: the camp wakes, and nobody is surprised (table rule).`;
   if (!awake.length) return ` With nobody awake to notice, they approach unseen: the party is surprised (Disadvantage on Initiative).`;
   return stealth > best
     ? ` They try to ambush: Stealth ${stealth} beats the party's best passive Perception ${best}${adj ? ` (${adj > 0 ? '+5 slow pace' : '−5 fast pace'})` : ''}. The party is surprised (Disadvantage on Initiative).`

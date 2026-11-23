@@ -25,6 +25,7 @@ const DAY = 24 * H;
 
 export const EFFECT_PRESETS: EffectPreset[] = [
   { name: 'Torch', kind: 'light', minutes: H, note: 'Bright Light 20 ft, Dim Light 20 ft more.' },
+  { name: 'Makeshift Torch', kind: 'light', minutes: 30, note: 'Bright Light 20 ft, Dim Light 20 ft more, for about 30 minutes (table rule).' },
   { name: 'Candle', kind: 'light', minutes: H, note: 'Bright Light 5 ft, Dim Light 5 ft more.' },
   { name: 'Lamp (one flask of oil)', kind: 'light', minutes: 6 * H, note: 'Bright Light 15 ft, Dim Light 30 ft more.' },
   { name: 'Hooded Lantern (one flask of oil)', kind: 'light', minutes: 6 * H, note: 'Bright Light 30 ft, Dim Light 30 ft more.' },

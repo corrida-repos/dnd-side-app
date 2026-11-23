@@ -161,7 +161,11 @@ function AddEffectCard() {
         <Select label="Caster (for Concentration)" value={caster} onChange={setCaster} options={[{ value: '', label: 'None' }, ...s.characters.map((c) => ({ value: c.id, label: c.name }))]} />
       )}
       {fuel && s.settings.trackGearUse && (
-        <Toggle checked={useGear} onChange={setUseGear} label={`Take ${FUEL_LABEL[fuel]} from the inventory (the people above first)`} />
+        <Toggle
+          checked={useGear}
+          onChange={setUseGear}
+          label={`Take ${FUEL_LABEL[fuel]} from the inventory (the people above first). Lit with a Tinderbox, from the campfire or a spell${s.settings.improvised ? ', or 10 minutes of friction without' : ''}.`}
+        />
       )}
       {preset.note && kind !== 'other' && (
         <Rule>

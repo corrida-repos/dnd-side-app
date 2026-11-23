@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
 import { fireThreat } from '../rules/weather';
-import { DIG_LABEL, HUNTING_TRAP, MAGNIFYING_GLASS, SHOVEL, TENT_SLEEPS, TRAP_CATCH_ON, type DigKind } from '../rules/gear';
+import { DIG_LABEL, HUNTING_TRAP, MAGNIFYING_GLASS, POT_ALARM_DC, SHOVEL, SNARE, SNARE_LINE, TRAP_CATCH_ON, type DigKind } from '../rules/gear';
 import { COOK_RAW_MINUTES, DEFAULT_FIRE_COLD_LIMIT_F, FIRE_LIGHT_DC, FIRE_METHODS, fireColdLimit, fireLighting, type FireMethod } from '../rules/campfire';
 import { GAME_ANIMALS, MEAT_LB, BUTCHER_MINUTES, BUTCHER_DC, isEdible, yieldsHide, STRANGE_TYPES } from '../rules/hunting';
 import { formatClock, formatDuration, lightAt } from '../rules/calendar';
@@ -134,7 +134,7 @@ function FireCard() {
           Cook raw food ({COOK_RAW_MINUTES} min)
         </button>
         <button disabled={!s.fire.lit || dirty <= 0} onClick={() => dispatch(E.boilWater)} title={s.fire.lit ? '' : 'Light the fire first'}>
-          Boil water ({BOIL_MINUTES} min)
+          {E.partyHasPot(s) === false ? `Boil with hot stones, no pot (${BOIL_MINUTES * 2} min, half the water)` : `Boil water (${BOIL_MINUTES} min)`}
         </button>
         <span className="muted small">A hot meal for everyone is on the Meals card.</span>
       </div>
@@ -311,7 +311,7 @@ function PurifyCard() {
       <h3>Nonmagical</h3>
       <div className="btn-row">
         <button disabled={!s.fire.lit || !(s.stores.waterUnsafeGal > 0 || skins.length > 0)} onClick={() => dispatch(E.boilWater)} title={s.fire.lit ? '' : 'Light the fire first'}>
-          Boil water ({BOIL_MINUTES} min)
+          {E.partyHasPot(s) === false ? `Boil with hot stones, no pot (${BOIL_MINUTES * 2} min, half the water)` : `Boil water (${BOIL_MINUTES} min)`}
         </button>
       </div>
       <Rule>
@@ -809,11 +809,17 @@ function CampGearCard() {
   const scattered = s.characters.flatMap((c) => c.inventory.filter((i) => i.scattered).map((i) => `${c.name}'s ${i.name}`));
   const who = diggers.length ? diggers : pcs[0] ? [pcs[0].id] : [];
   const riggerId = pcs.find((c) => c.id === rigger)?.id ?? pcs[0]?.id ?? '';
+  const [maker, setMaker] = useState('');
+  const makerC = pcs.find((c) => c.id === maker) ?? [...pcs].sort((a, b) => b.survival - a.survival)[0];
+  const [makerBonus, setMakerBonus] = useState<number | null>(null);
+  const mb = makerBonus ?? makerC?.survival ?? 0;
+  const snarers = pcs.filter((c) => c.inventory.some((i) => SNARE_LINE.test(i.name.trim())));
+  const snarerId = snarers.find((c) => c.id === trapper)?.id ?? snarers[0]?.id ?? '';
   return (
     <Card title="Camp gear">
       <h3>Tents</h3>
       <p className="small">
-        {spaces ? `${spaces / TENT_SLEEPS} Tent${spaces > TENT_SLEEPS ? 's' : ''}: room for ${spaces}.` : 'No Tents in anyone\'s inventory.'}{' '}
+        {spaces ? `Room for ${spaces}${s.place.leanTos ? ` (${s.place.leanTos} lean-to${s.place.leanTos > 1 ? 's' : ''} built here)` : ''}.` : 'No Tents in anyone\'s inventory.'}{' '}
         {s.place.shelter === 'tent'
           ? outside.length
             ? <span className="warn-text">Not enough room: {outside.map((c) => c.name).join(', ')} sleep{outside.length > 1 ? '' : 's'} in the open.</span>
@@ -845,6 +851,14 @@ function CampGearCard() {
           </button>
         </div>
       )}
+      {s.settings.improvised && snarers.length > 0 && (
+        <div className="btn-row tight">
+          <span className="small muted">No trap? </span>
+          <button className="small ghost" onClick={() => dispatch((st, cx) => E.setTraps(st, cx, snarerId, traps, true, s.characters.find((c) => c.id === snarerId)?.survival ?? 0))}>
+            {snarers.find((c) => c.id === snarerId)?.name} rigs {traps > 1 ? `${traps} snares` : 'a snare'} (Survival DC {SNARE.dc}, catch on {SNARE.catchOn}+)
+          </button>
+        </div>
+      )}
       {trappers.length ? (
         <div className="btn-row tight">
           <Select value={trapperId} onChange={setTrapper} options={trappers.map((c) => ({ value: c.id, label: c.name }))} />
@@ -858,14 +872,46 @@ function CampGearCard() {
       )}
       <h3>Alarm line</h3>
       {s.place.alarm ? (
-        <p className="small good-text">A Bell hangs on a line around the camp: anything crossing it wakes everyone, so the camp can&apos;t be surprised while resting.</p>
+        <p className="small good-text">
+          {s.place.alarm === 'pots'
+            ? `Pots and cans hang on a line around the camp: anything careless crossing it wakes everyone (a careful intruder needs Stealth ${POT_ALARM_DC}+ to slip past).`
+            : 'A Bell hangs on a line around the camp: anything crossing it wakes everyone, so the camp can\'t be surprised while resting.'}
+        </p>
       ) : (
         <div className="btn-row tight">
           <Select value={riggerId} onChange={setRigger} options={pcs.map((c) => ({ value: c.id, label: c.name }))} />
           <button className="small" disabled={!riggerId} onClick={() => dispatch((st, cx) => E.rigAlarm(st, cx, riggerId))}>
-            Rig a Bell on a line (10 min)
+            Rig an alarm line (10 min): a Bell, or pots and cans
           </button>
         </div>
+      )}
+      {s.settings.improvised && makerC && (
+        <>
+          <h3>Making do</h3>
+          <div className="btn-row tight">
+            <Select value={makerC.id} onChange={(v) => (setMaker(v), setMakerBonus(null))} options={pcs.map((c) => ({ value: c.id, label: c.name }))} />
+            <Num label="Survival" value={mb} onChange={(v) => setMakerBonus(Math.round(v))} width={2} />
+          </div>
+          <div className="btn-row tight">
+            {(['torch', 'leanTo', 'bedding', 'waterskin', 'cord'] as E.MakeshiftKind[]).map((k) => {
+              const job = E.makeshiftJob(s, k);
+              const name = { torch: 'Makeshift torch', leanTo: 'Lean-to', bedding: 'Bed of boughs', waterskin: 'Hide waterskin', cord: 'Vine cord' }[k];
+              return 'why' in job ? (
+                <button key={k} className="small ghost" disabled title={job.why}>
+                  {name}
+                </button>
+              ) : (
+                <button key={k} className="small ghost" title={`Make ${job.label}`} onClick={() => dispatch((st, cx) => E.makeshift(st, cx, makerC.id, k, mb))}>
+                  {name} (DC {job.dc}, {job.minutes} min)
+                </button>
+              );
+            })}
+          </div>
+          <p className="small muted">
+            Table rules for doing without: a makeshift torch burns about 30 minutes; a lean-to (or a snow trench in deep snow) sleeps two like a Tent; a bed of boughs counts as a Blanket tonight; a hide waterskin holds 4 pints; vine cord
+            bursts at DC 15. Lean-tos and bedding stay behind when the party moves on. Bare terrain (desert, arctic without snow, underground, at sea, in town) has nothing to work with.
+          </p>
+        </>
       )}
       {scattered.length > 0 && (
         <>
