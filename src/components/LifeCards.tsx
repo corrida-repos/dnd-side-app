@@ -6,7 +6,7 @@ import type { Character, Stash } from '../state/types';
 import { formatDuration } from '../rules/calendar';
 import { fmtGp } from '../rules/money';
 import { FESTERING_MEDICINE_DC, INJURIES, INJURY_MEDICINE_SUCCESSES, INJURY_REST_DAYS, type InjuryKind } from '../rules/injuries';
-import { MADNESS, DEPENDS_ON_SOURCE, type MadnessTier } from '../rules/madness';
+import { MADNESS, DEPENDS_ON_SOURCE, MADNESS_SAVE_DC, MADNESS_THRESHOLD, type MadnessTier } from '../rules/madness';
 import { MAGIC_AGING, STAGE_LABEL } from '../rules/aging';
 import { HULL_LIMIT, hullRepair } from '../rules/wear';
 import { DUE_PRESETS, PERIOD_LABEL, type DueKind, type DuePeriod } from '../rules/dues';
@@ -127,7 +127,7 @@ export function MadnessCard() {
               <p className="small">{m.effect}</p>
               <p className="small muted">{MADNESS[m.tier].cure}</p>
               <div className="btn-row tight">
-                {(m.tier === 'indefinite' ? ['Greater Restoration', 'Remove Curse', 'Dispel Evil and Good'] : ['Lesser Restoration', 'Greater Restoration']).map((sp) => (
+                {(m.tier === 'indefinite' ? ['Greater Restoration', 'Heal', 'Remove Curse', 'Dispel Evil and Good'] : ['Lesser Restoration', 'Greater Restoration']).map((sp) => (
                   <button key={sp} className={DEPENDS_ON_SOURCE.includes(sp) ? 'small ghost' : 'small'} title={DEPENDS_ON_SOURCE.includes(sp) ? 'Only if the source of the madness allows it (the DM decides)' : undefined} onClick={() => dispatch((st, cx) => E.spellOnTarget(st, cx, sp, c.id))}>
                     {sp}{DEPENDS_ON_SOURCE.includes(sp) ? ' (if the source allows)' : ''}
                   </button>
@@ -152,7 +152,7 @@ export function MadnessCard() {
         Apply madness
       </button>
       <Rule>
-        Optional rule from the 2014 DMG (also in the SRD 5.1), switch: {s.settings.madness ? 'on' : 'off'}. The DM decides when madness strikes, usually after a failed save against a madness-inducing effect. Short-term madness lasts 1d10 minutes, long-term madness 1d10 × 10 hours, indefinite madness until cured; effects are rolled on the d100 tables. Lesser Restoration ends short- and long-term madness, Greater Restoration ends indefinite madness, and Remove Curse or Dispel Evil and Good may work depending on the source. Calm Emotions suppresses madness while it lasts.
+        Optional rule from the 2014 DMG (also in the SRD 5.1), switch: {s.settings.madness ? 'on' : 'off'}. The DM decides when madness strikes, usually after a failed save against a madness-inducing effect. Short-term madness lasts 1d10 minutes, long-term madness 1d10 × 10 hours, indefinite madness until cured; effects are rolled on the d100 tables. Lesser Restoration ends short- and long-term madness, Greater Restoration ends indefinite madness, and Remove Curse or Dispel Evil and Good may work depending on the source. Calm Emotions suppresses madness while it lasts. Table rules: when Stress or Fear reaches {MADNESS_THRESHOLD}, the character makes a DC {MADNESS_SAVE_DC} Wisdom save or suffers long-term madness; Heal ends any madness.
       </Rule>
       <WaysAround topic="madness" />
     </Card>

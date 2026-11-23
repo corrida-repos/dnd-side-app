@@ -2,7 +2,8 @@
  * Madness, as the 5e rules give it (2014 DMG; the same rules and tables are in the System Reference Document 5.1,
  * CC BY 4.0). The 2024 books have no madness rules, so the whole feature is an optional rule behind a switch.
  * The DM decides when madness strikes, usually after a failed save against a madness-inducing effect.
- * Nothing here is a house rule: durations, effect tables (d100) and cures follow the source.
+ * Durations, effect tables (d100) and cures follow the source. Two table rules sit on top: Stress or Fear
+ * reaching a threshold calls for a Wisdom save, and Heal is strong enough to end any madness.
  */
 export type MadnessTier = 'short' | 'long' | 'indefinite';
 
@@ -91,7 +92,12 @@ export const MADNESS_SPELLS: Record<string, { ends: MadnessTier[]; suppress?: bo
   'Greater Restoration': { ends: ['short', 'long', 'indefinite'], note: 'Rids a character of indefinite madness (and any lesser madness).' },
   'Remove Curse': { ends: ['indefinite'], note: 'May be effective, depending on the source of the madness (the DM decides).' },
   'Dispel Evil and Good': { ends: ['indefinite'], note: 'May be effective, depending on the source of the madness (the DM decides).' },
+  Heal: { ends: ['short', 'long', 'indefinite'], note: 'Table rule: powerful enough to end any madness.' },
 };
+
+/** Table rule: Stress or Fear reaching this calls for a Wisdom save against long-term madness. */
+export const MADNESS_THRESHOLD = 6;
+export const MADNESS_SAVE_DC = 15;
 
 /** The effect a d100 roll gives for a tier. */
 export function madnessEffect(tier: MadnessTier, roll: number): string {

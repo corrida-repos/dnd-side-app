@@ -128,7 +128,7 @@ export const MECHANICS: Mechanic[] = [
 
   // ---- Tier 5: the hardest, with lasting harm to body, mind and gear.
   { key: 'lingeringInjuries', tier: 5, area: 'Rest', source: '2014 DMG', label: 'Lingering injuries (d20 table) from dropping to 0 HP, failing a death save by 5 or more, or a critical hit', cost: 'An injury to heal over days, with a daily Medicine check for a festering wound.' },
-  { key: 'madness', tier: 5, area: 'World', source: '2014 DMG', label: 'Madness: short-term, long-term and indefinite madness when the DM calls for it', cost: 'Only when the DM uses it: a madness to play for minutes, hours or until cured.' },
+  { key: 'madness', tier: 5, area: 'World', source: '2014 DMG', label: 'Madness: short-term, long-term and indefinite madness when the DM calls for it, and a DC 15 Wisdom save when Stress or Fear reaches 6', cost: 'A save when Stress or Fear climbs high, and a madness to play for minutes, hours or until cured.' },
   { key: 'gearWear', tier: 5, area: 'Gear', source: 'Table rule', label: 'Hard travel, heavy rain and salt water wear gear down until it is damaged; storms and long voyages wear ships', cost: 'An hour of upkeep every few days of hard travel, and repairs to pay for.' },
 ];
 

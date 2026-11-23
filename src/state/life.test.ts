@@ -90,9 +90,11 @@ describe('madness', () => {
     expect(madnessEffect('short', 1)).toMatch(/Paralyzed/);
     expect(madnessEffect('long', 100)).toMatch(/Unconscious/);
     expect(madnessEffect('indefinite', 15)).toMatch(/drunk/);
-    // Stress and Fear are separate trackers: no madness from them.
-    const stressed = E.adjustTrack(fresh((d) => (d.characters[0].stress = 5)), ctx(0), 'a', 'stress', 3, 'the crypt');
-    expect(stressed.characters[0].madness ?? []).toHaveLength(0);
+    // Table rule: Stress reaching 6 calls for a DC 15 Wisdom save; failing brings long-term madness.
+    const stressed = E.adjustTrack(fresh((d) => (d.characters[0].stress = 5)), ctx(0), 'a', 'stress', 1, 'the crypt');
+    expect(stressed.characters[0].madness?.[0].tier).toBe('long');
+    const steady = E.adjustTrack(fresh((d) => (d.characters[0].stress = 5)), ctx(0.99), 'a', 'stress', 1, 'the crypt');
+    expect(steady.characters[0].madness ?? []).toHaveLength(0);
     let s = E.addMadness(fresh(), ctx(0), 'a', 'long', 'the Far Realm');
     const m = s.characters[0].madness![0];
     expect(m.effect).toMatch(/repeat a specific activity/);
@@ -108,7 +110,7 @@ describe('madness', () => {
     s = E.addMadness(s, ctx(), 'a', 'indefinite', 'the Far Realm');
     s = E.spellOnTarget(s, ctx(), 'Lesser Restoration', 'a');
     expect(s.characters[0].madness!.map((m) => m.tier)).toEqual(['indefinite']);
-    s = E.spellOnTarget(s, ctx(), 'Greater Restoration', 'a');
+    s = E.spellOnTarget(s, ctx(), 'Heal', 'a');
     expect(s.characters[0].madness).toHaveLength(0);
   });
 });

@@ -430,7 +430,7 @@ Table rules under "Lifestyle risks in town". Renown 3+ spares the Wretched, as b
 
 ### Life beyond the adventure ✅
 - ✅ **Lingering injuries** (2014 DMG optional rule, Brutal tier): rolled on dropping to 0 HP or failing a death save by 5 or more; festering wounds cost HP maximum daily; rest, Medicine or magic heal them.
-- ✅ **Madness** (2014 DMG / SRD 5.1 optional rule, Brutal tier): short-term, long-term and indefinite, the d100 tables and cures by spell; applied when the DM calls for it.
+- ✅ **Madness** (2014 DMG / SRD 5.1 optional rule, Brutal tier): short-term, long-term and indefinite, the d100 tables and cures by spell; applied when the DM calls for it; table rule: a Wisdom save when Stress or Fear reaches 6, and Heal ends any madness.
 - ✅ **Ages and birthdays**: lifespans by species, birthdays on the calendar, life stages, magical aging and slowed aging.
 - ✅ **Wear and repair** (table rule, Brutal tier): hard travel, rain and salt water wear gear and hulls; upkeep, tools, artisans and docks repair them.
 - ✅ **Taxes, tithes and dues** (table rule): recurring charges that become debts when unpaid.

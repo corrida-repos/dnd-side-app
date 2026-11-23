@@ -46,7 +46,7 @@ export const TARGET_SPELLS: Record<string, string> = {
   'Lesser Restoration': 'Ends Blinded, Deafened, Paralyzed or Poisoned (here: Poisoned, then Blinded); also cures Sight Rot.',
   'Greater Restoration': 'Removes 1 Exhaustion level, or ends a curse, Charmed or Petrified (here: Exhaustion first, else a curse).',
   'Remove Curse': 'Ends every curse on the target; attunement to a cursed item can then be ended.',
-  Heal: 'Restores 70 HP and ends Blinded, Deafened and Poisoned; as magical healing of 6th level it also ends lingering injuries and scars.',
+  Heal: 'Restores 70 HP and ends Blinded, Deafened and Poisoned; as magical healing of 6th level it also ends lingering injuries and scars, and (table rule) any madness.',
   'Cure Wounds': 'Restores HP; as magical healing it ends a limp, internal injury, broken ribs or a festering wound (lingering injuries).',
   'Healing Word': 'Restores HP; as magical healing it ends a limp, internal injury, broken ribs or a festering wound (lingering injuries).',
   Regenerate: 'Restores lost limbs and eyes and ends every lingering injury.',
