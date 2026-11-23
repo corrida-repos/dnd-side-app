@@ -47,6 +47,7 @@ export const ACTIVITY_PRESETS: { name: string; days: number; gp: number; check: 
   { name: 'Religious service', days: 5, gp: 0, check: 'Intelligence (Religion) or Charisma (Persuasion)' },
   { name: 'Research', days: 5, gp: 50, check: 'Intelligence (Investigation)' },
   { name: 'Training (tool or language)', days: 50, gp: 250, check: 'No check. Ten workweeks, minus the Intelligence modifier, at 25 GP a week' },
+  { name: 'Special training (DMG reward)', days: 30, gp: 0, check: 'No check. A rare trainer offered as a reward (2024 DMG, Marks of Prestige): 30 days with the trainer for proficiency in a skill or a tool, or a language' },
   { name: 'Working a trade', days: 5, gp: 0, check: 'An ability check with the relevant tool or skill' },
   { name: "Change subclass (Tasha's)", days: 6, gp: 300, check: "No check. Twice the new class level in days and 100 GP per level (Tasha's); returning to an old subclass takes half the time and costs nothing. A skill or fighting style can be swapped when you reach a level with an Ability Score Improvement." },
 ];

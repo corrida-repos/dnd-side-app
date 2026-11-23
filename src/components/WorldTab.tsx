@@ -11,12 +11,16 @@ import { PATRONS, type PatronKind } from '../rules/patrons';
 import { REGIONS, type RegionKind } from '../rules/regions';
 import { WaysAround } from './WaysAround';
 import { DECIPHER_DC } from '../rules/tools';
+import { LIFESTYLE_LABEL, fmtGp } from '../rules/money';
+import { FORT_NEGLECT_DAYS, FORT_UPKEEP, LAND, LODGING_CAP, MARK_LABEL, PRIZE_CROWN_SHARE, RIGHTS, TITLE_RANK, TRUST_LABEL, TRUST_MAX, type FortType, type LandKind, type MarkKind, type RightKind, type TitleRank } from '../rules/prestige';
+import type { Mark } from '../state/types';
 
 export function WorldTab() {
   return (
     <div className="grid">
       <SkyCard />
       <FactionsCard />
+      <MarksCard />
       <RivalsCard />
       <PatronCard />
       <RegionCard />
@@ -526,6 +530,220 @@ function LanguageCard() {
       <Rule>
         The 2024 rules have no check for reading an unknown language. Table rule: anyone can puzzle out the gist of a short text from shared roots, numbers and pictures with Intelligence (Investigation) at DC {DECIPHER_DC}. A success gives
         the gist only, never exact wording; a failure gives nothing.
+      </Rule>
+    </Card>
+  );
+}
+
+function MarkRow({ m }: { m: Mark }) {
+  const s = useGame();
+  const [prize, setPrize] = useState(0);
+  const who = m.holderIds.map((id) => s.characters.find((c) => c.id === id)?.name).filter(Boolean).join(', ') || 'nobody';
+  const live = !m.revoked && !m.bastionId;
+  const rules = s.settings.prestigeRules;
+  const upkeep = m.fort ? FORT_UPKEEP[m.fort] : null;
+  const sponsorLeft = Math.max(0, (m.sponsoredUntilDay ?? 0) - s.dayIndex);
+  const title = m.titleId ? s.marks.find((x) => x.id === m.titleId) : null;
+  const lands = m.landId ? s.marks.find((x) => x.id === m.landId) : null;
+  return (
+    <li className="facility">
+      <div className="armor-row">
+        <span>
+          <b>{m.name}</b> <Pill tone="muted">{MARK_LABEL[m.kind]}</Pill>{' '}
+          {m.revoked ? <Pill tone="bad">Ended</Pill> : m.bastionId ? <Pill tone="good">Now a Bastion</Pill> : rules && <Pill tone={m.trust >= TRUST_MAX ? 'good' : m.trust > 1 ? 'warn' : 'bad'}>{TRUST_LABEL[m.trust]} {m.trust}/{TRUST_MAX}</Pill>}
+        </span>
+        <button className="ghost tiny" aria-label={`Remove ${m.name}`} onClick={() => dispatch((st, cx) => E.removeMark(st, cx, m.id))}>
+          ✕
+        </button>
+      </div>
+      <p className="small muted">
+        Held by {who}
+        {m.grantor ? `, granted by ${m.grantor}` : ''}.
+        {m.revoked ? ` Ended: ${m.revoked.why}.` : ''}
+      </p>
+      {m.kind === 'fortification' && upkeep && (
+        <p className="small">
+          {upkeep.label}: {fmtGp(upkeep.gpPerDay)} a day.{' '}
+          {live && (sponsorLeft > 0 ? `The grantor pays for ${sponsorLeft} more day${sponsorLeft > 1 ? 's' : ''}.` : 'The holders pay, charged each day.')}
+          {live && rules && (m.neglectDays ?? 0) > 0 ? ` Unpaid for ${m.neglectDays} of ${FORT_NEGLECT_DAYS} days.` : ''}
+        </p>
+      )}
+      {m.kind === 'land' && m.land && (
+        <>
+          <p className="small">
+            {LAND[m.land].label}. {rules ? LAND[m.land].note : 'Can be built on and inherited, not sold.'}
+            {title ? ` Comes with the title ${title.name}.` : ''}
+          </p>
+          {live && m.trouble && (
+            <div className="armor-row">
+              <span className="small warn-text">
+                Trouble ({s.dayIndex - m.trouble.sinceDay} of 30 days): {m.trouble.text}
+              </span>
+              <button className="small" onClick={() => dispatch((st, cx) => E.resolveLandTrouble(st, cx, m.id))}>
+                Dealt with it
+              </button>
+            </div>
+          )}
+        </>
+      )}
+      {m.kind === 'rights' && m.right && (
+        <>
+          <p className="small">
+            {RIGHTS[m.right].label}
+            {m.community ? ` (${m.community})` : ''}: {RIGHTS[m.right].effect} {live && (m.untilDay != null ? `Ends in ${Math.max(0, m.untilDay - s.dayIndex)} days.` : 'For life.')}
+            {live && m.right === 'lodging' && !m.community ? ' Name the community so it can apply.' : ''}
+          </p>
+          {live && m.right === 'marque' && (
+            <div className="btn-row tight">
+              <Num label="Prize" value={prize} onChange={(v) => setPrize(Math.max(0, v))} min={0} suffix="GP" width={7} />
+              <button className="small" disabled={prize <= 0} onClick={() => (dispatch((st, cx) => E.claimPrize(st, cx, m.id, prize)), setPrize(0))}>
+                Declare prize (crown takes {Math.round(PRIZE_CROWN_SHARE * 100)}%)
+              </button>
+            </div>
+          )}
+        </>
+      )}
+      {m.kind === 'title' && m.rank && (
+        <>
+          <p className="small">
+            {TITLE_RANK[m.rank].label}.{' '}
+            {TITLE_RANK[m.rank].lifestyle ? (rules ? `Must live ${LIFESTYLE_LABEL[TITLE_RANK[m.rank].lifestyle!]} or better, checked every 30 days.` : 'Expected to act in a manner befitting the title.') : 'No duties, but it may come with a minor supernatural gift (record it under Supernatural gifts).'}
+            {lands ? ` Lands: ${lands.name}.` : ''}
+          </p>
+          <Text label="Heir" value={m.heir ?? ''} onChange={(v) => edit((d) => void (d.marks.find((x) => x.id === m.id)!.heir = v))} placeholder="Who inherits it" />
+        </>
+      )}
+      {live && (
+        <div className="btn-row tight">
+          {rules && (
+            <>
+              <button className="small" disabled={m.trust >= TRUST_MAX} onClick={() => dispatch((st, cx) => E.adjustMarkTrust(st, cx, m.id, 1, 'loyal service'))}>
+                Loyal service (+1)
+              </button>
+              <button className="small" onClick={() => dispatch((st, cx) => E.adjustMarkTrust(st, cx, m.id, -1, m.kind === 'rights' ? 'the right was abused' : 'conduct unbecoming'))}>
+                {m.kind === 'rights' ? 'Abused (−1)' : 'Displeased (−1)'}
+              </button>
+            </>
+          )}
+          {m.kind === 'fortification' && (
+            <button className="small" onClick={() => dispatch((st, cx) => E.fortToBastion(st, cx, m.id))}>
+              Make it a Bastion
+            </button>
+          )}
+          <button className="small" onClick={() => dispatch((st, cx) => E.revokeMark(st, cx, m.id, m.kind === 'title' ? 'stripped by decree' : 'by decree'))}>
+            {m.kind === 'title' ? 'Strip' : 'Revoke'}
+          </button>
+        </div>
+      )}
+      <Text value={m.notes} onChange={(v) => edit((d) => void (d.marks.find((x) => x.id === m.id)!.notes = v))} placeholder="Notes: duties, the document's wording, where it hangs" />
+    </li>
+  );
+}
+
+function MarksCard() {
+  const s = useGame();
+  const pcs = s.characters.filter((c) => c.kind !== 'mount');
+  const [kind, setKind] = useState<MarkKind>('title');
+  const [name, setName] = useState('');
+  const [grantor, setGrantor] = useState('');
+  const [holders, setHolders] = useState<string[]>([]);
+  const [fort, setFort] = useState<FortType>('keep');
+  const [sponsor, setSponsor] = useState(1);
+  const [land, setLand] = useState<LandKind>('farmland');
+  const [right, setRight] = useState<RightKind>('lodging');
+  const [community, setCommunity] = useState('');
+  const [days, setDays] = useState(0);
+  const [soldiers, setSoldiers] = useState(2);
+  const [rank, setRank] = useState<TitleRank>('knight');
+  const [withLand, setWithLand] = useState<LandKind | ''>('');
+  const active = s.marks.filter((m) => !m.revoked && !m.bastionId);
+  const past = s.marks.filter((m) => m.revoked || m.bastionId);
+  return (
+    <Card title="Marks of prestige">
+      {s.marks.length === 0 && <p className="muted small">No fortifications, land, special rights or titles yet.</p>}
+      <ul className="plain">
+        {active.map((m) => (
+          <MarkRow key={m.id} m={m} />
+        ))}
+      </ul>
+      {past.length > 0 && (
+        <details>
+          <summary>Ended or turned into Bastions ({past.length})</summary>
+          <ul className="plain">
+            {past.map((m) => (
+              <MarkRow key={m.id} m={m} />
+            ))}
+          </ul>
+        </details>
+      )}
+      <details>
+        <summary>Grant a mark of prestige</summary>
+        <div className="row">
+          <Select label="Kind" value={kind} onChange={(v: MarkKind) => setKind(v)} options={(Object.keys(MARK_LABEL) as MarkKind[]).map((k) => ({ value: k, label: MARK_LABEL[k] }))} />
+          <Text label="Name" value={name} onChange={setName} placeholder={kind === 'title' ? TITLE_RANK[rank].example : kind === 'fortification' ? 'e.g. Thornwatch Keep' : kind === 'land' ? 'e.g. the Fenwick holding' : 'e.g. Freedom of Greywater'} />
+          <Text label="Granted by" value={grantor} onChange={setGrantor} placeholder="e.g. Queen Yolande" />
+        </div>
+        <div className="row">
+          {kind === 'fortification' && (
+            <>
+              <Select label="Fortification" value={fort} onChange={(v: FortType) => setFort(v)} options={(Object.keys(FORT_UPKEEP) as FortType[]).map((k) => ({ value: k, label: `${FORT_UPKEEP[k].label} (${fmtGp(FORT_UPKEEP[k].gpPerDay)}/day)` }))} />
+              <Num label="Grantor pays upkeep for" value={sponsor} onChange={(v) => setSponsor(Math.max(0, Math.round(v)))} min={0} suffix="months" width={3} />
+            </>
+          )}
+          {kind === 'land' && <Select label="Land" value={land} onChange={(v: LandKind) => setLand(v)} options={(Object.keys(LAND) as LandKind[]).map((k) => ({ value: k, label: LAND[k].label }))} />}
+          {kind === 'rights' && (
+            <>
+              <Select label="Right" value={right} onChange={(v: RightKind) => setRight(v)} options={(Object.keys(RIGHTS) as RightKind[]).map((k) => ({ value: k, label: RIGHTS[k].label }))} />
+              {(right === 'lodging' || right === 'rites' || right === 'soldiers') && <Text label="Community" value={community} onChange={setCommunity} placeholder={s.place.settlement ? s.place.name : 'Town or city'} />}
+              {right === 'soldiers' && <Num label="Soldiers" value={soldiers} onChange={(v) => setSoldiers(Math.max(1, Math.round(v)))} min={1} width={3} />}
+              <Num label="Lasts (0 = for life)" value={days} onChange={(v) => setDays(Math.max(0, Math.round(v)))} min={0} suffix="days" width={4} />
+            </>
+          )}
+          {kind === 'title' && (
+            <>
+              <Select label="Rank" value={rank} onChange={(v: TitleRank) => setRank(v)} options={(Object.keys(TITLE_RANK) as TitleRank[]).map((k) => ({ value: k, label: TITLE_RANK[k].label }))} />
+              <Select label="Comes with land" value={withLand} onChange={(v: LandKind | '') => setWithLand(v)} options={[{ value: '', label: 'No land' }, ...(Object.keys(LAND) as LandKind[]).map((k) => ({ value: k, label: LAND[k].label }))]} />
+            </>
+          )}
+        </div>
+        <div className="field">
+          <span className="field-label">Granted to</span>
+          <div className="chips">
+            {pcs.map((c) => (
+              <Toggle key={c.id} checked={holders.includes(c.id)} onChange={(v) => setHolders(v ? [...holders, c.id] : holders.filter((x) => x !== c.id))} label={c.name} />
+            ))}
+          </div>
+        </div>
+        {kind === 'rights' && <p className="small muted">{RIGHTS[right].effect}</p>}
+        <button
+          className="primary"
+          disabled={!holders.length}
+          onClick={() => {
+            dispatch((st, cx) =>
+              E.grantMark(st, cx, {
+                kind,
+                name: name || (kind === 'rights' ? RIGHTS[right].label : kind === 'title' ? TITLE_RANK[rank].label : kind === 'fortification' ? FORT_UPKEEP[fort].label : LAND[land].label),
+                holderIds: holders,
+                grantor,
+                fort,
+                sponsorMonths: sponsor,
+                land,
+                right,
+                community: community || (right === 'lodging' && s.place.settlement ? s.place.name : ''),
+                days: days || null,
+                soldiers,
+                rank,
+                withLand: withLand || null,
+              }),
+            );
+            setName('');
+          }}
+        >
+          Grant
+        </button>
+      </details>
+      <Rule>
+        2024 DMG, Marks of Prestige: a fortification is governed by the holders, but its land stays the crown&apos;s. It costs {Object.values(FORT_UPKEEP).map((u) => `${fmtGp(u.gpPerDay)}`).join(', ')} a day (outpost, keep, castle), and the grantor may pay for the first months. Land can be built on and inherited but not sold. Special rights last as long as the document says. Titles can be passed down. Any of them can be taken away for disloyalty or abuse. Table rules ({s.settings.prestigeRules ? 'on' : 'off'}, Settings): the grantor&apos;s trust starts at {TRUST_MAX}, and it is gone (the mark taken back) at 0. Land pays rents monthly, but a 1 on a d6 brings trouble, and trouble left for 30 days costs trust and that month&apos;s income. Titles cost trust each month the holder lives below the rank&apos;s lifestyle. {FORT_NEGLECT_DAYS} days of unpaid fortification upkeep costs trust. Free room and board covers lifestyles up to {LIFESTYLE_LABEL[LODGING_CAP]}. The crown takes {Math.round(PRIZE_CROWN_SHARE * 100)}% of a prize.
       </Rule>
     </Card>
   );

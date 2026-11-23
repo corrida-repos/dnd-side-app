@@ -53,6 +53,7 @@ function migrate(raw: unknown): State | null {
     recipeNames: parsed.recipeNames ?? [],
     dispatches: parsed.dispatches ?? [],
     businesses: parsed.businesses ?? [],
+    marks: parsed.marks ?? [],
     rivals: parsed.rivals ?? [],
     debts: parsed.debts ?? [],
     encounterClock: parsed.encounterClock ?? 0,

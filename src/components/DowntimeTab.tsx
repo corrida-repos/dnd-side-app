@@ -25,7 +25,8 @@ import { MAGIC_ITEM_VALUE, fmtGp } from '../rules/money';
 import { SPELLBOOK_COPY, ACTIVITY_PRESETS } from '../rules/longterm';
 import { AWAY_PROGRESS, BUILDING_PRESETS, BUSINESS_DEBT_PENALTY, BUSINESS_MAX_DAYS, BUSINESS_PRESETS } from '../rules/business';
 import { WaysAround } from './WaysAround';
-import { BOOK, TOOLS, carriesTool, hasSkill, proficientWith } from '../rules/gear';
+import { BOOK, SKILLS, TOOLS, carriesTool, hasSkill, proficientWith } from '../rules/gear';
+import { TRAINING_KIND_LABEL, type TrainingKind } from '../rules/prestige';
 
 export function DowntimeTab() {
   const s = useGame();
@@ -164,6 +165,7 @@ function NewProject() {
   const [consumable, setConsumable] = useState(false);
   const [days, setDays] = useState(5);
   const [learn, setLearn] = useState('');
+  const [learnKind, setLearnKind] = useState<TrainingKind>('skill');
   const [newLevel, setNewLevel] = useState(3);
   const [returning, setReturning] = useState(false);
   const [intMod, setIntMod] = useState(0);
@@ -355,6 +357,18 @@ function NewProject() {
                 />
               </>
             )}
+            {name.startsWith('Special training') && (
+              <>
+                <Select label="Learns" value={learnKind} onChange={(v: TrainingKind) => (setLearnKind(v), setLearn(''))} options={(Object.keys(TRAINING_KIND_LABEL) as TrainingKind[]).map((k) => ({ value: k, label: TRAINING_KIND_LABEL[k] }))} />
+                {learnKind === 'skill' ? (
+                  <Select label="Skill" value={learn} onChange={setLearn} options={[{ value: '', label: 'Choose…' }, ...SKILLS.map((k) => ({ value: k, label: k }))]} />
+                ) : learnKind === 'tool' ? (
+                  <Select label="Tool" value={learn} onChange={setLearn} options={[{ value: '', label: 'Choose…' }, ...TOOLS.map((t) => ({ value: t.name, label: t.name }))]} />
+                ) : (
+                  <Text label="Language" value={learn} onChange={setLearn} placeholder="e.g. Draconic" />
+                )}
+              </>
+            )}
             {name.startsWith('Training') && (
               <>
                 <Text label="Language or tool" value={learn} onChange={setLearn} placeholder="e.g. Elvish, Thieves' Tools" />
@@ -444,6 +458,7 @@ function NewProject() {
             ...(trade ? { rarity, dealGp: calc.gp } : {}),
             ...(kind === 'spellcopy' ? { spell: { name: spellName.trim() || 'Unnamed spell', level: spellLevel } } : {}),
             ...(kind === 'activity' && name.startsWith('Training') && learn.trim() ? { learn: learn.trim(), name: `Training: ${learn.trim()}` } : {}),
+            ...(kind === 'activity' && name.startsWith('Special training') ? { learnKind, ...(learn.trim() ? { learn: learn.trim(), name: `Special training: ${learn.trim()}` } : {}) } : {}),
             product: productFor(),
             materialsUsed: Object.entries(useMats)
               .filter(([, q]) => q > 0)

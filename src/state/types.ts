@@ -18,6 +18,7 @@ import type { RegionKind } from '../rules/regions';
 import type { HirelingRole } from '../rules/hirelings';
 import type { ClueKind, StudyMethod } from '../rules/identify';
 import type { WeightSource } from '../rules/encumbrance';
+import type { FortType, LandKind, MarkKind, RightKind, TitleRank, TrainingKind } from '../rules/prestige';
 import type { Purse } from '../rules/coins';
 
 export type Season = 'winter' | 'spring' | 'summer' | 'autumn';
@@ -474,6 +475,8 @@ export interface Project {
   spell?: { name: string; level: number };
   /** Training: the language or tool learned. */
   learn?: string;
+  /** Special training (2024 DMG Marks of Prestige): what `learn` is, so it lands in the right proficiency list. */
+  learnKind?: TrainingKind;
   /** A finished activity waiting for its checks, and what came of it. */
   awaitingOutcome?: boolean;
   outcome?: string;
@@ -609,6 +612,43 @@ export interface Debt {
   steps: string[];
   /** In debtors' prison, working it off. */
   imprisoned?: boolean;
+}
+
+/** A Mark of Prestige (2024 DMG): a fortification, parcel of land, special rights or a title. */
+export interface Mark {
+  id: string;
+  kind: MarkKind;
+  name: string;
+  holderIds: string[];
+  /** Who granted it: a monarch, a council, an archfey. */
+  grantor: string;
+  grantedDay: number;
+  /** The grantor's trust (table rule): 3 down to 0, when the mark is taken back. */
+  trust: number;
+  notes: string;
+  /** Taken back, stripped or expired. */
+  revoked?: { day: number; why: string };
+  /** Fortification: its type, the day the grantor stops paying upkeep, and days in a row it went unpaid. */
+  fort?: FortType;
+  sponsoredUntilDay?: number;
+  neglectDays?: number;
+  /** Became the holder's Bastion. */
+  bastionId?: string;
+  /** Land: what it is, and trouble waiting to be dealt with. */
+  land?: LandKind;
+  trouble?: { text: string; sinceDay: number } | null;
+  /** Land granted with a title: the title's id. */
+  titleId?: string;
+  /** Special rights: which, where, until when (none: for life), and the sworn soldiers. */
+  right?: RightKind;
+  community?: string;
+  untilDay?: number | null;
+  soldiers?: number;
+  hirelingIds?: string[];
+  /** Title: its rank, who inherits it, and the land that came with it. */
+  rank?: TitleRank;
+  heir?: string;
+  landId?: string;
 }
 
 export interface Rival {
@@ -784,6 +824,8 @@ export interface Settings {
   facilityBooks: ('FRHoF' | 'EFA')[];
   /** Table rule: weekly risks and attention from lifestyle in town. */
   lifestyleRisks: boolean;
+  /** Table rule: Marks of Prestige carry obligations (land income and trouble, title upkeep, unpaid fortifications) and can be revoked. */
+  prestigeRules: boolean;
   /** Optional Xanathar's rules resolve downtime activities with checks and tables. */
   downtimeOutcomes: boolean;
   /** Costly Material components must be in the caster's inventory and are used up (2024 PHB). */
@@ -937,6 +979,8 @@ export interface State {
   rivalHeat?: boolean;
   /** Businesses the characters own (optional Running a Business rule). */
   businesses: Business[];
+  /** Marks of Prestige: fortifications, land, special rights and titles (2024 DMG). */
+  marks: Mark[];
   /** Minutes of overland time since the last automatic random encounter check. */
   encounterClock: number;
   /** Exploration turns since the last automatic wandering monster check. */

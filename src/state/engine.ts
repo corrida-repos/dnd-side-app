@@ -1,4 +1,4 @@
-import type { ActiveEffect, Activity, CharacterSpell, InventoryItem, LogEntry, Ritual, Stash, Bastion, Business, Character, FacilityWork, Obstacle, Rival, Debt, ExhaustionCause, Facility, MagicItem, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
+import type { ActiveEffect, Activity, CharacterSpell, InventoryItem, LogEntry, Ritual, Stash, Bastion, Business, Character, FacilityWork, Obstacle, Rival, Debt, Mark, ExhaustionCause, Facility, MagicItem, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
 import { BASIC_BUILD, BASTION_TURN_DAYS, defaultSize, ENLARGE, rollBastionEvent, SIZE_LABEL, SPECIAL_FACILITIES, type FacilitySize } from '../rules/bastion';
 import { d20, die, combineModes, rollDice, rollExpr, signed, type Rng, type RollMode } from '../rules/dice';
 import { dateFromIndex, formatClock, formatDate, formatDuration, lightAt, sunriseMinutes } from '../rules/calendar';
@@ -37,6 +37,7 @@ import { BOILING_POT, CHARCOAL_WORDS, FRICTION_LIGHT_MINUTES, HIDE_WATERSKIN, LE
 import type { DdbImport } from '../rules/ddb';
 import { FEED_GP_PER_DAY, HIRELING_WAGE, magicItemValue, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset, type Lifestyle } from '../rules/money';
 import { STABLE_WAKE_DIE, STABILIZE_DC } from '../rules/upkeep';
+import { FORT_NEGLECT_DAYS, FORT_UPKEEP, LAND, LODGING_CAP, MARK_LABEL, PRIZE_CROWN_SHARE, RIGHTS, TITLE_RANK, TRUST_LABEL, TRUST_MAX, lifestyleBelow, lowerLifestyle, monthDue, rollLandIncome, rollLandTrouble, sameCommunity, TRAINING_KIND_LABEL } from '../rules/prestige';
 import { RITUAL_EXTRA_MINUTES as RITUAL_TAG_MINUTES, spellInfo } from '../rules/rituals';
 import { maxWatchMinutes, slotTimes, watchMinutes, watchSight, type Sight } from '../rules/watch';
 import { abilityMod, ATTUNE_AWAY_MINUTES, IDENTIFY_MINUTES, MAX_ATTUNED, RITUAL_EXTRA_MINUTES } from '../rules/upkeep';
@@ -401,7 +402,7 @@ function dailyCosts(s: State): void {
         c.drankPintsToday = Math.max(c.drankPintsToday, waterNeedPints(c, false, false));
         fed.push(c.name);
       }
-      const cost = patronLifestyleCost(s, c.lifestyle);
+      const cost = freeLodging(s, c) ? Math.max(0, patronLifestyleCost(s, c.lifestyle) - patronLifestyleCost(s, lowerLifestyle(c.lifestyle, LODGING_CAP))) : patronLifestyleCost(s, c.lifestyle);
       const next = dateFromIndex(s.calendar, s.startYear, s.dayIndex + 1);
       const period = s.settings.lifestylePeriod;
       if (period === 'day') payGold(s, [c.id], cost, `a day of ${LIFESTYLE_LABEL[c.lifestyle]} living`);
@@ -510,6 +511,7 @@ function endOfDay(s: State, ctx: Ctx): void {
   progressBastions(s);
   bastionDaily(s);
   progressBusinesses(s);
+  prestigeDaily(s, ctx);
   log(s, `A new day begins: ${formatDate(s.calendar, s.startYear, s.dayIndex)}.`);
   newWeather(s, ctx);
 }
@@ -1938,8 +1940,8 @@ function progress(s: State, p: Project, ctx?: Ctx): void {
       return c && alive(c);
     }).length + hired;
   if (hired > 0) payGold(s, p.charIds, hired * HIRELING_WAGE.skilled, `${hired} hired artisan${hired > 1 ? 's' : ''} on ${p.name}`);
-  // Normally only one other character can help (the DM can allow more).
-  const amount = Math.max(1, s.settings.extraCraftHelpers ? crafters : Math.min(2, crafters));
+  // Normally only one other character can help (the DM can allow more). Training is time with the trainer: trainees don't speed each other up.
+  const amount = p.learnKind ? 1 : Math.max(1, s.settings.extraCraftHelpers ? crafters : Math.min(2, crafters));
   p.daysDone = Math.min(p.daysRequired, p.daysDone + amount);
   if (p.daysDone >= p.daysRequired) progressFinish(s, p, ctx);
   else log(s, `A day's work on ${p.name}: ${p.daysDone}/${p.daysRequired} workdays.`);
@@ -1949,8 +1951,9 @@ function progressFinish(s: State, p: Project, ctx?: Ctx): void {
   {
     p.done = true;
     log(s, `Downtime project complete: ${p.name}.`, 'good');
-    const act = p.kind === 'activity' ? activityOf(p.name) : null;
-    if (act && s.settings.downtimeOutcomes) {
+    const act = p.kind === 'activity' && !p.learnKind ? activityOf(p.name) : null;
+    if (p.learnKind) finishSpecialTraining(s, p);
+    else if (act && s.settings.downtimeOutcomes) {
       if (act === 'Training') {
         const learn = (p.learn || p.name.split(':')[1] || '').trim();
         for (const id of p.charIds) {
@@ -6374,4 +6377,222 @@ export const checkForEncounter = act((d, ctx, activity: CheckConditions['activit
 /** Skip the check: something turns up. Roll on the table. */
 export const rollRandomEncounter = act((d, ctx, activity: CheckConditions['activity'] = 'camp') => {
   resolveEncounter(d, ctx, activity);
+});
+
+// ---------------------------------------------------------------- marks of prestige (2024 DMG)
+
+/** DMG special training: 30 days with the trainer for a skill, a tool or a language. */
+function finishSpecialTraining(s: State, p: Project): void {
+  const learn = (p.learn ?? '').trim();
+  if (!learn || !p.learnKind) {
+    log(s, `${p.name} is done. Record what was learned on the character sheet.`);
+    return;
+  }
+  for (const id of p.charIds) {
+    const c = charById(s, id);
+    if (!c) continue;
+    const add = (list: string[] | undefined) => [...new Set([...(list ?? []), learn])];
+    if (p.learnKind === 'skill') c.skillProfs = add(c.skillProfs);
+    else if (p.learnKind === 'tool') c.toolProfs = add(c.toolProfs);
+    else c.trainedProficiencies = add(c.trainedProficiencies);
+    log(s, `${c.name} finishes a month of rare training and ${p.learnKind === 'language' ? `can now speak and read ${learn}` : `is now proficient ${p.learnKind === 'skill' ? 'in' : 'with'} ${learn}`} (${TRAINING_KIND_LABEL[p.learnKind]}).`, 'good');
+  }
+}
+
+const activeMark = (m: Mark): boolean => !m.revoked && !m.bastionId;
+const holderNames = (s: State, m: Mark): string =>
+  m.holderIds
+    .map((id) => charById(s, id)?.name)
+    .filter(Boolean)
+    .join(' and ') || 'the holders';
+
+/** Free room and board granted by special rights covers this character here. */
+export function freeLodging(s: State, c: Character): boolean {
+  return s.place.settlement && s.marks.some((m) => activeMark(m) && m.kind === 'rights' && m.right === 'lodging' && m.holderIds.includes(c.id) && sameCommunity(m.community ?? '', s.place.name));
+}
+
+/** What a fortification costs the holders today (0 while the grantor pays). */
+export function fortUpkeepToday(s: State, m: Mark): number {
+  if (m.kind !== 'fortification' || !m.fort || !activeMark(m)) return 0;
+  return s.dayIndex < (m.sponsoredUntilDay ?? 0) ? 0 : FORT_UPKEEP[m.fort].gpPerDay;
+}
+
+function takeBack(s: State, m: Mark, why: string, tone: Tone = 'bad'): void {
+  if (m.revoked) return;
+  m.revoked = { day: s.dayIndex, why };
+  if (m.hirelingIds?.length) {
+    s.hirelings = s.hirelings.filter((h) => !m.hirelingIds!.includes(h.id));
+    log(s, `The soldiers sworn to ${holderNames(s, m)} under “${m.name}” return to their posts.`);
+  }
+  const verb = m.kind === 'title' ? 'is stripped from' : m.kind === 'rights' ? 'no longer applies to' : 'is taken back from';
+  log(s, `${m.name} ${verb} ${holderNames(s, m)}: ${why}.`, tone);
+  const linked = s.marks.filter((x) => x.id !== m.id && (x.id === m.landId || x.titleId === m.id));
+  for (const x of linked) takeBack(s, x, `it came with the title ${m.name}`, tone);
+}
+
+function loseTrust(s: State, m: Mark, why: string): void {
+  m.trust = Math.max(0, m.trust - 1);
+  if (m.trust <= 0) takeBack(s, m, `${m.grantor || 'the grantor'} has lost all faith (${why})`);
+  else log(s, `${m.grantor || 'The grantor'}'s trust in ${holderNames(s, m)} over ${m.name} slips to ${TRUST_LABEL[m.trust]} (${m.trust}/${TRUST_MAX}): ${why}.`, 'warn');
+}
+
+/** Runs at the start of each day: fortification upkeep, rights that expire, and the monthly land and title checks. */
+function prestigeDaily(s: State, ctx: Ctx): void {
+  for (const m of s.marks) {
+    if (!activeMark(m)) continue;
+    if (m.kind === 'fortification' && m.fort) {
+      if (m.sponsoredUntilDay != null && s.dayIndex === m.sponsoredUntilDay) log(s, `${m.grantor || 'The grantor'} no longer pays for ${m.name}: from today its upkeep of ${fmtGp(FORT_UPKEEP[m.fort].gpPerDay)} a day falls to ${holderNames(s, m)}.`, 'warn');
+      const cost = fortUpkeepToday(s, m);
+      if (cost > 0) {
+        payGold(s, m.holderIds, cost, `a day's upkeep on ${m.name} (garrison, servants and repairs)`);
+        const broke = s.settings.chargeCosts && m.holderIds.some((id) => (charById(s, id)?.gp ?? 0) < 0);
+        if (s.settings.prestigeRules && broke) {
+          m.neglectDays = (m.neglectDays ?? 0) + 1;
+          if (m.neglectDays % 7 === 0 && m.neglectDays < FORT_NEGLECT_DAYS) log(s, `Unpaid at ${m.name}: guards drift away and repairs wait (${m.neglectDays} days).`, 'warn');
+          if (m.neglectDays >= FORT_NEGLECT_DAYS) {
+            m.neglectDays = 0;
+            loseTrust(s, m, `${FORT_NEGLECT_DAYS} days of unpaid upkeep`);
+          }
+        } else m.neglectDays = 0;
+      }
+    }
+    if (m.kind === 'rights' && m.untilDay != null && s.dayIndex >= m.untilDay) takeBack(s, m, 'the term in the document has run out', 'info');
+    if (!s.settings.prestigeRules || !monthDue(m.grantedDay, s.dayIndex)) continue;
+    if (m.kind === 'land' && m.land) {
+      if (m.trouble) {
+        log(s, `Word reaches ${m.grantor || 'the ruler'} that trouble on ${m.name} has gone unanswered for a month, and the land yields nothing (${m.trouble.text.replace(/\.$/, '')}).`, 'bad');
+        loseTrust(s, m, 'trouble on the land left unanswered');
+        if (m.revoked) continue;
+      } else {
+        const gp = rollLandIncome(m.land, ctx.rng);
+        if (gp > 0) receiveGold(s, m.holderIds, gp, `a month of rents and dues from ${m.name}`);
+      }
+      const trouble = rollLandTrouble(ctx.rng);
+      if (trouble) {
+        m.trouble = { text: trouble, sinceDay: s.dayIndex };
+        log(s, `A rider brings word from ${m.name}: ${trouble} Deal with it within 30 days.`, 'warn');
+      }
+    }
+    if (m.kind === 'title' && m.rank) {
+      const need = TITLE_RANK[m.rank].lifestyle;
+      if (!need) continue;
+      const shabby = m.holderIds.map((id) => charById(s, id)).filter((c): c is Character => !!c && alive(c) && lifestyleBelow(c.lifestyle, need));
+      if (shabby.length) loseTrust(s, m, `${shabby.map((c) => c.name).join(' and ')} live${shabby.length > 1 ? '' : 's'} below what a ${TITLE_RANK[m.rank].label.toLowerCase()} must keep up (${LIFESTYLE_LABEL[need]} or better)`);
+    }
+  }
+}
+
+export interface MarkGrant {
+  kind: Mark['kind'];
+  name: string;
+  holderIds: string[];
+  grantor: string;
+  notes?: string;
+  fort?: Mark['fort'];
+  /** Months the grantor pays the fortification's upkeep. */
+  sponsorMonths?: number;
+  land?: Mark['land'];
+  right?: Mark['right'];
+  community?: string;
+  /** Days the rights last (none: for life). */
+  days?: number | null;
+  soldiers?: number;
+  rank?: Mark['rank'];
+  heir?: string;
+  /** A title that comes with land of this kind. */
+  withLand?: Mark['land'] | null;
+}
+
+export const grantMark = act((d, _ctx, g: MarkGrant) => {
+  const base = { id: uid(), name: g.name.trim() || MARK_LABEL[g.kind], holderIds: g.holderIds, grantor: g.grantor.trim(), grantedDay: d.dayIndex, trust: TRUST_MAX, notes: g.notes ?? '' };
+  const m: Mark = { ...base, kind: g.kind };
+  const who = holderNames(d, m);
+  const from = m.grantor ? ` by ${m.grantor}` : '';
+  if (g.kind === 'fortification') {
+    m.fort = g.fort ?? 'keep';
+    m.sponsoredUntilDay = d.dayIndex + Math.max(0, Math.round(g.sponsorMonths ?? 0)) * 30;
+    m.neglectDays = 0;
+    const up = FORT_UPKEEP[m.fort];
+    log(d, `${who} ${m.holderIds.length > 1 ? 'are' : 'is'} given custody of ${m.name}${from}: ${up.label.toLowerCase()}, ${fmtGp(up.gpPerDay)} a day to maintain${g.sponsorMonths ? `, paid by the grantor for the first ${g.sponsorMonths} month${g.sponsorMonths > 1 ? 's' : ''}` : ''}. The land beneath it stays the crown's.`, 'good');
+  } else if (g.kind === 'land') {
+    m.land = g.land ?? 'farmland';
+    m.trouble = null;
+    log(d, `${who} receive${m.holderIds.length > 1 ? '' : 's'} a sealed letter${from} granting ${m.name}: ${LAND[m.land].label.toLowerCase()}. It may be built on and inherited, but not sold or traded without leave.`, 'good');
+  } else if (g.kind === 'rights') {
+    m.right = g.right ?? 'other';
+    m.community = g.community?.trim() || undefined;
+    m.untilDay = g.days ? d.dayIndex + Math.round(g.days) : null;
+    if (m.right === 'soldiers') {
+      m.soldiers = Math.max(1, Math.round(g.soldiers ?? 2));
+      m.hirelingIds = [];
+      for (let i = 0; i < m.soldiers; i++) {
+        const h = { id: uid(), name: `Sworn soldier ${i + 1}`, role: 'guard' as const, bonus: 0, passivePerception: 10, skilled: false, wageGp: 0, payer: 'party', active: true };
+        d.hirelings.push(h);
+        m.hirelingIds.push(h.id);
+      }
+    }
+    log(d, `A proclamation${from} grants ${who} ${RIGHTS[m.right].label.toLowerCase()}${m.community ? ` (${m.community})` : ''}${m.untilDay != null ? ` for ${g.days} days` : ''}.${m.right === 'soldiers' ? ` ${m.soldiers} soldiers swear to serve them.` : ''}`, 'good');
+  } else {
+    m.rank = g.rank ?? 'knight';
+    m.heir = g.heir?.trim() || undefined;
+    log(d, `${who} kneel${m.holderIds.length > 1 ? '' : 's'} and rise${m.holderIds.length > 1 ? '' : 's'} as ${m.name}${from}.${TITLE_RANK[m.rank].lifestyle ? ` People now expect them to live ${LIFESTYLE_LABEL[TITLE_RANK[m.rank].lifestyle!]} or better.` : ' Archfey titles may come with a minor supernatural gift instead of land.'}`, 'good');
+    if (g.withLand) {
+      const land: Mark = { ...base, id: uid(), kind: 'land', name: `Lands of ${m.name}`, land: g.withLand, trouble: null, titleId: m.id };
+      m.landId = land.id;
+      d.marks.push(land);
+      log(d, `With the title come its lands: ${LAND[g.withLand].label.toLowerCase()}.`, 'good');
+    }
+  }
+  d.marks.push(m);
+});
+
+const markById = (s: State, id: string) => s.marks.find((m) => m.id === id);
+
+export const revokeMark = act((d, _ctx, id: string, why: string) => {
+  const m = markById(d, id);
+  if (m) takeBack(d, m, why || 'by decree');
+});
+
+/** Table rule: the grantor's trust goes up (service, loyalty) or down (abuse, disloyalty, conduct unbecoming). */
+export const adjustMarkTrust = act((d, _ctx, id: string, delta: 1 | -1, why: string) => {
+  const m = markById(d, id);
+  if (!m || !activeMark(m)) return;
+  if (delta < 0) loseTrust(d, m, why || 'conduct that displeases the grantor');
+  else if (m.trust < TRUST_MAX) {
+    m.trust += 1;
+    log(d, `${m.grantor || 'The grantor'}'s trust in ${holderNames(d, m)} over ${m.name} grows to ${TRUST_LABEL[m.trust]} (${m.trust}/${TRUST_MAX})${why ? `: ${why}` : ''}.`, 'good');
+  }
+});
+
+export const resolveLandTrouble = act((d, _ctx, id: string) => {
+  const m = markById(d, id);
+  if (!m?.trouble) return;
+  log(d, `${holderNames(d, m)} put the trouble on ${m.name} to rest, and the people there breathe easier.`, 'good');
+  m.trouble = null;
+});
+
+/** Letter of marque: the crown takes its share of a prize from its enemies, the rest goes to the holders. */
+export const claimPrize = act((d, _ctx, id: string, gp: number) => {
+  const m = markById(d, id);
+  if (!m || !activeMark(m) || m.right !== 'marque' || gp <= 0) return;
+  const crown = Math.round(gp * PRIZE_CROWN_SHARE * 100) / 100;
+  log(d, `A prize worth ${fmtGp(gp)} taken from the crown's enemies is declared under ${m.name}: ${fmtGp(crown)} goes to ${m.grantor || 'the crown'}.`);
+  receiveGold(d, m.holderIds, Math.round((gp - crown) * 100) / 100, `their share of a lawful prize`);
+});
+
+/** The DMG lets a gifted fortification become the reason a character gets a Bastion. */
+export const fortToBastion = act((d, ctx, id: string) => {
+  const m = markById(d, id);
+  if (!m || !activeMark(m) || m.kind !== 'fortification' || !m.holderIds[0]) return;
+  Object.assign(d, foundBastion(d, ctx, m.holderIds[0], m.name));
+  const nm = markById(d, id)!;
+  nm.bastionId = d.bastions.at(-1)?.id;
+  log(d, `${nm.name} becomes ${holderNames(d, nm)}'s Bastion. Its upkeep now follows the Bastion rules instead.`, 'good');
+});
+
+export const removeMark = act((d, _ctx, id: string) => {
+  const m = markById(d, id);
+  if (!m) return;
+  if (m.hirelingIds?.length) d.hirelings = d.hirelings.filter((h) => !m.hirelingIds!.includes(h.id));
+  d.marks = d.marks.filter((x) => x.id !== id && x.titleId !== id);
 });
