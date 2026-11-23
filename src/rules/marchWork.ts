@@ -10,7 +10,7 @@ import { activityOf } from './downtimeOutcomes';
  * Hand work that needs no bench, fire, water or flat surface: whittling (Woodcarver's Tools), knitting, braiding and
  * small weaving (Weaver's Tools), and stitching leather or shoes (Leatherworker's and Cobbler's Tools), on items light
  * enough to hold while walking. Practising a language with someone walking alongside, or a musical instrument, works
- * too. Writing (scribing a scroll, copying a spell, calligraphy) goes on if the writer keeps their concentration: no
+ * too. Writing (scribing a scroll, copying a spell, calligraphy) goes on only at a slow pace, if the writer keeps their concentration: no
  * Concentration spell held at the same time, and a Constitution save each leg, as for Concentration, or the leg's
  * lines come out spoiled. Anything needing a forge, kiln, still, fire, a library, a workshop or a town does not.
  */
@@ -43,7 +43,7 @@ const weightOf = (g: GearItem): number | null => {
 
 const toolOk = (tool: string): MarchWork => {
   const t = toolNamed(tool);
-  if (t?.name === CALL) return { ok: true, concentration: true, why: 'calligraphy can be practised while walking, keeping concentration' };
+  if (t?.name === CALL) return { ok: true, concentration: true, why: 'calligraphy can be practised at a slow walk, keeping concentration' };
   if (t?.category === 'instrument') return { ok: true, why: `${t.name} can be practised while walking` };
   if (t && HAND_TOOLS.includes(t.name)) return { ok: true, why: `${t.name} are hand work` };
   return { ok: false, why: `${t?.name ?? tool} need a bench or workshop` };
@@ -61,9 +61,9 @@ export function marchWork(p: Pick<Project, 'kind' | 'name' | 'product' | 'learn'
       return { ok: true, why: `${g.name} is hand work with ${tool}` };
     }
     case 'scroll':
-      return { ok: true, concentration: true, why: 'scribing can go on while walking, keeping concentration' };
+      return { ok: true, concentration: true, why: 'scribing can go on at a slow walk, keeping concentration' };
     case 'spellcopy':
-      return { ok: true, concentration: true, why: 'copying a spell can go on while walking, keeping concentration' };
+      return { ok: true, concentration: true, why: 'copying a spell can go on at a slow walk, keeping concentration' };
     case 'potion':
       return { ok: false, why: 'brewing needs a fire and a still' };
     case 'magic':

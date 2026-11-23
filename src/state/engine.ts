@@ -1412,7 +1412,7 @@ function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
   if (d.travel.lost) d.travel.milesOffCourse += offCourse;
   if (offCourse > 0 && d.travel.lost) log(d, `${+offCourse.toFixed(1)} of those miles went the wrong way. The party is still lost.`, 'warn');
   log(d, `Covered ${+miles.toFixed(1)} miles. That makes ${+d.travel.milesToday.toFixed(1)} miles and ${d.travel.hoursToday} travel hour(s) since the last Long Rest.`);
-  workOnTheMarch(d, ctx, o.hours, d.travel.navigatorId, o.foragerIds);
+  workOnTheMarch(d, ctx, o.hours, d.travel.navigatorId, o.foragerIds, o.pace);
   // One foraging roll per 8 hours on the road, with a shorter leg finding a share of a day's food.
   for (const id of o.foragerIds) {
     const c = charById(d, id);
@@ -2095,8 +2095,10 @@ export const MARCH_WORK_RATE = 0.5;
 export const WORKDAY_HOURS = 8;
 
 /** Who could work a hand-held project while walking: conscious and doing nothing but marching. */
-export function marchWorkers(s: State, p: Project, navigatorId: string | null | undefined, foragerIds: string[]): Character[] {
+export function marchWorkers(s: State, p: Project, navigatorId: string | null | undefined, foragerIds: string[], pace: Pace = s.travel.pace): Character[] {
   const writing = !!marchWork(p).concentration;
+  // Writing on the march needs a slow pace (table rule): at a normal or fast walk the pen won't stay on the line.
+  if (writing && pace !== 'slow') return [];
   const who = p.charIds
     .map((id) => charById(s, id))
     .filter((c): c is Character => !!c && c.kind === 'pc' && alive(c) && !c.dying && !c.stable && c.hp > 0 && c.id !== navigatorId && !foragerIds.includes(c.id) && !(writing && holdsConcentration(s, c)));
@@ -2111,11 +2113,15 @@ export function holdsConcentration(s: State, c: Character): boolean {
 }
 
 /** Table rule: crafters who are only marching keep working on projects they can carry in their hands, at half rate. */
-function workOnTheMarch(s: State, ctx: Ctx, hours: number, navigatorId: string | null | undefined, foragerIds: string[]): void {
+function workOnTheMarch(s: State, ctx: Ctx, hours: number, navigatorId: string | null | undefined, foragerIds: string[], pace: Pace): void {
   if (!s.settings.workWhileMarching || hours <= 0) return;
   for (const p of s.projects.filter((x) => marchWork(x).ok && !x.done && !x.awaitingOutcome)) {
-    const able = marchWorkers(s, p, navigatorId, foragerIds);
-    if (!able.length) continue;
+    const able = marchWorkers(s, p, navigatorId, foragerIds, pace);
+    if (!able.length) {
+      if (marchWork(p).concentration && pace !== 'slow' && marchWorkers(s, p, navigatorId, foragerIds, 'slow').length)
+        log(s, `No writing on ${p.name} at a ${pace} pace: writing on the march needs a slow pace (table rule).`);
+      continue;
+    }
     // Writing on the march: each writer keeps their concentration with a Constitution save, or the leg's lines are spoiled.
     let who = able;
     if (marchWork(p).concentration) {
