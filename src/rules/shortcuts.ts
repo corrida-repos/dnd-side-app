@@ -45,6 +45,7 @@ export type TopicId =
   | 'water'
   | 'foraging'
   | 'hunting'
+  | 'taming'
   | 'tainted'
   | 'cold'
   | 'heat'
@@ -205,6 +206,18 @@ export const TOPICS: Topic[] = [
       sub('Ranger', 'Beast Master', 3, 'Primal Companion', 'The Beast of the Land or Sky can scout and help bring the prey down.'),
       feature('Druid', 2, 'Wild Companion', 'Spend a Wild Shape use to get a familiar (Find Familiar) that scouts for game until your next Long Rest.'),
       spell('Find Familiar', 'A hawk or owl familiar scouts ahead and shares its senses. Ritual, but the 10 GP incense is consumed each time.'),
+    ],
+  },
+  {
+    id: 'taming',
+    title: 'Taming a wild creature',
+    problem: 'Winning over a wild Beast or Monstrosity takes a good first approach, then days of daily Animal Handling checks that can go wrong.',
+    ways: [
+      spell('Animal Friendship', 'A Beast that fails its Wisdom save is Charmed for 24 hours: it can be approached even if it was Hostile, and the caster has Advantage on the checks (2024 PHB Charmed).', ['Beasts only, not Monstrosities.']),
+      spell('Speak with Animals', 'Talk the beast round: Advantage on the approach and each session (table rule). Ritual.', ['Beasts only.']),
+      sub('Ranger', 'Beast Master', 3, 'Primal Companion', 'A ready-made beast companion that obeys commands, with no taming needed.'),
+      feat('Skilled', 'Proficiency in Animal Handling adds the Proficiency Bonus to every taming check.'),
+      { ...gear('Raw meat or fodder', 'Feeding it each session gives Advantage (table rule). Hunt first so the camp stores have meat.'), source: 'Table rule' },
     ],
   },
   {
@@ -1045,7 +1058,7 @@ export const TOPICS: Topic[] = [
 
 /** How the topics are grouped on the Ways Around tab. */
 export const TOPIC_GROUPS: { title: string; topics: TopicId[] }[] = [
-  { title: 'Food, water, poison and illness', topics: ['food', 'water', 'foraging', 'hunting', 'tainted', 'poison', 'disease', 'poisonHarvest'] },
+  { title: 'Food, water, poison and illness', topics: ['food', 'water', 'foraging', 'hunting', 'taming', 'tainted', 'poison', 'disease', 'poisonHarvest'] },
   { title: 'Weather and the wild', topics: ['cold', 'heat', 'weather', 'altitude', 'breath', 'hazards'] },
   { title: 'Rest, recovery and saves', topics: ['shortRest', 'longRest', 'watch', 'exhaustion', 'saves', 'dying', 'death', 'fear'] },
   { title: 'Travel and exploration', topics: ['march', 'lost', 'tracking', 'encounters', 'exploration', 'mounts', 'timekeeping'] },

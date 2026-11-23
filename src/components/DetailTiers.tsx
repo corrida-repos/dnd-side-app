@@ -23,7 +23,10 @@ function extras(s: Settings): Partial<Record<SwitchKey, { inline?: ReactNode; mo
       inline: <Num label="Raw food save DC" value={s.rawFoodDC} onChange={(v) => edit((d) => void (d.settings.rawFoodDC = Math.round(v)))} min={1} max={30} width={3} />,
       more: 'Eating raw food means a Con save, or the character is Sick: Poisoned until they finish a Long Rest. Cooking it or casting Purify Food and Drink makes it safe.',
     },
-    wildNeedsPurifying: { more: 'Drinking unpurified water means a DC 10 Con save, or the character is Sick: Poisoned until they finish a Long Rest. Purify Food and Drink or boiling makes it safe.' },
+    wildNeedsPurifying: {
+      inline: <Num label="Sewer Plague after this many water-borne illnesses (0 = never)" value={s.sewerPlagueAfter ?? 3} onChange={(v) => edit((d) => void (d.settings.sewerPlagueAfter = Math.max(0, Math.round(v))))} min={0} max={20} width={3} />,
+      more: 'Drinking unpurified water means a DC 10 Con save, or the character is Sick: Poisoned until they finish a Long Rest. Purify Food and Drink or boiling makes it safe. Table rule: after enough of these bouts (squalid town living counts too), the next one brings a DC 11 Con save against Sewer Plague, and the count starts again.',
+    },
     sleepDeprivation: { more: 'Each time the party passes another 24 hours without finishing a Long Rest, everyone makes a Con save or gains 1 Exhaustion level from Sleep deprivation. The DC is 10, plus 5 for every further 24 hours, and it resets after a Long Rest.' },
     nightTravelSlow: { more: 'Only a lit Torch, Lamp, Lantern or light spell on the Effects tab counts (a Candle is too small), and a full moon in a clear sky gives enough light. Darkvision, from any source, also does.' },
     hirelingsEat: { more: '1 lb of food and 1 gallon of water each per day. In a settlement their wages cover their keep. Needs Food and water on.' },

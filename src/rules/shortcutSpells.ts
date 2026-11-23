@@ -108,6 +108,7 @@ export const SPELL_FACTS: Record<string, SpellFact> = {
   'Locate Creature': f(4, 'Bard, Cleric, Druid, Paladin, Ranger, Wizard', 'Action', '1 hour', C),
   'Commune with Nature': f(5, 'Druid, Ranger', '1 minute', '1 minute', R),
   "Hunter's Mark": f(1, 'Ranger', 'Bonus Action', '1 hour', C),
+  'Animal Friendship': f(1, 'Bard, Druid, Ranger', 'Action', '24 hours'),
   'Speak with Animals': f(1, 'Bard, Druid, Ranger, Warlock', 'Action', '10 minutes', R),
   'Speak with Plants': f(3, 'Bard, Druid, Ranger', 'Action', '10 minutes'),
   'Beast Sense': f(2, 'Druid, Ranger', 'Action', '1 hour', { ...R, ...C }),

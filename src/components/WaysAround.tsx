@@ -40,6 +40,7 @@ export const TOPIC_PLACES: Record<TopicId, { tab: string; tabLabel: string; card
   water: { tab: 'camp', tabLabel: 'Camp & Survival', card: 'Camp stores' },
   foraging: { tab: 'camp', tabLabel: 'Camp & Survival', card: 'Foraging' },
   hunting: { tab: 'camp', tabLabel: 'Camp & Survival', card: 'Hunting and butchering' },
+  taming: { tab: 'camp', tabLabel: 'Camp & Survival', card: 'Taming a wild creature' },
   tainted: { tab: 'camp', tabLabel: 'Camp & Survival', card: 'Raw food and dirty water' },
   poisonHarvest: { tab: 'camp', tabLabel: 'Camp & Survival', card: 'Harvesting poison' },
   disease: { tab: 'effects', tabLabel: 'Effects & Lights', card: 'Diseases' },

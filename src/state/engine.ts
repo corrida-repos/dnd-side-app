@@ -1,4 +1,4 @@
-import type { ActiveEffect, Activity, CharacterSpell, InventoryItem, LogEntry, Ritual, Stash, Bastion, Business, Character, FacilityWork, Obstacle, Rival, Debt, Mark, ExhaustionCause, Facility, MagicItem, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
+import type { TameTarget, ActiveEffect, Activity, CharacterSpell, InventoryItem, LogEntry, Ritual, Stash, Bastion, Business, Character, FacilityWork, Obstacle, Rival, Debt, Mark, ExhaustionCause, Facility, MagicItem, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
 import { BASIC_BUILD, BASTION_TURN_DAYS, defaultSize, ENLARGE, rollBastionEvent, SIZE_LABEL, SPECIAL_FACILITIES, type FacilitySize } from '../rules/bastion';
 import { d20, die, combineModes, rollDice, rollExpr, signed, type Rng, type RollMode } from '../rules/dice';
 import { dateFromIndex, formatClock, formatDate, formatDuration, lightAt, sunriseMinutes } from '../rules/calendar';
@@ -30,6 +30,7 @@ import { AWAY_PROGRESS, BUILD_SPELLS, BUSINESS_DEBT_PENALTY, BUSINESS_MAX_DAYS, 
 import { HAZARDS, type GiftType, type HazardId } from '../rules/hazards';
 import { ARCANA_DC, STUDY_MINUTES, type StudyMethod } from '../rules/identify';
 import { FEED_LB_PER_DAY, MOUNT_CAPACITY, carryingCapacity, COINS_PER_LB, estimateWeight, loadLevel, parseInventory, RATION_WEIGHT, type LoadLevel } from '../rules/encumbrance';
+import { approachMode, bigEnoughToRide, canTame, FACTOR_LABEL, missedDays, sessionResult, tameDC, TAME_MAX_FAILS, TAME_RETRY_MINUTES, TAME_SESSION_MINUTES, trainingNeeded, TRAINING_LABEL, trustCue, trustNeeded, type ApproachFactors, type TameTraining } from '../rules/taming';
 import { BUTCHER_DC, BUTCHER_MINUTES, isEdible, MEAT_LB, STRANGE_TYPES, yieldsHide, type Creature } from '../rules/hunting';
 import { addCoins, COIN_GP, coinCount, coinsFor, emptyPurse, exchange, fmtPurse, purseValue, spend, type Denom, type Purse } from '../rules/coins';
 import { detectContainer } from '../rules/containers';
@@ -47,6 +48,7 @@ import { fireThreat, precipKind, rollWeather, temperatureAt, CLIMATES, weatherDa
 import {
   exhaustionSummary,
   foodNeedLb,
+  FOOD_LB_PER_DAY,
   PACES,
   PINTS_PER_GALLON,
   proficiencyBonus,
@@ -62,6 +64,7 @@ import {
   ARMOR_LABEL,
   PURIFY_SPELL,
   TAINTED_DC,
+  CITY_WATER_DC,
   BOIL_MINUTES,
 } from '../rules/survival';
 import { isCaster, PREP_RULE, preparedCount, preparedLimit } from '../rules/spells';
@@ -292,7 +295,7 @@ export function recoverExhaustion(c: Character): ExhaustionCause | null {
   return null;
 }
 
-function applySaveResult(s: State, c: Character, p: Omit<PendingSave, 'id' | 'stamp'>, passed: boolean, detail: string): void {
+function applySaveResult(s: State, ctx: Ctx, c: Character, p: Omit<PendingSave, 'id' | 'stamp'>, passed: boolean, detail: string): void {
   log(s, `${c.name}: Constitution save, DC ${p.dc}, against ${p.reason}. ${detail}${passed ? 'Success.' : 'Failure.'}`, passed ? 'good' : 'warn');
   if (!passed) {
     if (p.kind === 'tainted' || p.kind === 'raw') {
@@ -309,6 +312,8 @@ function applySaveResult(s: State, c: Character, p: Omit<PendingSave, 'id' | 'st
           : `${c.name} is Sick from ${p.reason}: Poisoned (Disadvantage on attack rolls and ability checks) until they finish a Long Rest.`,
         'bad',
       );
+      // Only a new bout counts: drinking more while already Sick doesn't.
+      if (p.kind === 'tainted' && !was) waterborneIllness(s, ctx, c);
       return;
     }
     if (p.kind === 'malnutrition') c.malnourished = true;
@@ -339,7 +344,7 @@ function requestSave(s: State, ctx: Ctx, c: Character, kind: SaveKind, dc: numbe
   const spec = { charId: c.id, kind, dc, mode, reason };
   if (s.settings.autoRollSaves) {
     const r = rollSave(c, dc, mode, ctx.rng);
-    applySaveResult(s, c, spec, r.passed, r.detail);
+    applySaveResult(s, ctx, c, spec, r.passed, r.detail);
   } else {
     s.pending.push({ ...spec, id: uid(), stamp: stamp(s) });
   }
@@ -353,8 +358,8 @@ export const resolvePending = act((d, ctx, id: string, outcome: 'roll' | 'pass' 
   if (!c) return;
   if (outcome === 'roll') {
     const r = rollSave(c, p.dc, p.mode, ctx.rng);
-    applySaveResult(d, c, p, r.passed, r.detail);
-  } else applySaveResult(d, c, p, outcome === 'pass', 'Entered by hand. ');
+    applySaveResult(d, ctx, c, p, r.passed, r.detail);
+  } else applySaveResult(d, ctx, c, p, outcome === 'pass', 'Entered by hand. ');
 });
 
 // ---------------------------------------------------------------- the clock
@@ -464,6 +469,7 @@ function endOfDay(s: State, ctx: Ctx): void {
   dailyCosts(s);
   patronDaily(s);
   lifestyleRisks(s, ctx);
+  cityWater(s, ctx);
   purseDebts(s);
   if ((s.dayIndex + 1) % 7 === 0) debtsWeekly(s, ctx);
   groomTheMounts(s);
@@ -2166,15 +2172,13 @@ function lifestyleRisks(s: State, ctx: Ctx): void {
       case 'wretched':
         if (bestRenown(s) >= 3) break;
         if (r === 1) steal('1d6');
-        else if (r === 2) Object.assign(s, exposeContagion(s, ctx, c.id, 'sewer', true));
-        else if (r === 3) {
+        else if (r === 2) {
           log(s, `${c.name} is roughed up sleeping rough on the street (table rule).`, 'warn');
           Object.assign(s, changeHp(s, ctx, c.id, -die(4, ctx.rng)));
         }
         break;
       case 'squalid':
-        if (r === 1) Object.assign(s, exposeContagion(s, ctx, c.id, 'sewer', true));
-        else if (r === 2) steal('1d6');
+        if (r === 1) steal('1d6');
         break;
       case 'poor':
         if (r === 1 && die(2, ctx.rng) === 1) steal('1d4');
@@ -3006,7 +3010,40 @@ function endContagion(s: State, c: Character, id: string, why: string): void {
 }
 
 /** Exposure to a contagion: optionally roll the save to resist, otherwise infect. */
-export const exposeContagion = act((d, ctx, charId: string, kind: ContagionKind, rollToResist: boolean) => {
+export const exposeContagion = act((d, ctx, charId: string, kind: ContagionKind, rollToResist: boolean) => exposeContagionMut(d, ctx, charId, kind, rollToResist));
+
+/**
+ * Table rule: Sewer Plague doesn't strike out of nowhere. Each bout of illness from bad water wears a character down,
+ * and after enough of them (Settings, default 3) their next exposure is a DC 11 Con save against Sewer Plague.
+ * The count starts again after that save, whatever its result.
+ */
+function waterborneIllness(s: State, ctx: Ctx, c: Character): void {
+  const after = s.settings.sewerPlagueAfter ?? 3;
+  if (after <= 0) return;
+  c.waterborneIllnesses = (c.waterborneIllnesses ?? 0) + 1;
+  if (c.waterborneIllnesses < after) return;
+  c.waterborneIllnesses = 0;
+  if (c.contagions.some((x) => x.kind === 'sewer')) return;
+  noticed(s, 'contagionWorse', [c], `Bout after bout of foul water has worn ${c.name} down (${after} water-borne illnesses, table rule): their gut cramps and their joints ache in a way that feels like more than a passing sickness.`, 'bad');
+  exposeContagionMut(s, ctx, c.id, 'sewer', true);
+}
+
+/**
+ * Table rule: city water is more dangerous than a wild stream. Each day in a settlement, anyone living Squalid (DC 12) or
+ * Wretched (DC 14) drinks from public wells and gutters: a Con save or Sick, which counts toward Sewer Plague.
+ * Renown 3+ with a faction means shelter in need, which spares the Wretched the gutters.
+ */
+function cityWater(s: State, ctx: Ctx): void {
+  if (!s.settings.lifestyleRisks || !s.settings.wildNeedsPurifying || !s.place.settlement) return;
+  for (const c of adventurers(s)) {
+    if (c.lifestyle !== 'squalid' && c.lifestyle !== 'wretched') continue;
+    if (c.lifestyle === 'wretched' && bestRenown(s) >= 3) continue;
+    const dc = CITY_WATER_DC[c.lifestyle]!;
+    requestSave(s, ctx, c, 'tainted', dc, 'normal', c.lifestyle === 'wretched' ? 'gutter water and the dregs of public wells' : 'foul water from a tenement cistern');
+  }
+}
+
+function exposeContagionMut(d: State, ctx: Ctx, charId: string, kind: ContagionKind, rollToResist: boolean): void {
   const c = charById(d, charId);
   if (!c || !alive(c)) return;
   const info = CONTAGIONS[kind];
@@ -3024,7 +3061,7 @@ export const exposeContagion = act((d, ctx, charId: string, kind: ContagionKind,
   c.contagions.push({ id: uid(), kind, infectedAt: now, onsetAt, onset: false, successes: 0 });
   if (info.incubates) log(d, `${c.name} carries ${info.name}. Symptoms start in ${formatDuration(onsetAt - now)} (1d4 days); the player doesn't know yet.`, 'warn');
   tickContagions(d);
-});
+}
 
 /** Starts symptoms when incubation ends, and counts Sight Rot ointment time. */
 function tickContagions(s: State): void {
@@ -6595,4 +6632,184 @@ export const removeMark = act((d, _ctx, id: string) => {
   if (!m) return;
   if (m.hirelingIds?.length) d.hirelings = d.hirelings.filter((h) => !m.hirelingIds!.includes(h.id));
   d.marks = d.marks.filter((x) => x.id !== id && x.titleId !== id);
+});
+
+// ---------------------------------------------------------------- taming wild creatures (table rule)
+
+/** Wisdom (Animal Handling): Wisdom modifier, plus Proficiency Bonus if proficient, minus Exhaustion. */
+export function animalHandling(c: Character): { bonus: number; why: string } {
+  const prof = hasSkill(c, 'Animal Handling');
+  const pb = proficiencyBonus(c.level);
+  const bonus = c.wisMod + (prof ? pb : 0) - 2 * c.exhaustion;
+  const why = `Wisdom ${signed(c.wisMod)}${prof ? `, proficient ${signed(pb)}` : prof === false ? ', not proficient' : ', proficiency not recorded'}${c.exhaustion ? `, Exhaustion −${2 * c.exhaustion}` : ''}`;
+  return { bonus, why };
+}
+
+export interface NewTame {
+  name: string;
+  creature: string;
+  type: string;
+  size: Character['size'];
+  int: number;
+  cr: string;
+  speed: number;
+  movement: 'land' | 'fly' | 'swim';
+}
+
+function tameRoll(ctx: Ctx, tamer: Character, f: ApproachFactors, dc: number) {
+  const { adv, dis } = approachMode(f);
+  const mode = combineModes(adv ? 'advantage' : 'normal', dis ? 'disadvantage' : 'normal');
+  const r = d20(mode, ctx.rng);
+  const { bonus } = animalHandling(tamer);
+  const total = r.value + bonus;
+  const why = (Object.keys(f) as (keyof ApproachFactors)[]).filter((k) => f[k]).map((k) => FACTOR_LABEL[k]);
+  const text = `Wisdom (Animal Handling) ${r.rolls.join('/')}${mode !== 'normal' ? ` with ${mode === 'advantage' ? 'Advantage' : 'Disadvantage'}` : ''} ${signed(bonus)} = ${total} against DC ${dc}${why.length ? ` (${why.join(', ')})` : ''}`;
+  return { natural: r.value, total, text };
+}
+
+/** First contact: the Influence action to coax a wild Beast or Monstrosity into letting the tamer near (2024 PHB). */
+export const approachCreature = act((d, ctx, o: NewTame, tamerId: string, f: ApproachFactors, hostile: boolean) => {
+  if (!d.settings.taming) return void log(d, 'Taming wild creatures is switched off in Settings.', 'warn');
+  const tamer = charById(d, tamerId);
+  if (!tamer || tamer.kind === 'mount' || !alive(tamer)) return;
+  const ok = canTame(o.type, o.int);
+  if (!ok.ok) return void log(d, `${tamer.name} can't tame the ${o.creature}: ${ok.why}.`, 'warn');
+  if (hostile && !f.charmed) return void log(d, `The ${o.creature} is Hostile and won't be coaxed (2024 PHB: an unwilling creature refuses outright). Let it calm down, back off, or charm it first with Animal Friendship.`, 'warn');
+  d.taming ??= [];
+  const old = d.taming.find((t) => t.stage === 'wary' && t.creature === o.creature && t.tamerId === tamerId);
+  const now = absNow(d);
+  if (old?.retryAt && old.retryAt > now) return void log(d, `The ${old.name} won't let ${tamer.name} near again yet: try after ${formatDuration(old.retryAt - now)} (table rule: 24 hours after a failed approach).`, 'warn');
+  const dc = tameDC(o.int, o.cr);
+  advanceMut(d, ctx, 10, 'camp');
+  const r = tameRoll(ctx, tamer, f, dc);
+  const name = o.name.trim() || o.creature;
+  const base: TameTarget = { id: uid(), ...o, name, tamerId, stage: 'bonding', trust: 0, needed: trustNeeded(o.cr, o.int), fails: 0, lastSessionDay: null, startedDay: d.dayIndex, retryAt: null, trained: [] };
+  if (old) d.taming = d.taming.filter((t) => t !== old);
+  if (r.total >= dc) {
+    d.taming.push(base);
+    return void log(d, `${tamer.name} edges toward the ${o.creature}, slow and low: ${r.text}. It stops, sniffs the air, and doesn't run. Taming has begun: about ${base.needed} good days of patient work (an hour a day) will win it over.`, 'good', { charIds: [tamer.id] });
+  }
+  if (r.total <= dc - 5) return void log(d, `${tamer.name} misjudges the ${o.creature}: ${r.text}. It bares its teeth and lashes out or bolts (DM's call). It won't let anyone tame it now.`, 'bad', { charIds: [tamer.id] });
+  d.taming.push({ ...base, stage: 'wary', lastSessionDay: null, retryAt: absNow(d) + TAME_RETRY_MINUTES });
+  log(d, `${tamer.name} gets too close too fast: ${r.text}. The ${o.creature} backs off to a safe distance and watches. ${tamer.name} can try again in 24 hours (table rule).`, 'warn', { charIds: [tamer.id] });
+});
+
+function tamedMount(d: State, t: TameTarget): Character {
+  const m = newCharacter({
+    kind: 'mount',
+    name: t.name,
+    species: t.creature,
+    className: 'Other',
+    size: t.size,
+    speed: t.speed,
+    movement: t.movement,
+    saddle: 'none',
+    tasks: [],
+    bedroll: false,
+    rationsLb: 0,
+    waterPints: 0,
+    waterCapacityPints: 0,
+    gp: 0,
+    conScore: 12,
+    swimSpeed: t.movement === 'swim',
+    carryCapacity: null,
+    tamed: { tamerId: t.tamerId, trained: [] },
+  });
+  d.characters.push(m);
+  return m;
+}
+
+/** An hour's daily session with a creature being tamed or trained. Feeds it from the camp stores (raw meat first). */
+export const tameSession = act((d, ctx, id: string, f: Omit<ApproachFactors, 'food'>) => {
+  const t = d.taming?.find((x) => x.id === id);
+  if (!t || t.stage === 'wary') return;
+  const tamer = charById(d, t.tamerId);
+  if (!tamer || !alive(tamer)) return void log(d, `${t.name}'s tamer can't work with it right now.`, 'warn');
+  if (t.stage === 'tamed' && !t.training) return void log(d, `${t.name} is tamed. Choose something to train it for first.`, 'warn');
+  if (t.lastSessionDay === d.dayIndex) return void log(d, `${tamer.name} has already worked with ${t.name} today (table rule: one session a day).`, 'warn');
+  if (t.stage === 'bonding') {
+    const missed = missedDays(t.lastSessionDay ?? t.startedDay, d.dayIndex);
+    if (missed) {
+      t.trust -= missed;
+      if (t.trust < 0) {
+        d.taming = d.taming!.filter((x) => x !== t);
+        return void log(d, `${t.name} was left alone too long (${missed} day${missed > 1 ? 's' : ''} without a session) and has gone back to the wild.`, 'bad');
+      }
+      log(d, `${t.name} was left alone for ${missed} day${missed > 1 ? 's' : ''} and is warier again (table rule: −1 trust a day).`, 'warn');
+    }
+  }
+  // Feed it a day's food from the camp stores: raw meat first, then other food.
+  const need = FOOD_LB_PER_DAY[t.size];
+  const fromRaw = Math.min(need, d.stores.foodRawLb);
+  const fromFood = Math.min(need - fromRaw, d.stores.foodLb);
+  const fed = fromRaw + fromFood >= need - 1e-9;
+  if (fed) {
+    d.stores.foodRawLb = Math.round((d.stores.foodRawLb - fromRaw) * 100) / 100;
+    d.stores.foodLb = Math.round((d.stores.foodLb - fromFood) * 100) / 100;
+    const m = t.mountId ? charById(d, t.mountId) : undefined;
+    if (m) m.ateLbToday = Math.max(m.ateLbToday, need);
+  }
+  advanceMut(d, ctx, TAME_SESSION_MINUTES, 'camp');
+  t.lastSessionDay = d.dayIndex;
+  const dc = tameDC(t.int, t.cr);
+  const r = tameRoll(ctx, tamer, { ...f, food: fed }, dc);
+  const res = sessionResult(r.natural, r.total, dc);
+  const feedTxt = fed ? ` It eats ${fmtLb(need)} from the camp stores.` : ` There was no food to offer (${fmtLb(need)} needed), so no Advantage.`;
+  if (res === 'great' || res === 'success') t.fails = 0;
+  else t.fails += 1;
+  const gain = res === 'great' ? 2 : res === 'success' ? 1 : res === 'setback' ? -1 : 0;
+
+  if (t.stage === 'bonding') {
+    t.trust = Math.max(0, t.trust + gain);
+    if (t.fails >= TAME_MAX_FAILS) {
+      d.taming = d.taming!.filter((x) => x !== t);
+      return void log(d, `${tamer.name} works with ${t.name}: ${r.text}.${feedTxt} After ${TAME_MAX_FAILS} bad days in a row it slips away in the night and doesn't come back (table rule).`, 'bad', { charIds: [tamer.id] });
+    }
+    if (t.trust >= t.needed) {
+      t.stage = 'tamed';
+      const m = tamedMount(d, t);
+      t.mountId = m.id;
+      return void log(d, `${tamer.name} works with ${t.name}: ${r.text}.${feedTxt} ${trustCue(t.creature, t.trust, t.needed)} ${t.name} is tamed and joins the party: it needs food and water every day like any mount. Untrained, it acts on its own in a fight and can only be ridden as an independent mount.`, 'good', { charIds: [tamer.id] });
+    }
+    const how = res === 'great' ? 'a breakthrough' : res === 'success' ? 'a good session' : res === 'setback' ? 'a setback' : 'no progress';
+    return void log(d, `${tamer.name} works with ${t.name}: ${r.text}, ${how}.${feedTxt} ${trustCue(t.creature, t.trust, t.needed)}${t.fails ? ` (${t.fails} bad day${t.fails > 1 ? 's' : ''} in a row)` : ''}`, gain > 0 ? 'good' : 'warn', { charIds: [tamer.id] });
+  }
+
+  // Training a tamed creature: failures never undo it, they just waste the day.
+  const tr = t.training!;
+  if (t.fails >= TAME_MAX_FAILS) {
+    tr.progress = Math.max(0, tr.progress - 1);
+    t.fails = 0;
+  }
+  tr.progress = Math.max(0, tr.progress + Math.max(0, gain));
+  if (tr.progress >= tr.needed) {
+    t.trained = [...new Set([...t.trained, tr.kind])];
+    delete t.training;
+    const m = t.mountId ? charById(d, t.mountId) : undefined;
+    if (m) m.tamed = { tamerId: t.tamerId, trained: [...t.trained] };
+    const what =
+      tr.kind === 'mount'
+        ? `${t.name} now accepts a rider and can be a controlled mount (2024 PHB).${t.movement !== 'land' ? ' A flying or swimming mount needs an Exotic Saddle.' : ''}`
+        : `${t.name} now follows simple commands from ${tamer.name}: come, stay, guard, attack, fetch (table rule).`;
+    return void log(d, `${tamer.name} trains ${t.name}: ${r.text}.${feedTxt} ${what}`, 'good', { charIds: [tamer.id] });
+  }
+  log(d, `${tamer.name} trains ${t.name} ${TRAINING_LABEL[tr.kind]}: ${r.text}, ${gain > 0 ? 'it learns a little more' : 'a wasted day'}.${feedTxt} About ${tr.needed - tr.progress} more good session${tr.needed - tr.progress === 1 ? '' : 's'} to go.`, gain > 0 ? 'good' : 'warn', { charIds: [tamer.id] });
+});
+
+/** Starts training a tamed creature to accept a rider or follow commands. */
+export const startTraining = act((d, _ctx, id: string, kind: TameTraining) => {
+  const t = d.taming?.find((x) => x.id === id);
+  if (!t || t.stage !== 'tamed' || t.trained.includes(kind)) return;
+  const tamer = charById(d, t.tamerId);
+  if (kind === 'mount' && tamer && !bigEnoughToRide(t.size, tamer.size)) return void log(d, `A ${t.size} ${t.creature} is too small to carry ${tamer.name} (2024 PHB: a mount must be at least one size larger than its rider). Someone smaller could ride it.`, 'warn');
+  t.training = { kind, progress: 0, needed: trainingNeeded(t.cr, t.int) };
+  log(d, `${tamer?.name ?? 'Its tamer'} begins training ${t.name} ${TRAINING_LABEL[kind]}: about ${t.training.needed} good sessions, an hour a day (table rule).${kind === 'mount' ? ' It must also have the right shape to carry a rider: DM\'s call.' : ''}`);
+});
+
+/** Lets the creature go, or stops tracking it once it is tamed and trained. */
+export const releaseTame = act((d, _ctx, id: string) => {
+  const t = d.taming?.find((x) => x.id === id);
+  if (!t) return;
+  d.taming = d.taming!.filter((x) => x !== t);
+  if (t.stage !== 'tamed') log(d, `The party leaves the ${t.creature} to the wild.`);
 });

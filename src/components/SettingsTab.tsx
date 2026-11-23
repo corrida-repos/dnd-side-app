@@ -69,7 +69,7 @@ function DateCard() {
 
 function RulesCard() {
   const s = useGame();
-  const set = (k: 'autoRollSaves' | 'noTimepiece' | 'coldGear2014' | 'heavyClothing2014' | 'extraCraftHelpers' | 'climateAdjustedPrecip', v: boolean) => edit((d) => void (d.settings[k] = v));
+  const set = (k: 'autoRollSaves' | 'noTimepiece' | 'coldGear2014' | 'heavyClothing2014' | 'extraCraftHelpers' | 'climateAdjustedPrecip' | 'taming', v: boolean) => edit((d) => void (d.settings[k] = v));
   return (
     <Card title="Rules options">
       <div className="stack tight">
@@ -86,6 +86,7 @@ function RulesCard() {
         <Toggle checked={s.settings.coldGear2014} onChange={(v) => set('coldGear2014', v)} label="Cold weather gear protects against extreme cold (2014 rule; 2024 only counts Cold Resistance or Immunity)" />
         <Toggle checked={s.settings.heavyClothing2014} onChange={(v) => set('heavyClothing2014', v)} label="Heavy clothing gives Disadvantage on extreme heat saves (2014 rule; 2024 only counts Medium or Heavy armor)" />
         <Toggle checked={s.settings.extraCraftHelpers} onChange={(v) => set('extraCraftHelpers', v)} label="Allow more than one helper on a crafting project (normally only one other character can help)" />
+        <Toggle checked={s.settings.taming} onChange={(v) => set('taming', v)} label="Wild Beasts and Monstrosities of Intelligence 5 or lower can be tamed with daily Animal Handling sessions (table rule)" />
         <Select
           label="Lifestyle is paid"
           value={s.settings.lifestylePeriod}

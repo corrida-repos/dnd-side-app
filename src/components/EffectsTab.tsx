@@ -408,8 +408,18 @@ function ContagionCard() {
       <p className="small muted">
         <b>Effects:</b> {info.effects}
       </p>
+      {s.settings.wildNeedsPurifying && (s.settings.sewerPlagueAfter ?? 3) > 0 && s.characters.some((c) => (c.waterborneIllnesses ?? 0) > 0) && (
+        <p className="small warn-text">
+          Water-borne illnesses toward Sewer Plague:{' '}
+          {s.characters
+            .filter((c) => (c.waterborneIllnesses ?? 0) > 0)
+            .map((c) => `${c.name} ${c.waterborneIllnesses}/${s.settings.sewerPlagueAfter ?? 3}`)
+            .join(', ')}
+          .
+        </p>
+      )}
       <Rule>
-        2024 DMG. Saves happen on their own: Sewer Plague at dawn, Cackle Fever after each Long Rest. Recuperating means {RECUPERATE_DAYS} days of nothing that would interrupt a Long Rest, then a DC {RECUPERATE_DC} Con save; success gives Advantage on saves against the contagion for 24 hours.
+        2024 DMG. Table rule: Sewer Plague comes from repeated water-borne illness, not from a single bad drink. Unpurified water counts, and so does city water: living Squalid (DC 12) or Wretched (DC 14) in a settlement means a save every day. Saves happen on their own: Sewer Plague at dawn, Cackle Fever after each Long Rest. Recuperating means {RECUPERATE_DAYS} days of nothing that would interrupt a Long Rest, then a DC {RECUPERATE_DC} Con save; success gives Advantage on saves against the contagion for 24 hours.
       </Rule>
       <WaysAround topic={'disease'} />
     </Card>
