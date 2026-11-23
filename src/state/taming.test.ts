@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest';
 import * as E from './engine';
 import { createDefaultState, newCharacter } from './defaults';
 import type { State } from './types';
-import { canTame, influenceDC, missedDays, sessionResult, tameDC, trainingNeeded, trustNeeded, bigEnoughToRide } from '../rules/taming';
+import { canTame, charmSpellsFor, influenceDC, missedDays, NO_AIDS, sessionAttitude, sessionResult, tameCheck, tameDC, trainingNeeded, trustNeeded, bigEnoughToRide, type TamerFacts } from '../rules/taming';
 
 const ctx = (v = 0.5): E.Ctx => ({ rng: () => v });
 const NAT20 = ctx(0.999);
 const NAT1 = ctx(0);
-const none = { food: false, charmed: false, speaking: false, threatened: false };
+const none = NO_AIDS;
 const wolf: E.NewTame = { name: 'Ash', creature: 'Wolf', type: 'beast', size: 'Medium', int: 3, cr: '1/4', speed: 40, movement: 'land' };
 const griffon: E.NewTame = { name: 'Talon', creature: 'Griffon', type: 'monstrosity', size: 'Large', int: 2, cr: '2', speed: 30, movement: 'fly' };
 
@@ -26,7 +26,7 @@ function fresh(patch: (s: State) => void = () => {}): State {
 const nextDay = (s: State): State => ({ ...s, dayIndex: s.dayIndex + 1 });
 const begin = (t: E.NewTame = wolf): State => {
   const s = fresh();
-  return E.approachCreature(s, NAT20, t, s.characters[0].id, none, false);
+  return E.approachCreature(s, NAT20, t, s.characters[0].id, none);
 };
 
 describe('taming rules', () => {
@@ -64,26 +64,43 @@ describe('taming rules', () => {
 describe('taming a wild creature', () => {
   it('starts bonding on a successful approach', () => {
     const s = fresh();
-    const n = E.approachCreature(s, NAT20, wolf, s.characters[0].id, none, false);
+    const n = E.approachCreature(s, NAT20, wolf, s.characters[0].id, none);
     expect(n.taming).toMatchObject([{ name: 'Ash', stage: 'bonding', trust: 0, needed: 3 }]);
     expect(n.minutes).toBe(s.minutes + 10);
   });
 
-  it('refuses a Hostile creature unless it is charmed', () => {
+  it('refuses when Unwilling, and rolls with Disadvantage when Hostile (2024 PHB)', () => {
     const s = fresh();
-    expect(E.approachCreature(s, NAT20, wolf, s.characters[0].id, none, true).taming ?? []).toHaveLength(0);
-    expect(E.approachCreature(s, NAT20, wolf, s.characters[0].id, { ...none, charmed: true }, true).taming).toHaveLength(1);
+    expect(E.approachCreature(s, NAT20, wolf, s.characters[0].id, { ...none, unwilling: true }).taming ?? []).toHaveLength(0);
+    const h = E.approachCreature(s, NAT20, wolf, s.characters[0].id, { ...none, attitude: 'hostile' });
+    expect(h.taming).toHaveLength(1);
+    expect(h.log.some((l) => /Disadvantage/.test(l.text))).toBe(true);
+  });
+
+  it('raises a young creature without an approach, in half the time', () => {
+    const s = fresh();
+    const n = E.raiseYoung(s, ctx(), griffon, s.characters[0].id);
+    expect(n.taming).toMatchObject([{ stage: 'bonding', needed: 4, raised: true }]);
+    expect(n.minutes).toBe(s.minutes);
+  });
+
+  it('offers a Tasha sidekick for CR 1/2 or lower', () => {
+    let s = begin();
+    const id = s.taming![0].id;
+    s = { ...s, taming: [{ ...s.taming![0], trust: 2 }] };
+    s = E.tameSession(s, NAT20, id, none);
+    expect(s.log.some((l) => /sidekick/.test(l.text))).toBe(true);
   });
 
   it('makes the tamer wait a day after a near miss, and loses the creature on a bad miss', () => {
     const s = fresh((d) => (d.characters[0].wisMod = 4));
     // d20 = 7 + 4 + 3 = 14 against DC 15: a near miss.
-    const near = E.approachCreature(s, ctx(0.3), wolf, s.characters[0].id, none, false);
+    const near = E.approachCreature(s, ctx(0.3), wolf, s.characters[0].id, none);
     expect(near.taming).toMatchObject([{ stage: 'wary' }]);
-    expect(E.approachCreature(near, NAT20, wolf, s.characters[0].id, none, false).taming).toMatchObject([{ stage: 'wary' }]);
+    expect(E.approachCreature(near, NAT20, wolf, s.characters[0].id, none).taming).toMatchObject([{ stage: 'wary' }]);
     const later = nextDay(near);
-    expect(E.approachCreature(later, NAT20, wolf, s.characters[0].id, none, false).taming).toMatchObject([{ stage: 'bonding' }]);
-    expect(E.approachCreature(s, NAT1, wolf, s.characters[0].id, none, false).taming).toHaveLength(0);
+    expect(E.approachCreature(later, NAT20, wolf, s.characters[0].id, none).taming).toMatchObject([{ stage: 'bonding' }]);
+    expect(E.approachCreature(s, NAT1, wolf, s.characters[0].id, none).taming).toHaveLength(0);
   });
 
   it('wins it over with daily sessions, feeding it, and adds it to the party', () => {
@@ -137,6 +154,60 @@ describe('taming a wild creature', () => {
 
   it('does nothing when switched off', () => {
     const s = fresh((d) => (d.settings.taming = false));
-    expect(E.approachCreature(s, NAT20, wolf, s.characters[0].id, none, false).taming ?? []).toHaveLength(0);
+    expect(E.approachCreature(s, NAT20, wolf, s.characters[0].id, none).taming ?? []).toHaveLength(0);
+  });
+});
+
+describe('workarounds and shortcuts', () => {
+  const me: TamerFacts = { wisMod: 1, chaMod: 4, pb: 3, exhaustion: 0, animalHandling: false, persuasion: true, performance: false, feats: [], species: 'Human', level: 5 };
+  const beast = { type: 'beast', int: 3, movement: 'land' as const };
+  const monster = { type: 'monstrosity', int: 2, movement: 'land' as const };
+
+  it('uses Animal Handling, or Persuasion once Speak with Animals lets it understand', () => {
+    expect(tameCheck(me, beast, NO_AIDS)).toMatchObject({ skill: 'Wisdom (Animal Handling)', bonus: 1, mode: 'normal' });
+    expect(tameCheck(me, beast, { ...NO_AIDS, speaking: true })).toMatchObject({ skill: 'Charisma (Persuasion)', bonus: 7 });
+    // Speak with Animals only reaches Beasts.
+    expect(tameCheck(me, monster, { ...NO_AIDS, speaking: true }).skill).toBe('Wisdom (Animal Handling)');
+  });
+
+  it('applies attitudes, Charmed, Help and Enhance Ability as Advantage, and they cancel with Disadvantage', () => {
+    expect(tameCheck(me, beast, { ...NO_AIDS, attitude: 'friendly' }).mode).toBe('advantage');
+    expect(tameCheck(me, beast, { ...NO_AIDS, attitude: 'hostile' }).mode).toBe('disadvantage');
+    expect(tameCheck(me, beast, { ...NO_AIDS, charmed: true, threatened: true }).mode).toBe('normal');
+    expect(tameCheck(me, beast, { ...NO_AIDS, helped: true }).mode).toBe('advantage');
+    expect(tameCheck(me, beast, { ...NO_AIDS, enhance: true }).mode).toBe('advantage');
+    expect(tameCheck(me, beast, { ...NO_AIDS, unwilling: true }).ok).toBe(false);
+  });
+
+  it('counts the Bastion Stable for Beasts only, and Guidance as a d4', () => {
+    expect(tameCheck(me, beast, { ...NO_AIDS, stable: true }).mode).toBe('advantage');
+    expect(tameCheck(me, monster, { ...NO_AIDS, stable: true }).mode).toBe('normal');
+    expect(tameCheck(me, beast, { ...NO_AIDS, guidance: true }).dice).toEqual([4]);
+  });
+
+  it('reads feats and species from the sheet', () => {
+    expect(tameCheck({ ...me, feats: ['Enclave Magic'] }, beast, NO_AIDS).mode).toBe('advantage');
+    expect(tameCheck({ ...me, feats: ['Enclave Magic'] }, monster, NO_AIDS).mode).toBe('normal');
+    expect(tameCheck({ ...me, feats: ['Mark of Handling'] }, monster, NO_AIDS).dice).toEqual([4]);
+    expect(tameCheck({ ...me, feats: ['Mark of Handling', 'Greater Mark of Handling'] }, monster, NO_AIDS).dice).toEqual([6]);
+    const firbolg = tameCheck({ ...me, species: 'Firbolg' }, beast, NO_AIDS);
+    expect(firbolg).toMatchObject({ skill: 'Charisma (Persuasion)', mode: 'advantage' });
+    expect(tameCheck({ ...me, species: 'Sea Elf' }, { ...beast, movement: 'swim' }, NO_AIDS).skill).toBe('Charisma (Persuasion)');
+  });
+
+  it('turns Friendly halfway to tamed, and lists charm spells that work', () => {
+    expect(sessionAttitude(1, 5, false)).toBe('indifferent');
+    expect(sessionAttitude(3, 5, false)).toBe('friendly');
+    expect(sessionAttitude(0, 5, true)).toBe('friendly');
+    expect(charmSpellsFor(beast, me).join()).toMatch(/Animal Friendship.*Charm Monster.*Awaken/);
+    expect(charmSpellsFor(monster, me).join()).not.toMatch(/Animal Friendship/);
+    expect(charmSpellsFor(monster, { ...me, feats: ['Mark of Handling'] }).join()).toMatch(/Animal Friendship/);
+  });
+
+  it('lists who can Help: Animal Handling proficiency or a groom', () => {
+    const s = fresh((d) => {
+      d.characters.push(newCharacter({ name: 'Bard', skillProfs: ['Animal Handling'], tasks: [] }), newCharacter({ name: 'Wizard', skillProfs: [], tasks: [] }));
+    });
+    expect(E.tameHelpers(s, s.characters[0].id).map((h) => h.name)).toEqual(['Bard']);
   });
 });
