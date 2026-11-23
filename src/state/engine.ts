@@ -3,7 +3,8 @@ import { BASIC_BUILD, BASTION_TURN_DAYS, defaultSize, ENLARGE, rollBastionEvent,
 import { d20, die, combineModes, rollDice, rollExpr, signed, type Rng, type RollMode } from '../rules/dice';
 import { dateFromIndex, formatClock, formatDate, formatDuration, lightAt, sunriseMinutes } from '../rules/calendar';
 import { EFFECT_PRESETS, EXPLORATION_TURN_MINUTES, LIGHT_WARNING_MINUTES, type EffectPreset } from '../rules/effects';
-import { divinationFailChance, SPELLBOOK_REPLACE } from '../rules/longterm';
+import { divinationFailChance, moonPhase, SPELLBOOK_REPLACE } from '../rules/longterm';
+import { illumination, passiveMod, sightFor, weatherObscures, type Vision } from '../rules/sight';
 import { LOST_RECHECK_DIE, navigationDC } from '../rules/navigation';
 import { TERRAIN, clampPace } from '../rules/terrain';
 import { readSky, SKY_DC } from '../rules/skyclock';
@@ -41,7 +42,7 @@ import { maxWatchMinutes, slotTimes, watchMinutes, watchSight, type Sight } from
 import { abilityMod, ATTUNE_AWAY_MINUTES, IDENTIFY_MINUTES, MAX_ATTUNED, RITUAL_EXTRA_MINUTES } from '../rules/upkeep';
 import { COOK_RAW_MINUTES, DEFAULT_FIRE_COLD_LIMIT_F, FIRE_LIGHT_DC, FIRE_METHODS, FIRE_SPELLS, fireColdLimit, fireKeepsWarm, fireLighting, type FireMethod } from '../rules/campfire';
 import { applyTier, tierName, TIERS, type TierId } from '../rules/detailTiers';
-import { fireThreat, rollWeather, temperatureAt, CLIMATES, weatherDamageAffinities, type Affinity } from '../rules/weather';
+import { fireThreat, precipKind, rollWeather, temperatureAt, CLIMATES, weatherDamageAffinities, type Affinity } from '../rules/weather';
 import {
   exhaustionSummary,
   foodNeedLb,
@@ -616,6 +617,45 @@ function campLitFor(s: State, endsIn: number): boolean {
   return s.effects.some((e) => e.kind === 'light' && e.pausedLeft == null && (e.endsAt == null || e.endsAt >= now + endsIn));
 }
 
+/** Darkvision right now: the character's own, an active Darkvision spell on them (150 ft), Goggles of Night (60 ft, or +60), and Devil's Sight. */
+export function visionOf(s: State, c: Character): Vision {
+  const now = absNow(s);
+  let ft = c.darkvision || 0;
+  const spell = s.effects.some(
+    (e) => /^darkvision\b/i.test(e.name) && (e.endsAt == null || e.endsAt > now) && (e.targetIds.length ? e.targetIds : e.casterId ? [e.casterId] : []).includes(c.id),
+  );
+  if (spell) ft = Math.max(ft, 150);
+  const names = [...(c.items ?? []).map((i) => i.name), ...(c.inventory ?? []).map((i) => i.name)];
+  if (names.some((n) => /goggles of night/i.test(n))) ft = Math.max(ft, c.darkvision > 0 ? c.darkvision + 60 : 60);
+  return { darkvision: ft, seesInDark: (c.features ?? []).some((f) => /devil'?s sight/i.test(f)) };
+}
+
+/** A full moon in a clear sky gives Dim Light outdoors at night (2024 PHB). */
+function fullMoonOut(s: State): boolean {
+  return s.weather.precip === 'none' && moonPhase(s.dayIndex, s.settings.moonOffset).name === 'Full moon';
+}
+
+/** Heavy rain or snow, or a sandstorm, obscuring the open air right now; null under a roof or underground. */
+function obscuredNow(s: State, indoors: boolean): string | null {
+  const clim = CLIMATES[s.weather.climate];
+  return weatherObscures({ precip: s.weather.precip, wind: s.weather.wind, sandy: !!clim.sandy, snow: precipKind(tempNow(s)) === 'snow', indoors: indoors || !!clim.noWeather });
+}
+
+/** Is there light right now? At camp a burning fire or a roof counts; on the move only carried lights do, and a candle is too small to travel by. */
+function lightNow(s: State, where: 'camp' | 'travel' | 'explore'): boolean {
+  const now = absNow(s);
+  if (where === 'camp' && (s.fire.lit || s.place.shelter === 'building')) return true;
+  return s.effects.some((e) => e.kind === 'light' && e.pausedLeft == null && (e.endsAt == null || e.endsAt > now) && (where !== 'travel' || !/candle/i.test(e.name)));
+}
+
+/** What a character can see right now, by the light, the weather and their senses. */
+export function sightNow(s: State, c: Character, where: 'camp' | 'travel' | 'explore'): Sight {
+  const underground = isUnderground(s);
+  const indoors = where === 'camp' && (s.place.shelter === 'building' || s.place.shelter === 'cave');
+  const light = illumination({ phase: lightAt(s.minutes % MIN_PER_DAY, seasonOf(s)).phase, underground, lit: lightNow(s, where), fullMoon: !underground && fullMoonOut(s) });
+  return sightFor(light.level, light.why, visionOf(s, c), underground ? null : obscuredNow(s, indoors));
+}
+
 export interface WatchSlotInfo {
   from: number;
   to: number;
@@ -625,8 +665,10 @@ export interface WatchSlotInfo {
 /** The watch plan as it would play out if the Long Rest started now. */
 export function planWatches(s: State): WatchSlotInfo[] {
   const start = s.minutes % MIN_PER_DAY;
-  const underground = !!CLIMATES[s.weather.climate].noWeather;
+  const underground = isUnderground(s);
   const season = seasonOf(s);
+  const fullMoon = !underground && fullMoonOut(s);
+  const obscured = underground ? null : obscuredNow(s, s.place.shelter === 'building' || s.place.shelter === 'cave');
   return slotTimes(start, s.watchPlan.count).map((t, i) => {
     const mid = ((t.from + t.to) / 2) % MIN_PER_DAY;
     const phase = lightAt(mid, season).phase;
@@ -636,8 +678,8 @@ export function planWatches(s: State): WatchSlotInfo[] {
       .map((id) => actorById(s, id))
       .filter((c): c is Character => !!c && alive(c))
       .map((c) => {
-        const sight = watchSight(phase, lit, c.darkvision, underground);
-        return { c, sight, passive: c.passivePerception + (sight.blind ? 0 : sight.penalty) };
+        const sight = watchSight(phase, lit, visionOf(s, c), underground, { fullMoon, obscured });
+        return { c, sight, passive: c.passivePerception + sight.penalty };
       });
     return { from: t.from, to: t.to, watchers };
   });
@@ -1088,16 +1130,15 @@ function activeNavigator(s: State, navId: string | null | undefined): Character 
   return best;
 }
 
-/** Table rule: it's night (or underground), there's no light, and someone in the party can't see in the dark. */
+/**
+ * Table rule: someone in the party can't see where they're going: Darkness (night without a full moon, or underground),
+ * no lit Torch, Lamp, Lantern or light spell (a Candle is too small), and no Darkvision or Devil's Sight.
+ * Carrying an unlit torch doesn't count: light one on the Effects tab, and it burns down as you go.
+ */
 function travelsBlind(s: State): boolean {
   if (!s.settings.nightTravelSlow) return false;
-  const underground = !!CLIMATES[s.weather.climate].noWeather;
-  if (!underground && lightAt(s.minutes % MIN_PER_DAY, seasonOf(s)).phase !== 'Night') return false;
-  const now = absNow(s);
-  if (s.effects.some((e) => e.kind === 'light' && e.pausedLeft == null && (e.endsAt == null || e.endsAt > now))) return false;
   const walkers = s.characters.filter((c) => c.kind !== 'mount' && alive(c) && !c.dying && !c.stable);
-  if (walkers.some((c) => c.inventory.some((i) => /torch|lantern|candle/i.test(i.name)))) return false;
-  return walkers.some((c) => !c.darkvision);
+  return walkers.some((c) => sightNow(s, c, 'travel').blind);
 }
 
 /** Travelers slowed to half Speed or less, which forces a Slow pace (2024 DMG "Slower Travelers"). */
@@ -1220,7 +1261,7 @@ function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
     const blind = o.pace !== 'slow' && travelsBlind(d);
     if (blind && !darkWarned) {
       darkWarned = true;
-      log(d, 'Night falls and not everyone can see in the dark. Without a light, the party picks its way forward at a Slow pace (table rule).', 'warn');
+      log(d, 'Darkness falls and not everyone can see in it. With no lit Torch, Lantern or light spell (light one on the Effects tab), the party picks its way forward at a Slow pace (table rule).', 'warn');
     }
     advanceMut(d, ctx, 60, 'travel');
     d.travel.hoursToday += altitude ? 2 : 1;
@@ -1296,9 +1337,16 @@ export const searchCheck = act((d, ctx, charId: string, what: 'search' | 'track'
   const c = actorById(d, charId);
   if (!c) return;
   const dc = TERRAIN[d.place.terrain].searchDC;
-  const r = d20('normal', ctx.rng);
+  // 2024 PHB: in Darkness without Darkvision you're Blinded and fail checks that need sight. Dim Light, heavy rain
+  // or snow and a sandstorm give Disadvantage on Wisdom (Perception), but not on Survival.
+  const sight = sightNow(d, c, 'explore');
+  const doing = what === 'track' ? 'looks for tracks' : 'searches';
+  if (sight.blind) return void log(d, `${c.name} ${doing}, but in the dark without a light or Darkvision there is nothing to see: the check fails (${sight.note}).`, 'warn');
+  const mode = what === 'search' ? sight.mode : 'normal';
+  const r = d20(mode, ctx.rng);
   const total = r.value + bonus - 2 * c.exhaustion;
-  log(d, `${c.name} ${what === 'track' ? 'looks for tracks: Wisdom (Survival)' : 'searches: Wisdom (Perception)'} ${r.value} ${signed(bonus - 2 * c.exhaustion)} = ${total} against DC ${dc} (${TERRAIN[d.place.terrain].label}). ${total >= dc ? 'Found!' : 'Nothing.'}`, total >= dc ? 'good' : 'warn');
+  const hindered = mode === 'disadvantage' ? `, Disadvantage: ${sight.note}` : '';
+  log(d, `${c.name} ${doing}: ${what === 'track' ? 'Wisdom (Survival)' : 'Wisdom (Perception)'} ${r.rolls.join('/')} ${signed(bonus - 2 * c.exhaustion)} = ${total} against DC ${dc} (${TERRAIN[d.place.terrain].label}${hindered}). ${total >= dc ? 'Found!' : 'Nothing.'}`, total >= dc ? 'good' : 'warn');
 });
 
 /** Runs a planned journey stage day by day: travel up to 8 hours, then (optionally) eat, drink and Long Rest overnight. */
@@ -6267,15 +6315,25 @@ function surpriseCheck(s: State, ctx: Ctx, cr: string, hostile: boolean, activit
   if (!hostile) return ' They aren’t hiding: both sides see each other at that distance.';
   const awake = activity === 'rest' ? watchers : s.characters.filter((c) => c.kind !== 'mount' && alive(c) && !c.dying && !c.stable);
   const pace = activity === 'travel' ? s.travel.pace : null;
-  const adj = pace === 'fast' ? -5 : pace === 'slow' ? 5 : 0;
-  const best = awake.length ? Math.max(...awake.map((c) => c.passivePerception)) + adj : -Infinity;
   const stealth = d20('normal', ctx.rng).value + estimatedStealth(cr);
   if (activity === 'rest' && s.place.alarm === true) return ' As they creep closer, someone or something crosses the alarm line and the Bell jangles: the camp wakes, and nobody is surprised (table rule).';
   if (activity === 'rest' && s.place.alarm === 'pots' && stealth < POT_ALARM_DC) return ` As they creep closer (Stealth ${stealth}), they blunder into the line of pots and set it clanking: the camp wakes, and nobody is surprised (table rule).`;
   if (!awake.length) return ` With nobody awake to notice, they approach unseen: the party is surprised (Disadvantage on Initiative).`;
-  return stealth > best
-    ? ` They try to ambush: Stealth ${stealth} beats the party's best passive Perception ${best}${adj ? ` (${adj > 0 ? '+5 slow pace' : '−5 fast pace'})` : ''}. The party is surprised (Disadvantage on Initiative).`
-    : ` They try to sneak up: Stealth ${stealth} against passive Perception ${best}${adj ? ` (${adj > 0 ? '+5 slow pace' : '−5 fast pace'})` : ''}. The party spots them in time, no surprise.`;
+  // Sight (light, Darkvision, heavy rain or snow) and pace each give Advantage or Disadvantage, which cancel and don't stack.
+  const paceMode: RollMode = pace === 'fast' ? 'disadvantage' : pace === 'slow' ? 'advantage' : 'normal';
+  const where = activity === 'travel' ? 'travel' : activity === 'explore' ? 'explore' : 'camp';
+  const seen = awake.map((c) => {
+    const sight = sightNow(s, c, where);
+    const mode = combineModes(sight.mode, paceMode);
+    return { c, sight, mode, passive: c.passivePerception + passiveMod(mode) };
+  });
+  const top = seen.reduce((a, b) => (b.passive > a.passive ? b : a));
+  const why = [top.sight.mode !== 'normal' ? top.sight.note : '', paceMode !== 'normal' ? `${pace} pace` : ''].filter(Boolean);
+  const cancel = top.mode === 'normal' && why.length > 1 ? ': Advantage and Disadvantage cancel' : '';
+  const best = `${top.c.name}'s passive Perception ${top.passive}${why.length ? ` (${why.join('; ')}${cancel})` : ''}`;
+  return stealth > top.passive
+    ? ` They try to ambush: Stealth ${stealth} beats ${best}. The party is surprised (Disadvantage on Initiative).`
+    : ` They try to sneak up: Stealth ${stealth} against ${best}. The party spots them in time, no surprise.`;
 }
 
 export function resolveEncounter(s: State, ctx: Ctx, activity: CheckConditions['activity'], checkDetail?: string): void {
