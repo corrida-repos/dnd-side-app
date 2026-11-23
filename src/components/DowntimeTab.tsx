@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { Project } from '../state/types';
 import { SpeedUp } from './SpeedUp';
 import { PATRONS } from '../rules/patrons';
-import { ACTIVITY_CHECKS, activityOf, CAROUSING_COST, CRIME_TARGETS } from '../rules/downtimeOutcomes';
+import { ACTIVITY_CHECKS, activityOf, BUY_MAX_BONUS, BUY_WEEK_GP, buyTotalNeeded, CAROUSING_COST, CAROUSING_NEEDS, CRIME_TARGETS, magicPrice, researchBonus, RESEARCH_MIN_GP, SELL_FIND_DC, SELL_WEEK_GP, sheetBonuses, WEEKLY, weeksIn } from '../rules/downtimeOutcomes';
 import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
 import { uid } from '../state/defaults';
@@ -94,8 +94,24 @@ export function DowntimeTab() {
           </div>
         )}
         <Rule>Each 8-hour workday adds one day of progress for every assigned crafter who is alive, because crafters who share the work divide the time between them.</Rule>
-        {done.filter((p) => p.awaitingOutcome).map((p) => (
-          <ActivityResolver key={p.id} p={p} />
+        {done.filter((p) => p.awaitingOutcome).map((p) =>
+          p.kind === 'buyMagic' || p.kind === 'sellMagic' ? <DealResolver key={p.id} p={p} /> : <ActivityResolver key={`${p.id}-${(p.resolvedFor ?? []).length}`} p={p} />,
+        )}
+        {done.filter((p) => p.offers?.length).map((p) => (
+          <div key={`offer-${p.id}`} className="decision">
+            <b>{p.name}</b>: {p.outcome}.
+            <div className="btn-row">
+              {p.offers!.map((o, i) => (
+                <button key={o.label} className={`small${o.shady ? '' : ' primary'}`} onClick={() => dispatch((st, cx) => E.answerDeal(st, cx, p.id, i))}>
+                  {o.label}
+                </button>
+              ))}
+              <button className="small ghost" onClick={() => dispatch((st, cx) => E.answerDeal(st, cx, p.id, null))}>
+                Turn it down
+              </button>
+            </div>
+            {p.offers!.some((o) => o.shady) && <Rule>Table rule: selling to a shady buyer doubles the complication chance (20%).</Rule>}
+          </div>
         ))}
         {done.length > 0 && (
           <details>
@@ -227,14 +243,18 @@ function NewProject() {
     }
     case 'buyMagic':
     case 'sellMagic': {
-      const value = MAGIC_ITEM_VALUE[rarity];
+      const value = MAGIC_ITEM_VALUE[rarity] / (consumable ? 2 : 1);
       const price = deal ?? (kind === 'sellMagic' ? value / 2 : value);
+      const weeks = weeksIn(dealDays);
       calc = {
         days: dealDays,
         gp: price,
         label: name || `${kind === 'buyMagic' ? 'Buy' : 'Sell'} a ${RARITY_LABEL[rarity].toLowerCase()} magic item`,
-        note:
-          kind === 'buyMagic'
+        note: s.settings.downtimeOutcomes
+          ? kind === 'buyMagic'
+            ? `Xanathar's: ${BUY_WEEK_GP} GP a workweek to search (${fmtGp(weeks * BUY_WEEK_GP)} for ${weeks}), then Charisma (Persuasion) with +1 for each week after the first (max +${BUY_MAX_BONUS}). A ${consumable ? 'consumable' : 'permanent'} ${RARITY_LABEL[rarity].toLowerCase()} item needs a total of ${buyTotalNeeded(rarity, consumable)} or more. Price ${fmtGp(magicPrice(rarity, consumable))}, or half again on a total of 15 or less.`
+            : `Xanathar's: ${SELL_WEEK_GP} GP and a DC ${SELL_FIND_DC} Intelligence (Investigation) check each workweek to find a buyer, then d100 + Charisma (Persuasion) for the offer, from a base price of ${fmtGp(magicPrice(rarity, consumable))}.`
+          : kind === 'buyMagic'
             ? `Finding a seller takes downtime. Typical value: ${fmtGp(value)}. The price is paid when the deal is done.`
             : `Finding a buyer takes downtime. Sellers usually get about half the value (${fmtGp(value / 2)}). The gold is received when the deal is done.`,
       };
@@ -265,7 +285,8 @@ function NewProject() {
   const canUntrained = s.settings.improvised && (kind === 'nonmagical' || kind === 'potion');
   if (canUntrained && untrained) calc = { ...calc, days: calc.days * 2, note: `${calc.note} Not proficient: twice the workdays (table rule; the 2024 PHB needs proficiency with the tool).` };
   const solo = isSoloWork(kind);
-  const cal = calendarDays(calc.days, solo ? 1 : crafters.length, s.settings.extraCraftHelpers);
+  const ownWeek = kind === 'activity' && !!activityOf(name);
+  const cal = calendarDays(calc.days, solo || ownWeek ? 1 : crafters.length, s.settings.extraCraftHelpers);
   const productFor = (): { name: string; qty: number; magic?: boolean; valueGp?: number } | undefined => {
     if (kind === 'nonmagical') {
       const item = GEAR_CATALOG.find((g) => g.name === gear);
@@ -313,7 +334,16 @@ function NewProject() {
         {(kind === 'buyMagic' || kind === 'sellMagic') && (
           <>
             <Select label="Rarity" value={rarity} onChange={(v: Rarity) => (setRarity(v), setDeal(null))} options={(Object.keys(RARITY_LABEL) as Rarity[]).map((r) => ({ value: r, label: RARITY_LABEL[r] }))} />
-            <Num label="Price" value={calc.gp} onChange={(v) => setDeal(Math.max(0, v))} min={0} suffix="GP" width={7} />
+            <Toggle checked={consumable} onChange={(v) => (setConsumable(v), setDeal(null))} label="Consumable (potion, scroll, ammunition…)" />
+            {kind === 'sellMagic' && pcs.some((c) => crafters.includes(c.id) && c.items.length) ? (
+              <Select
+                label="Item"
+                value={name}
+                onChange={setName}
+                options={[{ value: '', label: 'Choose…' }, ...pcs.filter((c) => crafters.includes(c.id)).flatMap((c) => c.items.map((i) => ({ value: i.name, label: `${i.name} (${c.name})` })))]}
+              />
+            ) : null}
+            {!s.settings.downtimeOutcomes && <Num label="Price" value={calc.gp} onChange={(v) => setDeal(Math.max(0, v))} min={0} suffix="GP" width={7} />}
             <Num label="Workdays" value={dealDays} onChange={(v) => setDealDays(Math.max(1, Math.round(v)))} min={1} width={3} />
           </>
         )}
@@ -471,7 +501,7 @@ function NewProject() {
             costGp: trade ? 0 : calc.gp,
             notes: kind === 'activity' ? (ACTIVITY_PRESETS.find((a) => a.name === name)?.check ?? '') : '',
             done: false,
-            ...(trade ? { rarity, dealGp: calc.gp } : {}),
+            ...(trade ? { rarity, dealGp: calc.gp, consumable, ...(name.trim() ? { itemName: name.trim() } : {}) } : {}),
             ...(kind === 'spellcopy' ? { spell: { name: spellName.trim() || 'Unnamed spell', level: spellLevel } } : {}),
             ...(kind === 'activity' && name.startsWith('Training') && learn.trim() ? { learn: learn.trim(), name: `Training: ${learn.trim()}` } : {}),
             ...(kind === 'activity' && name.startsWith('Special training') ? { learnKind, ...(learn.trim() ? { learn: learn.trim(), name: `Special training: ${learn.trim()}` } : {}) } : {}),
@@ -647,11 +677,14 @@ function ActivityResolver({ p }: { p: Project }) {
   const s = useGame();
   const id = activityOf(p.name)!;
   const checks = ACTIVITY_CHECKS[id];
-  const [bonuses, setBonuses] = useState<number[]>(checks.map(() => 0));
-  const [gp, setGp] = useState(id === 'Gambling' ? 50 : id === 'Research' ? 50 : 0);
+  const pending = p.charIds.filter((x) => !(p.resolvedFor ?? []).includes(x) && E.charById(s, x));
+  const who = E.charById(s, pending[0] ?? p.charIds[0]);
+  const sheet = who ? sheetBonuses(who, id) : [];
+  const [bonuses, setBonuses] = useState<number[]>(checks.map((_, i) => sheet[i]?.bonus ?? 0));
+  const [gp, setGp] = useState(id === 'Gambling' ? 50 : id === 'Research' ? RESEARCH_MIN_GP : 0);
   const [dc, setDc] = useState(10);
   const [circle, setCircle] = useState<'lower' | 'middle' | 'upper'>('lower');
-  const who = E.charById(s, p.charIds[0]);
+  const weeks = WEEKLY.includes(id) ? weeksIn(p.daysRequired) : 1;
   // 2024 PHB: proficiency with a tool and a skill that both apply gives Advantage.
   const toolAdv = (i: number): { on: boolean; why: string } | null => {
     if (!who) return null;
@@ -666,9 +699,12 @@ function ActivityResolver({ p }: { p: Project }) {
   };
   const [adv, setAdv] = useState<boolean[]>(checks.map((_, i) => !!toolAdv(i)?.on));
   const [book, setBook] = useState(!!who?.inventory.some((i) => BOOK.test(i.name)));
+  const weekly = id === 'Carousing' ? CAROUSING_COST[circle] : id === 'Research' ? Math.max(RESEARCH_MIN_GP, gp) : 0;
+  const owed = Math.max(0, weekly * weeks - p.costGp / Math.max(1, p.charIds.length));
   return (
     <div className="decision">
-      <b>{p.name}</b> is done{who ? ` for ${who.name}` : ''}. Roll its checks:
+      <b>{p.name}</b> is done{who ? ` for ${who.name}` : ''}
+      {weeks > 1 ? ` (${weeks} workweeks, each rolled on its own)` : ''}. Roll {pending.length > 1 ? `${who?.name}'s` : 'its'} checks:
       <div className="form-row">
         {checks.map((c, i) => (
           <Num key={c} label={c} value={bonuses[i] ?? 0} onChange={(v) => setBonuses(bonuses.map((b, k) => (k === i ? v : b)))} width={3} />
@@ -678,15 +714,53 @@ function ActivityResolver({ p }: { p: Project }) {
           return t ? <Toggle key={`adv-${c}`} checked={!!adv[i]} onChange={(v) => setAdv(adv.map((x, k) => (k === i ? v : x)))} label={`Advantage on ${c.split(' (')[0]} (${t.why})`} /> : null;
         })}
         {id === 'Research' && <Toggle checked={book} onChange={setBook} label="Consulting an accurate Book on the topic (+5, 2024 PHB)" />}
-        {id === 'Gambling' && <Num label="Stake" value={gp} onChange={(v) => setGp(Math.max(10, Math.min(1000, v)))} min={10} max={1000} suffix="GP" width={5} />}
-        {id === 'Research' && <Num label="Spent" value={gp} onChange={(v) => setGp(Math.max(50, v))} min={50} suffix="GP" width={5} />}
+        {id === 'Gambling' && <Num label="Stake a week" value={gp} onChange={(v) => setGp(Math.max(10, Math.min(1000, v)))} min={10} max={1000} suffix="GP" width={5} />}
+        {id === 'Research' && <Num label="Spent a week" value={gp} onChange={(v) => setGp(Math.max(RESEARCH_MIN_GP, v))} min={RESEARCH_MIN_GP} suffix="GP" width={5} />}
         {id === 'Crime' && <Select label="Target" value={String(dc)} onChange={(v) => setDc(Number(v))} options={CRIME_TARGETS.map((t) => ({ value: String(t.dc), label: t.label }))} />}
-        {id === 'Carousing' && <Select label="Circle" value={circle} onChange={setCircle} options={(['lower', 'middle', 'upper'] as const).map((c) => ({ value: c, label: `${c[0].toUpperCase()}${c.slice(1)} class (${CAROUSING_COST[c]} GP)` }))} />}
+        {id === 'Carousing' && <Select label="Circle" value={circle} onChange={setCircle} options={(['lower', 'middle', 'upper'] as const).map((c) => ({ value: c, label: `${c[0].toUpperCase()}${c.slice(1)} class (${CAROUSING_COST[c]} GP a week)` }))} />}
       </div>
-      <button className="small primary" onClick={() => dispatch((st, cx) => E.resolveActivityProject(st, cx, p.id, { bonuses, gp, dc, circle, advantage: adv, book: id === 'Research' && book }))}>
-        Roll the outcome
+      {sheet.length > 0 && <p className="small muted">From the sheet: {sheet.map((x) => `${x.why} = ${x.bonus >= 0 ? '+' : ''}${x.bonus}`).join(' · ')}{sheet.some((x) => !x.known) ? '. Some scores aren\'t recorded: check the numbers.' : ''}</p>}
+      {id === 'Carousing' && <p className="small muted">{CAROUSING_NEEDS[circle]}</p>}
+      {id === 'Research' && <p className="small muted">+{researchBonus(Math.max(RESEARCH_MIN_GP, gp))} from spending (+1 for every 100 GP beyond the first 100, max +6).</p>}
+      {id === 'Pit fighting' && who && <p className="small muted">The Constitution check adds a roll of {who.name}&apos;s d{who.hitDie} Hit Die (not spent).</p>}
+      {owed > 0 && <p className="small">Costs {fmtGp(owed)} more than the project charged ({fmtGp(weekly)} a week).</p>}
+      <button
+        className="small primary"
+        onClick={() => dispatch((st, cx) => E.resolveActivityProject(st, cx, p.id, { bonuses, gp, dc, circle, advantage: adv, book: id === 'Research' && book, hitDie: who?.hitDie, weeks }, who?.id))}
+      >
+        Roll the outcome{pending.length > 1 ? ` for ${who?.name}` : ''}
       </button>
-      <Rule>Optional rule from Xanathar&apos;s Guide (2014): the 2024 books have no outcome tables for these. Contacts, favors and lore go into the character&apos;s notes. Each week has a 10% chance of a complication.</Rule>
+      <Rule>Optional rule from Xanathar&apos;s Guide (2014): the 2024 books have no outcome tables for these. Everyone on the activity rolls their own checks. Contacts, favors and lore go into the character&apos;s notes. Each week has a 10% chance of a complication.</Rule>
+    </div>
+  );
+}
+
+function DealResolver({ p }: { p: Project }) {
+  const s = useGame();
+  const buy = p.kind === 'buyMagic';
+  const who = E.charById(s, p.charIds[0]);
+  const sheet = who ? sheetBonuses(who, buy ? 'Buying a magic item' : 'Selling a magic item') : [];
+  const [bonus, setBonus] = useState(sheet[0]?.bonus ?? 0);
+  const [offerBonus, setOfferBonus] = useState(sheet[1]?.bonus ?? 0);
+  const weeks = weeksIn(p.daysRequired);
+  const rarity = p.rarity ?? 'uncommon';
+  return (
+    <div className="decision">
+      <b>{p.name}</b>: {weeks} workweek{weeks > 1 ? 's' : ''} of searching{who ? ` by ${who.name}` : ''}, {fmtGp(weeks * (buy ? BUY_WEEK_GP : SELL_WEEK_GP))}.
+      <div className="form-row">
+        <Num label={buy ? 'Charisma (Persuasion)' : 'Intelligence (Investigation)'} value={bonus} onChange={setBonus} width={3} />
+        {!buy && <Num label="Charisma (Persuasion)" value={offerBonus} onChange={setOfferBonus} width={3} />}
+      </div>
+      {sheet.length > 0 && <p className="small muted">From the sheet: {sheet.map((x) => `${x.why} = ${x.bonus >= 0 ? '+' : ''}${x.bonus}`).join(' · ')}</p>}
+      <p className="small muted">
+        {buy
+          ? `Needs a total of ${buyTotalNeeded(rarity, !!p.consumable)} (with +${Math.min(BUY_MAX_BONUS, weeks - 1)} for the extra weeks).`
+          : `DC ${SELL_FIND_DC} each week to find a buyer, then d100 + Persuasion on the offer table.`}
+      </p>
+      <button className="small primary" onClick={() => dispatch((st, cx) => E.resolveDealProject(st, cx, p.id, { bonus, offerBonus }))}>
+        Roll the search
+      </button>
+      <Rule>Optional rule from Xanathar&apos;s Guide (2014), with 2024 DMG prices. 10% chance of a complication.</Rule>
     </div>
   );
 }

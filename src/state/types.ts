@@ -551,6 +551,13 @@ export interface Project {
   /** A finished activity waiting for its checks, and what came of it. */
   awaitingOutcome?: boolean;
   outcome?: string;
+  /** Participants whose activity checks have been rolled (each rolls their own, Xanathar's). */
+  resolvedFor?: string[];
+  /** Buying or selling a magic item: a consumable (half price, and easier to find), and the item's name. */
+  consumable?: boolean;
+  itemName?: string;
+  /** Offers waiting for an answer once a seller or buyer is found. */
+  offers?: { label: string; gp: number; shady?: boolean }[];
   /** Skilled hirelings with the right tools assisting the work, paid 2 GP each per workday. */
   hiredArtisans?: number;
   /** Hours of work done on the march toward the next workday (8 hours make one). */

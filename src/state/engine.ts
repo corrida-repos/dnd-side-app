@@ -19,7 +19,7 @@ import { ALL_IS_WELL, BARRACK_ROOM, BASTION_CHARMS, CONSTRUCTS, CREATURE_ROOM, G
 import { knownValue, misjudged, priceOf, saleRate, sameStack, valueSecret, valueUnknown } from '../rules/shop';
 import { APPRAISE_MINUTES, JEWELER_TOOLS, appraiseCheck, misjudgedValue, valuableKind, type AppraiseMethod } from '../rules/appraise';
 import { groundDifficulty, meltInches, mudAfter, snowfallInches } from '../rules/ground';
-import { activityOf, COMPLICATIONS, resolveActivity, type ActivityOpts, type Complication } from '../rules/downtimeOutcomes';
+import { activityOf, COMPLICATIONS, resolveActivity, resolveBuying, resolveSelling, weeksIn, type ActivityOpts, type Complication } from '../rules/downtimeOutcomes';
 import { GROUP_ASSISTANCE, PATRONS, type PatronKind } from '../rules/patrons';
 import { REGIONS, regionBand, type RegionKind } from '../rules/regions';
 import { CREDITOR_LABEL, DUE_DAYS, ESCALATION, LENIENT_GP, PRISON_LABOR_GP_PER_WEEK, SERVICE_CREDIT, WEEKLY_INTEREST, type CreditorKind, type Escalation } from '../rules/debts';
@@ -2203,7 +2203,8 @@ function progress(s: State, p: Project, ctx?: Ctx): void {
     }).length + hired;
   if (hired > 0) payGold(s, p.charIds, hired * HIRELING_WAGE.skilled, `${hired} hired artisan${hired > 1 ? 's' : ''} on ${p.name}`);
   // Normally only one other character can help (the DM can allow more). Training is time with the trainer: trainees don't speed each other up.
-  const amount = p.learnKind || isSoloWork(p.kind) ? 1 : Math.max(1, s.settings.extraCraftHelpers ? crafters : Math.min(2, crafters));
+  // Activities are each participant's own week (carousing together doesn't make the week shorter).
+  const amount = p.learnKind || isSoloWork(p.kind) || (p.kind === 'activity' && activityOf(p.name)) ? 1 : Math.max(1, s.settings.extraCraftHelpers ? crafters : Math.min(2, crafters));
   p.daysDone = Math.min(p.daysRequired, p.daysDone + amount);
   if (p.daysDone >= p.daysRequired) progressFinish(s, p, ctx);
   else log(s, `A day's work on ${p.name}: ${p.daysDone}/${p.daysRequired} workdays.`);
@@ -2247,6 +2248,12 @@ function progressFinish(s: State, p: Project, ctx?: Ctx): void {
         log(s, `${p.name} is done. Roll its checks on the Downtime tab.`);
       }
     } else if (p.kind === 'activity' && p.notes) log(s, `${p.name} is done. Make the check: ${p.notes}. The DM decides the outcome.`);
+    const trade = p.kind === 'buyMagic' || p.kind === 'sellMagic';
+    if (trade && s.settings.downtimeOutcomes) {
+      p.awaitingOutcome = true;
+      log(s, `${p.name}: the search is over. Roll it on the Downtime tab.`);
+      return;
+    }
     deliverProduct(s, p);
     if (p.kind === 'buyMagic' && p.dealGp) payGold(s, p.charIds, p.dealGp, p.name);
     if (p.kind === 'sellMagic' && p.dealGp) receiveGold(s, p.charIds, p.dealGp, p.name);
@@ -2738,30 +2745,109 @@ export const resolveObstacle = act((d, ctx, stageId: string, obstacleId: string,
 // ---------------------------------------------------------------- downtime activity outcomes
 
 /** Rolls a finished activity's checks (optional Xanathar's rules) and applies the gold, contacts, favors, jail time and complications. */
-export const resolveActivityProject = act((d, ctx, projectId: string, o: ActivityOpts) => {
+export const resolveActivityProject = act((d, ctx, projectId: string, o: ActivityOpts, charId?: string) => {
   const p = d.projects.find((x) => x.id === projectId);
   const id = p ? activityOf(p.name) : null;
-  const c = p ? charById(d, p.charIds[0]) : undefined;
-  if (!p || !id || !c) return;
+  const done = p?.resolvedFor ?? [];
+  const who = charId ?? p?.charIds.find((x) => !done.includes(x));
+  const c = p && who ? charById(d, who) : undefined;
+  if (!p || !id || !c || done.includes(c.id)) return;
   const heat = id === 'Crime' && d.rivalHeat;
   if (heat) d.rivalHeat = false;
-  const r = resolveActivity(id, heat ? { ...o, dc: Math.min(25, (o.dc ?? 10) + 5) } : o, ctx.rng);
+  const weeks = o.weeks ?? weeksIn(p.daysRequired);
+  const r = resolveActivity(id, { ...o, weeks, ...(heat ? { dc: Math.min(25, (o.dc ?? 10) + 5) } : {}) }, ctx.rng);
   if (heat) log(d, 'Bribed officials are watching: the job is harder (+5 DC).', 'warn');
-  p.awaitingOutcome = false;
-  p.outcome = r.text;
+  p.resolvedFor = [...done, c.id];
+  const alive = p.charIds.filter((x) => charById(d, x));
+  p.awaitingOutcome = alive.some((x) => !p.resolvedFor!.includes(x));
+  const line = `${p.charIds.length > 1 ? `${c.name}: ` : ''}${r.text}`;
+  p.outcome = p.outcome && p.charIds.length > 1 ? `${p.outcome} · ${line}` : line;
   log(d, `${c.name}'s ${p.name}: ${r.text}.`, r.gp < 0 || r.jailDays ? 'bad' : r.gp > 0 || r.notes.length ? 'good' : 'info');
+  // Weekly costs (company kept, research money) beyond what the project already charged, shared out per participant.
+  const covered = p.costGp / Math.max(1, p.charIds.length);
+  const extra = Math.round(Math.max(0, (r.spent ?? 0) - covered) * 100) / 100;
+  if (extra > 0) payGold(d, [c.id], extra, `${p.name} (${weeks} week${weeks > 1 ? 's' : ''})`);
   if (r.gp > 0) gainWealth(c, r.gp);
   if (r.gp < 0) spendWealth(c, -r.gp);
   if (r.debt) addDebtMut(d, c.id, 'The gambling house', 'criminal', r.debt);
   if (r.notes.length) c.notes = [c.notes, ...r.notes.map((n) => `${n} (${stamp(d)})`)].filter(Boolean).join('\n');
+  if (r.lifestyle && id === 'Working a trade') log(d, `${c.name}'s work covers a ${LIFESTYLE_LABEL[r.lifestyle].toLowerCase()} lifestyle while it lasts.`);
   if (r.jailDays) d.effects.push({ id: uid(), name: 'In jail', kind: 'other', targetIds: [c.id], casterId: null, concentration: false, shelter: false, startedAt: absNow(d), endsAt: absNow(d) + r.jailDays * MIN_PER_DAY, notes: 'Serving time for a crime.' });
   if (r.jailDays && id === 'Crime' && d.settings.notoriety) addHeatMut(d, d.place.name, 'serious', [c.id], 'caught at a crime');
   for (const n of r.notes) {
     const m = /^(Allied|Hostile) contact/.exec(n);
     if (m) addContactMut(d, { name: `New ${m[1].toLowerCase()} contact (${p.name})`, role: 'Other', place: d.place.name, bond: m[1] === 'Allied' ? 1 : -1, knownBy: [c.id], notes: n });
   }
-  if (r.complication) applyComplication(d, ctx, c, r.complication);
+  for (const comp of r.complications ?? (r.complication ? [r.complication] : [])) applyComplication(d, ctx, c, comp);
   rivalAdvances(d, ctx);
+});
+
+export interface DealOpts {
+  /** Buying: Charisma (Persuasion). Selling: Intelligence (Investigation) to find a buyer. */
+  bonus: number;
+  /** Selling: Charisma (Persuasion) for the offer roll. */
+  offerBonus?: number;
+  advantage?: boolean;
+}
+
+/** Rolls a finished magic item search (Xanathar's): pays the search money and lays out any offers to accept or turn down. */
+export const resolveDealProject = act((d, ctx, projectId: string, o: DealOpts) => {
+  const p = d.projects.find((x) => x.id === projectId);
+  const c = p ? charById(d, p.charIds[0]) : undefined;
+  if (!p || !c || (p.kind !== 'buyMagic' && p.kind !== 'sellMagic')) return;
+  const weeks = weeksIn(p.daysRequired);
+  const rarity = p.rarity ?? 'uncommon';
+  const consumable = !!p.consumable;
+  const r =
+    p.kind === 'buyMagic'
+      ? resolveBuying({ bonus: o.bonus, weeks, rarity, consumable, advantage: o.advantage }, ctx.rng)
+      : resolveSelling({ findBonus: o.bonus, offerBonus: o.offerBonus ?? 0, weeks, rarity, consumable }, ctx.rng);
+  p.awaitingOutcome = false;
+  p.outcome = r.text;
+  payGold(d, p.charIds, r.spent, `${p.kind === 'buyMagic' ? 'searching for a seller' : 'finding a buyer'} (${p.name})`);
+  log(d, `${c.name}'s ${p.name}: ${r.text}.`, r.offers.length ? 'good' : 'warn');
+  if (r.complication) applyComplication(d, ctx, c, r.complication);
+  if (r.offers.length) p.offers = r.offers;
+  else log(d, 'No deal. Start a new search to try again.');
+  rivalAdvances(d, ctx);
+});
+
+/** Takes one of a search's offers (by index), or turns them all down (null). */
+export const answerDeal = act((d, ctx, projectId: string, index: number | null) => {
+  const p = d.projects.find((x) => x.id === projectId);
+  if (!p?.offers?.length) return;
+  const offer = index == null ? null : p.offers[index];
+  p.offers = undefined;
+  if (!offer) {
+    p.outcome = `${p.outcome ?? ''} · turned down`;
+    log(d, `${p.name}: the offer is turned down.`);
+    return;
+  }
+  p.dealGp = offer.gp;
+  p.outcome = `${p.outcome ?? ''} · ${p.kind === 'buyMagic' ? 'bought' : 'sold'} for ${fmtGp(offer.gp)}`;
+  if (p.kind === 'buyMagic') {
+    payGold(d, p.charIds, offer.gp, p.name);
+    if (!p.product) p.product = { name: p.itemName?.trim() || `${p.rarity ? RARITY_LABEL[p.rarity] : 'Magic'} magic item`, qty: 1, magic: true };
+    deliverProduct(d, p);
+  } else {
+    receiveGold(d, p.charIds, offer.gp, p.name);
+    const name = p.itemName?.trim().toLowerCase();
+    for (const id of p.charIds) {
+      const c = charById(d, id);
+      const i = name && c ? c.items.findIndex((x) => x.name.toLowerCase() === name) : -1;
+      if (c && i >= 0) {
+        c.items.splice(i, 1);
+        log(d, `${c.name} hands over the ${p.itemName}.`);
+        break;
+      }
+    }
+    // Table rule: a shady buyer doubles the complication chance, to 20%.
+    if (offer.shady && die(10, ctx.rng) === 1) {
+      const list = COMPLICATIONS['Selling a magic item'];
+      const c = charById(d, p.charIds[0]);
+      if (c) applyComplication(d, ctx, c, list[die(list.length, ctx.rng) - 1]);
+    }
+  }
 });
 
 /** A complication's text, its rival (if any) and its mechanical effects. */

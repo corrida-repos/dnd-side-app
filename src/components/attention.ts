@@ -65,6 +65,7 @@ export function attentionItems(s: State): AttentionItem[] {
   }
 
   for (const p of s.projects) if (p.awaitingOutcome) add({ id: `act-${p.id}`, tone: 'warn', text: `${p.name} is done: roll its outcome`, tab: 'downtime' });
+  for (const p of s.projects) if (p.offers?.length) add({ id: `offer-${p.id}`, tone: 'warn', text: `${p.name}: an offer is waiting for an answer`, tab: 'downtime' });
   for (const b of s.businesses) if (b.daysWorked >= 30) add({ id: `biz-${b.id}`, tone: 'info', text: `${b.name}: 30 days worked, roll for the period`, tab: 'downtime' });
 
   for (const d of s.debts) {

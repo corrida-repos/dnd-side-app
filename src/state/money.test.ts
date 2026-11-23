@@ -47,8 +47,8 @@ describe('gold, lifestyle and wages', () => {
     expect(E.advance(s, ctx(), 60).characters.map((c) => c.gp)).toEqual([9, 8.8]);
   });
 
-  it('charges materials on start, and settles magic item deals on completion', () => {
-    const s = fresh((d) => (d.minutes = 8 * 60));
+  it('charges materials on start, and settles magic item deals on completion (outcome rolls off)', () => {
+    const s = fresh((d) => ((d.minutes = 8 * 60), (d.settings.downtimeOutcomes = false)));
     const a = s.characters[0].id;
     const craft = E.startProject(s, ctx(), project({ kind: 'nonmagical', charIds: [a], costGp: 7.5 }));
     expect(craft.characters[0].gp).toBe(2.5);
