@@ -11,6 +11,7 @@ import type { Character, CharacterSpell } from '../state/types';
 import { WaysAround } from './WaysAround';
 import { componentFor, TARGET_SPELLS } from '../rules/components';
 import { fmtGp } from '../rules/money';
+import { circleEligible, CIRCLE_RANGE_FT, helperProblem, slotsLeft } from '../rules/circle';
 
 export function MorningTab() {
   const s = useGame();
@@ -96,6 +97,8 @@ function CastPanel({ c }: { c: Character }) {
   const known = c.spells.map((sp) => ({ sp, info: { ...sp, ...spellInfo(sp, s.spellLibrary) } as CharacterSpell }));
   const [name, setName] = useState('');
   const [target, setTarget] = useState('');
+  const [helperIds, setHelperIds] = useState<string[]>([]);
+  const [option, setOption] = useState('');
   if (!known.length) return null;
   const pick = known.find((k) => k.sp.name === name) ?? known[0];
   const info = pick.info;
@@ -125,6 +128,7 @@ function CastPanel({ c }: { c: Character }) {
           As ritual ({formatDuration(Math.max(1, Math.round(base + RITUAL_EXTRA_MINUTES)))}, no slot)
         </button>
       </div>
+      {s.settings.circleMagic && circleEligible(info).ok && <CirclePanel c={c} info={info} helperIds={helperIds} setHelperIds={setHelperIds} option={option} setOption={setOption} target={TARGET_SPELLS[pick.sp.name] ? target || null : null} />}
       {TARGET_SPELLS[pick.sp.name] && (
         <div className="btn-row tight">
           <Select label="Target" value={target} onChange={setTarget} options={[{ value: '', label: 'Choose…' }, ...s.characters.map((x) => ({ value: x.id, label: `${x.name}${x.diedAt != null ? ' (dead)' : ''}` }))]} />
@@ -143,6 +147,48 @@ function CastPanel({ c }: { c: Character }) {
         {info.durationMinutes ? `Lasts ${formatDuration(info.durationMinutes)}${info.concentration ? ' (Concentration)' : ''}, and a timer starts on the Effects & Lights tab.` : info.permanent ? 'Lasts until dispelled.' : info.durationMinutes === null ? 'Instantaneous.' : ''}
         {info.castMinutes === undefined && ' Casting time unknown: import a 5etools spell file for exact times.'}
       </p>
+    </div>
+  );
+}
+
+/** Circle Magic (Heroes of Faerûn): secondary casters join a spell of 1 minute or longer, each spending a slot. */
+function CirclePanel({ c, info, helperIds, setHelperIds, option, setOption, target }: { c: Character; info: CharacterSpell; helperIds: string[]; setHelperIds: (v: string[]) => void; option: string; setOption: (v: string) => void; target: string | null }) {
+  const s = useGame();
+  const others = s.characters.filter((x) => x.id !== c.id && x.diedAt == null);
+  const chosen = helperIds.filter((id) => others.some((x) => x.id === id && !helperProblem(x, info.level)));
+  const prepared = info.prepared || info.alwaysPrepared;
+  return (
+    <div className="stack tight">
+      <h4>Circle casting (optional rule)</h4>
+      <div className="btn-row tight">
+        {others.map((x) => {
+          const problem = helperProblem(x, info.level);
+          const left = slotsLeft(x, info.level);
+          return (
+            <Toggle
+              key={x.id}
+              checked={chosen.includes(x.id)}
+              onChange={(v) => setHelperIds(v ? [...chosen, x.id] : chosen.filter((id) => id !== x.id))}
+              label={`${x.name}${problem ? '' : left === Infinity ? '' : ` (${left} slot${left === 1 ? '' : 's'} of L${info.level}+)`}`}
+              title={problem || undefined}
+            />
+          );
+        })}
+      </div>
+      <div className="btn-row tight">
+        <Text label="Circle option (from the spell)" value={option} onChange={setOption} placeholder="e.g. larger area" />
+        <button
+          className="small primary"
+          disabled={!chosen.length || !prepared}
+          title={!prepared ? 'Not prepared' : !chosen.length ? 'Pick at least one secondary caster' : ''}
+          onClick={() => dispatch((st, cx) => E.castSpell(st, cx, c.id, info.name, 'slot', target, { helperIds: chosen, option }))}
+        >
+          Cast as a Circle spell ({info.castTime}, {chosen.length + 1} slot{chosen.length ? 's' : ''})
+        </button>
+      </div>
+      <Rule>
+        {c.name} leads; each secondary caster needs the Spellcasting or Pact Magic feature and spends a spell slot of level {info.level} or higher. For the whole {info.castTime}, everyone stays within {CIRCLE_RANGE_FT} feet of {c.name}, takes the Magic action each turn and keeps Concentration, so anything else they concentrate on ends. If the casting is broken off, the spell fails and nobody's slot is spent. Only one circle option can apply.
+      </Rule>
     </div>
   );
 }

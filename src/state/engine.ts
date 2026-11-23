@@ -43,6 +43,7 @@ import { INN_STAY_GP, MEAL_GP, MEALS_PER_DAY, FEED_GP_PER_DAY, HIRELING_WAGE, ma
 import { STABLE_WAKE_DIE, STABILIZE_DC } from '../rules/upkeep';
 import { FORT_NEGLECT_DAYS, FORT_UPKEEP, LAND, LODGING_CAP, MARK_LABEL, PRIZE_CROWN_SHARE, RIGHTS, TITLE_RANK, TRUST_LABEL, TRUST_MAX, lifestyleBelow, lowerLifestyle, monthDue, rollLandIncome, rollLandTrouble, sameCommunity, TRAINING_KIND_LABEL, levelRenown, renownMinimum } from '../rules/prestige';
 import { RITUAL_EXTRA_MINUTES as RITUAL_TAG_MINUTES, spellInfo } from '../rules/rituals';
+import { circleBeginsText, circleBrokenText, circleEligible, circleEndsText, CIRCLE_RANGE_FT, helperProblem } from '../rules/circle';
 import { maxWatchMinutes, slotTimes, watchMinutes, watchSight, type Sight } from '../rules/watch';
 import { abilityMod, ATTUNE_AWAY_MINUTES, IDENTIFY_MINUTES, MAX_ATTUNED, RITUAL_EXTRA_MINUTES } from '../rules/upkeep';
 import { COOK_RAW_MINUTES, DEFAULT_FIRE_COLD_LIMIT_F, FIRE_LIGHT_DC, FIRE_METHODS, FIRE_SPELLS, fireColdLimit, fireKeepsWarm, fireLighting, type FireMethod } from '../rules/campfire';
@@ -5660,53 +5661,112 @@ export function canCastAsRitual(c: Character, sp: CharacterSpell): { ok: boolean
   return { ok: false, reason: `${c.name} needs ${sp.name} prepared to cast it as a ritual.` };
 }
 
-/** Casts a known spell: as a ritual (+10 minutes, no slot) or normally (uses a tracked slot of its level or higher). */
-export const castSpell = act((d, ctx, charId: string, spellName: string, mode: 'ritual' | 'slot', targetId: string | null = null) => {
+/** A circle casting: secondary casters who each spend a spell slot, and the circle option chosen from the book. */
+export interface CircleCast {
+  helperIds: string[];
+  option?: string;
+}
+
+/** Lowest tracked spell slot of at least this level with a use left; null if none; undefined if slots aren't tracked. */
+function findSlot(c: Character, level: number): Character['resources'][number] | null | undefined {
+  const slots = c.resources
+    .filter((r) => /(spell|pact) slots \(level (\d)\)/i.test(r.name))
+    .map((r) => ({ r, lvl: Number(/level (\d)/i.exec(r.name)![1]) }))
+    .filter((x) => x.lvl >= level)
+    .sort((a, b) => a.lvl - b.lvl);
+  if (!c.resources.some((r) => /(spell|pact) slots/i.test(r.name))) return undefined;
+  return slots.find((x) => x.r.current > 0)?.r ?? null;
+}
+
+/** Ends whatever this character is concentrating on, with a log line. */
+function dropConcentration(d: State, c: Character, why: string): void {
+  const dropped = d.effects.filter((e) => e.concentration && e.casterId === c.id);
+  if (!dropped.length) return;
+  d.effects = d.effects.filter((e) => !dropped.includes(e));
+  log(d, `${c.name} stops concentrating on ${dropped.map((e) => e.name).join(', ')}${why}.`, 'warn', { charIds: [c.id] });
+}
+
+/** Counts random encounters with creatures, so a long casting can tell whether one turned up mid-casting. */
+let encounterSerial = 0;
+
+/**
+ * Casts a known spell: as a ritual (+10 minutes, no slot) or normally (uses a tracked slot of its level or higher).
+ * A casting time of 1 minute or longer needs Concentration the whole time, so it ends other Concentration, and
+ * a random encounter during it breaks the casting off: the spell fails and no spell slot is spent.
+ * With `circle` (Heroes of Faerûn Circle Magic, optional), secondary casters each spend a slot too.
+ */
+export const castSpell = act((d, ctx, charId: string, spellName: string, mode: 'ritual' | 'slot', targetId: string | null = null, circle: CircleCast | null = null) => {
   const c = charById(d, charId);
   const own = c?.spells.find((x) => x.name === spellName);
   if (!c || !own || !alive(c)) return;
-  if (!useComponent(d, c, own.name)) return;
   const sp = { ...own, ...spellInfo(own, d.spellLibrary) } as CharacterSpell;
   const base = sp.castMinutes ?? 0;
+  // Circle magic: check everything before anything is spent.
+  const helpers: Character[] = [];
+  if (circle) {
+    if (!d.settings.circleMagic) return void log(d, 'Circle Magic is switched off in Settings.', 'warn');
+    if (mode === 'ritual') return void log(d, `A Circle spell is cast with a spell slot, so ${sp.name} can't be cast as a ritual and a Circle spell at once.`, 'warn');
+    const ok = circleEligible(sp);
+    if (!ok.ok) return void log(d, ok.reason, 'warn');
+    for (const id of [...new Set(circle.helperIds)].filter((x) => x !== c.id)) {
+      const h = charById(d, id);
+      if (!h) continue;
+      const problem = helperProblem(h, sp.level);
+      if (problem) return void log(d, `${problem} The circle casting of ${sp.name} doesn't begin.`, 'warn');
+      helpers.push(h);
+    }
+    if (!helpers.length) return void log(d, `A Circle spell needs at least one secondary caster besides ${c.name}.`, 'warn');
+  }
+  let slot: ReturnType<typeof findSlot>;
   if (mode === 'ritual') {
     const check = canCastAsRitual(c, sp);
-    if (!check.ok) {
-      log(d, check.reason, 'warn');
-      return;
-    }
+    if (!check.ok) return void log(d, check.reason, 'warn');
   } else if (sp.level > 0) {
-    if (!sp.prepared && !sp.alwaysPrepared) {
-      log(d, `${c.name} doesn't have ${sp.name} prepared.`, 'warn');
-      return;
-    }
-    const slots = c.resources
-      .filter((r) => /(spell|pact) slots \(level (\d)\)/i.test(r.name))
-      .map((r) => ({ r, lvl: Number(/level (\d)/i.exec(r.name)![1]) }))
-      .filter((x) => x.lvl >= sp.level)
-      .sort((a, b) => a.lvl - b.lvl);
-    if (slots.length) {
-      const free = slots.find((x) => x.r.current > 0);
-      if (!free) {
-        log(d, `${c.name} has no spell slots of level ${sp.level} or higher left for ${sp.name}.`, 'warn');
+    if (!sp.prepared && !sp.alwaysPrepared) return void log(d, `${c.name} doesn't have ${sp.name} prepared.`, 'warn');
+    slot = findSlot(c, sp.level);
+    if (slot === null) return void log(d, `${c.name} has no spell slots of level ${sp.level} or higher left for ${sp.name}.`, 'warn');
+  }
+  if (!useComponent(d, c, own.name)) return;
+  const minutes = base + (mode === 'ritual' ? RITUAL_TAG_MINUTES : 0);
+  const casters = [c, ...helpers];
+  const names = casters.map((x) => x.name);
+  const timeTxt = mode === 'ritual' ? `as a ritual (${sp.castTime ?? 'its casting time'} + 10 minutes = ${formatDuration(Math.max(1, Math.round(minutes)))}, no spell slot)` : `(${sp.castTime ?? 'its casting time'}${sp.level > 0 ? ', using a spell slot' : ''})`;
+  if (minutes >= 1) {
+    // Longer casting times: the Magic action every turn and Concentration until the spell is cast.
+    for (const x of casters) dropConcentration(d, x, ` to hold ${sp.name} together while casting it`);
+    if (helpers.length) log(d, `${c.name} begins ${sp.name} as a Circle spell with ${helpers.map((h) => h.name).join(', ')} as secondary caster${helpers.length > 1 ? 's' : ''} ${timeTxt}. Everyone in the circle stays within ${CIRCLE_RANGE_FT} feet of ${c.name}, takes the Magic action each turn and keeps Concentration until it's done.`, 'info', { charIds: casters.map((x) => x.id), sense: circleBeginsText(sp.name, helpers.map((h) => h.name)) });
+    let left = Math.round(minutes);
+    const startSerial = encounterSerial;
+    while (left > 0) {
+      const step = Math.min(left, 60);
+      advanceMut(d, ctx, step, 'camp');
+      left -= step;
+      const fallen = casters.filter((x) => !alive(x) || x.hp <= 0 || x.dying);
+      if (encounterSerial !== startSerial || fallen.length) {
+        const spent = Math.round(minutes) - left;
+        const why = fallen.length ? `${fallen.map((x) => x.name).join(', ')} can't keep casting` : 'creatures turn up mid-casting';
+        log(
+          d,
+          `${names.join(', ')} ${casters.length > 1 ? 'break' : 'breaks'} off casting ${sp.name} after ${formatDuration(Math.max(1, spent))}: ${why}. ${sp.name} fails and no spell slot is spent.${componentFor(own.name)?.consumed && d.settings.trackComponents ? ' The material component was already used up when the casting began.' : ''} If the DM rules the casting went on undisturbed, cast it again.`,
+          'warn',
+          { charIds: casters.map((x) => x.id), sense: helpers.length ? circleBrokenText(sp.name) : `The half-woven spell unravels and its gathered power drains away harmlessly.` },
+        );
         return;
       }
-      free.r.current -= 1;
     }
   }
-  const minutes = base + (mode === 'ritual' ? RITUAL_TAG_MINUTES : 0);
-  if (minutes > 0) advanceMut(d, ctx, minutes, 'camp');
-  const timeTxt = mode === 'ritual' ? `as a ritual (${sp.castTime ?? 'its casting time'} + 10 minutes = ${formatDuration(Math.max(1, Math.round(minutes)))}, no spell slot)` : `(${sp.castTime ?? 'its casting time'}${sp.level > 0 ? ', using a spell slot' : ''})`;
-  log(d, `${c.name} casts ${sp.name} ${timeTxt}.`, 'good');
+  if (slot) slot.current -= 1;
+  for (const h of helpers) {
+    const hs = findSlot(h, sp.level);
+    if (hs) hs.current -= 1;
+  }
+  if (helpers.length) {
+    log(d, `${c.name} completes ${sp.name} as a Circle spell${circle?.option?.trim() ? ` (${circle.option.trim()})` : ''}: ${names.join(', ')} each spend a spell slot of level ${sp.level} or higher.`, 'good', { charIds: casters.map((x) => x.id), sense: circleEndsText(sp.name) });
+  } else log(d, `${c.name} casts ${sp.name} ${timeTxt}.`, 'good');
   if (targetId && TARGET_SPELLS[sp.name]) applySpellTo(d, ctx, sp.name, targetId);
   if (sp.durationMinutes || sp.permanent) {
     const preset = { name: sp.name, kind: 'spell' as const, minutes: sp.permanent ? null : sp.durationMinutes ?? null, concentration: !!sp.concentration, shelter: /tiny hut|rope trick|magnificent mansion/i.test(sp.name) };
-    if (preset.concentration) {
-      const dropped = d.effects.filter((e) => e.concentration && e.casterId === c.id);
-      if (dropped.length) {
-        d.effects = d.effects.filter((e) => !dropped.includes(e));
-        log(d, `${c.name} stops concentrating on ${dropped.map((e) => e.name).join(', ')}.`, 'warn');
-      }
-    }
+    if (preset.concentration) dropConcentration(d, c, '');
     const now = absNow(d);
     d.effects.push({
       id: uid(),
@@ -5718,7 +5778,7 @@ export const castSpell = act((d, ctx, charId: string, spellName: string, mode: '
       shelter: preset.shelter,
       startedAt: now,
       endsAt: preset.minutes == null ? null : now + preset.minutes,
-      notes: '',
+      notes: helpers.length ? `Circle spell with ${helpers.map((h) => h.name).join(', ')}.${circle?.option?.trim() ? ` Circle option: ${circle.option.trim()}.` : ''}` : '',
     });
     log(d, `${sp.name} lasts ${preset.minutes == null ? 'until dispelled' : formatDuration(preset.minutes)}${preset.concentration ? ' (Concentration)' : ''}. Its timer is on the Effects & Lights tab.`);
   }
@@ -6850,6 +6910,7 @@ export function resolveEncounter(s: State, ctx: Ctx, activity: CheckConditions['
     log(s, `${head} ${res.row.text}. About ${res.distanceFt} feet away.${watchNote}`, 'info');
     return;
   }
+  encounterSerial += 1; // creatures, not just signs: enough to break off a long casting
   const c = res.row.creature;
   const party = table.party;
   const dm = `${head} ${res.summary} (CR ${c.cr}${res.row.followers ? ` and ${res.row.followers.creature.cr}` : ''}, rolled ${res.row.count}${res.row.followers ? ` and ${res.row.followers.count}` : ''}; ${res.xp} XP total, ${DIFFICULTY_LABEL[res.difficulty ?? 'low']} for ${party.size} level-${party.level} characters). Starting attitude: ${res.attitude?.attitude} (d20 ${res.attitude?.roll}). They are ${res.distanceFt} feet away (${res.distanceExpr}).${watchNote}${surpriseCheck(s, ctx, c.cr, res.attitude?.attitude === 'Hostile', activity, watchers)}${res.attitude?.attitude !== 'Hostile' ? ' They can be parleyed with: an Influence check (DC 15 or the creature’s Intelligence score, whichever is higher) can shift an Indifferent creature.' : ''}`;

@@ -774,6 +774,8 @@ export interface StatusEntry {
 }
 
 export interface Settings {
+  /** Optional rule (Forgotten Realms: Heroes of Faerûn): Circle Magic for spells with a casting time of 1 minute or longer. */
+  circleMagic: boolean;
   autoRollSaves: boolean;
   climateAdjustedPrecip: boolean;
   /** Table rule: a lit campfire keeps a camp from being exposed to extreme cold. */

@@ -69,7 +69,7 @@ function DateCard() {
 
 function RulesCard() {
   const s = useGame();
-  const set = (k: 'autoRollSaves' | 'noTimepiece' | 'coldGear2014' | 'heavyClothing2014' | 'extraCraftHelpers' | 'climateAdjustedPrecip' | 'taming' | 'workWhileMarching', v: boolean) => edit((d) => void (d.settings[k] = v));
+  const set = (k: 'autoRollSaves' | 'noTimepiece' | 'coldGear2014' | 'heavyClothing2014' | 'extraCraftHelpers' | 'climateAdjustedPrecip' | 'taming' | 'workWhileMarching' | 'circleMagic', v: boolean) => edit((d) => void (d.settings[k] = v));
   return (
     <Card title="Rules options">
       <div className="stack tight">
@@ -78,6 +78,7 @@ function RulesCard() {
         <Toggle checked={s.settings.noTimepiece} onChange={(v) => set('noTimepiece', v)} label="Nobody has a timepiece: show the time as nature's cues" />
         <Rule>The header and the Time card show the part of the day (Dawn, Mid-morning, Dusk and so on) instead of the exact clock. The DM can peek at the exact time on the Time card.</Rule>
         <Toggle checked={(s.settings.facilityBooks ?? []).includes('FRHoF')} onChange={(v) => edit((d) => void (d.settings.facilityBooks = [...(d.settings.facilityBooks ?? []).filter((x) => x !== 'FRHoF'), ...(v ? (['FRHoF'] as const) : [])]))} label="Bastion facilities from Forgotten Realms: Heroes of Faerûn" />
+        <Toggle checked={s.settings.circleMagic} onChange={(v) => set('circleMagic', v)} label="Circle Magic from Forgotten Realms: Heroes of Faerûn: secondary casters can join spells that take 1 minute or longer to cast (optional rule)" />
         <Toggle checked={(s.settings.facilityBooks ?? []).includes('EFA')} onChange={(v) => edit((d) => void (d.settings.facilityBooks = [...(d.settings.facilityBooks ?? []).filter((x) => x !== 'EFA'), ...(v ? (['EFA'] as const) : [])]))} label="Bastion facilities from Eberron: Forge of the Artificer" />
         <div className="form-row">
           <Num label="Stress removed per Long Rest" value={s.settings.stressPerLongRest} onChange={(v) => edit((d) => void (d.settings.stressPerLongRest = Math.max(0, Math.round(v))))} min={0} width={2} />
