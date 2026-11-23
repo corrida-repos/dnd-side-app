@@ -406,6 +406,13 @@ Always on, not a switch: realistic work earns realistic rewards.
 - ✅ **Recovering ammunition** (table rule on top of the 2024 half): Wisdom (Perception or Survival) DC 10 finds three quarters, beating it by 5 nine in ten.
 - ✅ **Mending** (table rule): a successful mend also clears wear; beating the DC by 5 reinforces the item against the next wear. Mending the spell clears wear too.
 - ✅ **Foraging** (table rule): each full 5 points over the DC adds another 1d6 lb of food.
+- ✅ **Found goods are trade goods** (table rule): pelts, furs, hides, trophies, Rations, foraged goods and route maps sell at full value.
+- ✅ **Crafting for sale** (table rule): a crafter sells their own new work at full price, so a finished piece is worth twice its materials.
+- ✅ **Running a business** (table rules on the 2014 DMG): +20 to the roll for a well-run business, and profits ×2 for 11–20 days and ×3 for 21–30.
+- ✅ **Performing for coin** (table rule): 2 hours in a settlement, Charisma (Performance) or an instrument: coppers under 10, 3d6 SP and a meal at 10+, 2d6 GP with supper and a room at 15+, 4d6 GP at 20+, 6d6 GP and an admirer (allied contact) at 25+.
+- ✅ **Maps and copies** (table rule): a charted route map is worth 25 GP; copy one in an hour with Cartographer's Tools (DC 10, a sheet). A fair copy of a Book (50 sheets) is worth 25 GP, sold as the copyist's own work.
+- ✅ **Working a trade** (table rule on Xanathar's): 1 GP more for each point above 10.
+- ✅ **Research** (table rules on Xanathar's): always at least one more piece of lore; each piece is Advantage on an Intelligence check about the topic; 15+ identifies a matching unidentified magic item the party holds; 16+ brings a scholar as an allied contact.
 - ✅ **Cooking** (table rule): any hot meal gives 8 hours of Advantage on saves against extreme cold and cold nights. A tasty meal also gives Advantage on forced-march saves, Stress −2 and Temporary HP equal to the cook's Proficiency Bonus. A feast (natural 20 or beating the DC by 5) gives Temporary HP equal to the cook's level plus Wisdom modifier, Stress −3 and Fear −1. Smoking meat over the fire (4 hours, Survival or Cook's Utensils DC 10) turns every 3 lb from the stores into a day of Rations that keep and sell for 5 SP (half on a failure, up to 30 lb a batch).
 
 ## Phase 9: Random tables from the 2024 DMG 📋

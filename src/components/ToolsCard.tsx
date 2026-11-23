@@ -3,7 +3,9 @@ import { useGame, dispatch } from '../state/store';
 import * as E from '../state/engine';
 import { Card, Num, Pill, Select, Text, Toggle, Rule } from './common';
 import { ABILITY_LABEL, BELL, INK, INK_PAGES, PAPER, PERFUME, SIGNAL_WHISTLE, TOOLS, carriesTool, proficientWith, toolCheck, type ToolCategory } from '../rules/gear';
-import { IMPROVISED_DC } from '../rules/tools';
+import { CARTOGRAPHER, IMPROVISED_DC } from '../rules/tools';
+import { BOOK_GP, BOOK_PAGES, COPY_MAP_DC } from '../rules/chorePayoffs';
+import { fmtGp } from '../rules/money';
 
 const CATEGORY_LABEL: Record<ToolCategory, string> = { artisan: "Artisan's Tools", other: 'Other tools', gaming: 'Gaming Sets', instrument: 'Musical Instruments' };
 
@@ -24,7 +26,13 @@ export function ToolsCard() {
   const [what, setWhat] = useState('');
   const [pages, setPages] = useState(1);
   const [writing, setWriting] = useState('');
+  const [perfBonus, setPerfBonus] = useState(0);
+  const [mapId, setMapId] = useState('');
+  const [bookName, setBookName] = useState('');
   if (!c) return null;
+  const maps = c.inventory.filter((i) => /^map of /i.test(i.name));
+  const mapPick = maps.find((m) => m.id === mapId) ?? maps[0];
+  const cartographer = c.inventory.some((i) => CARTOGRAPHER.test(i.name));
   const has = carriesTool(c, tool.name);
   const prof = proficientWith(c, tool.name);
   const b = bonus ?? sheet?.bonus ?? 0;
@@ -87,6 +95,33 @@ export function ToolsCard() {
           <span className="small muted">
             {paper} sheet{paper === 1 ? '' : 's'} · {ink ? `Ink: ${ink.uses ?? INK_PAGES} pages left${ink.qty > 1 ? ` (+${ink.qty - 1} bottles)` : ''}` : 'no Ink'}
           </span>
+        </div>
+      )}
+      {s.place.settlement && (
+        <div className="btn-row tight">
+          <Num label="Performance or instrument bonus" value={perfBonus} onChange={(v) => setPerfBonus(Math.round(v))} width={3} />
+          <button className="small" onClick={() => dispatch((st, cx) => E.perform(st, cx, c.id, perfBonus))}>
+            Perform for coin (2 h)
+          </button>
+          <span className="small muted">Table rule: coppers under 10; 3d6 SP and a meal at 10+; 2d6 GP, supper and a room at 15+; 4d6 GP at 20+; 6d6 GP and an admirer at 25+.</span>
+        </div>
+      )}
+      {cartographer && mapPick && (
+        <div className="btn-row tight">
+          <Select label="Map" value={mapPick.id} onChange={setMapId} options={maps.map((m) => ({ value: m.id, label: `${m.name}${m.valueGp ? ` (${fmtGp(m.valueGp)})` : ''}` }))} />
+          <button className="small" disabled={paper < 1} onClick={() => dispatch((st, cx) => E.copyMap(st, cx, c.id, mapPick.id, b))}>
+            Copy it (1 h, a sheet, DC {COPY_MAP_DC})
+          </button>
+          <span className="small muted">Table rule: a route map is worth its value in full to guides and traders. Uses the bonus above with Cartographer&apos;s Tools selected.</span>
+        </div>
+      )}
+      {paper >= BOOK_PAGES && ink && (
+        <div className="btn-row tight">
+          <Text value={bookName} onChange={setBookName} placeholder="Which Book to copy" />
+          <button className="small" onClick={() => dispatch((st, cx) => E.copyBook(st, cx, c.id, bookName))}>
+            Fair copy of a Book ({BOOK_PAGES} sheets, {Math.round((BOOK_PAGES * 10) / 60)} h)
+          </button>
+          <span className="small muted">Table rule: worth {fmtGp(BOOK_GP)}, sold at full price as the copyist&apos;s own work.</span>
         </div>
       )}
       <Rule>

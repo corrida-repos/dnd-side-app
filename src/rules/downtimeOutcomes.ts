@@ -5,6 +5,7 @@ import { proficiencyBonus } from './survival';
 import type { Character } from '../state/types';
 import { LIFESTYLE_GP, MAGIC_ITEM_VALUE, type Lifestyle } from './money';
 import type { Rarity } from './crafting';
+import { RESEARCH_EXTRA_LORE } from './chorePayoffs';
 
 /**
  * Downtime activity outcomes. The 2024 books give these activities no tables, so this follows the optional
@@ -54,6 +55,9 @@ export interface ActivityResult {
   spent?: number;
   /** Working a trade: workweeks of Disadvantage still to come. */
   lazyWeeks?: number;
+  /** Research: pieces of lore learned, and the best check total. */
+  lore?: number;
+  best?: number;
 }
 
 export const ACTIVITY_CHECKS: Record<ActivityId, string[]> = {
@@ -292,8 +296,9 @@ function resolveWeek(id: ActivityId, o: ActivityOpts, rng: Rng): ActivityResult 
       const bonus = researchBonus(spent);
       const book = o.book ? 5 : 0;
       const t = roll(0) + b(0) + bonus + book;
-      const n = t <= 5 ? 0 : t <= 10 ? 1 : t <= 20 ? 2 : 3;
-      return { text: `${t}${bonus ? ` (+${bonus} for ${spent} GP spent)` : ''}${book ? ' (+5 from an accurate Book)' : ''}: ${n ? `${n} piece${n > 1 ? 's' : ''} of lore (the DM supplies them)` : 'nothing useful'}`, gp: 0, notes: n ? [`Research: ${n} piece(s) of lore to collect from the DM`] : [], complication: complication() };
+      // Xanathar's table, plus a table rule: diligent research always turns up at least one more piece.
+      const n = (t <= 5 ? 0 : t <= 10 ? 1 : t <= 20 ? 2 : 3) + RESEARCH_EXTRA_LORE;
+      return { text: `${t}${bonus ? ` (+${bonus} for ${spent} GP spent)` : ''}${book ? ' (+5 from an accurate Book)' : ''}: ${n} piece${n > 1 ? 's' : ''} of lore (the DM supplies them)`, gp: 0, notes: [`Research: ${n} piece(s) of lore to collect from the DM`], complication: complication(), lore: n, best: t };
     }
     case 'Working a trade': {
       const t = roll(0) + b(0);
@@ -302,10 +307,11 @@ function resolveWeek(id: ActivityId, o: ActivityOpts, rng: Rng): ActivityResult 
       let i = t <= 9 ? 1 : t <= 14 ? 2 : 3;
       if (comp?.wageDown) i -= 1;
       const lifestyle = steps[i];
-      const extra = t >= 21 && !comp?.wageDown ? 25 : 0;
+      // Xanathar's: +25 GP on 21+. Table rule: skilled work earns 1 GP more for each point above 10.
+      const extra = comp?.wageDown ? 0 : (t >= 21 ? 25 : 0) + Math.max(0, t - 10);
       const gp = comp?.noPay ? 0 : LIFESTYLE_GP[lifestyle] * 7 + extra;
       const lazyWeeks = Math.max(0, (o.lazyWeeks ?? 0) - (lazy ? 1 : 0)) + (comp?.workDisadvantageWeeks ?? 0);
-      return { text: `${t}${lazy ? ' (Disadvantage: a reputation for laziness)' : ''}: ${comp?.noPay ? 'the work is done but the pay never comes' : `earns a ${lifestyle} living for the week${extra ? ' plus 25 GP' : ''}`}`, gp, notes: [], lifestyle, complication: comp, lazyWeeks };
+      return { text: `${t}${lazy ? ' (Disadvantage: a reputation for laziness)' : ''}: ${comp?.noPay ? 'the work is done but the pay never comes' : `earns a ${lifestyle} living for the week${extra ? ` plus ${extra} GP` : ''}`}`, gp, notes: [], lifestyle, complication: comp, lazyWeeks };
     }
     case 'Training':
       return { text: 'training complete', gp: 0, notes: [], complication: complication('Training') };
@@ -356,6 +362,8 @@ export function resolveActivity(id: ActivityId, o: ActivityOpts, rng: Rng): Acti
     out.notes.push(...r.notes);
     if (r.lifestyle) out.lifestyle = r.lifestyle;
     if (r.complication) out.complications!.push(r.complication);
+    if (r.lore) out.lore = (out.lore ?? 0) + r.lore;
+    if (r.best != null) out.best = Math.max(out.best ?? -99, r.best);
     if (r.jailDays) {
       out.jailDays = r.jailDays;
       if (w < weeks) lines.push(`the remaining ${weeks - w} week${weeks - w > 1 ? 's are' : ' is'} spent behind bars`);

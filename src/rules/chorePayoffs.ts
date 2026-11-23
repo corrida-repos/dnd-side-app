@@ -195,3 +195,54 @@ export const REINFORCE_MARGIN = 5;
 /** Each full 5 points by which a forager beats the DC adds another 1d6 lb of food. */
 export const FORAGE_BONUS_STEP = 5;
 export const forageBonusDice = (total: number, dc: number): number => Math.max(0, Math.floor((total - dc) / FORAGE_BONUS_STEP));
+
+// ---------------------------------------------------------------- performing for coin
+
+/** An evening's performance at an inn or market square: Charisma (Performance), or Charisma with an instrument. */
+export const PERFORM_MINUTES = 2 * 60;
+
+export interface PerformTake {
+  dice: string;
+  unit: 'cp' | 'sp' | 'gp';
+  /** A free meal from the house. */
+  meal: boolean;
+  /** A free room for the night. */
+  room: boolean;
+  /** Someone in the crowd wants to know the performer (an allied contact). */
+  admirer: boolean;
+  text: string;
+}
+
+/** Table rule: what an evening's performance brings in, by the check total. */
+export function performTake(total: number): PerformTake {
+  if (total < 10) return { dice: '2d6', unit: 'cp', meal: false, room: false, admirer: false, text: 'a thin crowd, some heckling and a few coppers' };
+  if (total < 15) return { dice: '3d6', unit: 'sp', meal: true, room: false, admirer: false, text: 'a warm room, tapping feet, a hat of silver and a meal on the house' };
+  if (total < 20) return { dice: '2d6', unit: 'gp', meal: true, room: true, admirer: false, text: 'a packed house that calls for more, a purse of gold, supper and a room for the night' };
+  if (total < 25) return { dice: '4d6', unit: 'gp', meal: true, room: true, admirer: false, text: 'a night the tavern will talk about for weeks: gold tossed on stage, the best room and the best supper' };
+  return { dice: '6d6', unit: 'gp', meal: true, room: true, admirer: true, text: 'a performance people will remember for years; someone of note seeks the performer out afterwards' };
+}
+
+// ---------------------------------------------------------------- maps and fair copies
+
+/** A charted map of a route is worth this to guides, traders and caravan masters (table rule; trade goods, full value). */
+export const ROUTE_MAP_GP = 25;
+/** Copying a map you have: 1 hour, a sheet of Paper or Parchment, Intelligence with Cartographer's Tools at DC 10. */
+export const COPY_MAP_MINUTES = 60;
+export const COPY_MAP_DC = 10;
+/** A fair copy of a Book (2024 PHB, 25 GP) takes 50 sheets and is worth a Book's price. */
+export const BOOK_PAGES = 50;
+export const BOOK_GP = 25;
+
+// ---------------------------------------------------------------- crafting for sale
+
+/** Table rule: a crafter sells their own new work as its maker, at full price, not as secondhand gear. */
+export const CRAFTED_SELLS_FULL = true;
+
+// ---------------------------------------------------------------- research (table rules on top of Xanathar's)
+
+/** Research always turns up at least this much more lore than Xanathar's table gives. */
+export const RESEARCH_EXTRA_LORE = 1;
+/** A total this high also brings a lead: a sage, archivist or scholar who becomes an allied contact. */
+export const RESEARCH_LEAD_AT = 16;
+/** A total this high on research about an unidentified magic item the party holds identifies it. */
+export const RESEARCH_IDENTIFY_AT = 15;

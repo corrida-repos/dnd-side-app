@@ -28,14 +28,14 @@ import { componentFor, REVIVAL_LIMIT, TARGET_SPELLS, type CostlyComponent } from
 import { POISONS, poisonByName, poisonItemName, type PoisonInfo } from '../rules/poisons';
 import { POISON_HARVEST_DC, POTION_MISCIBILITY } from '../rules/potions';
 import { ALCHEMIST, ALCHEMIST_FIRE_DC, IMPROVISED_DC, IMPROVISED_COOK_DC, IMPROVISED_HARVEST_DC, IMPROVISED_OINTMENT_DC, IMPROVISED_TESTS, IMPROVISED_TIME, TEST_KIND_LABEL, TOOL_TESTS, type TestKind, NAVIGATOR, STARGAZE_DC, IMPROVISED_STARGAZE_DC, STARGAZE_MINUTES, CARTOGRAPHER, MAP_DC, IMPROVISED_MAP_DC, MAP_MINUTES, mapName, isMapOf, MAP_BONUS, WEAVER, CLOTH, MEND_DC, IMPROVISED_MEND_DC, MEND_MINUTES, DECIPHER_DC, DECIPHER_MINUTES } from '../rules/tools';
-import { AWAY_PROGRESS, BUILD_SPELLS, BUSINESS_DEBT_PENALTY, BUSINESS_MAX_DAYS, CREW_COST_SHARE, MAX_EXTRA_CREWS, buildPace, rollBusiness } from '../rules/business';
+import { AWAY_PROGRESS, BUILD_SPELLS, BUSINESS_DEBT_PENALTY, BUSINESS_MAX_DAYS, BUSINESS_TABLE_BONUS, CREW_COST_SHARE, MAX_EXTRA_CREWS, buildPace, rollBusiness } from '../rules/business';
 import { HAZARDS, type GiftType, type HazardId } from '../rules/hazards';
 import { ARCANA_DC, STUDY_MINUTES, type StudyMethod } from '../rules/identify';
 import { FEED_LB_PER_DAY, MOUNT_CAPACITY, carryingCapacity, COINS_PER_LB, estimateWeight, loadLevel, parseInventory, RATION_WEIGHT, type LoadLevel } from '../rules/encumbrance';
 import { bigEnoughToRide, canBeSidekick, canTame, currentDC, dayOutcome, missedDays, NO_AIDS, resultGain, sessionAttitude, sessionResult, tameCheck, tameDC, TRUST_PER_DAY_MAX, TAME_MAX_FAILS, TAME_RETRY_MINUTES, TAME_SESSION_MINUTES, trainingNeeded, TRAINING_LABEL, trustCue, trustNeeded, type TameAids, type TamerFacts, type TameTraining } from '../rules/taming';
 import { BUTCHER_DC, BUTCHER_MINUTES, isEdible, MEAT_LB, STRANGE_TYPES, yieldsHide, type Creature } from '../rules/hunting';
 import { CURE_DC, CURE_LB_PER_RATION, CURE_MAX_LB, CURE_MINUTES, curedRations, FEAST_FEAR_RELIEF, FEAST_STRESS_RELIEF, feastTempHp, HEARTY_SAVES, isFeast, MEAL_BUFF_MINUTES, MEAL_STRESS_RELIEF, tastyTempHp, WARM_SAVES } from '../rules/cooking';
-import { AMMO_SEARCH_DC, ammoRecovered, CAROUSING_STRESS_PER_WEEK, DIG_FIND_ON, FINE_FUR, FINE_FUR_ODDS, FORECAST_MARGIN, forageBonusDice, HIDE_GP, isExceptional, KEPT_GEAR_MINUTES, KEPT_GEAR_NOTE, poisonYield, REINFORCE_MARGIN, rollFind, SERVICE_FEAR_PER_WEEK, SERVICE_STRESS_PER_WEEK, SMALL_PELT, trophyFor, WATCH_CATCH_DC, WATCH_CATCH_DICE, type Chore } from '../rules/chorePayoffs';
+import { BOOK_GP, BOOK_PAGES, COPY_MAP_DC, COPY_MAP_MINUTES, PERFORM_MINUTES, performTake, RESEARCH_IDENTIFY_AT, RESEARCH_LEAD_AT, ROUTE_MAP_GP, AMMO_SEARCH_DC, ammoRecovered, CAROUSING_STRESS_PER_WEEK, DIG_FIND_ON, FINE_FUR, FINE_FUR_ODDS, FORECAST_MARGIN, forageBonusDice, HIDE_GP, isExceptional, KEPT_GEAR_MINUTES, KEPT_GEAR_NOTE, poisonYield, REINFORCE_MARGIN, rollFind, SERVICE_FEAR_PER_WEEK, SERVICE_STRESS_PER_WEEK, SMALL_PELT, trophyFor, WATCH_CATCH_DC, WATCH_CATCH_DICE, type Chore } from '../rules/chorePayoffs';
 import { addCoins, COIN_GP, coinCount, coinsFor, emptyPurse, exchange, fmtPurse, purseValue, spend, type Denom, type Purse } from '../rules/coins';
 import { detectContainer } from '../rules/containers';
 import { FIRE_DAMAGE, RAT_BITE_DAMAGE, RELAXATION_NEEDS, SHAKEDOWN_DAMAGE, SHAKEDOWN_GP, SHAKEDOWN_RIVAL_ODDS, SHUNNED_AFTER_DAYS, SPOILED_FOOD_DC, TAINTED_POTION_ODDS, WATCH_FINE, WATCH_JAIL_DAYS, WEEKLY_ODDS, WRETCHED_STRESS, isLowLife } from '../rules/lowLife';
@@ -1597,7 +1597,7 @@ function chartStage(d: State, ctx: Ctx, st: JourneyStage, mapperId: string | nul
   const roll = `Wisdom with Cartographer's Tools ${r.value} ${signed(mod)} = ${r.value + mod} against DC ${CHART_DC}`;
   if (r.value + mod < CHART_DC) return void log(d, `${c.name} tries to turn the notes from the road into a map (${roll}), but there are too many gaps to steer by.`, 'warn');
   const name = mapName(st.name);
-  c.inventory.push({ id: uid(), name, qty: 1, weight: 0, source: 'manual', valueGp: 1, container: null, ammo: null });
+  c.inventory.push({ id: uid(), name, qty: 1, weight: 0, source: 'manual', valueGp: ROUTE_MAP_GP, container: null, ammo: null });
   log(d, `${c.name} charts the way (${roll}) and draws a ${name}. Finding the way here next time gets +5 (2024 PHB Map).`, 'good');
 }
 
@@ -2942,6 +2942,7 @@ export const resolveActivityProject = act((d, ctx, projectId: string, o: Activit
     const m = /^(Allied|Hostile) contact/.exec(n);
     if (m) addContactMut(d, { name: `New ${m[1].toLowerCase()} contact (${p.name})`, role: 'Other', place: d.place.name, bond: m[1] === 'Allied' ? 1 : -1, knownBy: [c.id], notes: n });
   }
+  if (id === 'Research' && r.lore) researchPayoff(d, c, p, r.lore, r.best ?? 0);
   // Table rule: good company and worship ease the mind, week by week.
   const wks = r.jailDays ? 1 : weeks;
   if (id === 'Carousing') easeMind(d, c, CAROUSING_STRESS_PER_WEEK * wks, 0, 'feels lighter after nights of drink, song and laughter');
@@ -3423,8 +3424,10 @@ export const sellItem = act((d, _ctx, charId: string, itemId: string, qty: numbe
     : misjudged(it) && it.valueBelieved !== unit
       ? ` The buyer values it at ${fmtGp(unit)} each, not the ${fmtGp(it.valueBelieved!)} the party thought.`
       : '';
-  const bonus = d.patron && saleRate(it.name) < 1 ? (PATRONS[d.patron.kind].saleBonus ?? 0) : 0;
-  const rate = saleRate(it.name) * (1 + bonus);
+  // Table rule: a crafter sells their own new work as its maker, at full price.
+  const base = it.crafted ? 1 : saleRate(it.name);
+  const bonus = d.patron && base < 1 ? (PATRONS[d.patron.kind].saleBonus ?? 0) : 0;
+  const rate = base * (1 + bonus);
   const gp = Math.round(unit * n * rate * 100) / 100;
   it.qty -= n;
   c.inventory = c.inventory.filter((i) => i.qty > 0);
@@ -4127,7 +4130,7 @@ export const settleBusiness = act((d, ctx, businessId: string) => {
     b.sabotaged = false;
   }
   const penalty = b.debts ? ` − ${b.debts * BUSINESS_DEBT_PENALTY} for unpaid debts` : '';
-  log(d, `${b.name}: d100 ${r.roll} + ${days} days${penalty} = ${r.total}. ${r.text}.`, r.payGp > 0 ? 'warn' : r.profitGp > 0 ? 'good' : 'info');
+  log(d, `${b.name}: d100 ${r.roll} + ${days} days + ${BUSINESS_TABLE_BONUS} (a well-run business, table rule)${penalty} = ${r.total}. ${r.text}.`, r.payGp > 0 ? 'warn' : r.profitGp > 0 ? 'good' : 'info');
   b.lastResult = `${r.text} (${r.total})`;
   b.daysWorked = 0;
   if (r.payGp > 0) {
@@ -5679,6 +5682,40 @@ export const butcher = act((d, ctx, o: ButcherOpts) => {
   log(d, `Butchered ${count} × ${cr.name} (${cr.size} ${cr.type}): ${meat} lb of raw meat added to the camp stores.${checkTxt}${hide}${trophyTxt}${strange}`, 'good');
 });
 
+/** What the research is about: the project's name after "Research" (e.g. "Research: the Sunless Citadel"). */
+const researchTopic = (p: Project): string => p.name.replace(/^research\b[:\s-]*/i, '').trim() || 'the topic';
+
+/**
+ * Table rules on top of Xanathar's Research: each piece of lore is an insight (Advantage on one Intelligence check
+ * about the topic), a strong result brings a scholar who becomes an allied contact, and research into an unidentified
+ * magic item the party holds identifies it.
+ */
+function researchPayoff(d: State, c: Character, p: Project, lore: number, best: number): void {
+  const topic = researchTopic(p);
+  const name = `Research insight: ${topic}`;
+  const had = d.effects.find((e) => e.name.startsWith(name) && e.targetIds.includes(c.id));
+  const uses = lore + Number(/×(\d+)/.exec(had?.name ?? '')?.[1] ?? 0);
+  d.effects = d.effects.filter((e) => e !== had);
+  d.effects.push({ id: uid(), name: `${name} ×${uses}`, kind: 'other', targetIds: [c.id], casterId: null, concentration: false, shelter: false, startedAt: absNow(d), endsAt: null, notes: `Table rule: Advantage on ${uses} Intelligence check${uses > 1 ? 's' : ''} about ${topic} (History, Arcana, Religion, Nature or Investigation). Lower the count as each is used.` });
+  log(d, `${c.name}'s notes on ${topic} are worth having: Advantage on ${uses} Intelligence check${uses > 1 ? 's' : ''} about it (table rule).`, 'good');
+  if (best >= RESEARCH_LEAD_AT) {
+    addContactMut(d, { name: `A scholar of ${topic}`, role: 'Sage', place: d.place.name, bond: 1, knownBy: [c.id], notes: `Met while researching ${topic}. Knows more, and might share it for a favor.` });
+    log(d, `Along the way ${c.name} strikes up a friendship with a scholar who knows ${topic} well: a new allied contact (table rule).`, 'good');
+  }
+  if (best >= RESEARCH_IDENTIFY_AT && topic !== 'the topic') {
+    const t = topic.toLowerCase();
+    for (const holder of d.characters) {
+      const it = holder.items.find((x) => !x.identified && [x.name, x.partyName ?? ''].some((n) => n.trim() && (n.toLowerCase().includes(t) || t.includes(n.toLowerCase()))));
+      if (!it) continue;
+      it.identified = true;
+      it.magicKnown = true;
+      addFinding(d, it, 'experiment', `Identified through research by ${c.name}.`);
+      log(d, `In an old catalogue ${c.name} finds a description that matches ${holder.name}'s ${it.partyName?.trim() || 'unknown item'} exactly: it is ${it.name} (table rule: identified by research).`, 'good');
+      break;
+    }
+  }
+}
+
 /** Eases Stress and Fear (never below 0) and tells the player what their character feels. */
 function easeMind(s: State, c: Character, stress: number, fear: number, feel: string): void {
   const st = Math.min(c.stress, stress);
@@ -5913,7 +5950,7 @@ export const draftMap = act((d, ctx, charId: string, useTools: boolean, bonus: n
   const roll = `${useTools ? "Wisdom with Cartographer's Tools" : 'Wisdom, with paper and charcoal'} ${r.value} ${signed(mod)} = ${r.value + mod} against DC ${dc}`;
   if (r.value + mod < dc) return void log(d, `${c.name} sketches the lay of the land (${roll}), but the result is too muddled to steer by.`, 'warn');
   const me = charById(d, charId)!;
-  me.inventory.push({ id: uid(), name, qty: 1, weight: 0, source: 'manual', valueGp: 1, container: null, ammo: null });
+  me.inventory.push({ id: uid(), name, qty: 1, weight: 0, source: 'manual', valueGp: ROUTE_MAP_GP, container: null, ammo: null });
   log(d, `${me.name} drafts a ${name} (${roll}). Navigating here now gets +5 (2024 PHB Map).`, 'good');
 });
 
@@ -6578,7 +6615,9 @@ export const soundSignal = act((d, _ctx, charId: string, kind: 'whistle' | 'bell
  * Writes pages: each sheet of Paper or Parchment holds about 250 words, and a bottle of Ink writes about 500 pages (2024 PHB).
  * Table rule: a page takes about 10 minutes to write out by hand.
  */
-export const writePages = act((d, ctx, charId: string, pages: number, what: string) => {
+export const writePages = act((d, ctx, charId: string, pages: number, what: string) => writePagesMut(d, ctx, charId, pages, what));
+
+function writePagesMut(d: State, ctx: Ctx, charId: string, pages: number, what: string): void {
   const c = charById(d, charId);
   const n = Math.max(1, Math.round(pages));
   if (!c) return;
@@ -6613,6 +6652,71 @@ export const writePages = act((d, ctx, charId: string, pages: number, what: stri
   }
   bottle.uses = pagesLeft;
   log(d, `${me.name} writes ${n} page${n > 1 ? 's' : ''}${what.trim() ? ` (${what.trim()})` : ''} in ${formatDuration(n * 10)}: about ${n * 250} words, ${note}.`);
+}
+
+/**
+ * Table rule: an evening's performance at an inn, tavern or market square (2 hours, in a settlement). Charisma
+ * (Performance), or Charisma with an instrument. Coin by the total; a good night brings supper and a room, a great one an admirer.
+ */
+export const perform = act((d, ctx, charId: string, bonus: number) => {
+  const c = charById(d, charId);
+  if (!c || !alive(c)) return;
+  if (!d.place.settlement) return void log(d, `${c.name} needs an audience: performing for coin takes an inn, tavern or market in a settlement.`, 'warn');
+  advanceMut(d, ctx, PERFORM_MINUTES, 'work');
+  const me = charById(d, charId)!;
+  const mod = bonus - 2 * me.exhaustion;
+  const r = d20('normal', ctx.rng);
+  const total = r.value + mod;
+  const t = performTake(total);
+  const q = rollExpr(t.dice, ctx.rng) ?? 1;
+  gainWealth(me, q * (t.unit === 'gp' ? 1 : t.unit === 'sp' ? 0.1 : 0.01));
+  const extras: string[] = [];
+  if (t.meal) {
+    me.ateLbToday = round2(me.ateLbToday + foodNeedLb(me) / MEALS_PER_DAY);
+    me.drankPintsToday = round2(me.drankPintsToday + waterNeedPints(me, false, false) / MEALS_PER_DAY);
+    extras.push('a meal');
+  }
+  if (t.room) {
+    me.lodging = { tier: 'comfortable', until: Math.max(me.lodging?.until ?? 0, (d.dayIndex + 1) * MIN_PER_DAY + 12 * 60) };
+    extras.push('a comfortable room tonight');
+  }
+  if (t.admirer) addContactMut(d, { name: `An admirer from ${d.place.name || 'the crowd'}`, role: 'Noble', place: d.place.name, bond: 2, knownBy: [me.id], notes: `Charmed by ${me.name}'s performance.` });
+  log(d, `${me.name} performs for two hours (Charisma ${r.value} ${signed(mod)} = ${total}): ${t.text}. ${q} ${t.unit.toUpperCase()}${extras.length ? `, plus ${extras.join(' and ')}` : ''}${t.admirer ? ', and a new allied contact' : ''} (table rule).`, total >= 10 ? 'good' : 'info');
+});
+
+/** Table rule: a fair copy of a map someone holds. 1 hour, a sheet of Paper or Parchment, Intelligence with Cartographer's Tools at DC 10. */
+export const copyMap = act((d, ctx, charId: string, mapItemId: string, bonus: number) => {
+  const c = charById(d, charId);
+  const holder = d.characters.find((x) => x.inventory.some((i) => i.id === mapItemId));
+  const map = holder?.inventory.find((i) => i.id === mapItemId);
+  if (!c || !map) return;
+  if (!c.inventory.some((i) => CARTOGRAPHER.test(i.name))) return void log(d, `${c.name} needs Cartographer's Tools to copy a map.`, 'warn');
+  const sheet = c.inventory.find((i) => PAPER.test(i.name.trim()) && i.qty > 0);
+  if (!sheet) return void log(d, `${c.name} needs a sheet of Paper or Parchment to copy the map onto.`, 'warn');
+  advanceMut(d, ctx, COPY_MAP_MINUTES, 'camp');
+  const me = charById(d, charId)!;
+  const paper = me.inventory.find((i) => i.id === sheet.id)!;
+  paper.qty -= 1;
+  me.inventory = me.inventory.filter((i) => i.qty > 0);
+  const mod = bonus - 2 * me.exhaustion;
+  const r = d20('normal', ctx.rng);
+  const roll = `Intelligence with Cartographer's Tools ${r.value} ${signed(mod)} = ${r.value + mod} against DC ${COPY_MAP_DC}`;
+  if (r.value + mod < COPY_MAP_DC) return void log(d, `${me.name} copies the ${map.name} (${roll}), but a slip of the pen spoils the sheet.`, 'warn');
+  addLine(d, me, map.name, 1, { valueGp: map.valueGp ?? ROUTE_MAP_GP, weight: 0 }, null, false);
+  log(d, `${me.name} makes a fair copy of the ${map.name} (${roll}): worth ${fmtGp(map.valueGp ?? ROUTE_MAP_GP)} to a guide, trader or caravan master (table rule).`, 'good');
+});
+
+/** Table rule: a fair copy of a Book someone carries: 50 sheets of Paper or Parchment and 50 pages of Ink. The copy is worth a Book's price and sells as the copyist's own work. */
+export const copyBook = act((d, ctx, charId: string, bookName: string) => {
+  const c = charById(d, charId);
+  if (!c) return;
+  const sheets = c.inventory.filter((i) => PAPER.test(i.name.trim()) && i.qty > 0).reduce((a, i) => a + i.qty, 0);
+  if (sheets < BOOK_PAGES) return void log(d, `A fair copy of a Book takes ${BOOK_PAGES} sheets of Paper or Parchment; ${c.name} has ${sheets}.`, 'warn');
+  if (!c.inventory.some((i) => INK.test(i.name.trim()) && i.qty > 0) || !c.inventory.some((i) => /ink pen|quill/i.test(i.name))) return void log(d, `${c.name} needs Ink and an Ink Pen to copy a Book.`, 'warn');
+  writePagesMut(d, ctx, charId, BOOK_PAGES, `a fair copy of ${bookName || 'a Book'}`);
+  const me = charById(d, charId)!;
+  addLine(d, me, `Book (copy of ${bookName.trim() || 'a Book'})`, 1, { valueGp: BOOK_GP, crafted: true, weight: 5 }, null, false);
+  log(d, `${me.name} binds the pages into a Book, worth ${fmtGp(BOOK_GP)} and sold as their own work (table rule).`, 'good');
 });
 
 // ---------------------------------------------------------------- learning what magic items do
@@ -6772,7 +6876,7 @@ function stowItem(s: State, c: Character, name: string, qty: number, extra: Part
 }
 
 function addLine(_s: State, c: Character, name: string, qty: number, extra: Partial<InventoryItem>, inside: string | null, fresh: boolean): InventoryItem {
-  const same = !fresh && c.inventory.find((i) => sameStack(i, { name, valueGp: extra.valueGp }) && (i.containerId ?? null) === inside && !i.scattered && !i.damaged);
+  const same = !fresh && c.inventory.find((i) => sameStack(i, { name, valueGp: extra.valueGp }) && !!i.crafted === !!extra.crafted && (i.containerId ?? null) === inside && !i.scattered && !i.damaged);
   if (same) {
     same.qty += qty;
     return same;
@@ -7051,7 +7155,8 @@ function deliverProduct(s: State, p: Project): void {
   if (magic) {
     c.items.push({ id: uid(), name, requiresAttunement: false, attuned: false, identified: true, charges: null, maxCharges: null, regain: 'all', regainAt: 'never', awaySince: null, notes: 'Crafted', magicKnown: true, clues: [], findings: [] });
   } else {
-    const notes = stowItem(s, c, name, qty, valueGp != null ? { valueGp } : {}, true);
+    const crafted = p.kind !== 'buyMagic' && p.kind !== 'sellMagic' ? { crafted: true } : {};
+    const notes = stowItem(s, c, name, qty, { ...(valueGp != null ? { valueGp } : {}), ...crafted }, true);
     if (notes.length) log(s, notes.join(' '));
   }
   log(s, `${c.name} now has ${qty > 1 ? `${qty} × ` : ''}${name}${magic ? ' (with their magic items)' : ' (in their inventory)'}.`, 'good');

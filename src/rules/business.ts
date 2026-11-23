@@ -95,17 +95,24 @@ export interface BusinessResult {
   text: string;
 }
 
+/** Table rule: an owner who runs the place well adds this to the 2014 DMG roll, so even a week's work tends to pay. */
+export const BUSINESS_TABLE_BONUS = 20;
+/** Table rule: profits scale with the stretch, ×1 for up to 10 days, ×2 up to 20, ×3 up to 30 (the 2014 table pays the same for 1 day or 30). */
+export const profitScale = (days: number): number => Math.max(1, Math.ceil(days / 10));
+
 export function rollBusiness(rng: Rng, days: number, gpPerDay: number, debts: number): BusinessResult {
   const d = Math.min(BUSINESS_MAX_DAYS, Math.max(0, days));
   const roll = rollDice(1, 100, rng);
-  const total = roll + d - BUSINESS_DEBT_PENALTY * debts;
+  const total = roll + d + BUSINESS_TABLE_BONUS - BUSINESS_DEBT_PENALTY * debts;
+  const x = profitScale(d);
+  const scaled = (r: BusinessResult): BusinessResult => (r.profitGp && x > 1 ? { ...r, profitGp: r.profitGp * x, text: `${r.text}, ×${x} for ${d} days` } : r);
   const upkeep = gpPerDay * d;
   const r = (x: number) => Math.round(x * 100) / 100;
   if (total <= 20) return { roll, total, payGp: r(upkeep * 1.5), profitGp: 0, text: 'A bad stretch: pay one and a half times the maintenance' };
   if (total <= 30) return { roll, total, payGp: r(upkeep), profitGp: 0, text: 'Pay the full maintenance' };
   if (total <= 40) return { roll, total, payGp: r(upkeep / 2), profitGp: 0, text: 'Profits cover half the maintenance; pay the other half' };
   if (total <= 60) return { roll, total, payGp: 0, profitGp: 0, text: 'The business covers its own maintenance' };
-  if (total <= 80) return { roll, total, payGp: 0, profitGp: rollDice(1, 6, rng) * 5, text: 'Covers its maintenance and turns a small profit (1d6 × 5 GP)' };
-  if (total <= 90) return { roll, total, payGp: 0, profitGp: rollDice(2, 8, rng) * 5, text: 'Covers its maintenance and turns a good profit (2d8 × 5 GP)' };
-  return { roll, total, payGp: 0, profitGp: rollDice(3, 10, rng) * 5, text: 'A great stretch: covers its maintenance and turns a big profit (3d10 × 5 GP)' };
+  if (total <= 80) return scaled({ roll, total, payGp: 0, profitGp: rollDice(1, 6, rng) * 5, text: 'Covers its maintenance and turns a small profit (1d6 × 5 GP)' });
+  if (total <= 90) return scaled({ roll, total, payGp: 0, profitGp: rollDice(2, 8, rng) * 5, text: 'Covers its maintenance and turns a good profit (2d8 × 5 GP)' });
+  return scaled({ roll, total, payGp: 0, profitGp: rollDice(3, 10, rng) * 5, text: 'A great stretch: covers its maintenance and turns a big profit (3d10 × 5 GP)' });
 }

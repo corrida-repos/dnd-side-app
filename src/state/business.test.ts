@@ -6,13 +6,15 @@ import { rollBusiness } from '../rules/business';
 const ctx = (v = 0.5): E.Ctx => ({ rng: () => v });
 
 describe('Running a Business table', () => {
-  it('adds days (at most 30) and subtracts 10 per debt', () => {
-    // rng 0.1 → d100 11; +10 days = 21 → full maintenance for 10 days at 2 GP
-    expect(rollBusiness(() => 0.1, 10, 2, 0)).toMatchObject({ roll: 11, total: 21, payGp: 20, profitGp: 0 });
-    expect(rollBusiness(() => 0.1, 50, 2, 0).total).toBe(41);
-    expect(rollBusiness(() => 0.1, 10, 2, 1)).toMatchObject({ total: 11, payGp: 30 });
-    // 0.99 → 100 → 3d10 (each 10) × 5 = 150
+  it('adds days (at most 30), +20 for a well-run business, and subtracts 10 per debt', () => {
+    // rng 0.1 → d100 11; +10 days +20 = 41 → covers its maintenance
+    expect(rollBusiness(() => 0.1, 10, 2, 0)).toMatchObject({ roll: 11, total: 41, payGp: 0, profitGp: 0 });
+    expect(rollBusiness(() => 0.1, 50, 2, 0).total).toBe(61);
+    // one debt: 31 → half the maintenance for 10 days at 2 GP
+    expect(rollBusiness(() => 0.1, 10, 2, 1)).toMatchObject({ total: 31, payGp: 10 });
+    // 0.99 → 100 → 3d10 (each 10) × 5 = 150, ×1 for 5 days and ×3 for 30
     expect(rollBusiness(() => 0.99, 5, 2, 0).profitGp).toBe(150);
+    expect(rollBusiness(() => 0.99, 30, 2, 0).profitGp).toBe(450);
   });
 });
 
@@ -43,11 +45,12 @@ describe('running a business', () => {
     s.businesses[0].daysWorked = 10;
     s.businesses[0].gpPerDay = 10;
     s = E.settleBusiness(s, ctx(0.05), s.businesses[0].id);
-    expect(s.businesses[0]).toMatchObject({ debts: 1, unpaidGp: 150 });
+    // d100 6 + 10 days + 20 = 36: half the maintenance, 50 GP the owner can't pay.
+    expect(s.businesses[0]).toMatchObject({ debts: 1, unpaidGp: 50 });
     expect(s.characters[0].gp).toBe(5);
     s = E.payBusinessDebts(s, ctx(), s.businesses[0].id);
     expect(s.businesses[0].debts).toBe(0);
-    expect(s.characters[0].gp).toBe(-145);
+    expect(s.characters[0].gp).toBe(-45);
   });
 
   it('builds a business: pays up front, takes the listed days while overseen, slower while away', () => {

@@ -223,7 +223,7 @@ function NewProject() {
       calc = {
         ...r,
         label: qty > 1 ? `${qty} × ${base}` : base,
-        note: `${item ? `Needs proficiency with ${toolLabel(item)}. ` : 'Needs proficiency with the right tool. '}Each 8-hour workday makes 10 GP of progress, and materials cost half the price.${
+        note: `${item ? `Needs proficiency with ${toolLabel(item)}. ` : 'Needs proficiency with the right tool. '}Each 8-hour workday makes 10 GP of progress, and materials cost half the price. Table rule: the crafter sells their own new work at full price, so a finished piece is worth twice what it cost.${
           qty > 1 ? (s.settings.batchCrafting ? ' The batch counts as one item worth the total (table rule).' : ' Each item rounds up to a whole day (2024 PHB, read strictly).') : ''
         }`,
       };
@@ -308,6 +308,11 @@ function NewProject() {
     <Card title="New downtime project">
       <Select label="Type" value={kind} onChange={setKind} options={(Object.keys(PROJECT_KIND_LABEL) as ProjectKind[]).map((k) => ({ value: k, label: PROJECT_KIND_LABEL[k] }))} />
       <Text label="Name" value={name} onChange={setName} placeholder={kind === 'activity' ? ACTIVITY_IDEAS.join(', ') : 'Optional'} wide />
+      {kind === 'activity' && name.startsWith('Research') && (
+        <p className="small muted">
+          Name it &ldquo;Research: topic&rdquo; (a person, place, legend or a magic item&apos;s name). Table rules: every piece of lore becomes Advantage on an Intelligence check about the topic; a total of 15+ identifies a matching unidentified magic item the party holds; 16+ also brings a scholar as an allied contact.
+        </p>
+      )}
       <div className="form-row">
         {kind === 'nonmagical' && (
           <>
@@ -583,7 +588,7 @@ function BusinessCard() {
                 </div>
               )}
               {!b.building && <><p className="small">
-                {b.daysWorked} day(s) worked since the last roll{b.daysWorked > BUSINESS_MAX_DAYS ? ` (only ${BUSINESS_MAX_DAYS} count)` : ''}. Roll: d100 + {counted}
+                {b.daysWorked} day(s) worked since the last roll{b.daysWorked > BUSINESS_MAX_DAYS ? ` (only ${BUSINESS_MAX_DAYS} count)` : ''}. Roll: d100 + {counted} + 20 (table rule)
                 {b.debts > 0 && <> − {b.debts * BUSINESS_DEBT_PENALTY} for {b.debts} unpaid debt(s) ({fmtGp(b.unpaidGp)})</>}.
                 {b.lastResult && <span className="muted"> Last: {b.lastResult}.</span>}
               </p>
@@ -640,7 +645,7 @@ function BusinessCard() {
         </button>
       </details>
       <Rule>
-        2014 DMG: each downtime day the owner spends running the business counts (at most 30). Then roll d100 + days on the Running a Business table: low rolls mean paying 1½×, full or half the maintenance for those days; middling rolls break even; high rolls add a profit of 1d6, 2d8 or 3d10 × 5 GP. An unpaid cost makes the business start to fail: −10 to later rolls for each debt until it&apos;s paid. Building one follows the DMG&apos;s Building a Stronghold rule: pay the cost up front, and work takes the listed days while the owner oversees it; each day away adds 3 days. The 2024 rules have no equivalent, so this can be switched off in Settings.
+        2014 DMG: each downtime day the owner spends running the business counts (at most 30). Then roll d100 + days on the Running a Business table: low rolls mean paying 1½×, full or half the maintenance for those days; middling rolls break even; high rolls add a profit of 1d6, 2d8 or 3d10 × 5 GP. Table rules: a well-run business adds +20 to the roll, and profits are multiplied by 2 for 11–20 days and by 3 for 21–30. An unpaid cost makes the business start to fail: −10 to later rolls for each debt until it&apos;s paid. Building one follows the DMG&apos;s Building a Stronghold rule: pay the cost up front, and work takes the listed days while the owner oversees it; each day away adds 3 days. The 2024 rules have no equivalent, so this can be switched off in Settings.
       </Rule>
       <WaysAround topic={'building'} />
     </Card>
