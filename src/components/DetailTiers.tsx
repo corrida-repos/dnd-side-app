@@ -25,7 +25,7 @@ function extras(s: Settings): Partial<Record<SwitchKey, { inline?: ReactNode; mo
     },
     wildNeedsPurifying: { more: 'Drinking unpurified water means a DC 10 Con save, or the character is Sick: Poisoned until they finish a Long Rest. Purify Food and Drink or boiling makes it safe.' },
     sleepDeprivation: { more: 'Each time the party passes another 24 hours without finishing a Long Rest, everyone makes a Con save or gains 1 Exhaustion level from Sleep deprivation. The DC is 10, plus 5 for every further 24 hours, and it resets after a Long Rest.' },
-    nightTravelSlow: { more: 'A Torch, Lantern or Candle in anyone’s inventory, or an active light effect, counts as light.' },
+    nightTravelSlow: { more: 'Only a lit Torch, Lamp, Lantern or light spell on the Effects tab counts (a Candle is too small), and a full moon in a clear sky gives enough light. Darkvision, from any source, also does.' },
     hirelingsEat: { more: '1 lb of food and 1 gallon of water each per day. In a settlement their wages cover their keep. Needs Food and water on.' },
     foodAndWater: { more: 'Off, characters and mounts never go hungry or thirsty: nothing is checked at midnight and the checklists stop asking for meals. Rations and water can still be tracked by hand.' },
     extremeWeather: { more: 'Off, the weather is still rolled and described, but nobody saves against cold or heat. Cold nights (if on) then apply at any temperature at or below their threshold.' },

@@ -115,7 +115,7 @@ function FireCard() {
               Light: night watchers see the camp clearly for the next {s.fire.fuelHours} h of fuel (until {formatClock((s.minutes + s.fire.fuelHours * 60) % 1440)}). A watch counts as lit only if the fuel lasts all of it.
             </span>
           ) : (
-            <span>Light: unlit, watchers have Dim Light or Darkness: −5 to passive Perception, or hearing only without Darkvision.</span>
+            <span>Light: unlit, watchers face Dim Light (twilight or a full moon) or Darkness: −5 to passive Perception, whether they see by Darkvision or can only listen. Darkvision lets them see in Dim Light as normal. Heavy rain or snow gives −5 whatever the light (it doesn&apos;t stack).</span>
           )}
           {night && s.fire.lit && <span className="warn-text"> At night it can also be seen from far off: +1 on the encounter check.</span>}
         </li>

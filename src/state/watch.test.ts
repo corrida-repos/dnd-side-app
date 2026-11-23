@@ -17,6 +17,7 @@ function fresh(patch: (s: State) => void = () => {}): State {
   ];
   s.minutes = 22 * 60;
   s.fire = { lit: false, fuelHours: 0, sheltered: false };
+  s.settings.moonOffset = -s.dayIndex; // a new moon: no moonlight
   s.log = [];
   patch(s);
   return s;
@@ -30,11 +31,14 @@ describe('watch rules', () => {
   });
 
   it('judges sight by light and darkvision', () => {
-    expect(watchSight('Night', false, 0, false)).toMatchObject({ blind: true });
+    expect(watchSight('Night', false, 0, false)).toMatchObject({ penalty: -5, blind: true });
     expect(watchSight('Night', false, 60, false)).toMatchObject({ penalty: -5, blind: false });
     expect(watchSight('Night', true, 0, false)).toMatchObject({ penalty: 0, blind: false });
     expect(watchSight('Dusk', false, 0, false).penalty).toBe(-5);
     expect(watchSight('Day', false, 0, false).penalty).toBe(0);
+    expect(watchSight('Dusk', false, 60, false).penalty).toBe(0); // Darkvision: Dim Light as Bright
+    expect(watchSight('Night', false, 0, false, { fullMoon: true })).toMatchObject({ penalty: -5, blind: false });
+    expect(watchSight('Night', true, 0, false, { obscured: 'heavy rain' }).penalty).toBe(-5);
   });
 });
 
@@ -43,7 +47,7 @@ describe('night watch plan', () => {
     const s = fresh((d) => (d.watchPlan = { count: 4, slots: [[d.characters[0].id], [d.characters[1].id], [d.characters[1].id], [d.characters[0].id]] }));
     const plan = E.planWatches(s);
     expect(plan.map((p) => p.from)).toEqual([1320, 1440, 1560, 1680]);
-    expect(plan[0].watchers[0]).toMatchObject({ passive: 12, sight: { blind: true } });
+    expect(plan[0].watchers[0]).toMatchObject({ passive: 7, sight: { blind: true } }); // hearing only: never better than Darkvision
     expect(plan[1].watchers[0]).toMatchObject({ passive: 9, sight: { blind: false } });
     const lit = fresh((d) => {
       d.watchPlan = { count: 4, slots: [[d.characters[0].id], [], [], []] };

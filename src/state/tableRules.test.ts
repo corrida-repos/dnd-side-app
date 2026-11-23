@@ -54,7 +54,10 @@ describe('table rules for edge cases', () => {
       d.characters[0].darkvision = 0;
     });
     expect(E.travel(s, ctx(), { ...go, hours: 1 }).travel.milesToday).toBe(2);
-    const lit = E.addInventory(s, ctx(), s.characters[0].id, 'Torch');
+    // A torch in the pack isn't enough: it has to be lit.
+    const packed = E.addInventory(s, ctx(), s.characters[0].id, 'Torch');
+    expect(E.travel(packed, ctx(), { ...go, hours: 1 }).travel.milesToday).toBe(2);
+    const lit = E.addEffect(s, ctx(), { preset: { name: 'Torch', kind: 'light', minutes: 60 }, minutes: 60, targetIds: [], casterId: null });
     expect(E.travel(lit, ctx(), { ...go, hours: 1 }).travel.milesToday).toBe(3);
   });
 

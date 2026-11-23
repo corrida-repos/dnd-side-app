@@ -1,4 +1,5 @@
 import type { LightPhase } from './calendar';
+import { illumination, sightFor, type Sight, type Vision } from './sight';
 
 /** A Long Rest is 8 hours. */
 export const REST_MINUTES = 8 * 60;
@@ -18,22 +19,23 @@ export function slotTimes(start: number, count: number): { from: number; to: num
   return Array.from({ length: count }, (_, i) => ({ from: start + i * len, to: start + (i + 1) * len }));
 }
 
-export interface Sight {
-  /** Penalty to passive Perception for sight (Disadvantage counts as −5). */
-  penalty: number;
-  /** In Darkness without Darkvision: sight fails and only hearing works. */
-  blind: boolean;
-  note: string;
-}
+export type { Sight } from './sight';
 
-/** What a watcher can see: Dim Light gives −5 to passive Perception, and Darkness leaves only hearing. */
-export function watchSight(phase: LightPhase, lit: boolean, darkvisionFt: number, underground: boolean): Sight {
-  if (lit) return { penalty: 0, blind: false, note: 'firelight or a light source' };
-  const dark = underground || phase === 'Night';
-  const dim = !underground && (phase === 'Dawn' || phase === 'Dusk');
-  if (!dark && !dim) return { penalty: 0, blind: false, note: 'daylight' };
-  if (dim) return darkvisionFt > 0 ? { penalty: 0, blind: false, note: 'dim light, but Darkvision' } : { penalty: -5, blind: false, note: 'dim light (−5)' };
-  return darkvisionFt > 0 ? { penalty: -5, blind: false, note: 'Darkvision in darkness counts as dim light (−5)' } : { penalty: -5, blind: true, note: 'darkness: hearing only' };
+/**
+ * What a watcher can see (see sight.ts): Dim Light, heavy rain or snow, and Darkness seen through Darkvision each
+ * give −5 to passive Perception (Disadvantage doesn't stack); in Darkness without Darkvision only hearing works, also −5.
+ * A light source or a roof overhead lights the camp.
+ */
+export function watchSight(
+  phase: LightPhase,
+  lit: boolean,
+  vision: number | Vision,
+  underground: boolean,
+  o: { fullMoon?: boolean; obscured?: string | null } = {},
+): Sight {
+  const v: Vision = typeof vision === 'number' ? { darkvision: vision, seesInDark: false } : vision;
+  const light = illumination({ phase, underground, lit, fullMoon: !!o.fullMoon });
+  return sightFor(light.level, light.why, v, o.obscured ?? null);
 }
 
 /**

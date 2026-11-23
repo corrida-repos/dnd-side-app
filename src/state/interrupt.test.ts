@@ -90,6 +90,6 @@ describe('hirelings at work', () => {
     });
     const sent = E.sendMessage(s, ctx(), 'm', 30, 'party');
     expect(sent.characters.map((c) => c.gp)).toEqual([9.8, 9.8, 9.8]);
-    expect(E.planWatches(s)[0].watchers[0]).toMatchObject({ passive: 15 });
+    expect(E.planWatches(s)[0].watchers[0]).toMatchObject({ passive: 10 }); // in the dark, hearing only (−5)
   });
 });
