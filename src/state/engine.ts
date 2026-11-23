@@ -34,6 +34,7 @@ import { ARCANA_DC, STUDY_MINUTES, type StudyMethod } from '../rules/identify';
 import { FEED_LB_PER_DAY, MOUNT_CAPACITY, carryingCapacity, COINS_PER_LB, estimateWeight, loadLevel, parseInventory, RATION_WEIGHT, type LoadLevel } from '../rules/encumbrance';
 import { bigEnoughToRide, canBeSidekick, canTame, currentDC, dayOutcome, missedDays, NO_AIDS, resultGain, sessionAttitude, sessionResult, tameCheck, tameDC, TRUST_PER_DAY_MAX, TAME_MAX_FAILS, TAME_RETRY_MINUTES, TAME_SESSION_MINUTES, trainingNeeded, TRAINING_LABEL, trustCue, trustNeeded, type TameAids, type TamerFacts, type TameTraining } from '../rules/taming';
 import { BUTCHER_DC, BUTCHER_MINUTES, isEdible, MEAT_LB, STRANGE_TYPES, yieldsHide, type Creature } from '../rules/hunting';
+import { CURE_DC, CURE_LB_PER_RATION, CURE_MAX_LB, CURE_MINUTES, curedRations, feastTempHp, isFeast, MEAL_STRESS_RELIEF } from '../rules/cooking';
 import { DIG_FIND_ON, isExceptional, poisonYield, rollFind, trophyFor, type Chore } from '../rules/chorePayoffs';
 import { addCoins, COIN_GP, coinCount, coinsFor, emptyPurse, exchange, fmtPurse, purseValue, spend, type Denom, type Purse } from '../rules/coins';
 import { detectContainer } from '../rules/containers';
@@ -1757,11 +1758,10 @@ export const gatherWood = act((d, ctx, charId: string) => {
 });
 
 /**
- * Table rule (Rewarding chores): an exceptional result on a camp chore turns up something worth having. The find lands
+ * Table rule: an exceptional result on a camp chore turns up something worth having. The find lands
  * where it belongs: coins in the purse, valuables in the pack, materials in the crafting stash, food in the stores.
  */
 function grantFind(d: State, ctx: Ctx, c: Character, chore: Chore): void {
-  if (!d.settings.choreFinds) return;
   const f = rollFind(chore, ctx.rng);
   const r = f.reward;
   const n = (dice: string) => Math.max(1, rollExpr(dice, ctx.rng) ?? 1);
@@ -1800,7 +1800,7 @@ function grantFind(d: State, ctx: Ctx, c: Character, chore: Chore): void {
       break;
     }
   }
-  log(d, `${c.name} comes across ${f.text}: ${got} (table rule: rewarding chores).`, 'good');
+  log(d, `${c.name} comes across ${f.text}: ${got} (table rule).`, 'good');
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -1979,26 +1979,32 @@ export const cookMeal = act((d, ctx, cookId: string | null) => {
   const cook = cookId ? actorById(d, cookId) : undefined;
   advanceMut(d, ctx, 60, 'camp');
   const eaters: string[] = [];
+  const ate: Character[] = [];
   let cookedUnsafe = 0;
   for (const c of d.characters) {
     if (!alive(c) || !c.needsFood) continue;
     const got = takeFood(d, c, foodNeedLb(c) / 2, 'cook');
     cookedUnsafe += got.unsafe;
-    if (got.amount > 0) eaters.push(c.name);
+    if (got.amount > 0) (eaters.push(c.name), ate.push(c));
   }
   let flavor = '';
+  let tasty = false;
+  let feast = 0;
   const hiredCook = !!cookId?.startsWith('h:');
   if (cook && (cook.cooksUtensils || hiredCook || partyHasCooksUtensils(d) !== false)) {
     // 2024 PHB Cook's Utensils: improve food's flavor, Wisdom DC 10, plus Proficiency Bonus if proficient. A hired cook brings utensils and their own bonus.
     const bonus = hiredCook ? cook.wisMod : cook.wisMod + (cook.cooksUtensils ? proficiencyBonus(cook.level) : 0) - 2 * cook.exhaustion;
     const r = d20('normal', ctx.rng);
     const ok = r.value + bonus >= 10;
-    flavor = ` ${cook.name} cooks: Wisdom with Cook's Utensils ${r.value} ${signed(bonus)} = ${r.value + bonus} against DC 10, ${ok ? 'a delicious meal' : 'edible, at least'}.`;
+    tasty = ok;
+    if (ok && isFeast(r.value, r.value + bonus, 10)) feast = feastTempHp(cook.wisMod, hiredCook ? 2 : proficiencyBonus(cook.level));
+    flavor = ` ${cook.name} cooks: Wisdom with Cook's Utensils ${r.value} ${signed(bonus)} = ${r.value + bonus} against DC 10, ${feast ? 'a feast to remember' : ok ? 'a delicious meal' : 'edible, at least'}.`;
   } else if (cook && d.settings.improvised) {
     // Table rule: no utensils, so a pot, a spit and Wisdom (Survival) at DC +5.
     const bonus = cook.survival - 2 * cook.exhaustion;
     const r = d20('normal', ctx.rng);
     const ok = r.value + bonus >= IMPROVISED_COOK_DC;
+    tasty = ok;
     flavor = ` ${cook.name} cooks without proper utensils: Wisdom (Survival) ${r.value} ${signed(bonus)} = ${r.value + bonus} against DC ${IMPROVISED_COOK_DC}, ${ok ? 'surprisingly tasty' : 'edible, at least'}.`;
   } else if (cook) {
     flavor = ` ${cook.name} has no Cook's Utensils: plain fare, filling but nothing more.`;
@@ -2006,6 +2012,52 @@ export const cookMeal = act((d, ctx, cookId: string | null) => {
   const dish = d.recipeNames.length ? ` On the menu: ${d.recipeNames[absNow(d) % d.recipeNames.length]}.` : '';
   const purified = cookedUnsafe > 0 ? ` Cooking makes the ${fmtLb(round2(cookedUnsafe))} of raw food safe to eat.` : '';
   log(d, eaters.length ? `A hot meal at the campfire for ${eaters.join(', ')} (half a day's food each).${dish}${purified}${flavor}` : `Nothing to cook: the stores and rations are empty.${flavor}`, eaters.length ? 'good' : 'warn');
+  // Table rule: a good meal is worth the hour. Tasty food eases Stress; a feast also steels everyone with Temporary HP.
+  if (!tasty) return;
+  for (const c of ate) {
+    if (c.kind === 'mount') continue;
+    if (c.stress > 0) {
+      c.stress = Math.max(0, c.stress - MEAL_STRESS_RELIEF);
+      status(d, c, 'stressDown', `${c.name} lingers over the meal and feels the day's tension ease (Stress −${MEAL_STRESS_RELIEF}, now ${c.stress}; table rule).`, 'good');
+    }
+    if (feast && c.tempHp < feast) c.tempHp = feast;
+  }
+  if (feast) log(d, `Full bellies and good company: everyone who ate has ${feast} Temporary HP (table rule: a feast, the cook's Wisdom modifier plus Proficiency Bonus).`, 'good');
+});
+
+/**
+ * Table rule: smoking and drying meat from the camp stores into trail Rations over a lit fire. 4 hours, Wisdom (Survival)
+ * or Wisdom with Cook's Utensils at DC 10; 3 lb of meat makes a day of Rations (half on a failure). Up to 30 lb a batch.
+ * Rations keep, weigh less, and sell for 5 SP a day.
+ */
+export const cureRations = act((d, ctx, curerId: string) => {
+  const c = charById(d, curerId);
+  if (!c || !alive(c)) return;
+  if (!d.fire.lit) return void log(d, 'Smoking meat needs a lit fire.', 'warn');
+  const have = round2(d.stores.foodRawLb + d.stores.foodLb);
+  if (have < CURE_LB_PER_RATION) return void log(d, `There isn't enough meat in the stores to smoke (it takes ${CURE_LB_PER_RATION} lb for a day of Rations).`, 'warn');
+  const lb = Math.min(have, CURE_MAX_LB);
+  advanceMut(d, ctx, CURE_MINUTES, 'camp');
+  const me = charById(d, curerId)!;
+  const utensils = me.cooksUtensils ? me.wisMod + proficiencyBonus(me.level) : -Infinity;
+  const bonus = Math.max(me.survival, utensils) - 2 * me.exhaustion;
+  const r = d20('normal', ctx.rng);
+  const ok = r.value + bonus >= CURE_DC;
+  const used = Math.floor(lb / CURE_LB_PER_RATION) * CURE_LB_PER_RATION;
+  // Raw meat goes on the racks first: smoking it makes it safe.
+  const fromRaw = Math.min(d.stores.foodRawLb, used);
+  d.stores.foodRawLb = round2(d.stores.foodRawLb - fromRaw);
+  d.stores.foodLb = round2(d.stores.foodLb - (used - fromRaw));
+  const days = curedRations(used, ok);
+  if (days) addLine(d, me, 'Rations', days, {}, null, false);
+  const roll = `${utensils > me.survival ? "Wisdom with Cook's Utensils" : 'Wisdom (Survival)'} ${r.value} ${signed(bonus)} = ${r.value + bonus} against DC ${CURE_DC}`;
+  log(
+    d,
+    ok
+      ? `${me.name} smokes ${used} lb of meat over the fire for 4 hours (${roll}): ${days} day${days === 1 ? '' : 's'} of Rations, dry and keeping, worth 5 SP each (table rule).`
+      : `${me.name} smokes ${used} lb of meat (${roll}), but the fire runs hot and cold: half scorches or stays wet, and only ${days} day${days === 1 ? '' : 's'} of Rations come off the racks (table rule).`,
+    ok ? 'good' : 'warn',
+  );
 });
 
 // ---------------------------------------------------------------- purification
@@ -2378,7 +2430,7 @@ export const harvestPoison = act((d, ctx, charId: string, bonus: number, creatur
   const name = creature || 'the creature';
   const me = charById(d, charId)!;
   if (total >= dc) {
-    const y = poisonYield(creature, d.settings.choreFinds);
+    const y = poisonYield(creature);
     const have = me.inventory.find((i) => i.name === y.name && !i.containerId);
     if (have) have.qty += 1;
     else me.inventory.push({ id: uid(), name: y.name, qty: 1, weight: 0, source: 'manual', valueGp: y.valueGp, container: null, ammo: null });
@@ -5547,8 +5599,8 @@ export const butcher = act((d, ctx, o: ButcherOpts) => {
     else d.materials.push({ id: uid(), name, qty: count, unit: 'hide', valueGp: cr.size === 'Medium' ? 1 : cr.size === 'Large' ? 5 : 20 });
     hide = ` ${count} hide${count > 1 ? 's go' : ' goes'} into the materials stash.`;
   }
-  // Table rule (Rewarding chores): a clean job keeps the trophy parts whole, for selling or mounting.
-  const trophy = d.settings.choreFinds && clean ? trophyFor(cr) : null;
+  // Table rule: a clean job keeps the trophy parts whole, for selling or mounting.
+  const trophy = clean ? trophyFor(cr) : null;
   let trophyTxt = '';
   if (trophy) {
     const keeper = (who && alive(who) ? who : undefined) ?? d.characters.find((x) => x.kind === 'pc' && alive(x));
