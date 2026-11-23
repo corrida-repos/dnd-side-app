@@ -27,22 +27,27 @@ describe('mixed potions, renown and lifestyle', () => {
     expect(s.factions[0].renown).toBe(6);
   });
 
-  it('squalid living in town brings a bout of foul-water sickness, which counts toward Sewer Plague', () => {
-    const week = (after: number) => {
+  it('squalid and wretched living mean drinking city water every day, which counts toward Sewer Plague', () => {
+    const day = (lifestyle: 'squalid' | 'wretched' | 'poor', after = 3, renown = 0) => {
       let s = createDefaultState(() => 0);
       s.settings.sleepDeprivation = false;
       s.settings.sewerPlagueAfter = after;
       s.place.settlement = true;
-      s.characters = [newCharacter({ name: 'A', gp: 100, lifestyle: 'squalid', conSave: -10 })];
-      s.dayIndex = 6;
+      s.factions = renown ? [{ id: 'f', name: 'Harpers', renown, notes: '', levelOf: null }] : [];
+      s.characters = [newCharacter({ name: 'A', gp: 100, lifestyle, conSave: -10 })];
+      s.dayIndex = 2;
       s.minutes = 23 * 60;
       return E.advance(s, ctx(0.01), 120);
     };
-    const s = week(3);
+    const s = day('squalid');
     expect(s.characters[0].sick).toBe(true);
     expect(s.characters[0].waterborneIllnesses).toBe(1);
+    expect(s.log.some((l) => l.text.includes('DC 12') && l.text.includes('tenement cistern'))).toBe(true);
     expect(s.characters[0].contagions.some((x) => x.kind === 'sewer')).toBe(false);
-    expect(week(1).characters[0].contagions.some((x) => x.kind === 'sewer')).toBe(true);
+    expect(day('wretched').log.some((l) => l.text.includes('DC 14'))).toBe(true);
+    expect(day('wretched', 3, 3).characters[0].sick).toBe(false);
+    expect(day('poor').characters[0].sick).toBe(false);
+    expect(day('squalid', 1).characters[0].contagions.some((x) => x.kind === 'sewer')).toBe(true);
   });
 
   it('Sewer Plague only threatens after repeated illness from unpurified water', () => {

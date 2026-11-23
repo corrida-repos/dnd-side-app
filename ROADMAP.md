@@ -410,7 +410,8 @@ No change needed. These match the 2024 data:
 - Mount prices.
 
 ### Sewer Plague from repeated bad water ✅
-- ✅ Table rule: each new bout of sickness from unpurified water (or squalid or wretched town living) counts toward Sewer Plague. After 3 (adjustable, 0 = never), that bout brings a DC 11 Con save against it, and the count starts again. Drinking more while already Sick doesn't count twice. The count shows on the Effects tab.
+- ✅ Table rule: city water is worse than a wild stream. Living Squalid in a settlement means a DC 12 Con save against foul water every day, Wretched DC 14 (Renown 3+ spares the Wretched). Failing makes the character Sick.
+- ✅ Table rule: each new bout of sickness from unpurified or city water counts toward Sewer Plague. After 3 (adjustable, 0 = never), that bout brings a DC 11 Con save against it, and the count starts again. Drinking more while already Sick doesn't count twice. The count shows on the Effects tab.
 
 ## Not planned
 
