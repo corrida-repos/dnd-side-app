@@ -362,6 +362,8 @@ export interface Character {
   toolProfs?: string[];
   /** Skill proficiencies; undefined until recorded or imported. */
   skillProfs?: string[];
+  /** Working a trade: workweeks left with Disadvantage from a reputation for laziness (Xanathar's). */
+  workLazyWeeks?: number;
   /** Ability scores, when known (D&D Beyond import or typed in). */
   abilities?: Partial<Record<'str' | 'dex' | 'con' | 'int' | 'wis' | 'cha', number>>;
   /** Mounts: how it moves, for the saddle it needs. */
@@ -558,7 +560,7 @@ export interface Project {
   consumable?: boolean;
   itemName?: string;
   /** Offers waiting for an answer once a seller or buyer is found. */
-  offers?: { label: string; gp: number; shady?: boolean }[];
+  offers?: { label: string; gp: number }[];
   /** Skilled hirelings with the right tools assisting the work, paid 2 GP each per workday. */
   hiredArtisans?: number;
   /** Hours of work done on the march toward the next workday (8 hours make one). */

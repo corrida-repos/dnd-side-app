@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { Project } from '../state/types';
 import { SpeedUp } from './SpeedUp';
 import { PATRONS } from '../rules/patrons';
-import { ACTIVITY_CHECKS, activityOf, BUY_MAX_BONUS, BUY_WEEK_GP, buyTotalNeeded, CAROUSING_COST, CAROUSING_NEEDS, CRIME_TARGETS, magicPrice, researchBonus, RESEARCH_MIN_GP, SELL_FIND_DC, SELL_WEEK_GP, sheetBonuses, WEEKLY, weeksIn } from '../rules/downtimeOutcomes';
+import { ACTIVITY_CHECKS, activityOf, ASKING_PRICE_DICE, buyBonus, BUY_MAX_BONUS, BUY_WEEK_GP, buyTotalNeeded, CAROUSING_COST, CAROUSING_NEEDS, CRIME_TARGETS, MAGIC_LEVEL_LABEL, researchBonus, RESEARCH_MIN_GP, sellBase, SELL_WEEK_GP, sheetBonuses, WEEKLY, weeksIn, type MagicLevel } from '../rules/downtimeOutcomes';
 import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
 import { uid } from '../state/defaults';
@@ -30,6 +30,9 @@ import { BOOK, SKILLS, TOOLS, carriesTool, hasSkill, proficientWith } from '../r
 import { isLowLife } from '../rules/lowLife';
 import { TRAINING_KIND_LABEL, type TrainingKind } from '../rules/prestige';
 import { marchWork } from '../rules/marchWork';
+
+const anRarity = (r: Rarity): string => `${/^[aeiou]/i.test(RARITY_LABEL[r]) ? 'an' : 'a'} ${RARITY_LABEL[r].toLowerCase()}`;
+const cap = (t: string): string => t[0].toUpperCase() + t.slice(1);
 
 export function DowntimeTab() {
   const s = useGame();
@@ -102,7 +105,7 @@ export function DowntimeTab() {
             <b>{p.name}</b>: {p.outcome}.
             <div className="btn-row">
               {p.offers!.map((o, i) => (
-                <button key={o.label} className={`small${o.shady ? '' : ' primary'}`} onClick={() => dispatch((st, cx) => E.answerDeal(st, cx, p.id, i))}>
+                <button key={o.label} className="small primary" onClick={() => dispatch((st, cx) => E.answerDeal(st, cx, p.id, i))}>
                   {o.label}
                 </button>
               ))}
@@ -110,7 +113,6 @@ export function DowntimeTab() {
                 Turn it down
               </button>
             </div>
-            {p.offers!.some((o) => o.shady) && <Rule>Table rule: selling to a shady buyer doubles the complication chance (20%).</Rule>}
           </div>
         ))}
         {done.length > 0 && (
@@ -249,11 +251,11 @@ function NewProject() {
       calc = {
         days: dealDays,
         gp: price,
-        label: name || `${kind === 'buyMagic' ? 'Buy' : 'Sell'} a ${RARITY_LABEL[rarity].toLowerCase()} magic item`,
+        label: name || `${kind === 'buyMagic' ? 'Buy' : 'Sell'} ${anRarity(rarity)} magic item`,
         note: s.settings.downtimeOutcomes
           ? kind === 'buyMagic'
-            ? `Xanathar's: ${BUY_WEEK_GP} GP a workweek to search (${fmtGp(weeks * BUY_WEEK_GP)} for ${weeks}), then Charisma (Persuasion) with +1 for each week after the first (max +${BUY_MAX_BONUS}). A ${consumable ? 'consumable' : 'permanent'} ${RARITY_LABEL[rarity].toLowerCase()} item needs a total of ${buyTotalNeeded(rarity, consumable)} or more. Price ${fmtGp(magicPrice(rarity, consumable))}, or half again on a total of 15 or less.`
-            : `Xanathar's: ${SELL_WEEK_GP} GP and a DC ${SELL_FIND_DC} Intelligence (Investigation) check each workweek to find a buyer, then d100 + Charisma (Persuasion) for the offer, from a base price of ${fmtGp(magicPrice(rarity, consumable))}.`
+            ? `Xanathar's: at least a workweek and ${BUY_WEEK_GP} GP (a wealthy lifestyle to impress sellers), then Charisma (Persuasion) with +1 for each workweek beyond the first and +1 for each 100 GP beyond the first 100 (max +${BUY_MAX_BONUS}). A ${RARITY_LABEL[rarity].toLowerCase()}  item is for sale on a total of ${buyTotalNeeded(rarity)} or more, asking ${ASKING_PRICE_DICE[rarity]}${consumable ? ', halved for a consumable' : ''}.`
+            : `Xanathar's: a workweek and ${SELL_WEEK_GP} GP to spread word of the sale (${weeks} week${weeks > 1 ? 's' : ''}, one offer each), then Charisma (Persuasion): 1–10 half of ${fmtGp(sellBase(rarity, consumable))}, 11–20 the full price, 21+ one and a half times. You can always turn the offer down.`
           : kind === 'buyMagic'
             ? `Finding a seller takes downtime. Typical value: ${fmtGp(value)}. The price is paid when the deal is done.`
             : `Finding a buyer takes downtime. Sellers usually get about half the value (${fmtGp(value / 2)}). The gold is received when the deal is done.`,
@@ -699,6 +701,9 @@ function ActivityResolver({ p }: { p: Project }) {
   };
   const [adv, setAdv] = useState<boolean[]>(checks.map((_, i) => !!toolAdv(i)?.on));
   const [book, setBook] = useState(!!who?.inventory.some((i) => BOOK.test(i.name)));
+  const [rivalInCrime, setRivalInCrime] = useState(false);
+  const [attackFor, setAttackFor] = useState(-1);
+  const [attack, setAttack] = useState(0);
   const weekly = id === 'Carousing' ? CAROUSING_COST[circle] : id === 'Research' ? Math.max(RESEARCH_MIN_GP, gp) : 0;
   const owed = Math.max(0, weekly * weeks - p.costGp / Math.max(1, p.charIds.length));
   return (
@@ -717,16 +722,25 @@ function ActivityResolver({ p }: { p: Project }) {
         {id === 'Gambling' && <Num label="Stake a week" value={gp} onChange={(v) => setGp(Math.max(10, Math.min(1000, v)))} min={10} max={1000} suffix="GP" width={5} />}
         {id === 'Research' && <Num label="Spent a week" value={gp} onChange={(v) => setGp(Math.max(RESEARCH_MIN_GP, v))} min={RESEARCH_MIN_GP} suffix="GP" width={5} />}
         {id === 'Crime' && <Select label="Target" value={String(dc)} onChange={(v) => setDc(Number(v))} options={CRIME_TARGETS.map((t) => ({ value: String(t.dc), label: t.label }))} />}
+        {id === 'Crime' && <Toggle checked={rivalInCrime} onChange={setRivalInCrime} label="A rival is in crime or law enforcement (two successes bring a complication too)" />}
+        {id === 'Research' && <Toggle checked={!!adv[0]} onChange={(v) => setAdv([v])} label="A well-stocked library or knowledgeable sages (Advantage)" />}
+        {id === 'Pit fighting' && (
+          <>
+            <Select label="Replace with an attack roll" value={String(attackFor)} onChange={(v) => setAttackFor(Number(v))} options={[{ value: '-1', label: 'No' }, { value: '0', label: 'Instead of Athletics' }, { value: '1', label: 'Instead of Acrobatics' }]} />
+            {attackFor >= 0 && <Num label="Weapon attack bonus" value={attack} onChange={setAttack} width={3} />}
+          </>
+        )}
         {id === 'Carousing' && <Select label="Circle" value={circle} onChange={setCircle} options={(['lower', 'middle', 'upper'] as const).map((c) => ({ value: c, label: `${c[0].toUpperCase()}${c.slice(1)} class (${CAROUSING_COST[c]} GP a week)` }))} />}
       </div>
       {sheet.length > 0 && <p className="small muted">From the sheet: {sheet.map((x) => `${x.why} = ${x.bonus >= 0 ? '+' : ''}${x.bonus}`).join(' · ')}{sheet.some((x) => !x.known) ? '. Some scores aren\'t recorded: check the numbers.' : ''}</p>}
       {id === 'Carousing' && <p className="small muted">{CAROUSING_NEEDS[circle]}</p>}
-      {id === 'Research' && <p className="small muted">+{researchBonus(Math.max(RESEARCH_MIN_GP, gp))} from spending (+1 for every 100 GP beyond the first 100, max +6).</p>}
+      {id === 'Research' && <p className="small muted">+{researchBonus(Math.max(RESEARCH_MIN_GP, gp))} from spending (+1 for every 50 GP beyond the first 50, max +6).</p>}
+      {id === 'Working a trade' && (who?.workLazyWeeks ?? 0) > 0 && <p className="small warn-text">A reputation for laziness: Disadvantage for {who!.workLazyWeeks} more workweek(s).</p>}
       {id === 'Pit fighting' && who && <p className="small muted">The Constitution check adds a roll of {who.name}&apos;s d{who.hitDie} Hit Die (not spent).</p>}
       {owed > 0 && <p className="small">Costs {fmtGp(owed)} more than the project charged ({fmtGp(weekly)} a week).</p>}
       <button
         className="small primary"
-        onClick={() => dispatch((st, cx) => E.resolveActivityProject(st, cx, p.id, { bonuses, gp, dc, circle, advantage: adv, book: id === 'Research' && book, hitDie: who?.hitDie, weeks }, who?.id))}
+        onClick={() => dispatch((st, cx) => E.resolveActivityProject(st, cx, p.id, { bonuses: bonuses.map((b, i) => (id === 'Pit fighting' && i === attackFor ? attack : b)), gp, dc, circle, advantage: adv, book: id === 'Research' && book, hitDie: who?.hitDie, weeks, rivalInCrime }, who?.id))}
       >
         Roll the outcome{pending.length > 1 ? ` for ${who?.name}` : ''}
       </button>
@@ -741,26 +755,28 @@ function DealResolver({ p }: { p: Project }) {
   const who = E.charById(s, p.charIds[0]);
   const sheet = who ? sheetBonuses(who, buy ? 'Buying a magic item' : 'Selling a magic item') : [];
   const [bonus, setBonus] = useState(sheet[0]?.bonus ?? 0);
-  const [offerBonus, setOfferBonus] = useState(sheet[1]?.bonus ?? 0);
   const weeks = weeksIn(p.daysRequired);
+  const [gp, setGp] = useState(BUY_WEEK_GP);
+  const [magic, setMagic] = useState<MagicLevel>('standard');
   const rarity = p.rarity ?? 'uncommon';
   return (
     <div className="decision">
-      <b>{p.name}</b>: {weeks} workweek{weeks > 1 ? 's' : ''} of searching{who ? ` by ${who.name}` : ''}, {fmtGp(weeks * (buy ? BUY_WEEK_GP : SELL_WEEK_GP))}.
+      <b>{p.name}</b>: {weeks} workweek{weeks > 1 ? 's' : ''} {buy ? 'seeking a seller' : 'spreading word of the sale'}{who ? ` by ${who.name}` : ''}.
       <div className="form-row">
-        <Num label={buy ? 'Charisma (Persuasion)' : 'Intelligence (Investigation)'} value={bonus} onChange={setBonus} width={3} />
-        {!buy && <Num label="Charisma (Persuasion)" value={offerBonus} onChange={setOfferBonus} width={3} />}
+        <Num label="Charisma (Persuasion)" value={bonus} onChange={setBonus} width={3} />
+        {buy && <Num label="Spent on the search" value={gp} onChange={(v) => setGp(Math.max(BUY_WEEK_GP, v))} min={BUY_WEEK_GP} suffix="GP" width={6} />}
+        {buy && <Select label="Campaign (optional)" value={magic} onChange={setMagic} options={(Object.keys(MAGIC_LEVEL_LABEL) as MagicLevel[]).map((k) => ({ value: k, label: MAGIC_LEVEL_LABEL[k] }))} />}
       </div>
       {sheet.length > 0 && <p className="small muted">From the sheet: {sheet.map((x) => `${x.why} = ${x.bonus >= 0 ? '+' : ''}${x.bonus}`).join(' · ')}</p>}
       <p className="small muted">
         {buy
-          ? `Needs a total of ${buyTotalNeeded(rarity, !!p.consumable)} (with +${Math.min(BUY_MAX_BONUS, weeks - 1)} for the extra weeks).`
-          : `DC ${SELL_FIND_DC} each week to find a buyer, then d100 + Persuasion on the offer table.`}
+          ? `+${buyBonus(weeks, gp)} for the search. ${cap(anRarity(rarity))} item needs a total of ${buyTotalNeeded(rarity)}; asking ${ASKING_PRICE_DICE[rarity]}${p.consumable ? ', halved for a consumable' : ''}.`
+          : `${fmtGp(weeks * SELL_WEEK_GP)} to spread the word. Offers: 1–10 half of ${fmtGp(sellBase(rarity, !!p.consumable))}, 11–20 the full price, 21+ one and a half times.`}
       </p>
-      <button className="small primary" onClick={() => dispatch((st, cx) => E.resolveDealProject(st, cx, p.id, { bonus, offerBonus }))}>
-        Roll the search
+      <button className="small primary" onClick={() => dispatch((st, cx) => E.resolveDealProject(st, cx, p.id, buy ? { bonus, gp, magic } : { bonus }))}>
+        Roll the {buy ? 'search' : 'offer'}
       </button>
-      <Rule>Optional rule from Xanathar&apos;s Guide (2014), with 2024 DMG prices. 10% chance of a complication.</Rule>
+      <Rule>Optional rule from Xanathar&apos;s Guide (2014). Each workweek has a 10% chance of a complication{buy ? ' (a table rule for buying, where the book gives no odds)' : ''}.</Rule>
     </div>
   );
 }
