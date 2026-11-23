@@ -11,7 +11,9 @@ describe('which work can go on while marching (table rule)', () => {
     expect(proj({ name: 'Bedroll' }).ok).toBe(false);
     expect(proj({ name: 'Longsword' }).ok).toBe(false);
     expect(proj({ name: 'Something odd' }).ok).toBe(false);
-    expect(proj({ kind: 'scroll', name: 'Spell Scroll' }).ok).toBe(false);
+    expect(proj({ kind: 'scroll', name: 'Spell Scroll' })).toMatchObject({ ok: true, concentration: true });
+    expect(proj({ kind: 'spellcopy', name: 'Copy Fireball' })).toMatchObject({ ok: true, concentration: true });
+    expect(proj({ name: 'Ink' }).ok).toBe(false);
     expect(proj({ kind: 'potion', name: 'Potions' }).ok).toBe(false);
   });
 

@@ -4,7 +4,7 @@ import { watchCapacity, watchMinutes } from '../rules/watch';
 import { HUNTING_TRAP } from '../rules/gear';
 import { NAVIGATOR } from '../rules/tools';
 import { PROJECT_KIND_LABEL } from '../rules/crafting';
-import { marchWork } from '../rules/marchWork';
+import { MARCH_WRITING_DC, marchWork } from '../rules/marchWork';
 
 /** Where the party is, which decides which jobs make sense right now. */
 export type JobGroup = 'road' | 'camp' | 'town';
@@ -103,7 +103,7 @@ export function jobBoard(s: State): JobBoard {
 
   // Hand-held projects worked on the march (table rule): only for those doing nothing but walking.
   const marching = s.settings.workWhileMarching && (!town || journey) ? s.projects.filter((p) => marchWork(p).ok && !p.done && !p.awaitingOutcome) : [];
-  for (const p of marching) for (const c of E.marchWorkers(s, p, navId, foragers)) addDuty(c.id, `${p.name || PROJECT_KIND_LABEL[p.kind]} while marching`, 'road');
+  for (const p of marching) for (const c of E.marchWorkers(s, p, navId, foragers)) addDuty(c.id, `${p.name || PROJECT_KIND_LABEL[p.kind]} while marching${marchWork(p).concentration ? ' (keeping concentration)' : ''}`, 'road');
 
   // ---- camp: watches
   const load = E.watchLoad(s);
@@ -160,7 +160,7 @@ export function jobBoard(s: State): JobBoard {
         id: `march-${p.id}`,
         group: 'road',
         title: `${p.name || PROJECT_KIND_LABEL[p.kind]} on the march`,
-        what: `${marchWork(p).why[0].toUpperCase()}${marchWork(p).why.slice(1)}, so it goes on while walking: each marching hour counts as half an hour of work. ${p.daysDone}/${p.daysRequired} workdays${p.marchWorkHours ? ` and ${p.marchWorkHours} h toward the next` : ''}.${away.length ? ` ${away.map(name).join(', ')} can’t work it while navigating or foraging.` : ''}`,
+        what: `${marchWork(p).why[0].toUpperCase()}${marchWork(p).why.slice(1)}, so it goes on while walking: each marching hour counts as half an hour of work. ${p.daysDone}/${p.daysRequired} workdays${p.marchWorkHours ? ` and ${p.marchWorkHours} h toward the next` : ''}.${marchWork(p).concentration ? ` Each writer makes a DC ${MARCH_WRITING_DC} Constitution save per leg, as for Concentration, or that leg’s work is spoiled; nobody holding a Concentration spell can write.` : ''}${away.length ? ` ${away.map(name).join(', ')} can’t work it now (navigating, foraging${marchWork(p).concentration ? ' or concentrating on a spell' : ''}).` : ''}`,
         source: 'Table rule',
         status: on.length ? 'covered' : 'optional',
         shared: !p.learnKind,

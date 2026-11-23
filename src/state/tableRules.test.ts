@@ -137,4 +137,20 @@ describe('working on projects while marching (table rule)', () => {
     const t = E.travel(s, ctx(), { ...go, hours: 4 });
     expect(t.projects[0].done).toBe(true);
   });
+
+  it('lets writers scribe on the march only while they keep their concentration', () => {
+    const scroll = (rng: number, spell = false) => {
+      const s = fresh((st) => {
+        st.settings.forcedMarch = false;
+        st.projects = [{ id: 'p', name: 'Spell Scroll', kind: 'scroll', charIds: [st.characters[0].id], daysRequired: 3, daysDone: 0, costGp: 1, notes: '', done: false }];
+        if (spell) st.effects = [{ id: 'e', name: 'Detect Magic', kind: 'other', targetIds: [st.characters[0].id], casterId: st.characters[0].id, concentration: true, shelter: false, startedAt: 0, endsAt: null, notes: '' }];
+      });
+      return E.travel(s, ctx(rng), { ...go, hours: 4 });
+    };
+    expect(scroll(0.9).projects[0].marchWorkHours).toBe(2);
+    const fumbled = scroll(0);
+    expect(fumbled.projects[0].marchWorkHours ?? 0).toBe(0);
+    expect(fumbled.log.some((l) => /loses concentration on Spell Scroll/.test(l.text))).toBe(true);
+    expect(scroll(0.9, true).projects[0].marchWorkHours ?? 0).toBe(0);
+  });
 });
