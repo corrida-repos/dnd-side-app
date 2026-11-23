@@ -4,6 +4,7 @@ import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
 import { attentionItems } from './attention';
 import { PlayerSummaryCard } from './PlayerTodos';
+import { PartyJobsCard } from './PartyJobs';
 import { goTo } from './nav';
 import { CLIMATES, environmentEffects, temperatureAt, weatherSummary, type ClimateId, type Weather } from '../rules/weather';
 import { formatClock, formatDate, formatDuration } from '../rules/calendar';
@@ -27,6 +28,7 @@ export function Overview() {
       <AttentionCard />
       <PendingCard />
       <PlayerSummaryCard />
+      <PartyJobsCard />
       <ClockCard />
       <WeatherCard />
       <PartyStatusCard />
@@ -530,7 +532,7 @@ function TravelCard() {
   const [hours, setHours] = useState(4);
   const [pace, setPace] = useState<Pace>(s.travel.pace);
   const [difficult, setDifficult] = useState(false);
-  const [foragers, setForagers] = useState<string[]>([]);
+  const [foragers, setForagers] = useState<string[]>(s.travel.foragerIds ?? []);
   const [navigator, setNavigator] = useState<string>(s.travel.navigatorId ?? s.characters.filter((c) => c.kind !== 'mount').sort((a, b) => b.survival - a.survival)[0]?.id ?? '');
   const nav = E.currentNavigationDC(s);
   const [gallop, setGallop] = useState(false);
@@ -726,7 +728,7 @@ function JourneyCard() {
               </span>
               <span className="btn-row tight">
                 {!st.done && (
-                  <button className="small primary" onClick={() => dispatch((st2, cx) => E.runStage(st2, cx, st.id, { pace, foragerIds: [], navigatorId: s.travel.navigatorId, vesselId: vesselId || null, mapperId: mapperId || null }, camp))}>
+                  <button className="small primary" onClick={() => dispatch((st2, cx) => E.runStage(st2, cx, st.id, { pace, foragerIds: s.travel.foragerIds ?? [], navigatorId: s.travel.navigatorId, vesselId: vesselId || null, mapperId: mapperId || null }, camp))}>
                     Run stage
                   </button>
                 )}

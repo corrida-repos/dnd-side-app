@@ -1354,6 +1354,7 @@ function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
   log(d, `The party sets out at a ${o.pace} pace for ${o.hours} hour(s)${o.difficult ? ' over Difficult Terrain' : ''}. ${p.note}.`);
   const navId = o.navigatorId === undefined ? d.travel.navigatorId : o.navigatorId;
   d.travel.navigatorId = navId ?? null;
+  d.travel.foragerIds = o.foragerIds.filter((id) => charById(d, id));
   const nav = activeNavigator(d, navId);
   if (nav && !d.travel.lost && navigate(d, ctx, nav, o.pace) === false) {
     d.travel.lost = true;
