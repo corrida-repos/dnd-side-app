@@ -109,7 +109,7 @@ export const MECHANICS: Mechanic[] = [
   { key: 'weatherDamage', tier: 4, area: 'Combat', source: 'Table rule', label: 'Weather favors or hinders some damage types (+1 or −1 per die)', cost: 'A modifier to work out on damage rolls all through combat.' },
   { key: 'sleepInArmorPenalty', tier: 4, area: 'Rest', source: "Xanathar's", label: 'Sleeping in Medium or Heavy armor spoils the Long Rest', cost: 'Armor to take off and put on around every rest, and the minutes that takes.' },
   { key: 'doubleWaterInHeat', tier: 4, area: 'Survival', source: '2014 rule', label: 'Double water needs on days of 100 °F or hotter', cost: 'Twice the water to carry and log on hot days.' },
-  { key: 'prestigeRenownMin', tier: 4, area: 'World', source: 'Table rule', label: 'Factions expect renown before granting titles (knight 10, lord or count 25, duke 50) or fortifications (25)', cost: 'Renown to check before each faction grant.' },
+  { key: 'prestigeRenownMin', tier: 4, area: 'World', source: 'Table rule', label: 'Factions and rulers refuse titles (knight 10, lord or count 25, duke 50) and fortifications (25) below these renown scores', cost: 'Renown to check before each faction grant.' },
   { key: 'appraiseOneTry', tier: 4, area: 'Money', source: 'Table rule', label: 'One appraisal try per person until a rest', cost: 'Tracking who has tried which item.' },
   { key: 'appraiseTime', tier: 4, area: 'Money', source: 'Table rule', label: 'A careful appraisal takes 10 minutes', cost: 'The clock moves for each appraisal.' },
   { key: 'appraiseMisjudge', tier: 4, area: 'Money', source: 'Table rule', label: 'Secret appraisal rolls; failing by 5 or more gives a wrong value', cost: 'Secret rolls and values the party can’t trust.' },

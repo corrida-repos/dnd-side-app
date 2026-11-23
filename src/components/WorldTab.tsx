@@ -688,7 +688,10 @@ function MarksCard() {
   const [factionId, setFactionId] = useState('');
   const [rulerAsFaction, setRulerAsFaction] = useState(true);
   const fac = s.factions.find((f) => f.id === factionId);
-  const need = fac && s.settings.prestigeRenownMin ? renownMinimum(kind, rank) : 0;
+  const rulerFac = !fac && rulerAsFaction && grantor.trim() ? s.factions.find((f) => f.name.trim().toLowerCase() === grantor.trim().toLowerCase()) : undefined;
+  const judge = fac ?? rulerFac ?? (!fac && rulerAsFaction && grantor.trim() ? { name: grantor.trim(), renown: 0 } : undefined);
+  const need = judge && s.settings.prestigeRenownMin ? renownMinimum(kind, rank) : 0;
+  const refused = !!judge && need > judge.renown;
   const active = s.marks.filter((m) => !m.revoked && !m.bastionId);
   const past = s.marks.filter((m) => m.revoked || m.bastionId);
   return (
@@ -756,10 +759,14 @@ function MarksCard() {
           />
         )}
         {kind === 'rights' && <p className="small muted">{RIGHTS[right].effect}</p>}
-        {fac && need > fac.renown && <p className="small warn-text">Table rule: {fac.name} would expect renown {need} for this; the party has {fac.renown}.</p>}
+        {judge && refused && (
+          <p className="small warn-text">
+            Table rule: {judge.name} won&apos;t grant this below renown {need}; the party has {judge.renown}. Raise it with missions and time at court first, or untick the faction link to grant it as a one-off reward.
+          </p>
+        )}
         <button
           className="primary"
-          disabled={!holders.length}
+          disabled={!holders.length || refused}
           onClick={() => {
             dispatch((st, cx) =>
               E.grantMark(st, cx, {
@@ -787,7 +794,7 @@ function MarksCard() {
         </button>
       </details>
       <Rule>
-        2024 DMG, Marks of Prestige: a fortification is governed by the holders, but its land stays the crown&apos;s. It costs {Object.values(FORT_UPKEEP).map((u) => `${fmtGp(u.gpPerDay)}`).join(', ')} a day (outpost, keep, castle), and the grantor may pay for the first months. Land can be built on and inherited but not sold. Special rights last as long as the document says. Titles can be passed down. Any of them can be taken away for disloyalty or abuse. Table rules ({s.settings.prestigeRules ? 'on' : 'off'}, Settings): the grantor&apos;s trust starts at {TRUST_MAX}, and it is gone (the mark taken back) at 0. Land pays rents monthly, but a 1 on a d6 brings trouble, and trouble left for 30 days costs trust and that month&apos;s income. Titles cost trust each month the holder lives below the rank&apos;s lifestyle. {FORT_NEGLECT_DAYS} days of unpaid fortification upkeep costs trust. Free room and board covers lifestyles up to {LIFESTYLE_LABEL[LODGING_CAP]}. A mark granted by a tracked faction ties into its renown: loyal service also gives +1 renown, a mark taken back for disloyalty costs {E.REVOKE_RENOWN_LOSS}, and serious offenses against the faction cost trust.{s.settings.prestigeRenownMin ? ' Factions expect renown 10 for a knighthood, 25 for a lordship, county or fortification, and 50 for a dukedom.' : ''} The crown takes {Math.round(PRIZE_CROWN_SHARE * 100)}% of a prize.
+        2024 DMG, Marks of Prestige: a fortification is governed by the holders, but its land stays the crown&apos;s. It costs {Object.values(FORT_UPKEEP).map((u) => `${fmtGp(u.gpPerDay)}`).join(', ')} a day (outpost, keep, castle), and the grantor may pay for the first months. Land can be built on and inherited but not sold. Special rights last as long as the document says. Titles can be passed down. Any of them can be taken away for disloyalty or abuse. Table rules ({s.settings.prestigeRules ? 'on' : 'off'}, Settings): the grantor&apos;s trust starts at {TRUST_MAX}, and it is gone (the mark taken back) at 0. Land pays rents monthly, but a 1 on a d6 brings trouble, and trouble left for 30 days costs trust and that month&apos;s income. Titles cost trust each month the holder lives below the rank&apos;s lifestyle. {FORT_NEGLECT_DAYS} days of unpaid fortification upkeep costs trust. Free room and board covers lifestyles up to {LIFESTYLE_LABEL[LODGING_CAP]}. A mark granted by a tracked faction ties into its renown: loyal service also gives +1 renown, a mark taken back for disloyalty costs {E.REVOKE_RENOWN_LOSS}, and serious offenses against the faction cost trust.{s.settings.prestigeRenownMin ? ' Factions and rulers tracked as factions refuse to grant a knighthood below renown 10, a lordship, county or fortification below 25, or a dukedom below 50.' : ''} The crown takes {Math.round(PRIZE_CROWN_SHARE * 100)}% of a prize.
       </Rule>
     </Card>
   );
