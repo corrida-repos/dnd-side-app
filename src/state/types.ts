@@ -345,6 +345,8 @@ export interface Character {
   movement?: 'land' | 'fly' | 'swim';
   /** Mounts: the saddle it wears (2024 PHB Tack). */
   saddle?: 'none' | 'riding' | 'military' | 'exotic';
+  /** A creature the party tamed from the wild (table rule), and what it has been trained to do. */
+  tamed?: { tamerId: string; trained: ('mount' | 'commands')[] };
   /** −4 to D20 Tests after Raise Dead or Resurrection, easing by 1 each Long Rest. */
   revivalPenalty?: number;
   /** Remove Curse was cast: attunement to cursed items can be ended. */
@@ -834,6 +836,39 @@ export interface Settings {
   tentSpace: boolean;
   /** Table rule: a batch of cheap crafted items counts as one item worth their total price. */
   batchCrafting: boolean;
+  /** Table rule: taming a wild Beast or Monstrosity of low Intelligence with daily Animal Handling sessions. */
+  taming: boolean;
+}
+
+/** A wild creature someone is trying to tame or train (table rule). */
+export interface TameTarget {
+  id: string;
+  /** What the party calls it. */
+  name: string;
+  /** The kind of creature, e.g. "Wolf" or "Griffon". */
+  creature: string;
+  type: string;
+  size: Size;
+  int: number;
+  cr: string;
+  speed: number;
+  movement: 'land' | 'fly' | 'swim';
+  tamerId: string;
+  /** wary: the approach failed and it is waiting; bonding: daily sessions; tamed: it has joined the party. */
+  stage: 'wary' | 'bonding' | 'tamed';
+  trust: number;
+  needed: number;
+  /** Failed sessions in a row. */
+  fails: number;
+  lastSessionDay: number | null;
+  /** The day the approach succeeded. */
+  startedDay: number;
+  /** Absolute minute after which a failed approach can be tried again. */
+  retryAt: number | null;
+  /** The party member it became once tamed. */
+  mountId?: string;
+  training?: { kind: 'mount' | 'commands'; progress: number; needed: number };
+  trained: ('mount' | 'commands')[];
 }
 
 export interface Travel {
@@ -919,6 +954,8 @@ export interface State {
   materials: Material[];
   /** Creatures imported from a bestiary file, for hunting. */
   bestiary: Creature[];
+  /** Wild creatures being tamed or trained (table rule). */
+  taming?: TameTarget[];
   /** Every status change in the game, per character (kept much longer than the Chronicle). */
   statusLog: StatusEntry[];
   /** Stashes, bank vaults and vehicles holding the party's things. */
