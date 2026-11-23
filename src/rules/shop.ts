@@ -1,8 +1,8 @@
 import { ITEM_PRICES } from './itemPrices';
 import type { Settlement } from './services';
 
-/** 2024 PHB "Selling Treasure": equipment fetches half its price; gems, jewelry, art and trade goods keep full value. */
-export const FULL_VALUE = /\b(gem|gems|diamond|ruby|pearl|emerald|sapphire|opal|jade|jewel|jewelry|jewellery|amethyst|garnet|topaz|onyx|jacinth|gemstones?|art object|statuette|painting|tapestry|idol|chalice|trade goods|ingot|bar of (gold|silver)|spices?|silk)\b/i;
+/** 2024 PHB "Selling Treasure": equipment fetches half its price; gems, jewelry, art and trade goods keep full value. Table rule: pelts, furs, hides, trophies, Rations, foraged goods and route maps count as trade goods. */
+export const FULL_VALUE = /\b(gem|gems|diamond|ruby|pearl|emerald|sapphire|opal|jade|jewel|jewelry|jewellery|amethyst|garnet|topaz|onyx|jacinth|gemstones?|art object|statuette|painting|tapestry|idol|chalice|trade goods|ingot|bar of (gold|silver)|spices?|silk|pelts?|furs?|hides?|trophy|trophies|rations|honeycomb|mushrooms|herbs|fossils?|map of)\b/i;
 export const saleRate = (name: string): number => (FULL_VALUE.test(name) ? 1 : 0.5);
 
 /** Gemstones, whose value Jeweler's Tools can discern (2024 PHB). */

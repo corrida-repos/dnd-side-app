@@ -129,6 +129,8 @@ export interface InventoryItem {
   damaged?: boolean;
   /** Table rule: expertly mended, it shrugs off the next wear it would take. */
   reinforced?: boolean;
+  /** Table rule: the owner's own new work, sold at full price as its maker. */
+  crafted?: boolean;
   /** Who has already tried and failed to appraise it since the last rest (optional table rule). */
   appraiseTried?: string[];
   /** The inventory item this is packed inside, if any. */
