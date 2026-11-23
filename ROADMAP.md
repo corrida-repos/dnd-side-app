@@ -391,6 +391,44 @@ The gear makes things automatic, faster or better; without it you can still try,
 - ✅ **Vine cord:** Survival DC 15, 1 hour, 10 feet, bursts at Strength DC 15.
 - Barren terrain (desert, arctic without snow, underground, at sea, in town) has nothing to make these from.
 
+## Phase 9: Random tables from the 2024 DMG 📋
+
+The 2024 DMG's random tables that fit life outside one adventure, taken from the 5etools `book-xdmg.json`. Adventure prep tables (situations, hooks, climaxes, Greyhawk, planar layers, artifacts) stay out.
+
+### Treasure that becomes real items 📋
+- **Now:** loot is free text. A regex guesses whether it's a gem or an art object, and the Bastion Treasure event names its table ("Art object (250 GP table)", "Uncommon magic item") without rolling it.
+- **Rules (2024 DMG, chapter 7):**
+  - Gemstones by value: 10 GP (d12), 50 GP (d12), 100 GP (d10), 500 GP (d6), 1,000 GP (d8), 5,000 GP (d4).
+  - Art objects by value: 25, 250, 750, 2,500 and 7,500 GP, a d10 each.
+  - Trade Bars: 2-lb silver (10 GP), 5-lb silver (25 GP), 5-lb gold (250 GP).
+  - Random Individual Treasure by CR band (coins only, 3d6 GP up to 2d8 × 100 PP) and Random Treasure Hoard by CR band (coins, gems or art, magic items).
+  - Magic Item Rarities (d100), then the Arcana, Armaments, Implements and Relics tables for each rarity, Common to Legendary.
+- **To build:** a treasure roller on the Money tab (individual or hoard, by CR) that adds coins to the purse and named items to the inventory with their value and weight, so appraising and selling work on them straight away. The Bastion Treasure event and Magical Discovery roll the same tables.
+
+### Settlements 📋
+- **Now:** a place is just a name with a settlement on/off switch.
+- **Rules (2024 DMG, chapter 3, "Settlements"):** Settlements by Size (village up to 500 people and 20 GP items, town up to 5,000 and 2,000 GP, city beyond and 200,000 GP); Defining Traits (d20), Claims to Fame (d20), Current Calamities (d12), Local Leaders (d12), Tavern Names (d20 + d20) and Random Shops (d20).
+- **To build:** the first time the party arrives at a new settlement, offer to roll it up: size, trait, claim to fame, leader, a tavern or two and its shops. Each part can be re-rolled or typed over. The shops it has and the size limit set what the shop sells there. A calamity is a world event that lasts a while and ends or gets worse, and players get a line on what their characters notice when they arrive.
+
+### NPCs with names and faces 📋
+- **Now:** hirelings, contacts, patrons, rivals and Bastion guests have only the details typed in.
+- **Rules (2024 DMG, chapter 3, "Detailed NPCs"):** six name styles (Common, Guttural, Lyrical, Monosyllabic, Sinister, Whimsical), each a d12 given name and a d12 surname; NPC Appearance (d12); NPC Secrets (d10).
+- **To build:** a "roll an NPC" button wherever a person is added (hireling, contact, patron, rival, Bastion guest or defender). The name style, appearance and secret can each be re-rolled. The secret is DM-only.
+
+### Monsters with a mind of their own 📋
+- **Now:** an encounter rolls creatures, a starting attitude, distance and surprise.
+- **Rules (2024 DMG, chapter 4, "Monster Behavior"):** Monster Personality (d8) and Monster Relationships (d6).
+- **To build:** roll a personality and a relationship with each encounter and show them alongside the attitude, so a parley has something to go on.
+
+### Noise and locks 📋
+- **Now:** watches use passive Perception, with hearing as the only sense in Darkness. Thieves' Tools are on the sheet, but picking a lock has no DC or time.
+- **Rules (2024 DMG, chapter 2 "Audible Distance" and chapter 3 "Doors"):**
+  - Audible Distance: trying to be quiet 2d6 × 5 ft, normal noise 2d6 × 10 ft, very loud 2d6 × 50 ft.
+  - Lock Quality sets the DC to unlock (Inferior 10, Good 15, Superior 20); Lock Complexity sets the time (Simple 1 action, Complex 1 minute).
+- **To build:** noise from camp (a fire, talking, building, combat) sets how far away an encounter can hear the party, and a sound gives the watch a hearing distance. A "pick a lock" action rolls Thieves' Tools against the lock's DC; a Complex lock takes a minute, which matters for light, spell durations and exploration turns.
+
+---
+
 ## Verified correct ✅
 
 No change needed. These match the 2024 data:
