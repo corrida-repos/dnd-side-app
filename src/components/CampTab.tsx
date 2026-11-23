@@ -5,6 +5,7 @@ import { fireThreat } from '../rules/weather';
 import { DIG_LABEL, HUNTING_TRAP, MAGNIFYING_GLASS, POT_ALARM_DC, SHOVEL, SNARE, SNARE_LINE, TRAP_CATCH_ON, type DigKind } from '../rules/gear';
 import { COOK_RAW_MINUTES, DEFAULT_FIRE_COLD_LIMIT_F, FIRE_LIGHT_DC, FIRE_METHODS, fireColdLimit, fireLighting, type FireMethod } from '../rules/campfire';
 import { GAME_ANIMALS, MEAT_LB, BUTCHER_MINUTES, BUTCHER_DC, isEdible, yieldsHide, STRANGE_TYPES } from '../rules/hunting';
+import { CURE_DC, CURE_LB_PER_RATION, CURE_MAX_LB, FEAST_MARGIN, MEAL_STRESS_RELIEF } from '../rules/cooking';
 import { DIG_FIND_ON, FIND_MARGIN, poisonYield, trophyFor } from '../rules/chorePayoffs';
 import { fmtGp } from '../rules/money';
 import { formatClock, formatDuration, lightAt } from '../rules/calendar';
@@ -553,6 +554,21 @@ function MealsCard() {
         )}
         <button onClick={() => dispatch((st, c) => E.partyEat(st, c, 'meal'))}>Cold meal for everyone</button>
         <button onClick={() => dispatch((st, c) => E.partyDrink(st, c, 'meal'))}>Everyone drinks</button>
+      </div>
+      <p className="small muted">
+        Table rule: a tasty hot meal eases everyone&apos;s Stress by {MEAL_STRESS_RELIEF}. A feast (a natural 20, or beating the DC by {FEAST_MARGIN}) also gives everyone who ate Temporary HP equal to the cook&apos;s Wisdom modifier plus Proficiency Bonus.
+      </p>
+      <div className="btn-row">
+        <button
+          disabled={!s.fire.lit || !cook || cook.startsWith('h:') || s.stores.foodRawLb + s.stores.foodLb < CURE_LB_PER_RATION}
+          title={!s.fire.lit ? 'Light the fire first' : !cook || cook.startsWith('h:') ? 'Pick a party member as the cook' : ''}
+          onClick={() => dispatch((st, c) => E.cureRations(st, c, cook))}
+        >
+          Smoke meat into Rations (4 h)
+        </button>
+        <span className="small muted">
+          Table rule: Survival or Cook&apos;s Utensils, DC {CURE_DC}. Every {CURE_LB_PER_RATION} lb of meat from the stores (up to {CURE_MAX_LB} lb a batch) becomes a day of Rations that keeps and sells for 5 SP; half on a failure.
+        </span>
       </div>
       <div className="table-wrap">
         <table>
