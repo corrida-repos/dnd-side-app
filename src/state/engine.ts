@@ -30,7 +30,7 @@ import { AWAY_PROGRESS, BUILD_SPELLS, BUSINESS_DEBT_PENALTY, BUSINESS_MAX_DAYS, 
 import { HAZARDS, type GiftType, type HazardId } from '../rules/hazards';
 import { ARCANA_DC, STUDY_MINUTES, type StudyMethod } from '../rules/identify';
 import { FEED_LB_PER_DAY, MOUNT_CAPACITY, carryingCapacity, COINS_PER_LB, estimateWeight, loadLevel, parseInventory, RATION_WEIGHT, type LoadLevel } from '../rules/encumbrance';
-import { approachMode, bigEnoughToRide, canTame, FACTOR_LABEL, missedDays, sessionResult, tameDC, TAME_MAX_FAILS, TAME_RETRY_MINUTES, TAME_SESSION_MINUTES, trainingNeeded, TRAINING_LABEL, trustCue, trustNeeded, type ApproachFactors, type TameTraining } from '../rules/taming';
+import { bigEnoughToRide, canBeSidekick, canTame, missedDays, sessionAttitude, sessionResult, tameCheck, tameDC, TAME_MAX_FAILS, TAME_RETRY_MINUTES, TAME_SESSION_MINUTES, trainingNeeded, TRAINING_LABEL, trustCue, trustNeeded, type TameAids, type TamerFacts, type TameTraining } from '../rules/taming';
 import { BUTCHER_DC, BUTCHER_MINUTES, isEdible, MEAT_LB, STRANGE_TYPES, yieldsHide, type Creature } from '../rules/hunting';
 import { addCoins, COIN_GP, coinCount, coinsFor, emptyPurse, exchange, fmtPurse, purseValue, spend, type Denom, type Purse } from '../rules/coins';
 import { detectContainer } from '../rules/containers';
@@ -6416,13 +6416,28 @@ export const rollRandomEncounter = act((d, ctx, activity: CheckConditions['activ
 
 // ---------------------------------------------------------------- taming wild creatures (table rule)
 
-/** Wisdom (Animal Handling): Wisdom modifier, plus Proficiency Bonus if proficient, minus Exhaustion. */
-export function animalHandling(c: Character): { bonus: number; why: string } {
-  const prof = hasSkill(c, 'Animal Handling');
-  const pb = proficiencyBonus(c.level);
-  const bonus = c.wisMod + (prof ? pb : 0) - 2 * c.exhaustion;
-  const why = `Wisdom ${signed(c.wisMod)}${prof ? `, proficient ${signed(pb)}` : prof === false ? ', not proficient' : ', proficiency not recorded'}${c.exhaustion ? `, Exhaustion −${2 * c.exhaustion}` : ''}`;
-  return { bonus, why };
+/** What a character brings to taming, read from their sheet. */
+export function tamerFacts(c: Character): TamerFacts {
+  const cha = c.abilities?.cha;
+  return {
+    wisMod: c.wisMod,
+    chaMod: typeof cha === 'number' ? abilityMod(cha) : null,
+    pb: proficiencyBonus(c.level),
+    exhaustion: c.exhaustion,
+    animalHandling: !!hasSkill(c, 'Animal Handling'),
+    persuasion: !!hasSkill(c, 'Persuasion'),
+    performance: !!hasSkill(c, 'Performance'),
+    feats: c.feats ?? [],
+    species: c.species ?? '',
+    level: c.level,
+  };
+}
+
+/** Who can take the Help action for a taming check: proficient in Animal Handling (2024 PHB), or a groom hireling. */
+export function tameHelpers(s: State, tamerId: string): { id: string; name: string }[] {
+  const pcs = s.characters.filter((c) => c.id !== tamerId && c.kind !== 'mount' && alive(c) && hasSkill(c, 'Animal Handling')).map((c) => ({ id: c.id, name: c.name }));
+  const grooms = s.hirelings.filter((h) => h.active && h.role === 'groom').map((h) => ({ id: `h:${h.id}`, name: `${h.name} (groom)` }));
+  return [...pcs, ...grooms];
 }
 
 export interface NewTame {
@@ -6436,32 +6451,32 @@ export interface NewTame {
   movement: 'land' | 'fly' | 'swim';
 }
 
-function tameRoll(ctx: Ctx, tamer: Character, f: ApproachFactors, dc: number) {
-  const { adv, dis } = approachMode(f);
-  const mode = combineModes(adv ? 'advantage' : 'normal', dis ? 'disadvantage' : 'normal');
-  const r = d20(mode, ctx.rng);
-  const { bonus } = animalHandling(tamer);
-  const total = r.value + bonus;
-  const why = (Object.keys(f) as (keyof ApproachFactors)[]).filter((k) => f[k]).map((k) => FACTOR_LABEL[k]);
-  const text = `Wisdom (Animal Handling) ${r.rolls.join('/')}${mode !== 'normal' ? ` with ${mode === 'advantage' ? 'Advantage' : 'Disadvantage'}` : ''} ${signed(bonus)} = ${total} against DC ${dc}${why.length ? ` (${why.join(', ')})` : ''}`;
-  return { natural: r.value, total, text };
+function tameRoll(ctx: Ctx, tamer: Character, c: { type: string; int: number; movement: 'land' | 'fly' | 'swim' }, a: TameAids, dc: number) {
+  const chk = tameCheck(tamerFacts(tamer), c, a);
+  if (!chk.ok) return { ok: false as const, why: chk.why! };
+  const r = d20(chk.mode, ctx.rng);
+  const extra = chk.dice.map((n) => die(n, ctx.rng));
+  const total = r.value + chk.bonus + extra.reduce((x, y) => x + y, 0);
+  const dice = chk.dice.map((n, i) => ` + ${extra[i]} (d${n})`).join('');
+  const text = `${chk.skill} ${r.rolls.join('/')}${chk.mode !== 'normal' ? ` with ${chk.mode === 'advantage' ? 'Advantage' : 'Disadvantage'}` : ''} ${signed(chk.bonus)}${dice} = ${total} against DC ${dc}${chk.notes.length ? ` (${chk.notes.join('; ')})` : ''}`;
+  return { ok: true as const, natural: r.value, total, text };
 }
 
 /** First contact: the Influence action to coax a wild Beast or Monstrosity into letting the tamer near (2024 PHB). */
-export const approachCreature = act((d, ctx, o: NewTame, tamerId: string, f: ApproachFactors, hostile: boolean) => {
+export const approachCreature = act((d, ctx, o: NewTame, tamerId: string, a: TameAids) => {
   if (!d.settings.taming) return void log(d, 'Taming wild creatures is switched off in Settings.', 'warn');
   const tamer = charById(d, tamerId);
   if (!tamer || tamer.kind === 'mount' || !alive(tamer)) return;
   const ok = canTame(o.type, o.int);
   if (!ok.ok) return void log(d, `${tamer.name} can't tame the ${o.creature}: ${ok.why}.`, 'warn');
-  if (hostile && !f.charmed) return void log(d, `The ${o.creature} is Hostile and won't be coaxed (2024 PHB: an unwilling creature refuses outright). Let it calm down, back off, or charm it first with Animal Friendship.`, 'warn');
   d.taming ??= [];
   const old = d.taming.find((t) => t.stage === 'wary' && t.creature === o.creature && t.tamerId === tamerId);
   const now = absNow(d);
-  if (old?.retryAt && old.retryAt > now) return void log(d, `The ${old.name} won't let ${tamer.name} near again yet: try after ${formatDuration(old.retryAt - now)} (table rule: 24 hours after a failed approach).`, 'warn');
+  if (old?.retryAt && old.retryAt > now) return void log(d, `The ${old.name} won't let ${tamer.name} near again yet: try after ${formatDuration(old.retryAt - now)} (2024 PHB Influence: 24 hours after a failed check), or try a different way.`, 'warn');
   const dc = tameDC(o.int, o.cr);
+  const r = tameRoll(ctx, tamer, o, { ...a, stable: false }, dc);
+  if (!r.ok) return void log(d, `The ${o.creature} won't be coaxed: ${r.why}.`, 'warn');
   advanceMut(d, ctx, 10, 'camp');
-  const r = tameRoll(ctx, tamer, f, dc);
   const name = o.name.trim() || o.creature;
   const base: TameTarget = { id: uid(), ...o, name, tamerId, stage: 'bonding', trust: 0, needed: trustNeeded(o.cr, o.int), fails: 0, lastSessionDay: null, startedDay: d.dayIndex, retryAt: null, trained: [] };
   if (old) d.taming = d.taming.filter((t) => t !== old);
@@ -6469,9 +6484,22 @@ export const approachCreature = act((d, ctx, o: NewTame, tamerId: string, f: App
     d.taming.push(base);
     return void log(d, `${tamer.name} edges toward the ${o.creature}, slow and low: ${r.text}. It stops, sniffs the air, and doesn't run. Taming has begun: about ${base.needed} good days of patient work (an hour a day) will win it over.`, 'good', { charIds: [tamer.id] });
   }
-  if (r.total <= dc - 5) return void log(d, `${tamer.name} misjudges the ${o.creature}: ${r.text}. It bares its teeth and lashes out or bolts (DM's call). It won't let anyone tame it now.`, 'bad', { charIds: [tamer.id] });
-  d.taming.push({ ...base, stage: 'wary', lastSessionDay: null, retryAt: absNow(d) + TAME_RETRY_MINUTES });
-  log(d, `${tamer.name} gets too close too fast: ${r.text}. The ${o.creature} backs off to a safe distance and watches. ${tamer.name} can try again in 24 hours (table rule).`, 'warn', { charIds: [tamer.id] });
+  if (r.total <= dc - 5) return void log(d, `${tamer.name} misjudges the ${o.creature}: ${r.text}. It bares its teeth and lashes out or bolts (table rule; DM decides which). It won't let anyone tame it now.`, 'bad', { charIds: [tamer.id] });
+  d.taming.push({ ...base, stage: 'wary', retryAt: absNow(d) + TAME_RETRY_MINUTES });
+  log(d, `${tamer.name} gets too close too fast: ${r.text}. The ${o.creature} backs off to a safe distance and watches. ${tamer.name} can try the same way again in 24 hours (2024 PHB Influence).`, 'warn', { charIds: [tamer.id] });
+});
+
+/** Raising a creature from an egg or a newborn: no approach, and it bonds in half the time (table rule after Monster Manual lore). */
+export const raiseYoung = act((d, _ctx, o: NewTame, tamerId: string) => {
+  if (!d.settings.taming) return void log(d, 'Taming wild creatures is switched off in Settings.', 'warn');
+  const tamer = charById(d, tamerId);
+  if (!tamer || tamer.kind === 'mount' || !alive(tamer)) return;
+  const ok = canTame(o.type, o.int);
+  if (!ok.ok) return void log(d, `${tamer.name} can't raise the ${o.creature}: ${ok.why}.`, 'warn');
+  const name = o.name.trim() || o.creature;
+  const t: TameTarget = { id: uid(), ...o, name, tamerId, stage: 'bonding', trust: 0, needed: trustNeeded(o.cr, o.int, true), fails: 0, lastSessionDay: null, startedDay: d.dayIndex, retryAt: null, trained: [], raised: true };
+  (d.taming ??= []).push(t);
+  log(d, `${tamer.name} takes on a young ${o.creature} and names it ${name}. It imprints on whoever feeds it: about ${t.needed} good days of care will bond it (table rule). The DM decides how long until it is grown enough to ride: Monster Manual lore says griffons, hippogriffs, wyverns and hadrosauruses are trained this way.`, 'good', { charIds: [tamer.id] });
 });
 
 function tamedMount(d: State, t: TameTarget): Character {
@@ -6500,7 +6528,7 @@ function tamedMount(d: State, t: TameTarget): Character {
 }
 
 /** An hour's daily session with a creature being tamed or trained. Feeds it from the camp stores (raw meat first). */
-export const tameSession = act((d, ctx, id: string, f: Omit<ApproachFactors, 'food'>) => {
+export const tameSession = act((d, ctx, id: string, a: Omit<TameAids, 'attitude' | 'food' | 'unwilling'>) => {
   const t = d.taming?.find((x) => x.id === id);
   if (!t || t.stage === 'wary') return;
   const tamer = charById(d, t.tamerId);
@@ -6532,9 +6560,11 @@ export const tameSession = act((d, ctx, id: string, f: Omit<ApproachFactors, 'fo
   advanceMut(d, ctx, TAME_SESSION_MINUTES, 'camp');
   t.lastSessionDay = d.dayIndex;
   const dc = tameDC(t.int, t.cr);
-  const r = tameRoll(ctx, tamer, { ...f, food: fed }, dc);
+  const attitude = sessionAttitude(t.trust, t.needed, t.stage === 'tamed');
+  const r = tameRoll(ctx, tamer, t, { ...a, attitude, food: fed, unwilling: false }, dc);
+  if (!r.ok) return;
   const res = sessionResult(r.natural, r.total, dc);
-  const feedTxt = fed ? ` It eats ${fmtLb(need)} from the camp stores.` : ` There was no food to offer (${fmtLb(need)} needed), so no Advantage.`;
+  const feedTxt = fed ? ` It eats ${fmtLb(need)} from the camp stores.` : ` There was no food to offer (${fmtLb(need)} needed), so no Advantage from food.`;
   if (res === 'great' || res === 'success') t.fails = 0;
   else t.fails += 1;
   const gain = res === 'great' ? 2 : res === 'success' ? 1 : res === 'setback' ? -1 : 0;
@@ -6549,10 +6579,12 @@ export const tameSession = act((d, ctx, id: string, f: Omit<ApproachFactors, 'fo
       t.stage = 'tamed';
       const m = tamedMount(d, t);
       t.mountId = m.id;
-      return void log(d, `${tamer.name} works with ${t.name}: ${r.text}.${feedTxt} ${trustCue(t.creature, t.trust, t.needed)} ${t.name} is tamed and joins the party: it needs food and water every day like any mount. Untrained, it acts on its own in a fight and can only be ridden as an independent mount.`, 'good', { charIds: [tamer.id] });
+      const sidekick = canBeSidekick(t.cr) ? ` Optional rule (Tasha's Cauldron): at CR ${t.cr} it can join as a sidekick with the Warrior or Expert class, at the party's average level.` : '';
+      return void log(d, `${tamer.name} works with ${t.name}: ${r.text}.${feedTxt} ${trustCue(t.creature, t.trust, t.needed)} ${t.name} is tamed and joins the party: it needs food and water every day like any mount. Untrained, it acts on its own in a fight and can only be ridden as an independent mount.${sidekick}`, 'good', { charIds: [tamer.id] });
     }
     const how = res === 'great' ? 'a breakthrough' : res === 'success' ? 'a good session' : res === 'setback' ? 'a setback' : 'no progress';
-    return void log(d, `${tamer.name} works with ${t.name}: ${r.text}, ${how}.${feedTxt} ${trustCue(t.creature, t.trust, t.needed)}${t.fails ? ` (${t.fails} bad day${t.fails > 1 ? 's' : ''} in a row)` : ''}`, gain > 0 ? 'good' : 'warn', { charIds: [tamer.id] });
+    const friendly = attitude === 'indifferent' && t.trust * 2 >= t.needed ? ` It now counts as Friendly toward ${tamer.name}, so later sessions have Advantage (2024 PHB attitudes).` : '';
+    return void log(d, `${tamer.name} works with ${t.name}: ${r.text}, ${how}.${feedTxt} ${trustCue(t.creature, t.trust, t.needed)}${friendly}${t.fails ? ` (${t.fails} bad day${t.fails > 1 ? 's' : ''} in a row)` : ''}`, gain > 0 ? 'good' : 'warn', { charIds: [tamer.id] });
   }
 
   // Training a tamed creature: failures never undo it, they just waste the day.
@@ -6583,7 +6615,7 @@ export const startTraining = act((d, _ctx, id: string, kind: TameTraining) => {
   const tamer = charById(d, t.tamerId);
   if (kind === 'mount' && tamer && !bigEnoughToRide(t.size, tamer.size)) return void log(d, `A ${t.size} ${t.creature} is too small to carry ${tamer.name} (2024 PHB: a mount must be at least one size larger than its rider). Someone smaller could ride it.`, 'warn');
   t.training = { kind, progress: 0, needed: trainingNeeded(t.cr, t.int) };
-  log(d, `${tamer?.name ?? 'Its tamer'} begins training ${t.name} ${TRAINING_LABEL[kind]}: about ${t.training.needed} good sessions, an hour a day (table rule).${kind === 'mount' ? ' It must also have the right shape to carry a rider: DM\'s call.' : ''}`);
+  log(d, `${tamer?.name ?? 'Its tamer'} begins training ${t.name} ${TRAINING_LABEL[kind]}: about ${t.training.needed} good sessions, an hour a day (table rule).${kind === 'mount' ? " It must also have the right shape to carry a rider: DM's call." : ''}`);
 });
 
 /** Lets the creature go, or stops tracking it once it is tamed and trained. */

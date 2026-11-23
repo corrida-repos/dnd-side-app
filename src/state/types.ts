@@ -869,6 +869,8 @@ export interface TameTarget {
   mountId?: string;
   training?: { kind: 'mount' | 'commands'; progress: number; needed: number };
   trained: ('mount' | 'commands')[];
+  /** Raised from an egg or newborn rather than tamed from the wild. */
+  raised?: boolean;
 }
 
 export interface Travel {
