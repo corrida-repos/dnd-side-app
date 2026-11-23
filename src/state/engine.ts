@@ -34,7 +34,7 @@ import { bigEnoughToRide, canBeSidekick, canTame, currentDC, dayOutcome, missedD
 import { BUTCHER_DC, BUTCHER_MINUTES, isEdible, MEAT_LB, STRANGE_TYPES, yieldsHide, type Creature } from '../rules/hunting';
 import { addCoins, COIN_GP, coinCount, coinsFor, emptyPurse, exchange, fmtPurse, purseValue, spend, type Denom, type Purse } from '../rules/coins';
 import { detectContainer } from '../rules/containers';
-import { FIRE_DAMAGE, RAT_BITE_DAMAGE, RELAXATION_NEEDS, SHAKEDOWN_DAMAGE, SHAKEDOWN_GP, SHAKEDOWN_RIVAL_ODDS, SHUNNED_AFTER_DAYS, SIGHT_ROT_MARGIN, SPOILED_FOOD_DC, TAINTED_POTION_ODDS, WATCH_FINE, WATCH_JAIL_DAYS, WEEKLY_ODDS, WRETCHED_STRESS, isLowLife } from '../rules/lowLife';
+import { FIRE_DAMAGE, RAT_BITE_DAMAGE, RELAXATION_NEEDS, SHAKEDOWN_DAMAGE, SHAKEDOWN_GP, SHAKEDOWN_RIVAL_ODDS, SHUNNED_AFTER_DAYS, SPOILED_FOOD_DC, TAINTED_POTION_ODDS, WATCH_FINE, WATCH_JAIL_DAYS, WEEKLY_ODDS, WRETCHED_STRESS, isLowLife } from '../rules/lowLife';
 import { BOILING_POT, CHARCOAL_WORDS, FRICTION_LIGHT_MINUTES, HIDE_WATERSKIN, LEAN_TO, BEDDING, MAKESHIFT_DC, MAKESHIFT_TORCH, POTS, POT_ALARM_DC, SNARE, SNARE_LINE, TINDERBOX, VINE_CORD, isBareback, leanToDC, ABILITY_LABEL, INK, INK_PAGES, PAPER, PERFUME, PERFUME_MINUTES, SIGNAL_WHISTLE, carriesTool, liquidCapacity, toolNamed, SPYGLASS, ALARM_LINE, ALARM_MINUTES, BELL, DIG_BY_HAND, DIG_LABEL, GATHER_MINUTES, HUNTING_TRAP, SCATTERABLE, SHOVEL, SHOVEL_MINUTES, STABLING_GP_PER_DAY, TENT, TENT_SLEEPS, TRAP_CATCH_ON, TRAP_MEAT_DICE, TRAP_SAVE_DC, needsExoticSaddle, type DigKind, MAGNIFYING_GLASS, hasSkill, proficientWith, PACKS, RATIONS, WATERSKIN, WATERSKIN_PINTS, packNamed, FUEL_LABEL, FUEL_MATCH, HEALERS_KIT, HEALERS_KIT_USES, OIL_MINUTES, VESSEL_MATCH, fuelFor, isHooded, isOilLight } from '../rules/gear';
 import type { DdbImport } from '../rules/ddb';
 import { INN_STAY_GP, MEAL_GP, MEALS_PER_DAY, FEED_GP_PER_DAY, HIRELING_WAGE, magicItemValue, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset, type Lifestyle } from '../rules/money';
@@ -346,7 +346,10 @@ function applySaveResult(s: State, ctx: Ctx, c: Character, p: Omit<PendingSave, 
         'bad',
       );
       // Only a new bout counts: drinking more while already Sick doesn't.
-      if (p.kind === 'tainted' && !was) waterborneIllness(s, ctx, c);
+      if (p.kind === 'tainted' && !was) {
+        waterborneIllness(s, ctx, c);
+        if (p.city) cityWaterSightRot(s, ctx, c);
+      }
       return;
     }
     if (p.kind === 'malnutrition') c.malnourished = true;
@@ -369,12 +372,12 @@ export const antitoxinActive = (s: State, c: Character): boolean => c.antitoxinU
 /** Advantage from Antitoxin on saves against poison, which is what raw food, dirty water and poisons call for. */
 const poisonSaveMode = (s: State, c: Character, mode: RollMode = 'normal'): RollMode => (antitoxinActive(s, c) ? combineModes(mode, 'advantage') : mode);
 
-function requestSave(s: State, ctx: Ctx, c: Character, kind: SaveKind, dc: number, mode: RollMode, reason: string): void {
+function requestSave(s: State, ctx: Ctx, c: Character, kind: SaveKind, dc: number, mode: RollMode, reason: string, city = false): void {
   if ((kind === 'raw' || kind === 'tainted') && antitoxinActive(s, c)) {
     mode = poisonSaveMode(s, c, mode);
     reason = `${reason}, with Antitoxin`;
   }
-  const spec = { charId: c.id, kind, dc, mode, reason };
+  const spec = { charId: c.id, kind, dc, mode, reason, ...(city ? { city: true } : {}) };
   if (s.settings.autoRollSaves) {
     const r = rollSave(c, dc, mode, ctx.rng);
     applySaveResult(s, ctx, c, spec, r.passed, r.detail);
@@ -3356,19 +3359,19 @@ function cityWater(s: State, ctx: Ctx): void {
     if (life === 'wretched' && !inDowntime(s)) continue;
     const dc = CITY_WATER_DC[life]!;
     const reason = life === 'wretched' ? 'gutter water and the dregs of public wells' : 'foul water from a tenement cistern';
-    if (!s.settings.autoRollSaves) {
-      requestSave(s, ctx, c, 'tainted', dc, 'normal', reason);
-      continue;
-    }
-    const mode = poisonSaveMode(s, c);
-    const r = rollSave(c, dc, mode, ctx.rng);
-    applySaveResult(s, ctx, c, { charId: c.id, kind: 'tainted', dc, mode, reason: `${reason}${mode === 'advantage' ? ', with Antitoxin' : ''}` }, r.passed, r.detail);
-    // Table rule: water bad enough to fail by 5 or more may carry Sight Rot (the 2024 DMG names tainted water).
-    if (!r.passed && r.total <= dc - SIGHT_ROT_MARGIN && !c.contagions.some((x) => x.kind === 'sightRot')) {
-      status(s, c, 'contagionOnset', `The water ${c.name} drank was worse than most: their eyes start to itch and water (table rule).`, 'bad');
-      exposeContagionMut(s, ctx, c.id, 'sightRot', true);
-    }
+    requestSave(s, ctx, c, 'tainted', dc, 'normal', reason, true);
   }
+}
+
+/**
+ * Table rule: city water can also carry Sight Rot (the 2024 DMG names tainted water), less often than it leads to
+ * Sewer Plague. Each new bout of sickness from it is a 1 in 6 chance (Settings) of a DC 15 Con save against Sight Rot.
+ */
+function cityWaterSightRot(s: State, ctx: Ctx, c: Character): void {
+  const odds = s.settings.sightRotOdds ?? 6;
+  if (odds <= 0 || c.contagions.some((x) => x.kind === 'sightRot') || die(odds, ctx.rng) !== 1) return;
+  status(s, c, 'contagionOnset', `The water ${c.name} drank carried something worse: their eyes start to itch and water (table rule).`, 'bad');
+  exposeContagionMut(s, ctx, c.id, 'sightRot', true);
 }
 
 function exposeContagionMut(d: State, ctx: Ctx, charId: string, kind: ContagionKind, rollToResist: boolean): void {

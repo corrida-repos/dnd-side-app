@@ -24,8 +24,13 @@ function extras(s: Settings): Partial<Record<SwitchKey, { inline?: ReactNode; mo
       more: 'Eating raw food means a Con save, or the character is Sick: Poisoned until they finish a Long Rest. Cooking it or casting Purify Food and Drink makes it safe.',
     },
     wildNeedsPurifying: {
-      inline: <Num label="Sewer Plague after this many water-borne illnesses (0 = never)" value={s.sewerPlagueAfter ?? 3} onChange={(v) => edit((d) => void (d.settings.sewerPlagueAfter = Math.max(0, Math.round(v))))} min={0} max={20} width={3} />,
-      more: 'Drinking unpurified water means a DC 10 Con save, or the character is Sick: Poisoned until they finish a Long Rest. Purify Food and Drink or boiling makes it safe. Table rule: after enough of these bouts (squalid town living counts too), the next one brings a DC 11 Con save against Sewer Plague, and the count starts again.',
+      inline: (
+        <>
+          <Num label="Sewer Plague after this many water-borne illnesses (0 = never)" value={s.sewerPlagueAfter ?? 3} onChange={(v) => edit((d) => void (d.settings.sewerPlagueAfter = Math.max(0, Math.round(v))))} min={0} max={20} width={3} />
+          <Num label="Sight Rot from city water: 1 in (0 = never)" value={s.sightRotOdds ?? 6} onChange={(v) => edit((d) => void (d.settings.sightRotOdds = Math.max(0, Math.round(v))))} min={0} max={100} width={3} />
+        </>
+      ),
+      more: 'Drinking unpurified water means a DC 10 Con save, or the character is Sick: Poisoned until they finish a Long Rest. Purify Food and Drink or boiling makes it safe. Table rule: after enough of these bouts (squalid town living counts too), the next one brings a DC 11 Con save against Sewer Plague, and the count starts again. Each new bout from city water also carries Sight Rot on a 1 in 6 (a DC 15 Con save).',
     },
     sleepDeprivation: { more: 'Each time the party passes another 24 hours without finishing a Long Rest, everyone makes a Con save or gains 1 Exhaustion level from Sleep deprivation. The DC is 10, plus 5 for every further 24 hours, and it resets after a Long Rest.' },
     nightTravelSlow: { more: 'Only a lit Torch, Lamp, Lantern or light spell on the Effects tab counts (a Candle is too small), and a full moon in a clear sky gives enough light. Darkvision, from any source, also does.' },

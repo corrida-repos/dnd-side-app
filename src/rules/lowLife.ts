@@ -16,8 +16,6 @@ export const WEEKLY_ODDS = {
 export const SPOILED_FOOD_DC = 10;
 /** A rat bite: 1 Piercing damage, and it counts toward Sewer Plague like a bout of water-borne illness. */
 export const RAT_BITE_DAMAGE = 1;
-/** Failing the city-water save by this much or more also means a DC 15 Con save against Sight Rot. */
-export const SIGHT_ROT_MARGIN = 5;
 /** Buying a potion while living Squalid or Wretched: a 1 in this many chance it's tainted (Cackle Fever, DC 10). */
 export const TAINTED_POTION_ODDS = 6;
 /** Gang shakedown: pay this much protection, or take the beating. */

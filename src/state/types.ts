@@ -450,6 +450,8 @@ export interface PendingSave {
   mode: 'normal' | 'advantage' | 'disadvantage';
   reason: string;
   stamp: string;
+  /** City water (table rule): failing may also carry Sight Rot. */
+  city?: boolean;
 }
 
 export interface Hireling {
@@ -789,6 +791,8 @@ export interface Settings {
   rawFoodDC: number;
   /** Table rule: water-borne illnesses before the next one brings a save against Sewer Plague (0 = never from water). */
   sewerPlagueAfter: number;
+  /** Table rule: each new bout of sickness from city water carries Sight Rot on a 1 in this many (0 = never). */
+  sightRotOdds: number;
   /** Table rule: sleeping out at or below coldNightF without warm cover risks Exhaustion. */
   coldNights: boolean;
   coldNightF: number;

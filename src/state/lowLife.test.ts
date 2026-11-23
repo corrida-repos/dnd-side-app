@@ -75,17 +75,34 @@ describe('Squalid and Wretched living (table rules)', () => {
     expect(s.characters[0].restless).toBe(false);
   });
 
-  it('city water that fails badly can carry Sight Rot', () => {
+  it('a bout of city-water sickness can also carry Sight Rot, 1 in 6 by default', () => {
+    const night = (c: E.Ctx, extra: Parameters<typeof newCharacter>[0] = {}, odds?: number) => {
+      let s = town('squalid', extra);
+      if (odds != null) s.settings.sightRotOdds = odds;
+      s.dayIndex = 2;
+      s.minutes = 23 * 60;
+      return E.advance(s, c, 120);
+    };
+    expect(night(ALL).characters[0].contagions.some((x) => x.kind === 'sightRot')).toBe(true);
+    expect(night(ALL, {}, 0).characters[0].contagions.some((x) => x.kind === 'sightRot')).toBe(false);
+    // Fails the water save (DC 12) but the 1-in-6 doesn't come up: Sick, no Sight Rot.
+    const unlucky = night(ctx(0.5));
+    expect(unlucky.characters[0].sick).toBe(true);
+    expect(unlucky.characters[0].contagions).toHaveLength(0);
+    // Passes the water save: nothing at all.
+    expect(night(ctx(0.3), { conSave: 10 }).characters[0].contagions).toHaveLength(0);
+  });
+
+  it('pending (hand-rolled) city-water saves still carry the Sight Rot chance', () => {
     let s = town('squalid');
+    s.settings.autoRollSaves = false;
     s.dayIndex = 2;
     s.minutes = 23 * 60;
     s = E.advance(s, ALL, 120);
+    const p = s.pending.find((x) => x.city);
+    expect(p).toBeDefined();
+    s = E.resolvePending(s, ALL, p!.id, 'fail');
     expect(s.characters[0].contagions.some((x) => x.kind === 'sightRot')).toBe(true);
-    let ok = town('squalid', { conSave: 10 });
-    ok.dayIndex = 2;
-    ok.minutes = 23 * 60;
-    ok = E.advance(ok, ctx(0.3), 120); // 7 + 10 passes DC 12
-    expect(ok.characters[0].contagions).toHaveLength(0);
   });
 
   it('a cheap potion bought while living rough may be tainted', () => {

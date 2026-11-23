@@ -418,7 +418,7 @@ Table rules under "Lifestyle risks in town". Renown 3+ spares the Wretched, as b
 - ✅ **Sleeping rough:** the Wretched face extreme cold and heat and cold nights in town as if camping. Squalid lodgings are drafty: a cold night still bites without a Blanket or Bedroll.
 - ✅ **Weekly, Squalid:** theft (coins or an item), spoiled food (Con DC 10 or Sick), a rat bite (1 damage, counts toward Sewer Plague), vermin and damp (a day of Rations eaten or an item damaged), Cackle Fever from a cheap tonic (1 in 12), a gang shakedown (pay 1d6 GP or take 1d6, maybe a Rival), and a rare tenement fire (2d6 Fire, maybe an item lost).
 - ✅ **Weekly, Wretched:** theft, being roughed up, rat bites (1 in 4), vermin, Cackle Fever from the crowded street, the town watch (moved on, fined 1d4 GP, or 1d3 days in jail), a broken night (next Long Rest removes no Exhaustion), and +1 Stress.
-- ✅ **Sight Rot:** failing the daily city-water save by 5 or more also means a DC 15 save against Sight Rot.
+- ✅ **Sight Rot:** each new bout of sickness from city water carries Sight Rot on a 1 in 6 (adjustable, 0 = never): a DC 15 Con save. Rarer than Sewer Plague, whose save comes every third bout.
 - ✅ **Tainted potions:** a potion bought while living rough is tainted 1 time in 6 (a DM-only flag: Cackle Fever when drunk).
 - ✅ **No real rest:** the Relaxation downtime activity gives nothing below a Modest lifestyle (*Xanathar's*).
 - ✅ **Shunned:** after 30 days of low living in town, Disadvantage on Charisma checks with the upper classes until they live Poor or better.
