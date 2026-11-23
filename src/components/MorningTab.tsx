@@ -9,6 +9,9 @@ import { spellInfo, RITUAL_EXTRA_MINUTES } from '../rules/rituals';
 import { formatDuration } from '../rules/calendar';
 import type { Character, CharacterSpell } from '../state/types';
 import { WaysAround } from './WaysAround';
+import { FocusBar, useFocused } from './focus';
+
+const notMount = (c: Character) => c.kind !== 'mount';
 import { componentFor, TARGET_SPELLS } from '../rules/components';
 import { fmtGp } from '../rules/money';
 import { circleEligible, circleOption, CIRCLE_OPTIONS, CIRCLE_RANGE_FT, helperProblem, optionProblem, slotNeedText, slotsLeft, spellCircle, type CircleOptionId } from '../rules/circle';
@@ -17,8 +20,10 @@ export function MorningTab() {
   const s = useGame();
   const done = s.characters.reduce((a, c) => a + c.tasks.filter((t) => t.done).length, 0);
   const total = s.characters.reduce((a, c) => a + c.tasks.length, 0);
+  const shown = useFocused(notMount);
   return (
     <div className="stack">
+      <FocusBar filter={notMount} />
       <p className="muted">
         Daily tasks reset after every Long Rest. {done}/{total} done.
       </p>
@@ -26,7 +31,7 @@ export function MorningTab() {
         <WaysAround topic={['rituals', 'concentration']} />
       </Card>
       <div className="grid wide">
-        {s.characters.filter((c) => c.kind !== 'mount').map((c) => (
+        {shown.map((c) => (
           <MorningCard key={c.id} c={c} />
         ))}
       </div>

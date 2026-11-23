@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useGame } from '../state/store';
-import { Card, Pill, Select, Toggle, Rule } from './common';
+import { Card, Pill, Toggle, Rule } from './common';
 import { playerItems, type PlayerItem } from './playerChecklist';
 import { goTo } from './nav';
+import { FocusBar, focusOn, setFocus, useFocused } from './focus';
 import type { Character } from '../state/types';
 
 const players = (cs: Character[]) => cs.filter((c) => c.kind !== 'mount');
@@ -10,10 +11,9 @@ const players = (cs: Character[]) => cs.filter((c) => c.kind !== 'mount');
 /** A checklist per player: what they suffer and need to fix, and the routine upkeep they should do. */
 export function PlayerTodosTab() {
   const s = useGame();
-  const [who, setWho] = useState('all');
   const [hideSecrets, setHideSecrets] = useState(false);
   const [copied, setCopied] = useState('');
-  const list = players(s.characters).filter((c) => who === 'all' || c.id === who);
+  const list = useFocused((c) => c.kind !== 'mount');
   const copy = (c: Character) => {
     const items = playerItems(s, c).filter((i) => !i.dmOnly);
     const text = `${c.name}\n${items.map((i) => `- ${i.text}${i.fix ? ` (${i.fix})` : ''}`).join('\n') || '- Nothing to do.'}`;
@@ -25,8 +25,8 @@ export function PlayerTodosTab() {
   return (
     <div className="grid">
       <Card title="Player checklists" className="span-all">
+        <FocusBar filter={(c) => c.kind !== 'mount'} />
         <div className="btn-row tight">
-          <Select value={who} onChange={setWho} options={[{ value: 'all', label: 'Everyone' }, ...players(s.characters).map((c) => ({ value: c.id, label: c.name }))]} />
           <Toggle checked={hideSecrets} onChange={setHideSecrets} label="Player view (hide DM-only items)" />
         </div>
         <Rule>Conditions a character is suffering, each with what fixes it, and routine upkeep outside the adventure itself: food and water, gear, spells, attunement, ammunition, debts and downtime. Copy a list to send it to that player; DM-only items are never copied.</Rule>
@@ -50,8 +50,8 @@ export function PlayerTodosTab() {
             }
           >
             {items.length === 0 && <p className="muted small">All good: nothing to fix or look after.</p>}
-            {statuses.length > 0 && <ItemList title="Needs action" items={statuses} />}
-            {upkeep.length > 0 && <ItemList title="Upkeep" items={upkeep} />}
+            {statuses.length > 0 && <ItemList c={c} title="Needs action" items={statuses} />}
+            {upkeep.length > 0 && <ItemList c={c} title="Upkeep" items={upkeep} />}
           </Card>
         );
       })}
@@ -66,7 +66,7 @@ function CountPill({ items }: { items: PlayerItem[] }) {
   return <Pill tone={bad ? 'bad' : 'warn'}>{bad + warn} to act on</Pill>;
 }
 
-function ItemList({ title, items }: { title: string; items: PlayerItem[] }) {
+function ItemList({ c, title, items }: { c: Character; title: string; items: PlayerItem[] }) {
   return (
     <>
       <h3>{title}</h3>
@@ -77,7 +77,7 @@ function ItemList({ title, items }: { title: string; items: PlayerItem[] }) {
               {i.dmOnly && <Pill tone="muted">DM only</Pill>} {i.text}
               {i.fix && <span className="small muted"> · {i.fix}</span>}
             </span>
-            <button className="ghost small" onClick={() => goTo(i.tab)}>
+            <button className="ghost small" onClick={() => focusOn(c.id, i.tab)}>
               Open
             </button>
           </li>
@@ -95,7 +95,7 @@ export function PlayerSummaryCard() {
     <Card
       title="Players"
       actions={
-        <button className="ghost small" onClick={() => goTo('todos')}>
+        <button className="ghost small" onClick={() => (setFocus('all'), goTo('todos'))}>
           All checklists
         </button>
       }
@@ -106,7 +106,10 @@ export function PlayerSummaryCard() {
           return (
             <li key={c.id} className="armor-row">
               <span>
-                <b>{c.name}</b> <CountPill items={items} />
+                <button className="link" onClick={() => focusOn(c.id, 'todos')} title={`Open ${c.name}'s checklist`}>
+                  <b>{c.name}</b>
+                </button>{' '}
+                <CountPill items={items} />
                 {top.length > 0 && <span className="small muted"> {top.map((i) => i.text).join(' · ')}</span>}
               </span>
             </li>

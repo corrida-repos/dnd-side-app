@@ -13,6 +13,8 @@ export interface AttentionItem {
   text: string;
   /** Where to handle it. */
   tab: string;
+  /** The character it is about: opening it shows that character on the Party tabs. */
+  charId?: string;
   /** Only the DM should know (hidden incubation, poisons waiting for midnight). */
   dmOnly?: boolean;
 }
@@ -25,9 +27,9 @@ export function attentionItems(s: State): AttentionItem[] {
 
   if (s.pending.length) add({ id: 'saves', tone: 'bad', text: `${s.pending.length} saving throw${s.pending.length > 1 ? 's' : ''} to roll`, tab: 'overview' });
   for (const c of s.characters) {
-    if (c.diedAt == null && c.dying) add({ id: `dying-${c.id}`, tone: 'bad', text: `${c.name} is dying: roll death saves`, tab: 'party' });
-    else if (c.diedAt == null && c.stable) add({ id: `stable-${c.id}`, tone: 'info', text: `${c.name} is unconscious and stable${c.wakesAt != null ? `, wakes in ${formatDuration(Math.max(0, c.wakesAt - now))}` : ''}`, tab: 'party' });
-    if (c.diedAt == null && c.exhaustion >= 3) add({ id: `exh-${c.id}`, tone: c.exhaustion >= 5 ? 'bad' : 'warn', text: `${c.name} is at Exhaustion ${c.exhaustion}`, tab: 'party' });
+    if (c.diedAt == null && c.dying) add({ id: `dying-${c.id}`, tone: 'bad', text: `${c.name} is dying: roll death saves`, tab: 'gear', charId: c.id });
+    else if (c.diedAt == null && c.stable) add({ id: `stable-${c.id}`, tone: 'info', text: `${c.name} is unconscious and stable${c.wakesAt != null ? `, wakes in ${formatDuration(Math.max(0, c.wakesAt - now))}` : ''}`, tab: 'gear', charId: c.id });
+    if (c.diedAt == null && c.exhaustion >= 3) add({ id: `exh-${c.id}`, tone: c.exhaustion >= 5 ? 'bad' : 'warn', text: `${c.name} is at Exhaustion ${c.exhaustion}`, tab: 'party', charId: c.id });
   }
 
   // Survival late in the day: anyone who still hasn't eaten or drunk enough.

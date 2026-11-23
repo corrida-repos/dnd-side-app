@@ -7,6 +7,7 @@ import { dateFromIndex, formatDuration } from '../rules/calendar';
 import { GIFT_TYPES, type GiftType } from '../rules/hazards';
 import { DIVINATION_SPELLS, divinationFailChance, moonPhase, RESURRECTION_SPELLS, RITUAL_PRESETS } from '../rules/longterm';
 import { Card, Meter, Num, Pill, Select, Text, Toggle, Rule } from './common';
+import { useGate } from './gate';
 import { RIVAL_IDEAS, RIVAL_ESCALATION } from '../rules/rivals';
 import { PATRONS, type PatronKind } from '../rules/patrons';
 import { REGIONS, type RegionKind } from '../rules/regions';
@@ -17,13 +18,15 @@ import { FORT_NEGLECT_DAYS, FORT_UPKEEP, LAND, LODGING_CAP, MARK_LABEL, PRIZE_CR
 import type { Mark, State } from '../state/types';
 
 export function WorldTab() {
+  const s = useGame();
+  const gate = useGate([{ name: 'Wanted by the law', idle: !s.settings.notoriety && !(s.notoriety ?? []).length }]);
   return (
     <div className="grid">
       <SkyCard />
       <FactionsCard />
       <MarksCard />
       <RivalsCard />
-      <NotorietyCard />
+      {gate.show('Wanted by the law') && <NotorietyCard />}
       <ContactsCard />
       <LettersCard />
       <PatronCard />

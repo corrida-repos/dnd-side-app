@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useGame, dispatch, undo, undoLabel, useVersion } from './state/store';
 import { attentionItems } from './components/attention';
 import * as E from './state/engine';
@@ -22,6 +22,7 @@ import { LogTab } from './components/LogTab';
 import { SettingsTab } from './components/SettingsTab';
 import { WaysTab } from './components/WaysAround';
 import { onGoTo } from './components/nav';
+import { JumpBar } from './components/JumpBar';
 
 const TABS = [
   { id: 'overview', label: 'Dashboard', el: Overview },
@@ -120,6 +121,7 @@ export function App() {
       /* ignore */
     }
   }, [tab]);
+  const mainRef = useRef<HTMLElement>(null);
   const t = E.tempNow(s);
   const Active = TABS.find((x) => x.id === tab)!.el;
   const section = sectionOf(tab);
@@ -202,7 +204,8 @@ export function App() {
           );
         })}
       </nav>
-      <main>
+      {tab !== 'ways' && <JumpBar root={mainRef} tab={tab} />}
+      <main ref={mainRef}>
         <Active />
       </main>
       <footer className="foot muted small">

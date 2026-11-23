@@ -11,6 +11,7 @@ import { formatClock, formatDate, formatDuration } from '../rules/calendar';
 import { PACES, foodNeedLb, waterNeedPints, fmtLb, fmtWater } from '../rules/survival';
 import { Card, Meter, Num, Pill, Rule, Select, Text, Toggle } from './common';
 import { Debuffs } from './Debuffs';
+import { focusOn } from './focus';
 import { groupLog, senseText } from './senseView';
 import type { Pace, Shelter, WaterQuality } from '../state/types';
 import { TERRAIN, TERRAIN_FOR_CLIMATE, maxPaceFor, type TerrainType } from '../rules/terrain';
@@ -21,18 +22,21 @@ import type { TopicId } from '../rules/shortcuts';
 import { CARTOGRAPHER, IMPROVISED_MAP_DC, IMPROVISED_STARGAZE_DC, MAP_DC, NAVIGATOR, STARGAZE_DC, mapName } from '../rules/tools';
 import { CHART_DC } from '../rules/uncharted';
 
-/** The DM's dashboard: what needs attention, the clock, the party, the conditions and what just happened. */
+/**
+ * The DM's dashboard, in the order play needs it: what is waiting on you, how the party is doing,
+ * what the world is doing to them, then the clock and who does which job.
+ */
 export function Overview() {
   return (
     <div className="grid">
       <AttentionCard />
-      <PendingCard />
       <PlayerSummaryCard />
-      <PartyJobsCard />
-      <ClockCard />
-      <WeatherCard />
+      <PendingCard />
       <PartyStatusCard />
       <EffectsCard />
+      <WeatherCard />
+      <ClockCard />
+      <PartyJobsCard />
       <RecentLog />
     </div>
   );
@@ -66,7 +70,7 @@ function AttentionCard() {
                 {i.dmOnly && <Pill tone="muted">DM only</Pill>} {i.text}
               </span>
               {i.tab !== 'overview' && (
-                <button className="ghost small" onClick={() => goTo(i.tab)}>
+                <button className="ghost small" onClick={() => (i.charId ? focusOn(i.charId, i.tab) : goTo(i.tab))}>
                   Open
                 </button>
               )}
@@ -446,6 +450,7 @@ function PartyStatusCard() {
           <thead>
             <tr>
               <th>Name</th>
+              <th>HP</th>
               <th>Debuffs</th>
               <th>Food today</th>
               <th>Water today</th>
@@ -471,10 +476,22 @@ function PartyStatusCard() {
               return (
                 <tr key={c.id}>
                   <td>
-                    <b>{c.name}</b>
+                    <button className="link" onClick={() => focusOn(c.id)} title={`Open ${c.name}'s character sheet`}>
+                      <b>{c.name}</b>
+                    </button>
                     <div className="muted small">
                       {c.className} {c.level} · {c.size}
                     </div>
+                  </td>
+                  <td className="nowrap">
+                    <button className="link" onClick={() => focusOn(c.id, 'gear')} title={`Damage, heal and Hit Point Dice for ${c.name}`}>
+                      <b className={c.hp === 0 ? 'bad-text' : c.hp * 2 < c.maxHp ? 'warn-text' : ''}>
+                        {c.hp}/{c.maxHp}
+                      </b>
+                    </button>
+                    {c.tempHp > 0 && <span className="muted small"> +{c.tempHp}</span>}
+                    <br />
+                    <Meter value={c.hp} max={c.maxHp} tone={c.hp * 2 >= c.maxHp ? 'good' : c.hp > 0 ? 'warn' : 'bad'} />
                   </td>
                   <td>
                     <Debuffs c={c} now={E.absNow(s)} load={E.carriedLoad(s, c)} />

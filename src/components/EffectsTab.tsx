@@ -11,9 +11,16 @@ import { POISONS, poisonByName } from '../rules/poisons';
 import { CONTAGIONS, RECUPERATE_DAYS, RECUPERATE_DC, type ContagionKind } from '../rules/contagion';
 import { WaysAround } from './WaysAround';
 import { InjuryCard, MadnessCard } from './LifeCards';
+import { useGate } from './gate';
 import { FUEL_LABEL, fuelFor, isHooded, isOilLight } from '../rules/gear';
 
 export function EffectsTab() {
+  const s = useGame();
+  const live = s.characters.filter((c) => E.alive(c));
+  const gate = useGate([
+    { name: 'Lingering injuries', idle: !s.settings.lingeringInjuries && !live.some((c) => (c.injuries ?? []).length) },
+    { name: 'Madness', idle: !s.settings.madness && !live.some((c) => (c.madness ?? []).length) },
+  ]);
   return (
     <div className="grid">
       <ActiveCard />
@@ -22,10 +29,11 @@ export function EffectsTab() {
       <BreathCard />
       <HazardCard />
       <ContagionCard />
-      <InjuryCard />
-      <MadnessCard />
+      {gate.show('Lingering injuries') && <InjuryCard />}
+      {gate.show('Madness') && <MadnessCard />}
       <PotionMixCard />
       <PoisonCard />
+      {gate.note}
     </div>
   );
 }

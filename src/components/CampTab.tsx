@@ -16,25 +16,30 @@ import { Card, Num, Pill, Select, Text, Toggle, Rule } from './common';
 import { POISON_HARVEST_DC } from '../rules/potions';
 import { ALCHEMIST, ALCHEMIST_FIRE_DC, IMPROVISED_COOK_DC, IMPROVISED_HARVEST_DC, IMPROVISED_TESTS, TEST_KIND_LABEL, toolTestsFor, type TestKind } from '../rules/tools';
 import { WaysAround } from './WaysAround';
+import { useGate } from './gate';
 import { SRD_POOL } from '../rules/encounters';
 import { AID_LABEL, bigEnoughToRide, canBeSidekick, canTame, charmSpellsFor, currentDC, NO_AIDS, TAME_MIN_DC, TRUST_PER_DAY_MAX, sessionAttitude, STABLE_DAYS, TAMED_RULES, tameCheck, tameDC, TAME_MAX_FAILS, TAME_MAX_INT, TAMEABLE_TYPES, TRAINING_LABEL, trainingNeeded, trustCue, trustNeeded, type Attitude, type TameAids, type TameTraining } from '../rules/taming';
 
+/** Camp in the order it happens: make camp (fire, watch, meals), mind the stores, then live off the land. */
 export function CampTab() {
+  const s = useGame();
+  const gate = useGate([{ name: 'Taming a wild creature', idle: !s.settings.taming && !(s.taming ?? []).length }]);
   return (
     <div className="grid">
       <FireCard />
+      <WatchCard />
+      <MealsCard />
       <StoresCard />
       <PurifyCard />
       <ArmorCard />
-      <WatchCard />
-      <MealsCard />
+      <CampGearCard />
       <ForageCard />
       <HuntCard />
-      <TameCard />
-      <CampGearCard />
-      <PoisonHarvestCard />
       <TestCard />
+      <PoisonHarvestCard />
+      {gate.show('Taming a wild creature') && <TameCard />}
       <RulesCard />
+      {gate.note}
     </div>
   );
 }

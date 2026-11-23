@@ -19,6 +19,7 @@ import { WaysAround } from './WaysAround';
 import { MaintainGear } from './LifeCards';
 import { REPAIR_DC, REPAIR_TOOL, materialOf, repairCost, wearLabel } from '../rules/wear';
 import { ToolsCard } from './ToolsCard';
+import { FocusBar, useFocused } from './focus';
 import { BOOK_BONUS, HEALERS_KIT, HEALERS_KIT_USES, RATIONS, SCATTERABLE, WATERSKIN } from '../rules/gear';
 
 const setChar = (id: string, fn: (c: Character) => void) =>
@@ -28,9 +29,10 @@ const setChar = (id: string, fn: (c: Character) => void) =>
   });
 
 export function GearTab() {
-  const s = useGame();
+  const shown = useFocused();
   return (
     <div className="stack">
+      <FocusBar />
       <Card>
         <WaysAround topic={['attunement', 'identify', 'ammo', 'shortRest']} />
       </Card>
@@ -39,7 +41,7 @@ export function GearTab() {
         <AfterTheFight />
         <ToolsCard />
         <PartyKnowledgeCard />
-        {s.characters.map((c) => (
+        {shown.map((c) => (
           <Card key={c.id} title={`${c.name} · ${c.className} ${c.level}`}>
             <HpBlock c={c} />
             {c.kind !== 'mount' && <ResourcesBlock c={c} />}

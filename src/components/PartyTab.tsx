@@ -9,6 +9,7 @@ import { Debuffs } from './Debuffs';
 import { DdbImportCard } from './DdbImport';
 import { AgeCard } from './LifeCards';
 import { senseText } from './senseView';
+import { FocusBar, useFocused } from './focus';
 import type { ArmorKind, Character, ClassName, ExhaustionCause, Resist, Size } from '../state/types';
 import * as E2 from '../state/engine';
 import { absNow, log, type Track } from '../state/engine';
@@ -20,9 +21,10 @@ const RESIST = [
 ] as const;
 
 export function PartyTab() {
-  const s = useGame();
+  const shown = useFocused();
   return (
     <div className="stack">
+      <FocusBar />
       <SpeciesList />
       <div className="btn-row">
         <button className="primary" onClick={() => edit((d) => void d.characters.push(newCharacter()))}>
@@ -31,11 +33,11 @@ export function PartyTab() {
         <span className="muted small">Enter save bonuses as they appear on the sheet. The tracker takes off Exhaustion penalties for you.</span>
       </div>
       <div className="grid">
-        <DdbImportCard />
-        {s.characters.map((c) => (
+        {shown.map((c) => (
           <CharacterCard key={c.id} c={c} />
         ))}
         <AgeCard />
+        <DdbImportCard />
       </div>
     </div>
   );
@@ -137,7 +139,11 @@ function ExhaustionEditor({ c, set }: { c: Character; set: (patch: Partial<Chara
   );
 }
 
+const sign = (n: number) => (n >= 0 ? `+${n}` : `${n}`);
+
 function CharacterCard({ c }: { c: Character }) {
+  // A new character opens on the sheet to fill in; after that, the sheet stays folded behind the trackers used in play.
+  const [sheetOpen, setSheetOpen] = useState(() => c.name === 'New adventurer' || c.name.trim() === '');
   const set = (patch: Partial<Character>) =>
     edit((d) => {
       const t = d.characters.find((x) => x.id === c.id);
@@ -163,6 +169,13 @@ function CharacterCard({ c }: { c: Character }) {
         </button>
       }
     >
+      <details className="sheet" open={sheetOpen} onToggle={(e) => setSheetOpen((e.currentTarget as HTMLDetailsElement).open)}>
+        <summary>
+          Sheet{' '}
+          <span className="muted small">
+            {[c.species, `${c.subclass ? `${c.subclass} ` : ''}${c.className} ${c.level}`, c.size, `Con save ${sign(c.conSave)}`, `Wis ${sign(c.wisMod)}`, `Survival ${sign(c.survival)}`].filter(Boolean).join(' · ')}
+          </span>
+        </summary>
       <div className="form-row">
         <Text label="Name" value={c.name} onChange={(v) => set({ name: v })} wide />
         <Select label="Class" value={c.className} onChange={changeClass} options={CLASSES} />
@@ -229,6 +242,7 @@ function CharacterCard({ c }: { c: Character }) {
           {needsExoticSaddle(c) && <span className="small warn-text">A flying or swimming mount needs an Exotic Saddle to be ridden (2024 PHB).</span>}
         </div>
       )}
+      </details>
       <ExhaustionEditor c={c} set={set} />
 
       <Trackers c={c} />

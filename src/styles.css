@@ -1266,3 +1266,67 @@ select {
   gap: 2px 12px;
   align-items: baseline;
 }
+
+/* one character in focus across the Party tabs */
+.focus-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.focus-bar button {
+  border-radius: 999px;
+  padding: 3px 12px;
+  font-size: 0.88rem;
+}
+.focus-bar button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+/* a name or label that opens something, styled as text */
+button.link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  text-decoration: underline dotted var(--muted);
+  text-underline-offset: 3px;
+}
+button.link:hover:not(:disabled) {
+  color: var(--accent);
+}
+
+/* jump to a card on a long tab */
+.jump-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  margin: -6px 0 14px;
+  align-items: center;
+}
+.jump-bar button {
+  border-radius: 999px;
+  padding: 1px 10px;
+  font-size: 0.8rem;
+  background: transparent;
+  color: var(--muted);
+}
+.jump-bar button:hover:not(:disabled) {
+  color: var(--text);
+}
+.card.jumped {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* cards hidden because their rule is switched off */
+.hidden-note {
+  grid-column: 1 / -1;
+}
+
+.nowrap {
+  white-space: nowrap;
+}

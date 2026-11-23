@@ -42,8 +42,8 @@ export function playerItems(s: State, c: Character): PlayerItem[] {
     status('bad', `Dead for ${formatDuration(Math.max(1, dead))}`, still.length ? `Still possible: ${still.join(', ')}. Gentle Repose stops the clock.` : 'Beyond the reach of revival spells.', 'world', 'dead');
     return out;
   }
-  if (c.dying) status('bad', `Dying (${c.deathSuccesses} successes, ${c.deathFailures} failures)`, 'Death saves each turn; Medicine DC 10 or any healing stabilizes.', 'party', 'dying');
-  else if (c.stable) status('warn', 'Unconscious but stable', c.wakesAt != null ? `Wakes with 1 HP in ${formatDuration(Math.max(0, c.wakesAt - now))}, or with any healing.` : 'Any healing wakes them.', 'party', 'stable');
+  if (c.dying) status('bad', `Dying (${c.deathSuccesses} successes, ${c.deathFailures} failures)`, 'Death saves each turn; Medicine DC 10 or any healing stabilizes.', 'gear', 'dying');
+  else if (c.stable) status('warn', 'Unconscious but stable', c.wakesAt != null ? `Wakes with 1 HP in ${formatDuration(Math.max(0, c.wakesAt - now))}, or with any healing.` : 'Any healing wakes them.', 'gear', 'stable');
   for (const p of exhaustionBreakdown(c)) {
     status(c.exhaustion >= 4 ? 'bad' : 'warn', `Exhaustion ×${p.count} from ${p.label}`, p.locked ? (p.cause === 'malnutrition' ? 'Eat a full day’s food before a Long Rest can remove it.' : p.cause === 'dehydration' ? 'Drink a full day’s water before a Long Rest can remove it.' : 'Lasts until the disease ends.') : 'Each Long Rest removes one level; Greater Restoration removes one.', 'party', `exh-${p.cause}`);
   }

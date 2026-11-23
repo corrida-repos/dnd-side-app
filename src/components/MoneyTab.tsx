@@ -8,6 +8,7 @@ import { fmtGp, HIRELING_WAGE, INN_STAY_GP, LIFESTYLE_GP, LIFESTYLE_LABEL, MEAL_
 type Tier = Exclude<Lifestyle, 'wretched'>;
 import { foodNeedLb, fmtLb, WATER_GAL_PER_DAY } from '../rules/survival';
 import { Card, Num, Pill, Select, Text, Toggle, Rule } from './common';
+import { useGate } from './gate';
 import { HIRELING_ROLES, MESSENGER_GP_PER_MILE, type HirelingRole } from '../rules/hirelings';
 import { coinCount, DENOMS, purseValue, type Denom } from '../rules/coins';
 import type { Hireling } from '../state/types';
@@ -23,6 +24,8 @@ import { SETTLEMENT_SIZE, townSells, townSpecials } from '../rules/settlements';
 import { SADDLE_LABEL, STABLING_GP_PER_DAY, needsExoticSaddle, type Saddle } from '../rules/gear';
 
 export function MoneyTab() {
+  const s = useGame();
+  const gate = useGate([{ name: 'Taxes, tithes and dues', idle: !s.settings.duesAndTaxes && !(s.dues ?? []).length }]);
   return (
     <div className="grid">
       <PurseCard />
@@ -31,7 +34,7 @@ export function MoneyTab() {
       <MountsCard />
       <ShopCard />
       <DebtsCard />
-      <DuesCard />
+      {gate.show('Taxes, tithes and dues') && <DuesCard />}
       <ServicesCard />
     </div>
   );
