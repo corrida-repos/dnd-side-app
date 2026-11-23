@@ -2094,11 +2094,17 @@ export const MARCH_WORK_RATE = 0.5;
 /** Hours of work in a workday (2024 PHB: crafting progresses in 8-hour days). */
 export const WORKDAY_HOURS = 8;
 
+/** Table rule: hand work goes on at a normal or slow pace, writing only at a slow one; language practice at any pace. */
+export const marchPaceOk = (p: Project, pace: Pace): boolean => {
+  const w = marchWork(p);
+  return w.concentration ? pace === 'slow' : w.talk ? true : pace !== 'fast';
+};
+
 /** Who could work a hand-held project while walking: conscious and doing nothing but marching. */
 export function marchWorkers(s: State, p: Project, navigatorId: string | null | undefined, foragerIds: string[], pace: Pace = s.travel.pace): Character[] {
   const writing = !!marchWork(p).concentration;
-  // Writing on the march needs a slow pace (table rule): at a normal or fast walk the pen won't stay on the line.
-  if (writing && pace !== 'slow') return [];
+  // Table rule: no work in the hands at a fast pace, and writing only at a slow one, where the pen stays on the line.
+  if (!marchPaceOk(p, pace)) return [];
   const who = p.charIds
     .map((id) => charById(s, id))
     .filter((c): c is Character => !!c && c.kind === 'pc' && alive(c) && !c.dying && !c.stable && c.hp > 0 && c.id !== navigatorId && !foragerIds.includes(c.id) && !(writing && holdsConcentration(s, c)));
@@ -2118,8 +2124,8 @@ function workOnTheMarch(s: State, ctx: Ctx, hours: number, navigatorId: string |
   for (const p of s.projects.filter((x) => marchWork(x).ok && !x.done && !x.awaitingOutcome)) {
     const able = marchWorkers(s, p, navigatorId, foragerIds, pace);
     if (!able.length) {
-      if (marchWork(p).concentration && pace !== 'slow' && marchWorkers(s, p, navigatorId, foragerIds, 'slow').length)
-        log(s, `No writing on ${p.name} at a ${pace} pace: writing on the march needs a slow pace (table rule).`);
+      if (!marchPaceOk(p, pace) && marchWorkers(s, p, navigatorId, foragerIds, 'slow').length)
+        log(s, `No work on ${p.name} at a ${pace} pace: ${marchWork(p).concentration ? 'writing on the march needs a slow pace' : 'hand work on the march needs a normal or slow pace'} (table rule).`);
       continue;
     }
     // Writing on the march: each writer keeps their concentration with a Constitution save, or the leg's lines are spoiled.

@@ -174,4 +174,15 @@ describe('working on projects while marching (table rule)', () => {
     expect(t.projects[0].marchWorkHours ?? 0).toBe(0);
     expect(t.log.some((l) => /needs a slow pace/.test(l.text))).toBe(true);
   });
+
+  it('stops hand work at a fast pace', () => {
+    const s = fresh((st) => {
+      st.settings.forcedMarch = false;
+      st.projects = [{ id: 'p', name: 'Quarterstaff', kind: 'nonmagical', charIds: [st.characters[0].id], daysRequired: 3, daysDone: 0, costGp: 1, notes: '', done: false, product: { name: 'Quarterstaff', qty: 1 } }];
+    });
+    const t = E.travel(s, ctx(), { ...go, pace: 'fast', hours: 4 });
+    expect(t.projects[0].marchWorkHours ?? 0).toBe(0);
+    expect(t.log.some((l) => /hand work on the march needs a normal or slow pace/.test(l.text))).toBe(true);
+    expect(E.travel(s, ctx(), { ...go, pace: 'slow', hours: 4 }).projects[0].marchWorkHours).toBe(2);
+  });
 });

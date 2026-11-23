@@ -66,7 +66,7 @@ export const MECHANICS: Mechanic[] = [
   // ---- Tier 1: rules that take work away, so even the lightest game keeps them.
   { key: 'deathSavesResolve', tier: 1, area: 'Rest', source: 'Table rule', label: 'Time can’t pass while someone is dying: their death saves roll at once', cost: 'Saves work: skipping time never leaves a character stuck at 0 HP waiting for rolls.' },
   { key: 'fireWarmsCamp', tier: 1, area: 'Camp', source: 'Table rule', label: 'A lit campfire protects the camp from extreme cold', cost: 'Saves work: no hourly cold saves at a camp with a fire.' },
-  { key: 'workWhileMarching', tier: 1, area: 'Downtime', source: 'Table rule', label: 'Crafters who are only marching keep working on hand-held projects at half rate; writers only at a slow pace, keeping concentration', cost: 'Saves time: travel days still move hand-held work along, logged with each leg.' },
+  { key: 'workWhileMarching', tier: 1, area: 'Downtime', source: 'Table rule', label: 'Crafters who are only marching keep working on hand-held projects (not at a fast pace) at half rate; writers only at a slow pace, keeping concentration', cost: 'Saves time: travel days still move hand-held work along, logged with each leg.' },
   { key: 'batchCrafting', tier: 1, area: 'Downtime', source: 'Table rule', label: 'Cheap items are crafted in batches: 20 days of Rations take one workday, not twenty', cost: 'Saves work: one project for a stack of arrows, torches or rations.' },
   { key: 'fallbackNavigator', tier: 1, area: 'Travel', source: 'Table rule', label: 'With no navigator able to act, the best Survival in the party finds the way', cost: 'Saves work: travel never stalls for want of a navigator.' },
 

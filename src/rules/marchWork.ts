@@ -9,7 +9,7 @@ import { activityOf } from './downtimeOutcomes';
  *
  * Hand work that needs no bench, fire, water or flat surface: whittling (Woodcarver's Tools), knitting, braiding and
  * small weaving (Weaver's Tools), and stitching leather or shoes (Leatherworker's and Cobbler's Tools), on items light
- * enough to hold while walking. Practising a language with someone walking alongside, or a musical instrument, works
+ * enough to hold while walking, at a normal or slow pace (not a fast one). Practising a language with someone walking alongside, or a musical instrument, works
  * too. Writing (scribing a scroll, copying a spell, calligraphy) goes on only at a slow pace, if the writer keeps their concentration: no
  * Concentration spell held at the same time, and a Constitution save each leg, as for Concentration, or the leg's
  * lines come out spoiled. Anything needing a forge, kiln, still, fire, a library, a workshop or a town does not.
@@ -26,6 +26,8 @@ export interface MarchWork {
   ok: boolean;
   /** Writing: the worker must keep their concentration (no Concentration spell, and a save each leg). */
   concentration?: boolean;
+  /** Talk, not hand work (language practice): it goes on even at a fast pace. */
+  talk?: boolean;
   /** Why it can or can't be worked on the march, in a few words. */
   why: string;
 }
@@ -73,12 +75,12 @@ export function marchWork(p: Pick<Project, 'kind' | 'name' | 'product' | 'learn'
       return { ok: false, why: 'deals are struck in town' };
     case 'activity': {
       const learn = (p.learn ?? '').trim();
-      if (p.learnKind === 'language') return { ok: true, why: 'a language can be practised with a teacher walking alongside' };
+      if (p.learnKind === 'language') return { ok: true, talk: true, why: 'a language can be practised with a teacher walking alongside' };
       if (p.learnKind === 'tool') return learn ? toolOk(learn) : { ok: false, why: 'the tool isn’t named' };
       if (p.learnKind === 'skill') return { ok: false, why: 'skill training needs a proper place to train' };
       if (activityOf(p.name) === 'Training' && learn) {
         if (toolNamed(learn)) return toolOk(learn);
-        return { ok: true, why: `${learn} can be practised with a teacher walking alongside` };
+        return { ok: true, talk: true, why: `${learn} can be practised with a teacher walking alongside` };
       }
       return { ok: false, why: 'this activity happens in a settlement' };
     }

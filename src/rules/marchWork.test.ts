@@ -18,7 +18,7 @@ describe('which work can go on while marching (table rule)', () => {
   });
 
   it('allows practising languages and instruments but not place-bound activities', () => {
-    expect(proj({ kind: 'activity', name: 'Training: Elvish', learn: 'Elvish' }).ok).toBe(true);
+    expect(proj({ kind: 'activity', name: 'Training: Elvish', learn: 'Elvish' })).toMatchObject({ ok: true, talk: true });
     expect(proj({ kind: 'activity', name: 'Training: Flute', learn: 'Flute' }).ok).toBe(true);
     expect(proj({ kind: 'activity', name: "Training: Smith's Tools", learn: "Smith's Tools" }).ok).toBe(false);
     expect(proj({ kind: 'activity', name: 'Special training: Dwarvish', learn: 'Dwarvish', learnKind: 'language' }).ok).toBe(true);
