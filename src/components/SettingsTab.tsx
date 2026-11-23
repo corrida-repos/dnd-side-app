@@ -69,7 +69,7 @@ function DateCard() {
 
 function RulesCard() {
   const s = useGame();
-  const set = (k: 'autoRollSaves' | 'noTimepiece' | 'coldGear2014' | 'heavyClothing2014' | 'extraCraftHelpers' | 'climateAdjustedPrecip' | 'taming' | 'workWhileMarching', v: boolean) => edit((d) => void (d.settings[k] = v));
+  const set = (k: 'autoRollSaves' | 'noTimepiece' | 'coldGear2014' | 'heavyClothing2014' | 'extraCraftHelpers' | 'climateAdjustedPrecip' | 'taming' | 'workWhileMarching' | 'circleMagic', v: boolean) => edit((d) => void (d.settings[k] = v));
   return (
     <Card title="Rules options">
       <div className="stack tight">
@@ -78,6 +78,7 @@ function RulesCard() {
         <Toggle checked={s.settings.noTimepiece} onChange={(v) => set('noTimepiece', v)} label="Nobody has a timepiece: show the time as nature's cues" />
         <Rule>The header and the Time card show the part of the day (Dawn, Mid-morning, Dusk and so on) instead of the exact clock. The DM can peek at the exact time on the Time card.</Rule>
         <Toggle checked={(s.settings.facilityBooks ?? []).includes('FRHoF')} onChange={(v) => edit((d) => void (d.settings.facilityBooks = [...(d.settings.facilityBooks ?? []).filter((x) => x !== 'FRHoF'), ...(v ? (['FRHoF'] as const) : [])]))} label="Bastion facilities from Forgotten Realms: Heroes of Faerûn" />
+        <Toggle checked={s.settings.circleMagic} onChange={(v) => set('circleMagic', v)} label="Circle Magic from Forgotten Realms: Heroes of Faerûn: secondary casters can join spells that take 1 minute or longer to cast (optional rule)" />
         <Toggle checked={(s.settings.facilityBooks ?? []).includes('EFA')} onChange={(v) => edit((d) => void (d.settings.facilityBooks = [...(d.settings.facilityBooks ?? []).filter((x) => x !== 'EFA'), ...(v ? (['EFA'] as const) : [])]))} label="Bastion facilities from Eberron: Forge of the Artificer" />
         <div className="form-row">
           <Num label="Stress removed per Long Rest" value={s.settings.stressPerLongRest} onChange={(v) => edit((d) => void (d.settings.stressPerLongRest = Math.max(0, Math.round(v))))} min={0} width={2} />
@@ -87,7 +88,7 @@ function RulesCard() {
         <Toggle checked={s.settings.heavyClothing2014} onChange={(v) => set('heavyClothing2014', v)} label="Heavy clothing gives Disadvantage on extreme heat saves (2014 rule; 2024 only counts Medium or Heavy armor)" />
         <Toggle checked={s.settings.extraCraftHelpers} onChange={(v) => set('extraCraftHelpers', v)} label="Allow more than one helper on a crafting project (normally only one other character can help)" />
         <Toggle checked={s.settings.taming} onChange={(v) => set('taming', v)} label="Wild Beasts and Monstrosities of Intelligence 5 or lower can be tamed with daily Animal Handling sessions (table rule)" />
-        <Toggle checked={s.settings.workWhileMarching} onChange={(v) => set('workWhileMarching', v)} label="Crafters who are only marching keep working on projects they can hold in their hands, at half rate (table rule)" />
+        <Toggle checked={s.settings.workWhileMarching} onChange={(v) => set('workWhileMarching', v)} label="Crafters who are only marching keep working on hand-held projects (not at a fast pace), at half rate; writers only at a slow pace, keeping concentration (table rule)" />
         <Select
           label="Lifestyle is paid"
           value={s.settings.lifestylePeriod}

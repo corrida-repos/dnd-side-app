@@ -11,6 +11,7 @@ import type { Character, CharacterSpell } from '../state/types';
 import { WaysAround } from './WaysAround';
 import { componentFor, TARGET_SPELLS } from '../rules/components';
 import { fmtGp } from '../rules/money';
+import { circleEligible, circleOption, CIRCLE_OPTIONS, CIRCLE_RANGE_FT, helperProblem, optionProblem, slotNeedText, slotsLeft, spellCircle, type CircleOptionId } from '../rules/circle';
 
 export function MorningTab() {
   const s = useGame();
@@ -96,6 +97,8 @@ function CastPanel({ c }: { c: Character }) {
   const known = c.spells.map((sp) => ({ sp, info: { ...sp, ...spellInfo(sp, s.spellLibrary) } as CharacterSpell }));
   const [name, setName] = useState('');
   const [target, setTarget] = useState('');
+  const [helperIds, setHelperIds] = useState<string[]>([]);
+  const [option, setOption] = useState<CircleOptionId>('prolong');
   if (!known.length) return null;
   const pick = known.find((k) => k.sp.name === name) ?? known[0];
   const info = pick.info;
@@ -125,6 +128,7 @@ function CastPanel({ c }: { c: Character }) {
           As ritual ({formatDuration(Math.max(1, Math.round(base + RITUAL_EXTRA_MINUTES)))}, no slot)
         </button>
       </div>
+      {s.settings.circleMagic && circleEligible(info).ok && <CirclePanel c={c} info={info} helperIds={helperIds} setHelperIds={setHelperIds} option={option} setOption={setOption} target={TARGET_SPELLS[pick.sp.name] ? target || null : null} />}
       {TARGET_SPELLS[pick.sp.name] && (
         <div className="btn-row tight">
           <Select label="Target" value={target} onChange={setTarget} options={[{ value: '', label: 'Choose…' }, ...s.characters.map((x) => ({ value: x.id, label: `${x.name}${x.diedAt != null ? ' (dead)' : ''}` }))]} />
@@ -143,6 +147,51 @@ function CastPanel({ c }: { c: Character }) {
         {info.durationMinutes ? `Lasts ${formatDuration(info.durationMinutes)}${info.concentration ? ' (Concentration)' : ''}, and a timer starts on the Effects & Lights tab.` : info.permanent ? 'Lasts until dispelled.' : info.durationMinutes === null ? 'Instantaneous.' : ''}
         {info.castMinutes === undefined && ' Casting time unknown: import a 5etools spell file for exact times.'}
       </p>
+    </div>
+  );
+}
+
+/** Circle Magic (Heroes of Faerûn): secondary casters join a spell that takes 1 minute or longer. */
+function CirclePanel({ c, info, helperIds, setHelperIds, option: picked, setOption, target }: { c: Character; info: CharacterSpell; helperIds: string[]; setHelperIds: (v: string[]) => void; option: CircleOptionId; setOption: (v: CircleOptionId) => void; target: string | null }) {
+  const s = useGame();
+  // Options this spell can use, as far as the app knows (range and area aren't stored, so those are left to the table).
+  const usable = CIRCLE_OPTIONS.filter((o) => !optionProblem(info, o.id, 99));
+  const option = usable.some((o) => o.id === picked) ? picked : usable[0]?.id ?? picked;
+  const opt = circleOption(option);
+  const need = opt.helperSlot(info);
+  const others = s.characters.filter((x) => x.id !== c.id && x.diedAt == null && x.kind !== 'mount');
+  const chosen = helperIds.filter((id) => others.some((x) => x.id === id && !helperProblem(x, need)));
+  const problem = chosen.length ? optionProblem(info, option, chosen.length) : 'Pick at least one secondary caster';
+  const prepared = info.prepared || info.alwaysPrepared;
+  const own = spellCircle(info.name);
+  const castTime = option === 'spell' && own?.castTime ? own.castTime : info.castTime;
+  return (
+    <div className="stack tight">
+      <h4>Circle casting (optional rule)</h4>
+      <Select label="Circle casting option" value={option} onChange={setOption} options={(usable.length ? usable : CIRCLE_OPTIONS).map((o) => ({ value: o.id, label: `${o.label} (helpers spend ${slotNeedText(o.helperSlot(info))})` }))} />
+      <p className="small muted">{option === 'spell' && own ? `${info.name} as a Circle spell: ${own.note}; at least ${own.minHelpers} secondary caster${own.minHelpers > 1 ? 's' : ''}.` : opt.summary}</p>
+      <div className="btn-row tight">
+        {others.map((x) => {
+          const why = helperProblem(x, need);
+          const left = need.kind === 'none' ? Infinity : slotsLeft(x, need.kind === 'any' ? 1 : need.level);
+          return (
+            <Toggle
+              key={x.id}
+              checked={chosen.includes(x.id)}
+              onChange={(v) => setHelperIds(v ? [...chosen, x.id] : chosen.filter((id) => id !== x.id))}
+              label={`${x.name}${why || left === Infinity ? '' : ` (${left} slot${left === 1 ? '' : 's'})`}`}
+              title={why || undefined}
+            />
+          );
+        })}
+      </div>
+      <button className="small primary" disabled={!!problem || !prepared} title={!prepared ? 'Not prepared' : problem} onClick={() => dispatch((st, cx) => E.castSpell(st, cx, c.id, info.name, 'slot', target, { helperIds: chosen, option }))}>
+        Cast as a Circle spell ({castTime}, {chosen.length + 1} caster{chosen.length ? 's' : ''})
+      </button>
+      {problem && chosen.length > 0 && <p className="small muted">{problem}</p>}
+      <Rule>
+        {c.name} is the primary caster: they choose targets, provide the components, spend the spell's slot and hold its Concentration. Each secondary caster needs the Spellcasting or Pact Magic feature and contributes from within {CIRCLE_RANGE_FT} feet of {c.name}. For the whole casting time everyone takes the Magic action each turn and keeps Concentration, so anything else they concentrate on ends; if anyone's Concentration breaks, the spell fails, no slot is spent and no Material component is consumed. Only one option applies per casting. At the DM's discretion, spellcasting NPCs can spend a use of a spell of the same level or higher in place of a slot.
+      </Rule>
     </div>
   );
 }

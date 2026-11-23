@@ -137,4 +137,52 @@ describe('working on projects while marching (table rule)', () => {
     const t = E.travel(s, ctx(), { ...go, hours: 4 });
     expect(t.projects[0].done).toBe(true);
   });
+
+  it('lets writers scribe on the march only while they keep their concentration', () => {
+    const scroll = (rng: number, spell = false) => {
+      const s = fresh((st) => {
+        st.settings.forcedMarch = false;
+        st.projects = [{ id: 'p', name: 'Spell Scroll', kind: 'scroll', charIds: [st.characters[0].id], daysRequired: 3, daysDone: 0, costGp: 1, notes: '', done: false }];
+        if (spell) st.effects = [{ id: 'e', name: 'Detect Magic', kind: 'other', targetIds: [st.characters[0].id], casterId: st.characters[0].id, concentration: true, shelter: false, startedAt: 0, endsAt: null, notes: '' }];
+      });
+      return E.travel(s, ctx(rng), { ...go, pace: 'slow', hours: 4 });
+    };
+    expect(scroll(0.9).projects[0].marchWorkHours).toBe(2);
+    const fumbled = scroll(0);
+    expect(fumbled.projects[0].marchWorkHours ?? 0).toBe(0);
+    expect(fumbled.log.some((l) => /loses concentration on Spell Scroll/.test(l.text))).toBe(true);
+    expect(scroll(0.9, true).projects[0].marchWorkHours ?? 0).toBe(0);
+  });
+
+  it('keeps writing a one-person job, at the desk and on the march', () => {
+    const s = fresh((st) => {
+      st.settings.forcedMarch = false;
+      st.settings.extraCraftHelpers = true;
+      st.projects = [{ id: 'p', name: 'Copy Fireball', kind: 'spellcopy', charIds: st.characters.map((c) => c.id), daysRequired: 6, daysDone: 0, costGp: 1, notes: '', done: false }];
+    });
+    expect(E.marchWorkers(s, s.projects[0], null, [], 'slow')).toHaveLength(1);
+    expect(E.travel(s, ctx(0.9), { ...go, pace: 'slow', hours: 4 }).projects[0].marchWorkHours).toBe(2);
+    expect(E.workOnProjects(s, ctx(), ['p']).projects[0].daysDone).toBe(1);
+  });
+
+  it('only lets writers write at a slow pace', () => {
+    const s = fresh((st) => {
+      st.settings.forcedMarch = false;
+      st.projects = [{ id: 'p', name: 'Spell Scroll', kind: 'scroll', charIds: [st.characters[0].id], daysRequired: 3, daysDone: 0, costGp: 1, notes: '', done: false }];
+    });
+    const t = E.travel(s, ctx(0.9), { ...go, hours: 4 });
+    expect(t.projects[0].marchWorkHours ?? 0).toBe(0);
+    expect(t.log.some((l) => /needs a slow pace/.test(l.text))).toBe(true);
+  });
+
+  it('stops hand work at a fast pace', () => {
+    const s = fresh((st) => {
+      st.settings.forcedMarch = false;
+      st.projects = [{ id: 'p', name: 'Quarterstaff', kind: 'nonmagical', charIds: [st.characters[0].id], daysRequired: 3, daysDone: 0, costGp: 1, notes: '', done: false, product: { name: 'Quarterstaff', qty: 1 } }];
+    });
+    const t = E.travel(s, ctx(), { ...go, pace: 'fast', hours: 4 });
+    expect(t.projects[0].marchWorkHours ?? 0).toBe(0);
+    expect(t.log.some((l) => /hand work on the march needs a normal or slow pace/.test(l.text))).toBe(true);
+    expect(E.travel(s, ctx(), { ...go, pace: 'slow', hours: 4 }).projects[0].marchWorkHours).toBe(2);
+  });
 });

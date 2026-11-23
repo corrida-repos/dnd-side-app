@@ -3,8 +3,8 @@ import type { Character, State } from '../state/types';
 import { watchCapacity, watchMinutes } from '../rules/watch';
 import { HUNTING_TRAP } from '../rules/gear';
 import { NAVIGATOR } from '../rules/tools';
-import { PROJECT_KIND_LABEL } from '../rules/crafting';
-import { marchWork } from '../rules/marchWork';
+import { PROJECT_KIND_LABEL, isSoloWork } from '../rules/crafting';
+import { MARCH_WRITING_DC, marchWork } from '../rules/marchWork';
 
 /** Where the party is, which decides which jobs make sense right now. */
 export type JobGroup = 'road' | 'camp' | 'town';
@@ -103,7 +103,7 @@ export function jobBoard(s: State): JobBoard {
 
   // Hand-held projects worked on the march (table rule): only for those doing nothing but walking.
   const marching = s.settings.workWhileMarching && (!town || journey) ? s.projects.filter((p) => marchWork(p).ok && !p.done && !p.awaitingOutcome) : [];
-  for (const p of marching) for (const c of E.marchWorkers(s, p, navId, foragers)) addDuty(c.id, `${p.name || PROJECT_KIND_LABEL[p.kind]} while marching`, 'road');
+  for (const p of marching) for (const c of E.marchWorkers(s, p, navId, foragers)) addDuty(c.id, `${p.name || PROJECT_KIND_LABEL[p.kind]} while marching${marchWork(p).concentration ? ' (keeping concentration)' : ''}`, 'road');
 
   // ---- camp: watches
   const load = E.watchLoad(s);
@@ -155,18 +155,20 @@ export function jobBoard(s: State): JobBoard {
     }
     for (const p of marching) {
       const on = E.marchWorkers(s, p, navId, foragers);
-      const away = p.charIds.filter((id) => !on.some((c) => c.id === id) && able.some((c) => c.id === id));
+      const writing = !!marchWork(p).concentration;
+      const tooFast = !E.marchPaceOk(p, s.travel.pace);
+      const away = tooFast || (isSoloWork(p.kind) && on.length) ? [] : p.charIds.filter((id) => !on.some((c) => c.id === id) && able.some((c) => c.id === id));
       jobs.push({
         id: `march-${p.id}`,
         group: 'road',
         title: `${p.name || PROJECT_KIND_LABEL[p.kind]} on the march`,
-        what: `${marchWork(p).why[0].toUpperCase()}${marchWork(p).why.slice(1)}, so it goes on while walking: each marching hour counts as half an hour of work. ${p.daysDone}/${p.daysRequired} workdays${p.marchWorkHours ? ` and ${p.marchWorkHours} h toward the next` : ''}.${away.length ? ` ${away.map(name).join(', ')} can’t work it while navigating or foraging.` : ''}`,
+        what: `${marchWork(p).why[0].toUpperCase()}${marchWork(p).why.slice(1)}, so it goes on while walking${writing || marchWork(p).talk ? '' : ' at a normal or slow pace'}: each marching hour counts as half an hour of work. ${p.daysDone}/${p.daysRequired} workdays${p.marchWorkHours ? ` and ${p.marchWorkHours} h toward the next` : ''}.${marchWork(p).concentration ? ` Only at a slow pace. The writer makes a DC ${MARCH_WRITING_DC} Constitution save per leg, as for Concentration, or that leg’s work is spoiled; nobody holding a Concentration spell can write.` : ''}${away.length ? ` ${away.map(name).join(', ')} can’t work it now (navigating, foraging${marchWork(p).concentration ? ' or concentrating on a spell' : ''}).` : ''}`,
         source: 'Table rule',
         status: on.length ? 'covered' : 'optional',
-        shared: !p.learnKind,
+        shared: !p.learnKind && !isSoloWork(p.kind),
         holders: on.map((c) => ({ id: c.id, name: c.name })),
         picks: [],
-        blocked: on.length ? undefined : 'Nobody on it is free to work while walking.',
+        blocked: on.length ? undefined : tooFast ? `${writing ? 'Writing needs a slow pace' : 'Hand work needs a normal or slow pace'}; the party is set to ${s.travel.pace}.` : 'Nobody on it is free to work while walking.',
         tab: 'downtime',
       });
     }
@@ -313,7 +315,7 @@ export function jobBoard(s: State): JobBoard {
   when = 'town';
   if (town) {
     for (const p of s.projects.filter((x) => !x.done)) {
-      const sharable = p.kind === 'nonmagical' || p.kind === 'scroll' || p.kind === 'potion' || p.kind === 'magic';
+      const sharable = p.kind === 'nonmagical' || p.kind === 'potion' || p.kind === 'magic';
       const on = p.charIds.filter((id) => duties.has(id));
       jobs.push({
         id: `proj-${p.id}`,
