@@ -5,7 +5,7 @@ import { fireThreat } from '../rules/weather';
 import { DIG_LABEL, HUNTING_TRAP, MAGNIFYING_GLASS, POT_ALARM_DC, SHOVEL, SNARE, SNARE_LINE, TRAP_CATCH_ON, type DigKind } from '../rules/gear';
 import { COOK_RAW_MINUTES, DEFAULT_FIRE_COLD_LIMIT_F, FIRE_LIGHT_DC, FIRE_METHODS, fireColdLimit, fireLighting, type FireMethod } from '../rules/campfire';
 import { GAME_ANIMALS, MEAT_LB, BUTCHER_MINUTES, BUTCHER_DC, isEdible, yieldsHide, STRANGE_TYPES } from '../rules/hunting';
-import { CURE_DC, CURE_LB_PER_RATION, CURE_MAX_LB, FEAST_MARGIN, MEAL_STRESS_RELIEF } from '../rules/cooking';
+import { CURE_DC, CURE_LB_PER_RATION, CURE_MAX_LB, FEAST_FEAR_RELIEF, FEAST_MARGIN, FEAST_STRESS_RELIEF, MEAL_STRESS_RELIEF } from '../rules/cooking';
 import { DIG_FIND_ON, FIND_MARGIN, poisonYield, trophyFor } from '../rules/chorePayoffs';
 import { fmtGp } from '../rules/money';
 import { formatClock, formatDuration, lightAt } from '../rules/calendar';
@@ -556,7 +556,7 @@ function MealsCard() {
         <button onClick={() => dispatch((st, c) => E.partyDrink(st, c, 'meal'))}>Everyone drinks</button>
       </div>
       <p className="small muted">
-        Table rule: a tasty hot meal eases everyone&apos;s Stress by {MEAL_STRESS_RELIEF}. A feast (a natural 20, or beating the DC by {FEAST_MARGIN}) also gives everyone who ate Temporary HP equal to the cook&apos;s Wisdom modifier plus Proficiency Bonus.
+        Table rule. <b>Any hot meal</b> warms everyone who ate for 8 hours: Advantage on saves against extreme cold and cold nights. <b>A tasty meal</b> (the cook&apos;s check succeeds) also gives Advantage on forced-march saves, Stress −{MEAL_STRESS_RELIEF} and Temporary HP equal to the cook&apos;s Proficiency Bonus. <b>A feast</b> (a natural 20, or beating the DC by {FEAST_MARGIN}) gives Temporary HP equal to the cook&apos;s level plus Wisdom modifier, Stress −{FEAST_STRESS_RELIEF} and Fear −{FEAST_FEAR_RELIEF}.
       </p>
       <div className="btn-row">
         <button

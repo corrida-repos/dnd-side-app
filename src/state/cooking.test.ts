@@ -15,26 +15,43 @@ function camp() {
 }
 
 describe('cooking payoffs', () => {
-  it('a tasty meal eases Stress for everyone who ate', () => {
+  it('a tasty meal eases Stress, gives Temporary HP and fortifies against the march', () => {
     let s = camp();
     s = E.cookMeal(s, ctx(0.25), s.characters[0].id); // 6 + 5 = 11: tasty, not a feast
-    expect(s.characters.map((c) => c.stress)).toEqual([2, 1]);
-    expect(s.characters[1].tempHp).toBe(0);
+    expect(s.characters.map((c) => c.stress)).toEqual([1, 0]);
+    expect(s.characters.map((c) => c.tempHp)).toEqual([3, 3]);
+    expect(s.characters[1].mealBuff?.hearty).toBe(true);
   });
 
-  it('a feast also gives Temporary HP', () => {
+  it('a feast gives the cook level plus Wisdom in Temporary HP and eases Fear', () => {
     let s = camp();
+    s.characters[1].fear = 2;
     s = E.cookMeal(s, ctx(0.99), s.characters[0].id);
-    // Wisdom +2 and Proficiency Bonus +3.
-    expect(s.characters.map((c) => c.tempHp)).toEqual([5, 5]);
+    expect(s.characters.map((c) => c.tempHp)).toEqual([7, 7]);
+    expect(s.characters.map((c) => c.stress)).toEqual([0, 0]);
+    expect(s.characters[1].fear).toBe(1);
   });
 
-  it('a failed cook check gives nothing extra', () => {
+  it('even plain hot food warms against the cold, but gives nothing else', () => {
     let s = camp();
     s.characters[0].wisMod = -5;
     s.characters[0].cooksUtensils = false;
     s = E.cookMeal(s, ctx(0.01), s.characters[0].id);
     expect(s.characters.map((c) => c.stress)).toEqual([3, 2]);
+    expect(s.characters[1].mealBuff).toMatchObject({ hearty: false });
+  });
+
+  it('the warmth gives Advantage on a cold save for 8 hours', () => {
+    let s = camp();
+    s = E.cookMeal(s, ctx(0.01), null);
+    s.settings.autoRollSaves = false;
+    s.weather = { ...s.weather, high: -10, low: -20 };
+    s.place.shelter = 'none';
+    s.fire.lit = false;
+    s = E.advance(s, ctx(0.5), 60);
+    const cold = s.pending.find((p) => p.kind === 'cold');
+    expect(cold?.mode).toBe('advantage');
+    expect(cold?.reason).toContain('hot meal');
   });
 
   it('smoking meat turns the stores into Rations, raw meat first', () => {

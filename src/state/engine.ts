@@ -34,7 +34,7 @@ import { ARCANA_DC, STUDY_MINUTES, type StudyMethod } from '../rules/identify';
 import { FEED_LB_PER_DAY, MOUNT_CAPACITY, carryingCapacity, COINS_PER_LB, estimateWeight, loadLevel, parseInventory, RATION_WEIGHT, type LoadLevel } from '../rules/encumbrance';
 import { bigEnoughToRide, canBeSidekick, canTame, currentDC, dayOutcome, missedDays, NO_AIDS, resultGain, sessionAttitude, sessionResult, tameCheck, tameDC, TRUST_PER_DAY_MAX, TAME_MAX_FAILS, TAME_RETRY_MINUTES, TAME_SESSION_MINUTES, trainingNeeded, TRAINING_LABEL, trustCue, trustNeeded, type TameAids, type TamerFacts, type TameTraining } from '../rules/taming';
 import { BUTCHER_DC, BUTCHER_MINUTES, isEdible, MEAT_LB, STRANGE_TYPES, yieldsHide, type Creature } from '../rules/hunting';
-import { CURE_DC, CURE_LB_PER_RATION, CURE_MAX_LB, CURE_MINUTES, curedRations, feastTempHp, isFeast, MEAL_STRESS_RELIEF } from '../rules/cooking';
+import { CURE_DC, CURE_LB_PER_RATION, CURE_MAX_LB, CURE_MINUTES, curedRations, FEAST_FEAR_RELIEF, FEAST_STRESS_RELIEF, feastTempHp, HEARTY_SAVES, isFeast, MEAL_BUFF_MINUTES, MEAL_STRESS_RELIEF, tastyTempHp, WARM_SAVES } from '../rules/cooking';
 import { DIG_FIND_ON, isExceptional, poisonYield, rollFind, trophyFor, type Chore } from '../rules/chorePayoffs';
 import { addCoins, COIN_GP, coinCount, coinsFor, emptyPurse, exchange, fmtPurse, purseValue, spend, type Denom, type Purse } from '../rules/coins';
 import { detectContainer } from '../rules/containers';
@@ -392,6 +392,12 @@ function requestSave(s: State, ctx: Ctx, c: Character, kind: SaveKind, dc: numbe
   if ((kind === 'raw' || kind === 'tainted') && antitoxinActive(s, c)) {
     mode = poisonSaveMode(s, c, mode);
     reason = `${reason}, with Antitoxin`;
+  }
+  // Table rule: a hot meal in the belly helps against the cold, and a good one against a hard march.
+  const meal = c.mealBuff && c.mealBuff.until > absNow(s) ? c.mealBuff : null;
+  if (meal && ((WARM_SAVES as readonly string[]).includes(kind) || (meal.hearty && (HEARTY_SAVES as readonly string[]).includes(kind)))) {
+    mode = combineModes(mode, 'advantage');
+    reason = `${reason}, warmed by a hot meal`;
   }
   const spec = { charId: c.id, kind, dc, mode, reason, ...(city ? { city: true } : {}) };
   if (s.settings.autoRollSaves) {
@@ -1989,7 +1995,8 @@ export const cookMeal = act((d, ctx, cookId: string | null) => {
   }
   let flavor = '';
   let tasty = false;
-  let feast = 0;
+  let feast = false;
+  let pb = 2;
   const hiredCook = !!cookId?.startsWith('h:');
   if (cook && (cook.cooksUtensils || hiredCook || partyHasCooksUtensils(d) !== false)) {
     // 2024 PHB Cook's Utensils: improve food's flavor, Wisdom DC 10, plus Proficiency Bonus if proficient. A hired cook brings utensils and their own bonus.
@@ -1997,7 +2004,8 @@ export const cookMeal = act((d, ctx, cookId: string | null) => {
     const r = d20('normal', ctx.rng);
     const ok = r.value + bonus >= 10;
     tasty = ok;
-    if (ok && isFeast(r.value, r.value + bonus, 10)) feast = feastTempHp(cook.wisMod, hiredCook ? 2 : proficiencyBonus(cook.level));
+    pb = hiredCook ? 2 : proficiencyBonus(cook.level);
+    feast = ok && isFeast(r.value, r.value + bonus, 10);
     flavor = ` ${cook.name} cooks: Wisdom with Cook's Utensils ${r.value} ${signed(bonus)} = ${r.value + bonus} against DC 10, ${feast ? 'a feast to remember' : ok ? 'a delicious meal' : 'edible, at least'}.`;
   } else if (cook && d.settings.improvised) {
     // Table rule: no utensils, so a pot, a spit and Wisdom (Survival) at DC +5.
@@ -2005,24 +2013,38 @@ export const cookMeal = act((d, ctx, cookId: string | null) => {
     const r = d20('normal', ctx.rng);
     const ok = r.value + bonus >= IMPROVISED_COOK_DC;
     tasty = ok;
-    flavor = ` ${cook.name} cooks without proper utensils: Wisdom (Survival) ${r.value} ${signed(bonus)} = ${r.value + bonus} against DC ${IMPROVISED_COOK_DC}, ${ok ? 'surprisingly tasty' : 'edible, at least'}.`;
+    pb = proficiencyBonus(cook.level);
+    feast = ok && isFeast(r.value, r.value + bonus, IMPROVISED_COOK_DC);
+    flavor = ` ${cook.name} cooks without proper utensils: Wisdom (Survival) ${r.value} ${signed(bonus)} = ${r.value + bonus} against DC ${IMPROVISED_COOK_DC}, ${feast ? 'a spit-roast feast against all odds' : ok ? 'surprisingly tasty' : 'edible, at least'}.`;
   } else if (cook) {
     flavor = ` ${cook.name} has no Cook's Utensils: plain fare, filling but nothing more.`;
   }
   const dish = d.recipeNames.length ? ` On the menu: ${d.recipeNames[absNow(d) % d.recipeNames.length]}.` : '';
   const purified = cookedUnsafe > 0 ? ` Cooking makes the ${fmtLb(round2(cookedUnsafe))} of raw food safe to eat.` : '';
   log(d, eaters.length ? `A hot meal at the campfire for ${eaters.join(', ')} (half a day's food each).${dish}${purified}${flavor}` : `Nothing to cook: the stores and rations are empty.${flavor}`, eaters.length ? 'good' : 'warn');
-  // Table rule: a good meal is worth the hour. Tasty food eases Stress; a feast also steels everyone with Temporary HP.
-  if (!tasty) return;
+  // Table rule: a good meal is worth the hour. Any hot meal warms against the cold for 8 hours; a tasty one also
+  // fortifies for a hard march, eases Stress and gives Temporary HP; a feast does more.
+  const until = absNow(d) + MEAL_BUFF_MINUTES;
+  const temp = feast ? feastTempHp(cook!.level ?? 1, cook!.wisMod, pb) : tasty ? tastyTempHp(pb) : 0;
+  const relief = feast ? FEAST_STRESS_RELIEF : tasty ? MEAL_STRESS_RELIEF : 0;
   for (const c of ate) {
+    c.mealBuff = { until: Math.max(until, c.mealBuff?.until ?? 0), hearty: tasty || (!!c.mealBuff?.hearty && c.mealBuff.until > absNow(d)) };
     if (c.kind === 'mount') continue;
-    if (c.stress > 0) {
-      c.stress = Math.max(0, c.stress - MEAL_STRESS_RELIEF);
-      status(d, c, 'stressDown', `${c.name} lingers over the meal and feels the day's tension ease (Stress −${MEAL_STRESS_RELIEF}, now ${c.stress}; table rule).`, 'good');
+    if (relief && c.stress > 0) {
+      const by = Math.min(c.stress, relief);
+      c.stress -= by;
+      status(d, c, 'stressDown', `${c.name} lingers over the meal and feels the day's tension ease (Stress −${by}, now ${c.stress}; table rule).`, 'good');
     }
-    if (feast && c.tempHp < feast) c.tempHp = feast;
+    if (feast && c.fear > 0) {
+      const by = Math.min(c.fear, FEAST_FEAR_RELIEF);
+      c.fear -= by;
+      status(d, c, 'fearDown', `${c.name} laughs with the others around the fire, and the dread loosens its hold (Fear −${by}, now ${c.fear}; table rule).`, 'good');
+    }
+    if (temp && c.tempHp < temp) c.tempHp = temp;
   }
-  if (feast) log(d, `Full bellies and good company: everyone who ate has ${feast} Temporary HP (table rule: a feast, the cook's Wisdom modifier plus Proficiency Bonus).`, 'good');
+  if (!ate.length) return;
+  const perks = [`warm against the cold for 8 hours (Advantage on saves against extreme cold and cold nights)`, tasty && 'fortified for the road (Advantage on forced-march saves)', temp && `${temp} Temporary HP`].filter(Boolean);
+  log(d, `${feast ? 'A feast to remember' : tasty ? 'A good hot meal' : 'Hot food'}: everyone who ate is ${perks.join(', ')} (table rule).`, 'good');
 });
 
 /**

@@ -293,6 +293,8 @@ export interface Character {
   renown: number;
   fear: number;
   stress: number;
+  /** Table rule: a hot meal's warmth (Advantage against cold) until this absolute minute; hearty adds forced marches. */
+  mealBuff?: { until: number; hearty: boolean } | null;
   /** At 0 HP and making death saves. */
   dying: boolean;
   /** At 0 HP but stable: no more death saves, and wakes with 1 HP at `wakesAt`. */
