@@ -10,8 +10,8 @@ const ctx = (v = 0.5): E.Ctx => ({ rng: () => v });
 function fresh(patch: (s: State) => void = () => {}): State {
   const s = createDefaultState(() => 0);
   Object.assign(s.settings, { encounters: false, foodAndWater: false, extremeWeather: false, sleepDeprivation: false, lifestyleRisks: false, coldNights: false, prestigeRules: false });
-  s.characters = [newCharacter({ name: 'Ada', className: 'Fighter', level: 5, gp: 1000, tasks: [], lifestyle: 'aristocratic' })];
-  s.place = { ...s.place, settlement: false, name: 'The road' };
+  s.characters = [newCharacter({ name: 'Ada', className: 'Fighter', level: 5, gp: 1000, tasks: [], lifestyle: 'wretched' })];
+  s.place = { ...s.place, settlement: true, name: 'Greyhawk' };
   s.log = [];
   patch(s);
   return s;
@@ -65,18 +65,40 @@ describe('noble path', () => {
     expect(s.marks.find((m) => m.kind === 'land' && m.titleId === title.id)?.land).toBe('farmland');
   });
 
-  it('Lord and Duke are only awarded, and the title grows in place with new lands', () => {
+  it('Lord is petitioned at DC 20, Duke only awarded, and the title grows in place with new lands', () => {
     let s = atCourt((d) => (d.characters[0].level = 20));
     const id = s.characters[0].id;
     s = E.awardLadder(s, ctx(), id, 'court', 3, 'knighted on the field at Greyford');
     s.factions[0].renown = 50;
-    expect(E.ladderBlocked(s, s.characters[0], 'court').join()).toMatch(/only ever granted/);
-    s = E.awardLadder(s, ctx(), id, 'court', 4, 'for holding the pass');
+    for (let m = 0; m < 6; m++) s = days(E.ladderDuty(s, ctx(), id, 'court', 2), 29);
+    expect(E.ladderBlocked(s, s.characters[0], 'court')).toEqual([]);
+    s = E.petitionLadder(s, ctx(0.9), id, 'court', 3); // 19 + 3 vs DC 20
     const pos = E.ladderPos(s.characters[0], 'court')!;
+    expect(pos.rank).toBe(4);
     const titles = s.marks.filter((m) => m.kind === 'title' && !m.revoked);
     expect(titles).toHaveLength(1);
     expect(titles[0]).toMatchObject({ rank: 'lord', id: pos.titleId });
     expect(s.marks.filter((m) => m.kind === 'land' && !m.revoked).map((m) => m.land).sort()).toEqual(['farmland', 'village']);
+    expect(E.ladderBlocked(s, s.characters[0], 'court').join()).toMatch(/Duke is only ever granted/);
+  });
+
+  it('titles pay fees and tolls each month the duties are kept', () => {
+    let s = atCourt((d) => (d.characters[0].level = 20));
+    const id = s.characters[0].id;
+    s = E.awardLadder(s, ctx(), id, 'court', 5, '');
+    const gp = s.characters[0].gp;
+    s = days(E.ladderDuty(s, ctx(), id, 'court', 7), 23);
+    expect(s.log.some((l) => /fees and tolls of a duke: 90 GP/.test(l.text))).toBe(true);
+    expect(s.characters[0].gp).toBeGreaterThanOrEqual(gp + 90);
+  });
+
+  it('days away from any settlement pause the month’s duties', () => {
+    let s = atCourt();
+    const id = s.characters[0].id;
+    s = E.awardLadder(s, ctx(), id, 'court', 3, '');
+    s.place = { ...s.place, settlement: false, name: 'The Barrier Peaks' };
+    s = days(s, 120);
+    expect(E.ladderPos(s.characters[0], 'court')).toMatchObject({ rank: 3, strikes: 0 });
   });
 
   it('a title taken back drops them to Esquire; neglected duties cost a rank and its lands', () => {
@@ -111,6 +133,24 @@ describe('bourgeois path', () => {
     s.businesses.push({ id: 'b', name: 'The Anvil', ownerId: id, gpPerDay: 2, daysWorked: 0, debts: 0, unpaidGp: 0, netGp: 0, lastResult: '', notes: '' });
     s = E.petitionLadder(s, ctx(0.9), id, 'guild', 3);
     expect(E.ladderPos(s.characters[0], 'guild')?.rank).toBe(3);
+  });
+
+  it('wealth for standing counts the businesses a character owns, not just gold on hand', () => {
+    let s = inGuild();
+    const id = s.characters[0].id;
+    s.characters[0].gp = 1000;
+    s.businesses.push({ id: 'b', name: 'Inn of the Silver Stag', ownerId: id, gpPerDay: 5, daysWorked: 0, debts: 0, unpaidGp: 0, netGp: 0, lastResult: '', notes: '', valueGp: 6000 });
+    s.businesses.push({ id: 'c', name: 'Small shop', ownerId: id, gpPerDay: 2, daysWorked: 0, debts: 0, unpaidGp: 0, netGp: 0, lastResult: '', notes: '' });
+    expect(E.ladderWealth(s, s.characters[0])).toBe(1000 + 6000 + 1000);
+    expect(E.ladderStanding(s, s.characters[0], 'guild').wealth).toBeGreaterThanOrEqual(5000);
+  });
+
+  it('a building finished by the owner is worth what it cost', () => {
+    let s = inGuild();
+    const id = s.characters[0].id;
+    s.characters[0].gp = 5000;
+    s = E.addBusiness(s, ctx(), 'The Anvil', id, 2, { what: 'Workshop or smithy', costGp: 1500, days: 1, landGp: 100 });
+    expect(s.businesses[0].valueGp).toBe(100);
   });
 
   it('a guild master’s businesses roll better, and the civic branch has its own titles', () => {

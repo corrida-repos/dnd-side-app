@@ -116,3 +116,17 @@ export function rollBusiness(rng: Rng, days: number, gpPerDay: number, debts: nu
   if (total <= 90) return scaled({ roll, total, payGp: 0, profitGp: rollDice(2, 8, rng) * 5, text: 'Covers its maintenance and turns a good profit (2d8 × 5 GP)' });
   return scaled({ roll, total, payGp: 0, profitGp: rollDice(3, 10, rng) * 5, text: 'A great stretch: covers its maintenance and turns a big profit (3d10 × 5 GP)' });
 }
+
+/**
+ * What a business is worth for standing (table rule): its recorded value; else the construction price of a building
+ * named like it; else the cheapest real building (1,000 GP or more) of its kind; else 500 × its daily maintenance.
+ */
+export function businessValue(b: { name: string; gpPerDay: number; valueGp?: number }): number {
+  if (b.valueGp != null) return b.valueGp;
+  const n = b.name.toLowerCase();
+  const named = BUILDING_PRESETS.find((x) => n.includes(x.name.toLowerCase()) || x.name.toLowerCase().includes(n));
+  if (named) return named.gp;
+  const kind = BUSINESS_PRESETS.find((p) => p.gpPerDay === b.gpPerDay && n.includes(p.name.split(',')[0].toLowerCase()));
+  const built = kind && BUILDING_PRESETS.filter((x) => x.business === kind.name && x.gp >= 1000).sort((a, c) => a.gp - c.gp)[0];
+  return built ? built.gp : Math.round(b.gpPerDay * 500);
+}
