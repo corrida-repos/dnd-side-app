@@ -2,7 +2,7 @@
 
 **Live app:** https://corrida-repos.github.io/dnd-side-app/
 
-A tracker for every nitty-gritty part of D&D 5.5e life that isn't tied to one campaign or adventure and doesn't run on combat's seconds-long timescale: time, travel, weather, survival, rests, upkeep, money, downtime and the wider world. It follows the 2024 *Player's Handbook* and *Dungeon Master's Guide*, marks anything else as a table rule you can switch off, and describes what the characters notice when their condition changes. It runs in the browser, needs no server, and saves to local storage.
+A tracker for every nitty-gritty part of D&D 5.5e life that isn't tied to one campaign or adventure and doesn't run on combat's seconds-long timescale: time, travel, weather, survival, rests, upkeep, money, downtime and the wider world. It follows the 5.5e core and supplemental books from Wizards of the Coast, labels legacy and table rules, and describes what the characters notice when their condition changes. It runs in the browser, needs no server, and saves to local storage.
 
 ## Running a session
 
@@ -19,17 +19,17 @@ A control bar stays on screen on every tab: the time, +10 minutes, +1 hour, +4 h
 
 ## Levels of detail
 
-**Settings → Level of detail** ranks every switchable mechanic by how much it slows the game down (how often it asks for a roll, a decision or an entry, and how much it interrupts the scene) and sets them all at once:
+**Settings → Level of detail** groups switchable mechanics by source. Standard includes supported mechanics from all Wizards of the Coast 5.5e books, including supplements and setting books. Gritty, Hardcore and Brutal add legacy and table rules.
 
-| Tier | What's on | What it asks of the table |
-| --- | --- | --- |
-| **1. Light** | Only rules that save work: death saves resolve before time moves, a campfire keeps the camp warm, someone always navigates. | Almost nothing: time, rests and timers run themselves. |
-| **2. Standard** | The 2024 PHB and DMG as written: food and water, extreme cold and heat saves, forced march, getting lost, carrying capacity, costs charged to gold, costly components, random encounters. | A few automatic saves a day, meals to log, coins spent. |
-| **3. Gritty** (new games start here) | Table and optional rules: 5 × / 10 × Strength encumbrance, coin weight, lighting campfires, raw food and dirty water, cold nights, hirelings eating, sleep deprivation, night and bad-weather travel, storms at sea, lifestyle risks and debts, downtime outcomes, running a business, supernatural regions each dawn, improvised attempts without the right tool, extra ways to appraise, taxes and dues, notoriety with the law, contacts that cool when neglected, news that takes time to travel. | Daily chores at camp and in town, more saves, closer inventory keeping. |
-| **4. Hardcore** | The fiddliest rules: weather changing every damage die, sleeping in armor, double water in heat, one-try, 10-minute and secret appraisals. | Work in combat and at every sale. |
-| **5. Brutal** | The hardest: lingering injuries (2014 DMG) from dropping to 0 HP, bad death saves and critical hits; madness (2014 DMG) when the DM calls for it or Stress or Fear reaches 6; gear and ship hulls wearing down on hard roads and at sea. | Wounds to heal over days, madness to play out, an hour of gear upkeep every few days of hard travel. |
+| Tier | What it enables |
+| --- | --- |
+| **1. Light** | Basic tracking for the clock, rests, weather and timers. |
+| **2. Standard** | Published 5.5e mechanics, including food and water, extreme weather, forced marches, carrying capacity, coin weight, tent capacity and Circle Magic from *Forgotten Realms: Heroes of Faerûn*. |
+| **3. Gritty** (new games start here) | Options such as automatic death-save resolution, campfire protection, raw food and unsafe water, weapon and armor training, and legacy sidekicks and downtime outcomes. |
+| **4. Hardcore** | Additional weather and appraisal rules, legacy gear and clothing effects, and penalties for sleeping in armor. |
+| **5. Brutal** | Legacy lingering injuries and madness, plus table rules for gear and hull wear. |
 
-Any single rule can still be switched by hand; the card then shows a custom mix and the tier it's closest to. Picking a tier can be undone. Rule variants (2014 cold gear, heavy clothing), numbers (DCs, temperatures) and books are left alone. Always running at every tier: the clock and calendar, weather rolls, rests, HP and resources, spell and effect timers, dying, and attunement. Bastions, crafting, diseases, poisons, hunting and the like cost time only when you use them.
+You can undo a preset change or adjust individual switches. Book selections, numeric thresholds and DM choices such as allowing extra crafting helpers are campaign settings. Bastions, crafting, diseases, poisons and hunting are available when the table uses them.
 
 ## What it tracks
 

@@ -2,7 +2,7 @@
 
 ## What this app is for
 
-D&D Life Manager handles every nitty-gritty part of D&D life that isn't tied to one campaign or adventure and doesn't run on combat's seconds-long timescale: time, travel, weather, survival, rests, upkeep, money, downtime and the wider world. Follow the 2024 rules (PHB/DMG), mark anything else as a table rule or optional rule with a switch, and give players in-world descriptions of what their characters notice when something changes over time.
+D&D Life Manager handles every nitty-gritty part of D&D life that isn't tied to one campaign or adventure and doesn't run on combat's seconds-long timescale: time, travel, weather, survival, rests, upkeep, money, downtime and the wider world. Put mechanics from all Wizards of the Coast 5.5e books in Standard, including supplemental and setting books. Put legacy and table rules in Gritty or higher. Give players in-world descriptions of what their characters notice when something changes over time.
 
 A long-term goal: give characters paths to rise in socioeconomic power, whether noble (court, titles, land), clerical (piety, priesthood) or bourgeois (guild, trade, civic office). The three ladders share one shape (see Phase 11 in `ROADMAP.md`), so new features in money, downtime and the wider world should feed into them where they can.
 

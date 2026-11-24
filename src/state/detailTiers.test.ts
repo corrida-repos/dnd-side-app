@@ -46,13 +46,39 @@ describe('levels of detail', () => {
     expect(closestTier(s.settings)).toEqual({ tier: 3, differences: 1 });
   });
 
-  it('sets every tiered switch, leaves variants alone, and logs it', () => {
-    const s = fresh((d) => void (d.settings.coldGear2014 = true));
+  it('sets every tiered switch, preserves campaign selections, and logs it', () => {
+    const s = fresh((d) => {
+      d.settings.coldGear2014 = true;
+      d.settings.facilityBooks = ['EFA'];
+      d.settings.extraCraftHelpers = true;
+    });
     const light = E.setDetailTier(s, ctx(), 1);
     expect(matchTier(light.settings)).toBe(1);
-    expect(light.settings).toMatchObject({ foodAndWater: false, extremeWeather: false, encounters: false, deathSavesResolve: true, coldGear2014: true });
+    expect(light.settings).toMatchObject({ foodAndWater: false, encounters: false, deathSavesResolve: false, coldGear2014: false, facilityBooks: ['EFA'], extraCraftHelpers: true });
     expect(light.log.at(-1)?.text).toMatch(/Light/);
     expect(matchTier(E.setDetailTier(light, ctx(), 4).settings)).toBe(4);
+  });
+
+  it('puts 5.5e core and supplemental mechanics in Standard and legacy and table rules above it', () => {
+    const s = E.setDetailTier(fresh(), ctx(), 2);
+    expect(s.settings).toMatchObject({
+      coinWeight: true,
+      tentSpace: true,
+      circleMagic: true,
+      armsTraining: false,
+      sidekicks: false,
+      taming: false,
+      deathSavesResolve: false,
+      fireWarmsCamp: false,
+      batchCrafting: false,
+      fallbackNavigator: false,
+      workWhileMarching: false,
+      coldGear2014: false,
+      heavyClothing2014: false,
+      climateAdjustedPrecip: false,
+    });
+    expect(tierPreset(3)).toMatchObject({ coinWeight: true, tentSpace: true, circleMagic: true, armsTraining: true, sidekicks: true, taming: true });
+    expect(tierPreset(4)).toMatchObject({ coldGear2014: true, heavyClothing2014: true, climateAdjustedPrecip: true });
   });
 
   it('Light: no hunger, thirst, cold saves, forced march or getting lost', () => {

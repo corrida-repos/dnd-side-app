@@ -55,14 +55,14 @@ function extras(s: Settings): Partial<Record<SwitchKey, { inline?: ReactNode; mo
 }
 
 const TIER_BLURB: Record<TierId, string> = {
-  1: 'Always kept: these rules take work away.',
-  2: 'The 2024 rules as written.',
-  3: 'Table and optional rules that add chores and saves.',
+  1: 'Core tracking with optional switches off.',
+  2: 'Published 5.5e core and supplemental mechanics.',
+  3: 'Legacy and table rules.',
   4: 'The fiddliest rules: work in combat and at every sale.',
   5: 'The hardest: lasting injuries, madness and gear that wears out.',
 };
 
-/** Pick how much detail the app tracks, and see every switchable mechanic ranked by how much it slows play. */
+/** Pick a preset and customise its individual mechanics. */
 export function DetailCard() {
   const s = useGame();
   const current = matchTier(s.settings);
@@ -72,8 +72,7 @@ export function DetailCard() {
   return (
     <Card title="Level of detail" className="span-all">
       <Rule>
-        Every switchable mechanic is ranked by how much it slows the game down: how often it asks for a roll, a decision or an entry, and how much it interrupts the scene. Pick a tier to set them all at once, then change any
-        single rule below. Rule variants and numbers in Rules options are left alone. Choosing a tier can be undone.
+        Standard enables mechanics from all Wizards of the Coast 5.5e books supported by the app. Gritty, Hardcore and Brutal add legacy and table rules. Pick a preset to apply its switches, then adjust individual rules below. You can undo a preset change.
       </Rule>
       <div className="tier-picker" role="radiogroup" aria-label="Level of detail">
         {TIERS.map((t) => (
@@ -109,26 +108,28 @@ export function DetailCard() {
           <h3>
             Tier {t.id} · {t.name} <span className="muted small">{TIER_BLURB[t.id]}</span>
           </h3>
-          <ul className="plain tier-list">
-            {MECHANICS.filter((m) => m.tier === t.id).map((m) => {
-              const x = ex[m.key];
-              const on = !!s.settings[m.key];
-              return (
-                <li key={m.key} className={on ? '' : 'tier-off'}>
-                  <Toggle checked={on} onChange={(v) => set(m.key, v)} label={m.label} />
-                  <span className="pill pill-info">{m.source}</span>
-                  <div className="small muted tier-cost">{m.cost}</div>
-                  {on && x?.inline && <div className="form-row">{x.inline}</div>}
-                  {x?.more && (
-                    <details className="small">
-                      <summary>Rule details</summary>
-                      <p className="rule">{x.more}</p>
-                    </details>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
+          {t.id !== 1 && (
+            <ul className="plain tier-list">
+              {MECHANICS.filter((m) => m.tier === t.id).map((m) => {
+                const x = ex[m.key];
+                const on = !!s.settings[m.key];
+                return (
+                  <li key={m.key} className={on ? '' : 'tier-off'}>
+                    <Toggle checked={on} onChange={(v) => set(m.key, v)} label={m.label} />
+                    <span className="pill pill-info">{m.source}</span>
+                    <div className="small muted tier-cost">{m.cost}</div>
+                    {on && x?.inline && <div className="form-row">{x.inline}</div>}
+                    {x?.more && (
+                      <details className="small">
+                        <summary>Rule details</summary>
+                        <p className="rule">{x.more}</p>
+                      </details>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </section>
       ))}
       <div className="grid tier-notes">
