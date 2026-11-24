@@ -150,12 +150,22 @@ export interface InventoryItem {
   wear?: number;
 }
 
+export type TransportMode = 'land' | 'sea' | 'air';
+export type TransportStatus = 'ready' | 'reserved' | 'unavailable';
+
+export interface VehicleDetails {
+  mode: TransportMode;
+  status: TransportStatus;
+  preset?: string;
+}
+
 export interface Stash {
   id: string;
   name: string;
   kind: 'stash' | 'vehicle' | 'bank';
   /** Vessel speed in mph (ships and airships), if this vehicle sails. */
   speedMph?: number;
+  vehicle?: VehicleDetails;
   /** Where it is in the world. */
   location: string;
   capacityLb: number | null;
@@ -273,6 +283,8 @@ export interface Character {
   lifestyle: Lifestyle;
   /** Lifestyle run up in town but not yet paid (weekly or monthly billing). */
   lifestyleOwed?: number;
+  /** Last recorded station for a mount. An empty station means no location has been recorded. */
+  mountStation?: string;
   /** Mount speed in feet (mounts only). */
   speed: number;
   className: ClassName;

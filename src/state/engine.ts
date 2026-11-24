@@ -1,4 +1,4 @@
-import type { LadderPos, TameTarget, ActiveEffect, Activity, CharacterSpell, InventoryItem, LogEntry, Ritual, Stash, Bastion, Business, Character, FacilityWork, Obstacle, Rival, Debt, Mark, Faction, ExhaustionCause, Facility, JourneyStage, MagicItem, Pace, PendingSave, Project, Recruit, SaveKind, Size, State, Tone } from './types';
+import type { LadderPos, TameTarget, ActiveEffect, Activity, CharacterSpell, InventoryItem, LogEntry, Ritual, Stash, VehicleDetails, Bastion, Business, Character, FacilityWork, Obstacle, Rival, Debt, Mark, Faction, ExhaustionCause, Facility, JourneyStage, MagicItem, Pace, PendingSave, Project, Recruit, SaveKind, Size, State, Tone } from './types';
 import { BASIC_BUILD, BASTION_TURN_DAYS, defaultSize, ENLARGE, rollBastionEvent, SIZE_LABEL, SPECIAL_FACILITIES, type FacilitySize } from '../rules/bastion';
 import { d20, die, combineModes, rollDice, rollExpr, signed, type Rng, type RollMode } from '../rules/dice';
 import { dateFromIndex, formatClock, formatDate, formatDuration, lightAt, sunriseMinutes } from '../rules/calendar';
@@ -39,7 +39,7 @@ import { TALKS_TO_BEASTS, ATTITUDE_LABEL, HELPED_TRUST, hasAdvantage, RECRUIT_MA
 import { ANIMAL_NOTE, isAnimal, featuresAt, hpForLevel, HIT_DIE_BY_SIZE, NEEDS_LANGUAGE, SIDEKICK_CLASS_LABEL, SIDEKICK_MAX_CR, sidekickLevelFor, sidekickResources, type SidekickClass, type SidekickRole } from '../rules/sidekicks';
 import { PORTER_LB, SAILOR_BONUS, SAILOR_MAX, CATCH_UP_WARMS_EVERY_DAYS, LABORER_FUEL_DICE, RECUPERATE_EXHAUSTION, RECUPERATE_STRESS, BOOK_GP, BOOK_PAGES, COPY_MAP_DC, COPY_MAP_MINUTES, PERFORM_MINUTES, performTake, RESEARCH_IDENTIFY_AT, RESEARCH_LEAD_AT, ROUTE_MAP_GP, AMMO_SEARCH_DC, ammoRecovered, CAROUSING_STRESS_PER_WEEK, DIG_FIND_ON, FINE_FUR, FINE_FUR_ODDS, FORECAST_MARGIN, forageBonusDice, HIDE_GP, isExceptional, KEPT_GEAR_MINUTES, KEPT_GEAR_NOTE, poisonYield, REINFORCE_MARGIN, rollFind, SERVICE_FEAR_PER_WEEK, SERVICE_STRESS_PER_WEEK, SMALL_PELT, trophyFor, WATCH_CATCH_DC, WATCH_CATCH_DICE, type Chore } from '../rules/chorePayoffs';
 import { addCoins, COIN_GP, coinCount, coinsFor, emptyPurse, exchange, fmtPurse, purseValue, spend, type Denom, type Purse } from '../rules/coins';
-import { detectContainer } from '../rules/containers';
+import { canTravelAboard, detectContainer, transportMode, TRANSPORT_STATUSES } from '../rules/containers';
 import { FIRE_DAMAGE, RAT_BITE_DAMAGE, RELAXATION_NEEDS, SHAKEDOWN_DAMAGE, SHAKEDOWN_GP, SHAKEDOWN_RIVAL_ODDS, SHUNNED_AFTER_DAYS, SPOILED_FOOD_DC, TAINTED_POTION_ODDS, WATCH_FINE, WATCH_JAIL_DAYS, WEEKLY_ODDS, WRETCHED_STRESS, isLowLife } from '../rules/lowLife';
 import { BOILING_POT, CHARCOAL_WORDS, FRICTION_LIGHT_MINUTES, HIDE_WATERSKIN, LEAN_TO, BEDDING, MAKESHIFT_DC, MAKESHIFT_TORCH, POTS, POT_ALARM_DC, SNARE, SNARE_LINE, TINDERBOX, VINE_CORD, isBareback, leanToDC, ABILITY_LABEL, INK, INK_PAGES, PAPER, PERFUME, PERFUME_MINUTES, SIGNAL_WHISTLE, carriesTool, liquidCapacity, toolNamed, SPYGLASS, ALARM_LINE, ALARM_MINUTES, BELL, DIG_BY_HAND, DIG_LABEL, GATHER_MINUTES, HUNTING_TRAP, SCATTERABLE, SHOVEL, SHOVEL_MINUTES, STABLING_GP_PER_DAY, TENT, TENT_SLEEPS, TRAP_CATCH_ON, TRAP_MEAT_DICE, TRAP_SAVE_DC, needsExoticSaddle, type DigKind, MAGNIFYING_GLASS, hasSkill, proficientWith, abilityScore, PACKS, RATIONS, WATERSKIN, WATERSKIN_PINTS, packNamed, FUEL_LABEL, FUEL_MATCH, HEALERS_KIT, HEALERS_KIT_USES, OIL_MINUTES, VESSEL_MATCH, fuelFor, isHooded, isOilLight } from '../rules/gear';
 import type { DdbImport } from '../rules/ddb';
@@ -1608,18 +1608,18 @@ export function slowTravelers(s: State): string[] {
 /** Speed of a vessel today: no sail in a dead calm, half into a strong wind, plus the current downstream. */
 export function vesselSpeed(s: State, v: Stash, o: { againstWind?: boolean; downstream?: boolean }): { mph: number; note: string } {
   const base = v.speedMph ?? 1;
-  const name = v.name.toLowerCase();
+  const name = (v.vehicle?.preset ?? v.name).toLowerCase();
+  const atSea = transportMode(v) === 'sea';
   const oared = /keelboat|rowboat|galley|longship/.test(name);
-  const magic = /airship/.test(name);
-  if (!magic && s.weather.wind === 'none' && !oared) return { mph: 0, note: 'Dead calm: a ship that relies on sails can’t move and must be rowed or towed' };
+  if (atSea && s.weather.wind === 'none' && !oared) return { mph: 0, note: 'Dead calm: a ship that relies on sails can’t move and must be rowed or towed' };
   let mph = base;
   const notes: string[] = [];
-  if (!magic && s.weather.wind === 'none') notes.push('dead calm, so the crew rows');
-  if (o.againstWind && s.weather.wind === 'strong' && !magic) {
+  if (atSea && s.weather.wind === 'none') notes.push('dead calm, so the crew rows');
+  if (o.againstWind && s.weather.wind === 'strong' && atSea) {
     mph /= 2;
     notes.push('half speed into a strong wind');
   }
-  if (o.downstream && /keelboat|rowboat/.test(name)) {
+  if (atSea && o.downstream && /keelboat|rowboat/.test(name)) {
     mph += 3;
     notes.push('+3 mph with the current');
   }
@@ -1658,10 +1658,14 @@ function navigate(s: State, ctx: Ctx, nav: Character, pace: Pace): boolean | nul
 export const travel = act((d, ctx, o: TravelOpts) => travelMut(d, ctx, o));
 
 function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
+  const vessel = o.vesselId ? d.stashes.find((x) => x.id === o.vesselId && canTravelAboard(x)) : undefined;
+  if (o.vesselId && !vessel) {
+    log(d, 'The selected transport is unavailable for travel.', 'warn');
+    return 0;
+  }
   breakCamp(d, ctx);
   if (d.townMode === 'downtime') setTownModeMut(d, 'active', 'Downtime is over. ');
   for (const c of d.characters) if (c.lodging) c.lodging = null;
-  const vessel = o.vesselId ? d.stashes.find((x) => x.id === o.vesselId && x.speedMph) : undefined;
   if (vessel) return sail(d, ctx, vessel, o);
   if (o.flying && o.difficult) o = { ...o, difficult: false };
   const ground = groundDifficulty(d.place.ground, d.place.goodRoad);
@@ -1775,7 +1779,8 @@ function sail(d: State, ctx: Ctx, v: Stash, o: TravelOpts): number {
   log(d, `Aboard the ${v.name}, the party travels for ${o.hours} hour(s) at ${mph} mph${note ? ` (${note})` : ''}.`);
   advanceMut(d, ctx, o.hours * 60, 'camp');
   let miles = Math.round(mph * o.hours * 10) / 10;
-  if (d.settings.stormsAtSea && d.weather.wind === 'strong' && d.weather.precip === 'heavy' && !/airship/i.test(v.name)) {
+  const mode = transportMode(v);
+  if (mode === 'sea' && d.settings.stormsAtSea && d.weather.wind === 'strong' && d.weather.precip === 'heavy') {
     const helm = activeNavigator(d, d.travel.navigatorId);
     const r = d20('normal', ctx.rng);
     // Table rule: a trained crew helps hold her: +2 for each hired sailor, up to +10.
@@ -1790,8 +1795,8 @@ function sail(d: State, ctx: Ctx, v: Stash, o: TravelOpts): number {
   }
   d.travel.milesToday += miles;
   log(d, `The ${v.name} covers ${miles} miles.`);
-  wearFromTravel(d, o.hours, true);
-  hullWear(d, v, o.hours, d.weather.wind === 'strong' && d.weather.precip === 'heavy');
+  wearFromTravel(d, o.hours, mode !== 'land');
+  if (mode !== 'land') hullWear(d, v, o.hours, d.weather.wind === 'strong' && d.weather.precip === 'heavy');
   return miles;
 }
 
@@ -1826,6 +1831,7 @@ export const runStage = act((d, ctx, stageId: string, o: Omit<TravelOpts, 'hours
   const stage = () => d.journey.find((x) => x.id === stageId);
   const first = stage();
   if (!first || first.done) return;
+  if (o.vesselId && !d.stashes.some((x) => x.id === o.vesselId && canTravelAboard(x))) return void log(d, 'The selected transport is unavailable for travel.', 'warn');
   Object.assign(d.place, { terrain: first.terrain, onRoute: first.onRoute, goodRoad: first.goodRoad });
   const uncharted = d.settings.unchartedLand && !!first.uncharted;
   if (uncharted && first.trueMiles == null) {
@@ -1844,7 +1850,7 @@ export const runStage = act((d, ctx, stageId: string, o: Omit<TravelOpts, 'hours
   let fastDays = false;
   for (let day = 0; day < 60 && stage()!.milesDone < target(stage()!); day++) {
     const st = stage()!;
-    const vessel = o.vesselId ? d.stashes.find((x) => x.id === o.vesselId && x.speedMph) : undefined;
+    const vessel = d.stashes.find((x) => x.id === o.vesselId);
     const pace = clampPace(o.pace, st.terrain, st.goodRoad || !!d.travel.paceBoost);
     const pending = (st.obstacles ?? []).filter((x) => !x.resolved);
     if (pending.length && day === 0) log(d, `This stage has ${pending.length} unresolved obstacle(s): ${pending.map((x) => x.name).join(', ')}. Resolve them on the Journey card.`, 'warn');
@@ -7328,9 +7334,23 @@ export const moveCoins = act((d, _ctx, from: Holder, to: Holder, denom: Denom, c
   log(d, `${n} ${denom} moved from ${a.name} to ${b.name}.`);
 });
 
-export const createStash = act((d, _ctx, name: string, kind: Stash['kind'], location: string, capacityLb: number | null, speedMph?: number) => {
-  d.stashes.push({ id: uid(), name, kind, location, capacityLb, items: [], purse: emptyPurse(), notes: '', speedMph });
+export const createStash = act((d, _ctx, name: string, kind: Stash['kind'], location: string, capacityLb: number | null, speedMph?: number, vehicle?: VehicleDetails) => {
+  d.stashes.push({ id: uid(), name, kind, location, capacityLb, items: [], purse: emptyPurse(), notes: '', speedMph, vehicle });
   log(d, `New ${kind === 'vehicle' ? 'vehicle' : kind === 'bank' ? 'bank vault' : 'stash'}: ${name}${location ? `, at ${location}` : ''}.`);
+});
+
+export const updateVehicle = act((d, _ctx, id: string, changes: Pick<Stash, 'name' | 'location' | 'notes' | 'capacityLb' | 'speedMph'> & { vehicle: VehicleDetails }) => {
+  const vehicle = d.stashes.find((x) => x.id === id && x.kind === 'vehicle');
+  if (!vehicle || !changes.name.trim()) return;
+  Object.assign(vehicle, changes, { name: changes.name.trim(), location: changes.location.trim(), notes: changes.notes.trim() });
+  log(d, `${vehicle.name} · ${TRANSPORT_STATUSES[changes.vehicle.status]} · ${vehicle.location || 'station unspecified'}.`);
+});
+
+export const stationMount = act((d, _ctx, id: string, location: string) => {
+  const mount = d.characters.find((x) => x.id === id && x.kind === 'mount' && alive(x));
+  if (!mount || (mount.mountStation ?? '') === location.trim()) return;
+  mount.mountStation = location.trim();
+  log(d, mount.mountStation ? `${mount.name} is stationed at ${mount.mountStation}.` : `${mount.name}'s recorded station was cleared.`);
 });
 
 /** Weight stored in a stash or vehicle. */

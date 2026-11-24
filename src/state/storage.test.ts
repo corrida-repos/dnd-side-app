@@ -3,7 +3,7 @@ import * as E from './engine';
 import { createDefaultState, newCharacter } from './defaults';
 import type { State } from './types';
 import { coinsFor, exchange, purseValue, spend } from '../rules/coins';
-import { detectContainer } from '../rules/containers';
+import { canTravelAboard, detectContainer, transportMode, VEHICLES } from '../rules/containers';
 
 const ctx = (v = 0.5): E.Ctx => ({ rng: () => v });
 
@@ -84,5 +84,44 @@ describe('containers, stashes and vehicles', () => {
     expect(s.characters[0].gp).toBe(10.8);
     expect(E.holderValue(s.characters[0].inventory, s.characters[0].purse)).toBe(510.8);
     expect(E.stashLoad(s.stashes[0], true)).toBe(7); // 5 lb pack + 2 torches + 2 coins, to one decimal
+  });
+});
+
+describe('party transport', () => {
+  it('keeps cargo and coins when updating station and availability', () => {
+    let s = E.createStash(fresh(), ctx(), 'Skylark', 'vehicle', 'Sharn', 1000, 7, {
+      mode: 'air', status: 'ready', preset: 'Lyrandar Skyskiff',
+    });
+    const id = s.stashes[0].id;
+    s = E.moveCoins(s, ctx(), `c:${s.characters[0].id}`, `s:${id}`, 'gp', 1);
+    s = E.updateVehicle(s, ctx(), id, {
+      name: ' The Skylark ', location: ' Wroat ', notes: ' Held for repairs ', capacityLb: 1000, speedMph: 7,
+      vehicle: { mode: 'air', status: 'unavailable', preset: 'Lyrandar Skyskiff' },
+    });
+    expect(s.stashes[0]).toMatchObject({ id, name: 'The Skylark', location: 'Wroat', notes: 'Held for repairs', purse: { gp: 1 } });
+    expect(canTravelAboard(s.stashes[0])).toBe(false);
+    const attempted = E.travel(s, ctx(), { hours: 2, pace: 'normal', difficult: false, foragerIds: [], vesselId: id });
+    expect(attempted.minutes).toBe(s.minutes);
+  });
+
+  it('uses the Eberron airship speed even when the vessel has a custom name', () => {
+    const preset = VEHICLES.find((entry) => entry.name === 'Lyrandar Air Cruiser')!;
+    const base = fresh((s) => { s.weather.wind = 'none'; });
+    const s = E.createStash(base, ctx(), 'The Cloud Dancer', 'vehicle', 'Sharn', preset.capacityLb, preset.speedMph, {
+      mode: preset.mode, status: 'ready', preset: preset.name,
+    });
+    const vessel = s.stashes[0];
+    expect(vessel.capacityLb).toBe(4000);
+    expect(canTravelAboard(vessel)).toBe(true);
+    expect(E.vesselSpeed(s, vessel, { againstWind: true, downstream: true }).mph).toBe(10);
+    expect(transportMode({ ...vessel, name: 'Airship', vehicle: undefined })).toBe('air');
+  });
+
+  it('records a mount station on the existing animal record', () => {
+    const s = fresh((d) => { d.characters.push(newCharacter({ name: 'Clover', kind: 'mount' })); });
+    const id = s.characters[1].id;
+    const stationed = E.stationMount(s, ctx(), id, ' Sharn stables ');
+    expect(stationed.characters[1]).toMatchObject({ id, name: 'Clover', mountStation: 'Sharn stables' });
+    expect(E.stationMount(stationed, ctx(), id, '').characters[1].mountStation).toBe('');
   });
 });

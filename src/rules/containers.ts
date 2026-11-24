@@ -1,3 +1,4 @@
+import type { Stash, TransportMode, TransportStatus } from '../state/types';
 export interface ContainerInfo {
   /** Pounds it holds, or null when it's counted in items (quivers, cases) or effectively unlimited. */
   capacityLb: number | null;
@@ -32,18 +33,39 @@ export function detectContainer(name: string): ContainerInfo | null {
   return null;
 }
 
-/** Table defaults for vehicle storage (the PHB lists ship cargo in tons; land vehicles depend on what pulls them). */
-/** speedMph is set for vessels (PHB); land vehicles move at the travel pace of whatever pulls them. */
-export const VEHICLES: { name: string; capacityLb: number; note: string; speedMph?: number }[] = [
-  { name: 'Cart', capacityLb: 1500, note: 'Table default; depends on the animal pulling it' },
-  { name: 'Wagon', capacityLb: 3000, note: 'Table default; depends on the team pulling it' },
-  { name: 'Sled', capacityLb: 1000, note: 'Table default' },
-  { name: 'Carriage', capacityLb: 500, note: 'Table default; mostly passengers' },
-  { name: 'Rowboat', speedMph: 1.5, capacityLb: 300, note: 'Table default; no cargo hold' },
-  { name: 'Keelboat', speedMph: 1, capacityLb: 1000, note: 'PHB: ½ ton of cargo' },
-  { name: 'Airship', speedMph: 8, capacityLb: 2000, note: 'PHB: 1 ton of cargo' },
-  { name: 'Longship', speedMph: 3, capacityLb: 20000, note: 'PHB: 10 tons of cargo' },
-  { name: 'Sailing Ship', speedMph: 2, capacityLb: 200000, note: 'PHB: 100 tons of cargo' },
-  { name: 'Galley', speedMph: 4, capacityLb: 300000, note: 'PHB: 150 tons of cargo' },
-  { name: 'Warship', speedMph: 2.5, capacityLb: 400000, note: 'PHB: 200 tons of cargo' },
+export const TRANSPORT_MODES: Record<TransportMode, string> = { land: 'Land', sea: 'Sea', air: 'Air' };
+export const TRANSPORT_STATUSES: Record<TransportStatus, string> = {
+  ready: 'Available',
+  reserved: 'Reserved',
+  unavailable: 'Unavailable',
+};
+
+export const EBERRON_AIRSHIPS_URL = 'https://5e.tools/book.html#efa,7';
+export const VEHICLE_RULES_URL = 'https://5e.tools/book.html#xphb,6,mounts%20and%20vehicles';
+
+/** Land cargo limits are table defaults. Vessel cargo is converted at 2,000 lb per ton. */
+export const VEHICLES: { name: string; mode: TransportMode; capacityLb: number; note: string; speedMph?: number; source?: string }[] = [
+  { name: 'Cart', mode: 'land', capacityLb: 1500, note: 'Table default; depends on the animal pulling it' },
+  { name: 'Wagon', mode: 'land', capacityLb: 3000, note: 'Table default; depends on the team pulling it' },
+  { name: 'Sled', mode: 'land', capacityLb: 1000, note: 'Table default' },
+  { name: 'Carriage', mode: 'land', capacityLb: 500, note: 'Table default; mostly passengers' },
+  { name: 'Rowboat', mode: 'sea', speedMph: 1.5, capacityLb: 300, note: 'Table default; no cargo hold' },
+  { name: 'Keelboat', mode: 'sea', speedMph: 1, capacityLb: 1000, note: 'PHB: ½ ton of cargo' },
+  { name: 'Airship', mode: 'air', speedMph: 8, capacityLb: 2000, note: 'PHB: 1 ton of cargo' },
+  { name: 'Longship', mode: 'sea', speedMph: 3, capacityLb: 20000, note: 'PHB: 10 tons of cargo' },
+  { name: 'Sailing Ship', mode: 'sea', speedMph: 2, capacityLb: 200000, note: 'PHB: 100 tons of cargo' },
+  { name: 'Galley', mode: 'sea', speedMph: 4, capacityLb: 300000, note: 'PHB: 150 tons of cargo' },
+  { name: 'Warship', mode: 'sea', speedMph: 2.5, capacityLb: 400000, note: 'PHB: 200 tons of cargo' },
+  { name: 'Lyrandar Skyskiff', mode: 'air', speedMph: 7, capacityLb: 1000, note: '2 crew and 2 passengers', source: EBERRON_AIRSHIPS_URL },
+  { name: 'Strider Airship', mode: 'air', speedMph: 8, capacityLb: 2000, note: '6 crew and 20 passengers', source: EBERRON_AIRSHIPS_URL },
+  { name: 'Lyrandar Air Cruiser', mode: 'air', speedMph: 10, capacityLb: 4000, note: '10 crew and 40 passengers', source: EBERRON_AIRSHIPS_URL },
+  { name: 'Elemental Airship (Rising from the Last War)', mode: 'air', speedMph: 20, capacityLb: 60000, note: 'Typical clear-sky speed and maximum cargo. Many cities lack docking towers', source: 'https://5e.tools/book.html#erlw,10,travel' },
 ];
+
+export function transportMode(stash: Stash): TransportMode {
+  return stash.vehicle?.mode ?? (/airship/i.test(stash.name) ? 'air' : stash.speedMph ? 'sea' : 'land');
+}
+
+export function canTravelAboard(stash: Stash): boolean {
+  return stash.kind === 'vehicle' && !!stash.speedMph && (stash.vehicle?.status ?? 'ready') === 'ready';
+}

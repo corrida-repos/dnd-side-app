@@ -20,6 +20,7 @@ import { DEEP_SNOW_IN, groundDifficulty, OBSTACLES } from '../rules/ground';
 import { WaysAround } from './WaysAround';
 import type { TopicId } from '../rules/shortcuts';
 import { CARTOGRAPHER, IMPROVISED_MAP_DC, IMPROVISED_STARGAZE_DC, MAP_DC, NAVIGATOR, STARGAZE_DC, mapName } from '../rules/tools';
+import { canTravelAboard, transportMode } from '../rules/containers';
 import { CHART_DC } from '../rules/uncharted';
 
 /**
@@ -542,8 +543,10 @@ function TravelCard() {
   const [againstWind, setAgainstWind] = useState(false);
   const [downstream, setDownstream] = useState(false);
   const slow = E.slowTravelers(s);
-  const vessels = s.stashes.filter((x) => x.speedMph);
+  const vessels = s.stashes.filter(canTravelAboard);
   const [vesselId, setVesselId] = useState('');
+  const vessel = vessels.find((x) => x.id === vesselId);
+  const vesselPace = vessel && E.vesselSpeed(s, vessel, { againstWind, downstream });
   const [seeker, setSeeker] = useState(s.characters[0]?.id ?? '');
   const [seekBonus, setSeekBonus] = useState(0);
   const [starBonus, setStarBonus] = useState(0);
@@ -555,7 +558,7 @@ function TravelCard() {
   const miles = hours * p.mph * (difficult ? 0.5 : 1);
   const counted = s.travel.hoursToday + hours * (s.place.altitudeFt >= 10000 ? 2 : 1);
   return (
-    <Card title="Travel">
+    <Card title="Travel" actions={<button className="small ghost" onClick={() => goTo('storage')}>Manage transport</button>}>
       <div className="form-row">
         <Num label="Hours" value={hours} onChange={(v) => setHours(Math.round(v))} min={1} max={24} />
         <Select
@@ -573,21 +576,21 @@ function TravelCard() {
           <Toggle checked={gallop} onChange={setGallop} label={s.travel.gallopUsed ? 'Gallop (mounts need a rest first)' : 'Gallop: double distance for 1 hour'} />
         )}
         <Toggle checked={flying} onChange={setFlying} label="Flying, or ignoring Difficult Terrain (Fast pace anywhere)" />
-        {vesselId && <Toggle checked={againstWind} onChange={setAgainstWind} label="Sailing into the wind" />}
-        {vesselId && <Toggle checked={downstream} onChange={setDownstream} label="Downstream on a river" />}
+        {vessel && transportMode(vessel) === 'sea' && <Toggle checked={againstWind} onChange={setAgainstWind} label="Sailing into the wind" />}
+        {vessel && transportMode(vessel) === 'sea' && <Toggle checked={downstream} onChange={setDownstream} label="Downstream on a river" />}
         {vessels.length > 0 && (
           <Select
             label="Aboard"
             value={vesselId}
             onChange={setVesselId}
-            options={[{ value: '', label: 'On foot or mounted' }, ...vessels.map((v) => ({ value: v.id, label: `${v.name} (${v.speedMph} mph)` }))]}
+            options={[{ value: '', label: 'On foot or mounted' }, ...vessels.map((v) => ({ value: v.id, label: `${v.name} (${v.speedMph} mph)${v.location ? ` · ${v.location}` : ''}` }))]}
           />
         )}
       </div>
       {groundDifficulty(s.place.ground, s.place.goodRoad) && !vesselId && !flying && <p className="small warn-text">The ground ({groundDifficulty(s.place.ground, s.place.goodRoad)}) makes this Difficult Terrain: half speed (table rule).</p>}
       {(s.place.ground?.snowIn ?? 0) > 0 && !groundDifficulty(s.place.ground, s.place.goodRoad) && <p className="small muted">{s.place.ground!.snowIn} inches of snow on the ground (Difficult Terrain at {DEEP_SNOW_IN}).</p>}
       {slow.length > 0 && !vesselId && <p className="small warn-text">{slow.join(', ')} {slow.length > 1 ? 'are' : 'is'} at half Speed or less (load or Exhaustion): the party must travel at a Slow pace.</p>}
-      <p className="small">
+      {vessel && vesselPace ? <p className="small">About <b>{+(hours * vesselPace.mph).toFixed(1)} miles</b> aboard {vessel.name}{vesselPace.note ? ` · ${vesselPace.note}` : ''}.</p> : <p className="small">
         {p.note}. About <b>{+miles.toFixed(1)} miles</b>. {s.travel.hoursToday} travel hour(s) since the last Long Rest
         {s.settings.forcedMarch && counted > 8 && (
           <span className="bad-text">
@@ -597,7 +600,7 @@ function TravelCard() {
           </span>
         )}
         .
-      </p>
+      </p>}
       <div className="form-row">
         <Select
           label="Navigator"
@@ -708,7 +711,7 @@ function JourneyCard() {
   const [mapperId, setMapperId] = useState('');
   const unchartedOn = s.settings.unchartedLand;
   const cartographers = s.characters.filter((c) => c.kind !== 'mount' && E.alive(c) && c.inventory.some((i) => CARTOGRAPHER.test(i.name)));
-  const vessels = s.stashes.filter((x) => x.speedMph);
+  const vessels = s.stashes.filter(canTravelAboard);
   const left = s.journey.filter((x) => !x.done);
   return (
     <Card title="Journey">
@@ -769,7 +772,7 @@ function JourneyCard() {
               { value: 'fast', label: 'Fast' },
             ]}
           />
-          {vessels.length > 0 && <Select label="Aboard" value={vesselId} onChange={setVesselId} options={[{ value: '', label: 'On foot or mounted' }, ...vessels.map((v) => ({ value: v.id, label: v.name }))]} />}
+          {vessels.length > 0 && <Select label="Aboard" value={vesselId} onChange={setVesselId} options={[{ value: '', label: 'On foot or mounted' }, ...vessels.map((v) => ({ value: v.id, label: `${v.name}${v.location ? ` · ${v.location}` : ''}` }))]} />}
           <Toggle checked={camp} onChange={setCamp} label="Camp each night (eat, drink, Long Rest)" />
           {unchartedOn && left.some((x) => x.uncharted) && (
             <Select

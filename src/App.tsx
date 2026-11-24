@@ -36,7 +36,7 @@ const TABS = [
   { id: 'downtime', label: 'Downtime', el: DowntimeTab },
   { id: 'bastions', label: 'Bastions', el: BastionTab },
   { id: 'money', label: 'Town & Money', el: MoneyTab },
-  { id: 'storage', label: 'Storage', el: StorageTab },
+  { id: 'storage', label: 'Transport & Storage', el: StorageTab },
   { id: 'world', label: 'World', el: WorldTab },
   { id: 'log', label: 'Chronicle', el: LogTab },
   { id: 'ways', label: 'Ways Around', el: WaysTab },
