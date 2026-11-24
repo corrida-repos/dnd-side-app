@@ -879,7 +879,7 @@ function PlaceCard() {
         <Select
           label="Shelter"
           value={s.place.shelter}
-          onChange={(v: Shelter) => set({ shelter: v })}
+          onChange={(v: Shelter) => set({ shelter: v, encounterConcealedCave: false })}
           options={[
             { value: 'none', label: 'Open sky' },
             { value: 'tent', label: 'Tents' },

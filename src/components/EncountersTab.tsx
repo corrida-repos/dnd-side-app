@@ -118,9 +118,8 @@ function WhenCard() {
             <tr>
               <th>Danger</th>
               <th>Travel</th>
-              <th>Exposed camp</th>
-              <th>Exposed rest</th>
-              <th>Sheltered rest</th>
+              <th>Exposed camp or rest</th>
+              <th>Sheltered camp or rest</th>
               <th>Dungeon</th>
               <th>Base d20</th>
               <th>Tables built for</th>
@@ -138,9 +137,8 @@ function WhenCard() {
                     <div className="small muted">{i.examples}</div>
                   </td>
                   <td>Every {i.travelHours} h</td>
-                  <td>Every {formatDuration(i.campHours * 60)}</td>
-                  <td>Every {i.restHours} h</td>
-                  <td>Every {i.shelteredRestHours} h</td>
+                  <td>Every {i.exposedHours} h</td>
+                  <td>Every {i.shelteredHours} h</td>
                   <td>Every {i.everyTurns * 10} min</td>
                   <td>{i.on === 20 ? '20' : `${i.on}–20`}</td>
                   <td>
@@ -153,7 +151,7 @@ function WhenCard() {
         </table>
       </div>
       <Rule>
-        Table rule. Travel, camp, and rest share elapsed time toward the next check. Sheltered camps use the travel interval. Being stuck while stopped uses the exposed rest interval. Downtime work skips encounter checks.
+        Table rule. Travel, camp, and rest share elapsed time toward the next check. Camping and resting use the same interval in the same shelter. A party stuck in place uses the exposed interval. Downtime work skips encounter checks.
         Dungeon checks use exploration turns on the Effects & Ailments tab. Group size follows the 2024 DMG XP budget, with Deadly above High.
       </Rule>
     </Card>
@@ -165,13 +163,13 @@ const ALL_MODS: { label: string; value: number; when: string }[] = [
   { label: 'Exposed underground', value: 1, when: 'camping or resting underground without shelter' },
   { label: 'Light in the dark', value: 1, when: 'unshielded campfire or light at night or underground, while stopped' },
   { label: 'Stuck in place', value: 2, when: 'stranded while stopped' },
-  { label: 'Downed companion', value: 1, when: 'a living companion is at 0 HP and dying or stable' },
+  { label: 'Obvious signs', value: 1, when: 'noise, a trail, or other signs lead to the party while stopped' },
   { label: 'Fast pace', value: 1, when: 'travelling fast' },
   { label: 'Large group', value: 1, when: 'more than 6 in the party, counting mounts and hirelings' },
   { label: 'Slow pace', value: -1, when: 'travelling slowly (stealthily)' },
   { label: 'Good road', value: -1, when: 'travelling on a good road' },
   { label: 'Foul weather', value: -1, when: 'heavy rain or snow, or strong wind' },
-  { label: 'Sheltered camp', value: -1, when: 'in a building or cave, or under a shelter spell' },
+  { label: 'Sheltered camp', value: -1, when: 'in a building, a concealed or defensible cave, or under a shelter spell' },
 ];
 
 function ConditionsCard({ act, setAct }: { act: Act; setAct: (a: Act) => void }) {
@@ -182,7 +180,7 @@ function ConditionsCard({ act, setAct }: { act: Act; setAct: (a: Act) => void })
   const interval = encounterIntervalMinutes(s.place.danger, conditions);
   const banked = act === 'explore' ? s.exploreTurns * 10 : s.encounterClock;
   const nextIn = act === 'explore' ? Math.max(10, interval - banked) : nextEncounterMinutes(interval, banked);
-  const windowHours = act === 'explore' ? 1 : act === 'camp' ? 4 : 8;
+  const windowHours = act === 'explore' ? 1 : 8;
   const risk = encounterRisk(E.encounterTable(s), conditions, windowHours * 60, banked);
   const total = mods.reduce((a, m) => a + m.value, 0);
   const active = new Set(mods.map((m) => m.label));
@@ -192,9 +190,15 @@ function ConditionsCard({ act, setAct }: { act: Act; setAct: (a: Act) => void })
       <div className="form-row">
         <Select label="The party is" value={act} onChange={(v: Act) => setAct(v)} options={(Object.keys(ACT_LABEL) as Act[]).map((k) => ({ value: k, label: ACT_LABEL[k] }))} />
       </div>
-      {act !== 'travel' && <Toggle checked={!!s.place.encounterStuck}
-        onChange={(stuck) => edit((d) => { d.place.encounterStuck = stuck; })}
-        label="The party is stuck in place" />}
+      {act !== 'travel' && <div className="form-row">
+        <Toggle checked={!!s.place.encounterStuck} onChange={(stuck) => edit((d) => { d.place.encounterStuck = stuck; })}
+          label="The party is stuck in place" />
+        <Toggle checked={!!s.place.encounterObviousSigns} onChange={(signs) => edit((d) => { d.place.encounterObviousSigns = signs; })}
+          label="Noise or a trail gives away the party’s position" />
+        {s.place.shelter === 'cave' && <Toggle checked={!!s.place.encounterConcealedCave}
+          onChange={(concealed) => edit((d) => { d.place.encounterConcealedCave = concealed; })}
+          label="Concealed or defensible cave" />}
+      </div>}
       <ul className="plain small">
         {ALL_MODS.map((m) => (
           <li key={m.label} className={active.has(m.label) ? '' : 'muted'}>

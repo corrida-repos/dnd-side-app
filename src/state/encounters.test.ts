@@ -78,6 +78,25 @@ describe('random encounters by location danger', () => {
     expect(encounters(E.advance(stuck, HIGH, 10, 'camp'))).toHaveLength(1);
   });
 
+  it('uses an open cave as exposed and does not make a downed companion easier to discover', () => {
+    const s = fresh((d) => {
+      d.place.danger = 'moderate';
+      d.place.shelter = 'cave';
+      d.restStart = E.absNow(d);
+      d.watchPlan = { count: 4, slots: [[d.characters[0].id], [], [], []] };
+    });
+    const d = structuredClone(s);
+    Object.assign(d.characters[0], { hp: 0, stable: true, passivePerception: 30 });
+    expect(E.encounterConditions(d, 'rest')).toEqual(E.encounterConditions(s, 'rest'));
+    expect(E.encounterConditions(d, 'rest').sheltered).toBe(false);
+    expect(E.planWatches(d)[0].watchers).toHaveLength(0);
+    expect(E.watchLoad(d)).toEqual({});
+    expect(E.rollRandomEncounter(d, LOW, 'rest').encounterHandoffs?.[0]?.surprise).toMatchObject({ partySurprised: true });
+    d.place.encounterConcealedCave = true;
+    d.place.encounterObviousSigns = true;
+    expect(E.encounterConditions(d, 'rest')).toMatchObject({ sheltered: true, obviousSigns: true });
+  });
+
   it('uses the danger level for exploration turns', () => {
     let s = fresh((d) => (d.place.danger = 'moderate'));
     s = E.explorationTurn(s, HIGH, '');

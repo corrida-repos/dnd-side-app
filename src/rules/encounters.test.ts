@@ -34,11 +34,12 @@ describe('random encounter rules', () => {
     const rest = { ...base, activity: 'rest', night: true } as const;
     const camp = { ...rest, activity: 'camp' } as const;
     expect(encounterIntervalMinutes('moderate', base)).toBe(240);
-    expect(encounterIntervalMinutes('moderate', camp)).toBe(150);
+    expect(encounterIntervalMinutes('moderate', camp)).toBe(120);
     expect(encounterIntervalMinutes('moderate', rest)).toBe(120);
     expect(encounterIntervalMinutes('moderate', { ...rest, sheltered: true })).toBe(240);
+    expect(encounterIntervalMinutes('high', { ...camp, sheltered: true })).toBe(240);
     expect(encounterIntervalMinutes('moderate', { ...camp, sheltered: true, stuck: true })).toBe(120);
-    expect(checkModifiers({ ...rest, stuck: true, vulnerable: true }).map((m) => m.value)).toEqual([1, 2, 1]);
+    expect(checkModifiers({ ...rest, stuck: true, obviousSigns: true }).map((m) => m.value)).toEqual([1, 2, 1]);
     for (const danger of DANGERS.slice(1)) {
       expect(encounterIntervalMinutes(danger, rest)).toBeLessThan(encounterIntervalMinutes(danger, base));
     }

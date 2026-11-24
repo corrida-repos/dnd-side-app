@@ -19,9 +19,8 @@ export interface DangerInfo {
   examples: string;
   /** Hours between checks while on the move, stationary, or resting. */
   travelHours: number;
-  campHours: number;
-  restHours: number;
-  shelteredRestHours: number;
+  exposedHours: number;
+  shelteredHours: number;
   /** Dungeon or ruin: 10-minute exploration turns between checks. */
   everyTurns: number;
   /** An encounter happens on a d20 total of this or higher. */
@@ -38,11 +37,11 @@ export interface DangerInfo {
  * of the place.
  */
 export const DANGER: Record<Danger, DangerInfo> = {
-  safe: { label: 'Safe', examples: 'patrolled roads, farmland, inside town walls', travelHours: 12, campHours: 12, restHours: 12, shelteredRestHours: 12, everyTurns: 6, on: 20, builtFor: 'low', peaceful: 0.6 },
-  low: { label: 'Low', examples: 'borderlands, quiet forests, well-travelled trade routes', travelHours: 8, campHours: 4, restHours: 4, shelteredRestHours: 8, everyTurns: 4, on: 19, builtFor: 'low', peaceful: 0.4 },
-  moderate: { label: 'Moderate', examples: 'untamed wilderness, abandoned ruins, the Underdark’s edges', travelHours: 4, campHours: 2.5, restHours: 2, shelteredRestHours: 4, everyTurns: 3, on: 18, builtFor: 'moderate', peaceful: 0.25 },
-  high: { label: 'High', examples: 'monster hunting grounds, war zones, deep caverns', travelHours: 3, campHours: 2, restHours: 2, shelteredRestHours: 4, everyTurns: 2, on: 16, builtFor: 'high', peaceful: 0.12 },
-  deadly: { label: 'Deadly', examples: 'a dragon’s domain, a demon-haunted waste, an infested dungeon', travelHours: 2, campHours: 1, restHours: 1, shelteredRestHours: 2, everyTurns: 1, on: 15, builtFor: 'beyond', peaceful: 0.05 },
+  safe: { label: 'Safe', examples: 'patrolled roads, farmland, inside town walls', travelHours: 12, exposedHours: 12, shelteredHours: 12, everyTurns: 6, on: 20, builtFor: 'low', peaceful: 0.6 },
+  low: { label: 'Low', examples: 'borderlands, quiet forests, well-travelled trade routes', travelHours: 8, exposedHours: 4, shelteredHours: 8, everyTurns: 4, on: 19, builtFor: 'low', peaceful: 0.4 },
+  moderate: { label: 'Moderate', examples: 'untamed wilderness, abandoned ruins, the Underdark’s edges', travelHours: 4, exposedHours: 2, shelteredHours: 4, everyTurns: 3, on: 18, builtFor: 'moderate', peaceful: 0.25 },
+  high: { label: 'High', examples: 'monster hunting grounds, war zones, deep caverns', travelHours: 3, exposedHours: 2, shelteredHours: 4, everyTurns: 2, on: 16, builtFor: 'high', peaceful: 0.12 },
+  deadly: { label: 'Deadly', examples: 'a dragon’s domain, a demon-haunted waste, an infested dungeon', travelHours: 2, exposedHours: 1, shelteredHours: 2, everyTurns: 1, on: 15, builtFor: 'beyond', peaceful: 0.05 },
 };
 
 /** Lowest natural d20 that finds an encounter with this modifier. A natural 20 always does. */
@@ -71,7 +70,7 @@ export interface CheckConditions {
   /** Pack animals, wagons or more than 6 travellers. */
   bigGroup: boolean;
   stuck?: boolean;
-  vulnerable?: boolean;
+  obviousSigns?: boolean;
 }
 
 /** Exploration uses its own turn counter. Camp and rest use the same elapsed-time counter as travel. */
@@ -79,9 +78,7 @@ export function encounterIntervalMinutes(danger: Danger, c: Pick<CheckConditions
   const d = DANGER[danger];
   if (c.activity === 'explore') return d.everyTurns * 10;
   if (c.activity === 'travel') return d.travelHours * 60;
-  if (c.stuck) return d.restHours * 60;
-  if (c.activity === 'rest') return (c.sheltered ? d.shelteredRestHours : d.restHours) * 60;
-  return (c.sheltered ? d.travelHours : d.campHours) * 60;
+  return (c.sheltered && !c.stuck ? d.shelteredHours : d.exposedHours) * 60;
 }
 
 export function nextEncounterMinutes(interval: number, banked: number): number {
@@ -129,7 +126,7 @@ export function checkModifiers(c: CheckConditions): CheckMod[] {
   if (c.foulWeather && !c.underground) out.push({ label: 'Foul weather', value: -1, why: 'most creatures shelter from storms' });
   if (c.sheltered && c.activity !== 'travel') out.push({ label: 'Sheltered camp', value: -1, why: 'walls or rock hide the camp' });
   if (c.stuck && c.activity !== 'travel') out.push({ label: 'Stuck in place', value: 2, why: 'creatures have more time to find and approach the stranded party' });
-  if (c.vulnerable) out.push({ label: 'Downed companion', value: 1, why: 'a vulnerable member makes the party easier to approach' });
+  if (c.obviousSigns && c.activity !== 'travel') out.push({ label: 'Obvious signs', value: 1, why: 'noise or a trail gives creatures a way to find the party' });
   if (c.bigGroup) out.push({ label: 'Large group', value: 1, why: 'wagons, animals or a crowd are hard to hide' });
   return out;
 }

@@ -856,6 +856,11 @@ export interface WatchSlotInfo {
   watchers: { c: Character; sight: Sight; passive: number }[];
 }
 
+function watchersForSlot(s: State, slot: number): Character[] {
+  return (s.watchPlan.slots[slot] ?? []).map((id) => actorById(s, id))
+    .filter((c): c is Character => !!c && alive(c) && !c.dying && !c.stable);
+}
+
 /** The watch plan as it would play out if the Long Rest started now. */
 export function planWatches(s: State): WatchSlotInfo[] {
   const start = s.minutes % MIN_PER_DAY;
@@ -867,14 +872,10 @@ export function planWatches(s: State): WatchSlotInfo[] {
     const mid = ((t.from + t.to) / 2) % MIN_PER_DAY;
     const phase = lightAt(mid, season).phase;
     const lit = campLitFor(s, t.to - start);
-    const ids = s.watchPlan.slots[i] ?? [];
-    const watchers = ids
-      .map((id) => actorById(s, id))
-      .filter((c): c is Character => !!c && alive(c))
-      .map((c) => {
-        const sight = watchSight(phase, lit, visionOf(s, c), underground, { fullMoon, obscured });
-        return { c, sight, passive: c.passivePerception + sight.penalty };
-      });
+    const watchers = watchersForSlot(s, i).map((c) => {
+      const sight = watchSight(phase, lit, visionOf(s, c), underground, { fullMoon, obscured });
+      return { c, sight, passive: c.passivePerception + sight.penalty };
+    });
     return { from: t.from, to: t.to, watchers };
   });
 }
@@ -883,7 +884,9 @@ export function planWatches(s: State): WatchSlotInfo[] {
 export function watchLoad(s: State): Record<string, number> {
   const len = watchMinutes(s.watchPlan.count);
   const load: Record<string, number> = {};
-  for (const slot of s.watchPlan.slots.slice(0, s.watchPlan.count)) for (const id of slot) load[id] = (load[id] ?? 0) + len;
+  for (let slot = 0; slot < s.watchPlan.count; slot++) {
+    for (const { id } of watchersForSlot(s, slot)) load[id] = (load[id] ?? 0) + len;
+  }
   return load;
 }
 
@@ -1714,6 +1717,12 @@ function navigate(s: State, ctx: Ctx, nav: Character, pace: Pace): boolean | nul
 
 export const travel = act((d, ctx, o: TravelOpts) => travelMut(d, ctx, o));
 
+function clearEncounterCampConditions(place: State['place']): void {
+  delete place.encounterStuck;
+  delete place.encounterObviousSigns;
+  delete place.encounterConcealedCave;
+}
+
 function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
   if (d.pauseForButler && d.tacticalEncounter) return 0;
   const vessel = o.vesselId ? d.stashes.find((x) => x.id === o.vesselId && canTravelAboard(x)) : undefined;
@@ -1785,7 +1794,7 @@ function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
     }
     advanceMut(d, ctx, 60, 'travel', { travelHour: !!d.pauseForButler });
     traveledHours++;
-    delete d.place.encounterStuck;
+    clearEncounterCampConditions(d.place);
     d.travel.hoursToday += altitude ? 2 : 1;
     const burst = gallop && i === 0 ? 2 : 1;
     if (burst === 2) {
@@ -1848,7 +1857,7 @@ function sail(d: State, ctx: Ctx, v: Stash, o: TravelOpts): number {
   const start = absNow(d);
   advanceMut(d, ctx, o.hours * 60, 'camp', { tactical: true, encounterActivity: 'travel' });
   const hours = (absNow(d) - start) / 60;
-  if (hours > 0) delete d.place.encounterStuck;
+  if (hours > 0) clearEncounterCampConditions(d.place);
   let miles = Math.round(mph * hours * 10) / 10;
   const mode = transportMode(v);
   if (mode === 'sea' && d.settings.stormsAtSea && d.weather.wind === 'strong' && d.weather.precip === 'heavy') {
@@ -7935,12 +7944,12 @@ export function encounterConditions(s: State, activity: CheckConditions['activit
     pace: s.travel.pace,
     goodRoad: s.place.onRoute && s.place.goodRoad,
     foulWeather: s.weather.precip === 'heavy' || s.weather.wind === 'strong',
-    sheltered: s.place.shelter === 'building' || s.place.shelter === 'cave' || shelterSpell,
+    sheltered: s.place.shelter === 'building' || (s.place.shelter === 'cave' && !!s.place.encounterConcealedCave) || shelterSpell,
     underground: isUnderground(s),
     bigGroup: s.characters.filter((c) => alive(c) && mountWithParty(c)).length +
       s.hirelings.filter((h) => h.active && (h.busyUntil ?? 0) <= now).length > 6,
     stuck: !!s.place.encounterStuck,
-    vulnerable: s.characters.some((c) => c.kind !== 'mount' && alive(c) && (c.dying || c.stable)),
+    obviousSigns: !!s.place.encounterObviousSigns,
   };
 }
 
@@ -7960,7 +7969,7 @@ function onWatchNow(s: State): Character[] {
   if (s.restStart == null) return [];
   const len = watchMinutes(s.watchPlan.count);
   const slot = Math.min(s.watchPlan.count - 1, Math.max(0, Math.floor((absNow(s) - s.restStart) / len)));
-  return (s.watchPlan.slots[slot] ?? []).map((id) => actorById(s, id)).filter((c): c is Character => !!c && alive(c));
+  return watchersForSlot(s, slot);
 }
 
 /** One random encounter check: d20 plus the conditions, against the danger level's number. Returns true on an encounter. */
