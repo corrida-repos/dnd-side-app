@@ -1,3 +1,4 @@
+import { BrelandCard } from './Breland';
 import { DANGER, DANGERS, type Danger } from '../rules/encounters';
 import { useState } from 'react';
 import { useGame, dispatch, edit } from '../state/store';
@@ -30,6 +31,7 @@ import { CHART_DC } from '../rules/uncharted';
 export function Overview() {
   return (
     <div className="grid">
+      <BrelandCard />
       <AttentionCard />
       <PlayerSummaryCard />
       <PendingCard />
@@ -47,6 +49,7 @@ export function Overview() {
 export function TravelTab() {
   return (
     <div className="grid">
+      <BrelandCard />
       <TravelCard />
       <PlaceCard />
       <JourneyCard />
@@ -572,7 +575,7 @@ function TravelCard() {
           ]}
         />
         <Toggle checked={difficult} onChange={setDifficult} label="Difficult Terrain (half speed)" />
-        {s.characters.some((c) => c.kind === 'mount') && (
+        {s.characters.some((c) => c.kind === 'mount' && E.mountWithParty(c) && E.alive(c)) && (
           <Toggle checked={gallop} onChange={setGallop} label={s.travel.gallopUsed ? 'Gallop (mounts need a rest first)' : 'Gallop: double distance for 1 hour'} />
         )}
         <Toggle checked={flying} onChange={setFlying} label="Flying, or ignoring Difficult Terrain (Fast pace anywhere)" />

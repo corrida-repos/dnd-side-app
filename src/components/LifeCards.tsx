@@ -13,7 +13,7 @@ import { HULL_LIMIT, hullRepair } from '../rules/wear';
 import { DUE_PRESETS, PERIOD_LABEL, type DueKind, type DuePeriod } from '../rules/dues';
 import { BRIBE_GP_PER_HEAT, CRIMES, DISGUISE_NOTE, HEAT_LEVELS, RECOGNISED, heatLevel, jailDaysFor, type CrimeSeverity } from '../rules/notoriety';
 import { ATTITUDE_LABEL, CONTACT_ROLES, FAVOR_COOLDOWN_DAYS, NEGLECT_DAYS, attitudeOf, favorDC } from '../rules/contacts';
-import { COMMS, commCost, commDelay, type CommMethod } from '../rules/comms';
+import { COMMS, commCost, type CommMethod } from '../rules/comms';
 import { LETTER_METHODS, NEWS_SPEED, POST_NOTE, type NewsRoute } from '../rules/letters';
 import { WaysAround } from './WaysAround';
 
@@ -267,7 +267,7 @@ export function HullBlock({ st }: { st: Stash }) {
         Hull: {st.hullDamaged ? <Pill tone="bad">damaged, half speed</Pill> : <Pill tone={wear >= 2 ? 'warn' : 'muted'}>wear {Math.floor(wear)}/{HULL_LIMIT}</Pill>}
       </span>
       {(wear > 0 || st.hullDamaged) && (
-        <button className="small" disabled={!s.place.settlement} title={s.place.settlement ? undefined : 'Needs a dock: be in a settlement'} onClick={() => dispatch((x, cx) => E.repairHull(x, cx, st.id, []))}>
+        <button className="small" disabled={!s.place.settlement || !E.localServiceAvailable(s, ['docks', 'shipwright'])} title="Requires an open dock or shipyard" onClick={() => dispatch((x, cx) => E.repairHull(x, cx, st.id, []))}>
           Repair at a dock ({fmtGp(gp)}, {days} day{days > 1 ? 's' : ''})
         </button>
       )}
@@ -522,7 +522,7 @@ export function LettersCard() {
   const fromId = pcs.find((c) => c.id === from)?.id ?? pcs[0]?.id ?? '';
   const contact = contacts.find((k) => k.id === to);
   const dist = contact ? contact.distanceMiles : miles;
-  const delay = commDelay(method, dist);
+  const { delay, carrier } = E.letterRoute(s, method, dist);
   const gp = method === 'courier' ? commCost('messenger', dist) : commCost(method, dist);
   const letters = s.letters ?? [];
   const pending = letters.filter((l) => !l.delivered);
@@ -535,7 +535,12 @@ export function LettersCard() {
           {pending.map((l) => (
             <li key={l.id} className="small">
               {l.direction === 'out' ? `${E.charById(s, l.charId)?.name ?? '?'} → ${l.correspondent}` : `${l.correspondent} → ${E.charById(s, l.charId)?.name ?? '?'} (reply)`} by {COMMS[l.method].label.toLowerCase()}:{' '}
-              <Pill tone="muted">{l.direction === 'in' && l.sentAt > now ? `being written, ${formatDuration(l.arrivesAt - now)} to arrive` : `arrives in ${formatDuration(Math.max(1, l.arrivesAt - now))}`}</Pill>
+              {l.direction === 'in' && l.pickupTown && l.arrivesAt <= now ? (
+                <>
+                  <span>Waiting at the post in {l.pickupTown}. </span>
+                  <button className="small" disabled={!E.canCollectLetter(s, l.pickupTown)} onClick={() => dispatch((st, cx) => E.collectLetter(st, cx, l.id))}>Collect letter</button>
+                </>
+              ) : <Pill tone="muted">{l.direction === 'in' && l.sentAt > now ? `being written, ${formatDuration(l.arrivesAt - now)} to arrive` : `arrives in ${formatDuration(Math.max(1, l.arrivesAt - now))}`}</Pill>}
             </li>
           ))}
         </ul>
@@ -551,7 +556,7 @@ export function LettersCard() {
       <Text label="Says" value={text} onChange={setText} wide placeholder="A few words, for the record" />
       <Toggle checked={reply} onChange={setReply} label="They will write back (1d4 days to write, then the same way home)" />
       <p className="small muted">
-        {delay == null ? `${COMMS[method].label} can't reach ${dist} miles.` : `Arrives in ${delay === 0 ? 'moments' : formatDuration(delay)}${gp ? `, costs ${fmtGp(gp)}` : ''}.`} {COMMS[method].note} {method === 'messenger' || method === 'courier' ? POST_NOTE : ''}
+        {delay == null ? COMMS[method].maxMiles ? `${COMMS[method].label} can't reach ${dist} miles.` : carrier : `Arrives in ${delay === 0 ? 'moments' : formatDuration(delay)}${gp ? `, costs ${fmtGp(gp)}` : ''} via ${carrier}.`} {COMMS[method].note} {method === 'messenger' || method === 'courier' ? POST_NOTE : ''}
       </p>
       <button className="small" disabled={!fromId || delay == null || (!contact && !name.trim())} onClick={() => (dispatch((d, cx) => E.sendLetter(d, cx, { charId: fromId, contactId: contact?.id ?? null, correspondent: name.trim(), miles: dist, method, text: text.trim(), expectsReply: reply })), setText(''))}>
         Send

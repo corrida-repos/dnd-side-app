@@ -83,6 +83,7 @@ export const MECHANICS: Mechanic[] = [
   { key: 'tentSpace', tier: 2, area: 'Camp', source: '2024 PHB', label: 'A Tent sleeps two: anyone without a place sleeps in the open', cost: 'Tents to count against the party when camping in them.' },
 
   // ---- Gritty: legacy and table rules.
+  { key: 'townOpeningHours', tier: 3, area: 'Money', source: 'Table rule', label: 'Shops, banks and temples close at dusk', cost: 'Visit during daylight. Inns and taverns stay open.' },
   { key: 'deathSavesResolve', tier: 3, area: 'Rest', source: 'Table rule', label: 'Time can’t pass while someone is dying: their death saves roll at once', cost: 'Saves work: skipping time never leaves a character stuck at 0 HP waiting for rolls.' },
   { key: 'fireWarmsCamp', tier: 3, area: 'Camp', source: 'Table rule', label: 'A lit campfire protects the camp from extreme cold', cost: 'Saves work: no hourly cold saves at a camp with a fire.' },
   { key: 'workWhileMarching', tier: 3, area: 'Downtime', source: 'Table rule', label: 'Crafters who are only marching keep working on hand-held projects (not at a fast pace) at half rate; writers only at a slow pace, keeping concentration', cost: 'Saves time: travel days still move hand-held work along, logged with each leg.' },

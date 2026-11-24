@@ -44,6 +44,7 @@ export function StorageTab() {
 
 function MountStation({ mount }: { mount: Character }) {
   const [station, setStation] = useState(mount.mountStation ?? '');
+  if (mount.mountBoarding) return <p className="small">{mount.name} {mount.mountBoarding.sold ? 'was sold by' : 'is boarded at'} {mount.mountBoarding.provider}, {mount.mountBoarding.place}.</p>;
   return (
     <form className="form-row" onSubmit={(event) => {
       event.preventDefault();
@@ -56,6 +57,7 @@ function MountStation({ mount }: { mount: Character }) {
 }
 
 function NewStash() {
+  const s = useGame();
   const [kind, setKind] = useState<Stash['kind']>('vehicle');
   const [name, setName] = useState('');
   const [location, setLocation] = useState('');
@@ -65,6 +67,8 @@ function NewStash() {
   const [speed, setSpeed] = useState<number | null>(null);
   const vehicle = kind === 'vehicle';
   const rules = VEHICLES.find((entry) => entry.name === preset);
+  const localVault = kind === 'bank' && (!location.trim() || location.trim().toLowerCase() === s.place.name.trim().toLowerCase());
+  const cannotCreate = localVault && (!s.place.settlement || !E.localServiceAvailable(s, ['bank']));
   const capacity = cap ?? (vehicle ? rules?.capacityLb ?? 0 : 0);
   const mph = vehicle ? speed ?? rules?.speedMph ?? 0 : 0;
   return (
@@ -83,7 +87,7 @@ function NewStash() {
           <Select label="Kind" value={kind} onChange={(value) => { setKind(value); setCap(null); }} options={[
             { value: 'vehicle', label: 'Transport' },
             { value: 'stash', label: 'Stash or hiding place' },
-            { value: 'bank', label: 'Bank vault or rented room' },
+            { value: 'bank', label: 'Bank vault' },
           ]} />
           {vehicle && <Select label="Preset" value={preset} onChange={(value) => { setPreset(value); setCap(null); setSpeed(null); }} options={[
             ...VEHICLES.map((entry) => ({ value: entry.name, label: `${entry.name} · ${TRANSPORT_MODES[entry.mode]}` })),
@@ -93,12 +97,13 @@ function NewStash() {
         </div>
         <div className="form-row">
           <Text label="Name" value={name} onChange={setName} placeholder={vehicle ? preset || 'e.g. Lightning rail pass' : 'e.g. Kundarak vault'} />
-          <Text label={vehicle ? 'Stationed at' : 'Where'} value={location} onChange={setLocation} placeholder="e.g. Sharn, Lyrandar Tower" />
+          <Text label={vehicle ? 'Stationed at' : 'Where'} value={location} onChange={setLocation} placeholder={vehicle ? 'e.g. Sharn, Lyrandar Tower' : s.place.name} />
           <Num label="Cargo limit (lb, 0 = no limit)" value={capacity} onChange={(value) => setCap(Math.max(0, Math.round(value)))} min={0} width={7} />
           {vehicle && <Num label="Fixed speed (mph, 0 = none)" value={mph} onChange={(value) => setSpeed(Math.max(0, value))} min={0} step={0.5} width={5} />}
         </div>
         {vehicle && rules && <p className="small muted">{rules.note}. {rules.source === EBERRON_AIRSHIPS_URL && 'The helm normally requires the Mark of Storm. '}<a href={rules.source ?? VEHICLE_RULES_URL} target="_blank" rel="noreferrer">5etools rules</a></p>}
-        <button type="submit" className="primary">Add {vehicle ? 'transport' : 'storage'}</button>
+        {cannotCreate && <p className="small muted">An open bank is required here.</p>}
+        <button type="submit" className="primary" disabled={cannotCreate}>Add {vehicle ? 'transport' : 'storage'}</button>
       </form>
     </Card>
   );
@@ -144,9 +149,10 @@ function StashCard({ st }: { st: Stash }) {
   const [editing, setEditing] = useState(false);
   const vehicle = st.kind === 'vehicle';
   const rules = vehicle ? VEHICLES.find((entry) => entry.name === st.vehicle?.preset) : undefined;
+  const accessProblem = E.storageAccessProblem(s, st);
   const load = E.stashLoad(st, s.settings.coinWeight);
   const value = E.holderValue(st.items, st.purse);
-  const pcs = s.characters.filter((c) => c.diedAt == null);
+  const pcs = s.characters.filter((c) => c.diedAt == null && (E.mountWithParty(c) || E.mountBoardingHere(s, c)));
   const [who, setWho] = useState(pcs[0]?.id ?? '');
   const [itemId, setItemId] = useState('');
   const [qty, setQty] = useState(1);
@@ -179,10 +185,11 @@ function StashCard({ st }: { st: Stash }) {
       {vehicle && st.notes && <p className="small muted">{st.notes}</p>}
       {vehicle && editing && <VehicleEditor st={st} close={() => setEditing(false)} />}
       <p className="small muted">
-        {!vehicle && `${st.location || 'Somewhere in the world'} · `}{load} lb{st.capacityLb ? ` of ${st.capacityLb.toLocaleString()} lb` : ''} · worth about {fmtGp(value)} · {fmtPurse(st.purse)}
+        {!vehicle && `${st.bankName ? `${st.bankName}, ` : ''}${st.location || 'Somewhere in the world'} · `}{load} lb{st.capacityLb ? ` of ${st.capacityLb.toLocaleString()} lb` : ''} · worth about {fmtGp(value)} · {fmtPurse(st.purse)}
       </p>
       <HullBlock st={st} />
       {st.capacityLb ? <Meter value={load} max={st.capacityLb} tone={load > st.capacityLb ? 'bad' : 'good'} /> : null}
+      {accessProblem && <p className="small muted">{accessProblem}</p>}
       {st.items.length === 0 && <p className="muted small">Empty.</p>}
       <ul className="plain small">
         {st.items.map((i) => (
@@ -193,7 +200,7 @@ function StashCard({ st }: { st: Stash }) {
             </span>
             <span className="btn-row tight">
               <Select value={who} onChange={setWho} options={pcs.map((c) => ({ value: c.id, label: `to ${c.name}` }))} />
-              <button className="small" onClick={() => dispatch((st2, cx) => E.moveItem(st2, cx, ref, `c:${who}`, i.id, i.qty))}>
+              <button className="small" disabled={!!accessProblem || !giver} onClick={() => dispatch((st2, cx) => E.moveItem(st2, cx, ref, `c:${who}`, i.id, i.qty))}>
                 Take
               </button>
             </span>
@@ -205,7 +212,7 @@ function StashCard({ st }: { st: Stash }) {
         <Select value={who} onChange={(x) => (setWho(x), setItemId(''))} options={pcs.map((c) => ({ value: c.id, label: `From ${c.name}` }))} />
         <Select value={giveItem?.id ?? ''} onChange={setItemId} options={(giver?.inventory ?? []).filter((i) => !i.containerId).map((i) => ({ value: i.id, label: `${i.name}${i.qty > 1 ? ` (${i.qty})` : ''}` }))} />
         <Num value={qty} onChange={(x) => setQty(Math.max(1, Math.round(x)))} min={1} width={3} />
-        <button className="small" disabled={!giveItem} onClick={() => giveItem && dispatch((st2, cx) => E.moveItem(st2, cx, `c:${who}`, ref, giveItem.id, qty))}>
+        <button className="small" disabled={!giveItem || !!accessProblem} onClick={() => giveItem && dispatch((st2, cx) => E.moveItem(st2, cx, `c:${who}`, ref, giveItem.id, qty))}>
           Store
         </button>
       </div>
@@ -213,10 +220,10 @@ function StashCard({ st }: { st: Stash }) {
       <div className="btn-row tight">
         <Num value={coins} onChange={(x) => setCoins(Math.max(1, Math.round(x)))} min={1} width={5} />
         <Select value={denom} onChange={setDenom} options={DENOMS.map((d) => ({ value: d, label: d }))} />
-        <button className="small" onClick={() => dispatch((st2, cx) => E.moveCoins(st2, cx, `c:${who}`, ref, denom, coins))}>
+        <button className="small" disabled={!!accessProblem || !giver} onClick={() => dispatch((st2, cx) => E.moveCoins(st2, cx, `c:${who}`, ref, denom, coins))}>
           Deposit from {giver?.name ?? '…'}
         </button>
-        <button className="small ghost" onClick={() => dispatch((st2, cx) => E.moveCoins(st2, cx, ref, `c:${who}`, denom, coins))}>
+        <button className="small ghost" disabled={!!accessProblem || !giver} onClick={() => dispatch((st2, cx) => E.moveCoins(st2, cx, ref, `c:${who}`, denom, coins))}>
           Withdraw to {giver?.name ?? '…'}
         </button>
       </div>

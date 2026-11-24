@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import type { State } from './types';
-import { createDefaultState, newCharacter, SAVE_VERSION } from './defaults';
+import { createEberronState, createDefaultState, newCharacter, SAVE_VERSION } from './defaults';
 import { coinsFor } from '../rules/coins';
 import { MECHANICS, applyTier } from '../rules/detailTiers';
 import { ensureWeather, type Ctx } from './engine';
@@ -24,7 +24,7 @@ function migrate(raw: unknown): State | null {
       // Version 2 moved lingering injuries and madness to the Brutal tier: saves that only had them on by default turn them off.
       if ((parsed.version ?? 1) < 2 && !st.gearWear) Object.assign(st, { lingeringInjuries: false, madness: false });
       // The former Light preset disabled every tier switch and both supplemental Bastion books.
-      if ((parsed.version ?? 1) < 3 && st.facilityBooks?.length === 0 && MECHANICS.every((m) => !st[m.key])) applyTier(st, 1);
+      if ((parsed.version ?? 1) < 3 && st.facilityBooks?.length === 0 && MECHANICS.every((m) => m.key === 'townOpeningHours' || !st[m.key])) applyTier(st, 1);
       return st;
     })(),
     travel: { ...base.travel, ...parsed.travel },
@@ -158,6 +158,10 @@ export function importState(raw: unknown): boolean {
   if (!s) return false;
   commit(s, true);
   return true;
+}
+
+export function startEberron(start: Parameters<typeof createEberronState>[1]): void {
+  commit(createEberronState(ctx.rng, start), true, 'starting a new campaign in Breland');
 }
 
 export function resetState(): void {

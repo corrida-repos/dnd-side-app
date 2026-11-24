@@ -115,7 +115,13 @@ The app ships with **no** spell text. In **Settings → Spell library**, load a 
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md) for everything time-based in the rules and what is tracked so far.
+Roll up a settlement on the Town & Money tab to use named service providers, inn rates and mount boarding. Pick up fixed storage and held replies where you left them.
+
+Use **Settings → Start an Eberron campaign** to begin in Sharn or Wroat. View skycoach and lightning rail departures on the Dashboard or Travel tab.
+
+The Encounters tab can export the original rolls, party roster and conditions of a creature encounter as JSON. Import into an open Owlbear scene is still planned.
+
+See [ROADMAP.md](ROADMAP.md) for the complete roadmap and implementation status.
 
 ## Development
 

@@ -6,6 +6,11 @@
  * The DMG only lists shop types; the rest (inns, temples, stables, docks, the watch and so on) are the places the
  * 2024 PHB and DMG rules assume exist when they say "in a settlement".
  */
+import { ITEM_PRICES } from './itemPrices';
+import { GEM } from './shop';
+import { poisonByName } from './poisons';
+import { INN_STAY_GP } from './money';
+import type { TreasureKind } from './treasure';
 import { die, type Rng } from './dice';
 import type { Settlement } from './services';
 import { rollName, rollNpc, type Lean, type Npc } from './npcs';
@@ -299,6 +304,8 @@ export interface TownBuilding {
   keeper: Npc;
   /** Who works there, by stat block. */
   staff?: StaffGroup[];
+  /** Daily common, private and suite prices in GP. */
+  roomRates?: [number, number, number];
 }
 
 export interface Town {
@@ -373,7 +380,8 @@ export function newBuilding(type: string, rng: Rng, taken: Set<string>, size: Se
   const name = nameFor(b, keeper.name, rng, taken);
   taken.add(name);
   const staff = rollStaff(type, size, rng);
-  return { id: bid(), type, name, keeper, ...(staff.length ? { staff } : {}) };
+  const roomRates: TownBuilding['roomRates'] = type === 'inn' ? [die(2, rng) / 10, (2 + die(3, rng)) / 10, die(3, rng)] : undefined;
+  return { id: bid(), type, name, keeper, roomRates, ...(staff.length ? { staff } : {}) };
 }
 
 /**
@@ -682,3 +690,25 @@ export const CRIME_EXAMPLE: { label: string; covers: string; punishment: string 
   { label: 'Minor crime', covers: 'Armed assault (a nonfatal attack with a weapon or damaging spell), 50–250 GP of damage', punishment: 'A fine of at least 100 GP and 1d6 years in prison' },
   { label: 'Major crime', covers: 'Murder, bribing or impersonating an official, magical coercion', punishment: '2d10 years in prison, death or permanent exile, as a magistrate decides' },
 ];
+
+/** Buildings that handle sales back to merchants. Specialty goods take precedence over general equipment. */
+export function townBuyers(town: Town, item: { name: string; treasure?: { kind: TreasureKind } }): TownBuilding[] {
+  const { name, treasure } = item;
+  const catalog = ITEM_PRICES.find((entry) => entry.name.toLowerCase() === name.toLowerCase());
+  let types: string[] | undefined;
+  if (treasure?.kind === 'magic') return [];
+  if (treasure?.kind === 'gem' || treasure?.kind === 'art' || (!catalog && (GEM.test(name) || /\b(art object|painting|statuette|jewell?ery|tapestry)\b/i.test(name)))) types = ['jeweler'];
+  else if (treasure?.kind === 'bar') types = ['market', 'moneylender'];
+  else if (/\b(hides?|pelts?|furs?|troph(?:y|ies))\b/i.test(name)) types = ['leatherworker'];
+  else if (poisonByName(name) || /\bpoison\b/i.test(name)) types = ['fence'];
+  else if (/\b(herbs?|mushrooms?|sprig|mandrake|nightshade)\b/i.test(name)) types = ['apothecary', 'herbalist'];
+  const sellers = !types && catalog ? sellersOf(town, catalog) : [];
+  return town.buildings.filter((b) => b.type === 'pawnshop' || types?.includes(b.type) || sellers.includes(b));
+}
+
+/** Common, private and suite rates from the Greyhawk inn examples (GP per night). */
+export function innPrices(inn: TownBuilding | undefined): typeof INN_STAY_GP {
+  if (!inn?.roomRates) return INN_STAY_GP;
+  const [common, privateRoom, suite] = inn.roomRates;
+  return { squalid: common, poor: common, modest: privateRoom, comfortable: privateRoom, wealthy: suite, aristocratic: suite };
+}

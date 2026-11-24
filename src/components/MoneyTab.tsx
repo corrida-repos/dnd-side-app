@@ -1,9 +1,10 @@
+import { GALIFAR_COINS } from '../rules/eberron';
 import { NpcProfile } from './NpcProfile';
 import { useState } from 'react';
 import { DuesCard } from './LifeCards';
 import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
-import { fmtGp, HIRELING_WAGE, INN_STAY_GP, LIFESTYLE_GP, LIFESTYLE_LABEL, MEAL_GP, MEALS_PER_DAY, MOUNT_PRESETS, FEED_GP_PER_DAY, type Lifestyle } from '../rules/money';
+import { fmtGp, HIRELING_WAGE, LIFESTYLE_GP, LIFESTYLE_LABEL, MEAL_GP, MEALS_PER_DAY, MOUNT_PRESETS, FEED_GP_PER_DAY, type Lifestyle } from '../rules/money';
 
 type Tier = Exclude<Lifestyle, 'wretched'>;
 import { foodNeedLb, fmtLb, WATER_GAL_PER_DAY } from '../rules/survival';
@@ -21,7 +22,7 @@ import { COMMON_SPELL_REQUESTS, PASSAGE, SPELL_SERVICES, spellServiceAvailable, 
 import { WaysAround } from './WaysAround';
 import { TownCard } from './TownCard';
 import { ROLE_LABEL, SIDEKICK_CLASS_LABEL, SIDEKICK_FEATURES, SIDEKICK_KIND_IDS, SIDEKICK_KINDS, SIDEKICK_WAGE_GP, sidekickLevelFor, type SidekickKind } from '../rules/sidekicks';
-import { SETTLEMENT_SIZE, townSells, townSpecials } from '../rules/settlements';
+import { innPrices, SETTLEMENT_SIZE, townSells, townSpecials } from '../rules/settlements';
 import { SADDLE_LABEL, STABLING_GP_PER_DAY, needsExoticSaddle, type Saddle } from '../rules/gear';
 
 export function MoneyTab() {
@@ -73,7 +74,7 @@ function PurseCard() {
           <thead>
             <tr>
               <th>Who</th>
-              <th>Coins (pp · gp · ep · sp · cp)</th>
+              <th>{s.setting === 'eberron' ? `Coins (${[GALIFAR_COINS.pp, GALIFAR_COINS.gp, GALIFAR_COINS.ep, GALIFAR_COINS.sp, GALIFAR_COINS.cp].join(' · ')})` : 'Coins (pp · gp · ep · sp · cp)'}</th>
               <th>Lifestyle</th>
               <th>Per day</th>
             </tr>
@@ -147,7 +148,13 @@ function TownDayToDay() {
   const [nights, setNights] = useState(1);
   const [meal, setMeal] = useState<Tier>('modest');
   const ids = who.length ? who.filter((id) => pcs.some((c) => c.id === id)) : pcs.map((c) => c.id);
-  const tiers = Object.keys(INN_STAY_GP) as Tier[];
+  const [innId, setInnId] = useState('');
+  const inns = E.townProviders(s, ['inn']);
+  const inn = inns.find((b) => b.id === innId) ?? inns[0];
+  const roomPrices = innPrices(inn);
+  const canRent = E.localServiceAvailable(s, ['inn']);
+  const canEat = E.localServiceAvailable(s, ['inn', 'tavern']);
+  const tiers = Object.keys(roomPrices) as Tier[];
   return (
     <div className="decision">
       <div className="chips">
@@ -156,24 +163,26 @@ function TownDayToDay() {
         ))}
       </div>
       <div className="btn-row tight">
-        <Select value={room} onChange={setRoom} options={tiers.map((t) => ({ value: t, label: `${LIFESTYLE_LABEL[t]} room (${fmtGp(INN_STAY_GP[t])} a night)` }))} />
+          {inn && <Select label="Inn" value={inn.id} onChange={setInnId} options={inns.map((b) => ({ value: b.id, label: b.name }))} />}
+        <Select value={room} onChange={setRoom} options={tiers.map((t) => ({ value: t, label: `${LIFESTYLE_LABEL[t]} room (${fmtGp(roomPrices[t])} a night)` }))} />
         <Num value={nights} onChange={(v) => setNights(Math.max(1, Math.round(v)))} min={1} suffix="nights" width={3} />
-        <button className="small" disabled={!ids.length} onClick={() => dispatch((st, cx) => E.rentRooms(st, cx, ids, room, nights))}>
-          Rent ({fmtGp(INN_STAY_GP[room] * nights * ids.length)})
+        <button className="small" disabled={!ids.length || !canRent} onClick={() => dispatch((st, cx) => E.rentRooms(st, cx, ids, room, nights, inn?.id))}>
+          Rent ({fmtGp(roomPrices[room] * nights * ids.length)})
         </button>
       </div>
       <div className="btn-row tight">
         <Select value={meal} onChange={setMeal} options={tiers.map((t) => ({ value: t, label: `${LIFESTYLE_LABEL[t]} meal (${fmtGp(MEAL_GP[t])})` }))} />
-        <button className="small" disabled={!ids.length} onClick={() => dispatch((st, cx) => E.buyMeals(st, cx, ids, meal, 1))}>
+        <button className="small" disabled={!ids.length || !canEat} onClick={() => dispatch((st, cx) => E.buyMeals(st, cx, ids, meal, 1))}>
           One meal each
         </button>
-        <button className="small" disabled={!ids.length} onClick={() => dispatch((st, cx) => E.buyMeals(st, cx, ids, meal, MEALS_PER_DAY))}>
+        <button className="small" disabled={!ids.length || !canEat} onClick={() => dispatch((st, cx) => E.buyMeals(st, cx, ids, meal, MEALS_PER_DAY))}>
           A day&apos;s meals ({fmtGp(MEAL_GP[meal] * MEALS_PER_DAY * ids.length)})
         </button>
       </div>
+      {!canRent && <p className="small muted">There is no inn here.</p>}
       <p className="small muted">
         Tonight:{' '}
-        {pcs.map((c) => (E.hasRoom(s, c) ? `${c.name} in a ${LIFESTYLE_LABEL[c.lodging!.tier].toLowerCase()} room` : `${c.name} has no room`)).join(' · ')}.
+        {pcs.map((c) => (E.hasRoom(s, c) ? `${c.name} in a ${LIFESTYLE_LABEL[c.lodging!.tier].toLowerCase()} room${c.lodging!.innName ? ` at ${c.lodging!.innName}` : ''}` : `${c.name} has no room`)).join(' · ')}.
         {s.settings.lifestyleRisks ? ' The room sets the risks of town life; no room means sleeping rough.' : ''} Three meals make a day&apos;s food and drink.
       </p>
     </div>
@@ -195,7 +204,7 @@ function ExchangeRow() {
       <Select value={from} onChange={setFrom} options={DENOMS.map((d) => ({ value: d, label: d }))} />
       <span className="small">into</span>
       <Select value={to} onChange={setTo} options={DENOMS.map((d) => ({ value: d, label: d }))} />
-      <button className="small" onClick={() => dispatch((st, cx) => E.exchangeCoins(st, cx, who, from, to, count))}>
+      <button className="small" disabled={!E.localServiceAvailable(s, ['moneylender', 'bank', 'jeweler'])} onClick={() => dispatch((st, cx) => E.exchangeCoins(st, cx, who, from, to, count))}>
         Exchange
       </button>
       <Num label="Fee %" value={s.settings.moneychangerFee} onChange={(v) => edit((d) => void (d.settings.moneychangerFee = Math.max(0, v)))} min={0} step={0.5} width={3} />
@@ -267,6 +276,8 @@ function HirelingsCard() {
   const [payer, setPayer] = useState('party');
   const [miles, setMiles] = useState(10);
   const info = HIRELING_ROLES[role];
+  const hireProblem = E.hirelingProblem(s, role);
+  const employer = E.townProviders(s, E.hirelingProviders(role))[0];
   const set = (id: string, patch: Partial<Hireling>) => edit((d) => void Object.assign(d.hirelings.find((x) => x.id === id)!, patch));
   return (
     <Card title="Hirelings" className="span-2">
@@ -280,7 +291,7 @@ function HirelingsCard() {
                 <span>
                   <b>{h.name}</b> <Pill tone="muted">{r.label}</Pill>{' '}
                   <span className="muted small">
-                    {fmtGp(h.wageGp)}/day, paid by {h.payer === 'party' ? 'the party' : E.charById(s, h.payer)?.name ?? '?'}
+                    {fmtGp(h.wageGp)}/day, paid by {h.payer === 'party' ? 'the party' : E.charById(s, h.payer)?.name ?? '?'}{h.hiredAt ? ` · hired at ${h.hiredAt}` : ''}
                   </span>
                 </span>
                 <span className="btn-row tight">
@@ -325,7 +336,9 @@ function HirelingsCard() {
       <p className="small">
         {info.does} {info.hook && <span className="good-text">{info.hook}</span>}
       </p>
+      {(hireProblem || employer) && <p className="small muted">{hireProblem ?? `Ask at ${employer!.name}.`}</p>}
       <button
+        disabled={!!hireProblem}
         onClick={() => {
           dispatch((state, ctx) => E.employHireling(state, ctx, role, name, payer));
           setName('');
@@ -346,11 +359,16 @@ function MountsCard() {
   const [preset, setPreset] = useState(MOUNT_PRESETS[0].name);
   const [name, setName] = useState('');
   const [buyer, setBuyer] = useState<string>('free');
+  const [stableId, setStableId] = useState('');
+  const stables = E.townProviders(s, ['stable', 'inn']);
+  const stable = stables.find((entry) => entry.id === stableId) ?? stables[0];
+  const traveling = mounts.filter((mount) => E.alive(mount) && E.mountWithParty(mount));
   const [days, setDays] = useState(5);
   const p = MOUNT_PRESETS.find((x) => x.name === preset)!;
   return (
     <Card title="Mounts and animals">
       {mounts.length === 0 && <p className="muted small">No mounts yet.</p>}
+      {stable && <Select label="Board at" value={stable.id} onChange={setStableId} options={stables.map((entry) => ({ value: entry.id, label: entry.name }))} />}
       <ul className="plain">
         {mounts.map((m) => (
           <li key={m.id} className="armor-row">
@@ -369,17 +387,23 @@ function MountsCard() {
                 options={(Object.keys(SADDLE_LABEL) as Saddle[]).map((k) => ({ value: k, label: SADDLE_LABEL[k].split(' (')[0] }))}
               />
             </span>
+            {E.alive(m) && (m.mountBoarding ? (
+              <span className="small">
+                {m.mountBoarding.provider}, {m.mountBoarding.place} · {m.mountBoarding.sold ? 'Sold for unpaid board' : `${fmtGp(m.mountBoarding.owedGp)} due`}{' '}
+                {!m.mountBoarding.sold && <button className="small" disabled={!E.canCollectMount(s, m)} onClick={() => dispatch((st, cx) => E.collectMount(st, cx, m.id))}>Collect mount</button>}
+              </span>
+            ) : stable && <button className="small" onClick={() => dispatch((st, cx) => E.boardMount(st, cx, m.id, stable.id))}>Board mount</button>)}
             <button className="ghost small bad" aria-label={`Remove ${m.name}`} onClick={() => confirm(`Remove ${m.name}?`) && edit((d) => void (d.characters = d.characters.filter((x) => x.id !== m.id)))}>
               ✕
             </button>
           </li>
         ))}
       </ul>
-      {mounts.length > 0 && (
+      {traveling.length > 0 && (
         <div className="btn-row">
           <Num value={days} onChange={(v) => setDays(Math.max(1, Math.round(v)))} min={1} suffix="days" width={3} />
           <button onClick={() => dispatch((st, cx) => E.buyFeed(st, cx, days))}>
-            Buy feed ({fmtGp(FEED_GP_PER_DAY * days * mounts.length)})
+            Buy feed ({fmtGp(FEED_GP_PER_DAY * days * traveling.length)})
           </button>
         </div>
       )}
@@ -400,7 +424,7 @@ function MountsCard() {
       <Rule>
         Mounts follow the same food, water, temperature and Exhaustion rules as everyone else. Party meals feed them from their feed.{' '}
         {s.settings.stabling
-          ? `In a settlement they're stabled and fed each day for ${fmtGp(STABLING_GP_PER_DAY + FEED_GP_PER_DAY)} each (2024 PHB: Stabling 5 SP, Feed 5 CP).`
+          ? `Boarding includes food, water, and a night's rest. Each night adds ${fmtGp(STABLING_GP_PER_DAY + FEED_GP_PER_DAY)} to the bill. In settlements without a directory, daily stabling is automatic.`
           : "Town lifestyle doesn't cover them, so water them every day (for example with \"Top up today's water\")."}{' '}
         Saddles (2024 PHB): a Military Saddle gives Advantage on checks to stay mounted; flying and swimming mounts need an Exotic Saddle. Table rule: riding bareback means Disadvantage on checks to stay mounted, and no galloping. Set how a mount moves on the Characters tab.
       </Rule>
@@ -421,6 +445,7 @@ function ServicesCard() {
   const here = town?.size ?? pickedHere;
   const [spell, setSpell] = useState(COMMON_SPELL_REQUESTS[0].name);
   const [custom, setCustom] = useState(1);
+  const [tradition, setTradition] = useState<'arcane' | 'divine'>('arcane');
   const [target, setTarget] = useState('');
   const payers = payer === 'party' ? pcs.map((c) => c.id) : [payer];
   const f = PASSAGE.find((x) => x.id === fare)!;
@@ -428,7 +453,12 @@ function ServicesCard() {
   const req = COMMON_SPELL_REQUESTS.find((x) => x.name === spell);
   const level = req ? req.level : custom;
   const tier = [...SPELL_SERVICES].reverse().find((t) => level >= t.minLevel)!;
-  const available = spellServiceAvailable(tier.where, here);
+  const sizeAllows = spellServiceAvailable(tier.where, here);
+  const types = E.spellProviders(level, req ? (req.tradition ?? 'divine') : tradition);
+  const casters = E.townProviders(s, types);
+  const available = sizeAllows && E.localServiceAvailable(s, types);
+  const fareTypes = E.fareProviders(fare);
+  const fareProviders = E.townProviders(s, fareTypes);
   const freeByPatron = !!s.patron && level <= (PATRONS[s.patron.kind].freeSpellLevel ?? -1);
   const spellGp = freeByPatron ? 0 : tier.gp + (req?.componentGp ?? 0);
   return (
@@ -440,18 +470,20 @@ function ServicesCard() {
         {!f.gpFlat && <Num label={f.gpPerDay ? 'Days' : 'Miles'} value={amount} onChange={(v) => setAmount(Math.max(0, Math.round(v)))} min={0} width={5} />}
         <Num label="Passengers" value={people} onChange={(v) => setPeople(Math.max(1, Math.round(v)))} min={1} width={3} />
       </div>
-      <button className="small" onClick={() => dispatch((st, cx) => E.payForService(st, cx, payers, fareGp, `${f.label.replace(/ \(.*\)/, '')} for ${people}`))}>
+      <button className="small" disabled={!E.localServiceAvailable(s, fareTypes)} onClick={() => dispatch((st, cx) => E.bookPassage(st, cx, fare, payers, amount, people))}>
         Pay {fmtGp(fareGp)}
       </button>
+      {town && <span className="small muted"> {fareProviders[0]?.name ?? 'No provider open here.'}</span>}
       <h3>Spellcasting</h3>
       <div className="form-row">
         {town ? <span className="small">In the {here} of {town.name}</span> : <Select label="Settlement" value={here} onChange={setHere} options={[{ value: 'village', label: 'Village' }, { value: 'town', label: 'Town' }, { value: 'city', label: 'City' }]} />}
         <Select label="Spell" value={spell} onChange={setSpell} options={[...COMMON_SPELL_REQUESTS.map((x) => ({ value: x.name, label: `${x.name} (level ${x.level})` })), { value: '', label: 'Another spell…' }]} />
+        {!req && <Select label="Magic" value={tradition} onChange={setTradition} options={[{ value: 'arcane', label: 'Arcane' }, { value: 'divine', label: 'Divine' }]} />}
         {!req && <Num label="Spell level" value={custom} onChange={(v) => setCustom(Math.max(0, Math.min(9, Math.round(v))))} min={0} max={9} width={2} />}
       </div>
       <p className="small">
         {tier.level}: {fmtGp(tier.gp)}
-        {req?.componentGp ? ` + ${fmtGp(req.componentGp)} components` : ''}. {available ? 'A caster can be found here.' : `Only found in a ${tier.where === 'city' ? 'city' : 'town or city'}.`}
+        {req?.componentGp ? ` + ${fmtGp(req.componentGp)} components` : ''}. {!sizeAllows ? `Only found in a ${tier.where === 'city' ? 'city' : 'town or city'}.` : casters.length ? `Available at ${casters[0].name}.` : town ? 'No caster is available here.' : 'A caster can be found here.'}
         {req && <span className="muted"> {req.note}</span>}
         {freeByPatron && <span className="good-text"> Free through {s.patron!.name} (components included), if the cause serves the faith.</span>}
       </p>
@@ -461,14 +493,7 @@ function ServicesCard() {
       <button
         className="small"
         disabled={!available || (!!req && !!TARGET_SPELLS[req.name] && !target)}
-        onClick={() =>
-          dispatch((st, cx) => {
-            let next = E.payForService(st, cx, payers, spellGp, `having ${req ? req.name : `a level ${custom} spell`} cast`);
-            if (req && TARGET_SPELLS[req.name] && target) next = E.spellOnTarget(next, cx, req.name, target);
-            if (req?.name === 'Purify Food and Drink') next = E.purifySpell(next, cx, null, 'slot');
-            return next;
-          })
-        }
+        onClick={() => dispatch((st, cx) => E.buySpellcasting(st, cx, { spell, level, tradition, here, payerIds: payers, targetId: target }))}
       >
         Pay {fmtGp(spellGp)}
         {req && TARGET_SPELLS[req.name] ? ' and cast' : ''}
@@ -483,7 +508,7 @@ function ShopCard() {
   const s = useGame();
   const pcs = s.characters.filter((c) => c.kind !== 'mount' && E.alive(c));
   const [who, setWho] = useState('');
-  const town = E.currentTown(s);
+  const town = E.localShop(s);
   const [pickedHere, setHere] = useState<Settlement>('town');
   const here = town?.size ?? pickedHere;
   const [special, setSpecial] = useState('');
@@ -514,6 +539,7 @@ function ShopCard() {
   const spec = specials.find((x) => x.item.name === special) ?? specials[0];
   const sellable = buyer?.inventory ?? [];
   const sell = sellable.find((i) => i.id === sellId) ?? sellable[0];
+  const buyers = sell ? E.localBuyers(s, sell) : undefined;
   const sellUnit = sell ? (sell.valueGp ?? priceOf(sell.name)) : undefined;
   const payees = lootIds.length ? lootIds : pcs.map((c) => c.id);
   return (
@@ -563,9 +589,10 @@ function ShopCard() {
             <Select label="Item" value={sell?.id ?? ''} onChange={setSellId} options={sellable.map((i) => ({ value: i.id, label: `${i.name} ×${i.qty}${valueUnknown(i) ? ' (value unknown)' : ''}` }))} />
             <Num label="Qty" value={sellQty} onChange={(v) => setSellQty(Math.max(1, Math.round(v)))} min={1} width={3} />
           </div>
-          <button className="small" disabled={sellUnit == null} onClick={() => dispatch((st, cx) => E.sellItem(st, cx, whoId, sell!.id, sellQty))}>
+          <button className="small" disabled={sellUnit == null || buyers?.length === 0} onClick={() => dispatch((st, cx) => E.sellItem(st, cx, whoId, sell!.id, sellQty))}>
             {sellUnit == null ? 'Value unknown' : valueUnknown(sell!) ? 'Sell (value unknown: the buyer names a price)' : `Sell for ${fmtGp(Math.round(sellUnit * Math.min(sellQty, sell!.qty) * saleRate(sell!.name, sell!.treasure?.kind) * 100) / 100)}`}
           </button>
+          {buyers && <span className="small muted"> {buyers.length ? `Buyer: ${buyers[0].name}.` : 'No open shop here buys this item.'}</span>}
         </>
       )}
       {Math.max(0, ...s.factions.map((f) => f.renown)) >= 10 && <FactionSupply buyerId={whoId} />}

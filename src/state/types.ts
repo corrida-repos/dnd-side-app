@@ -1,3 +1,4 @@
+import type { EncounterHandoff } from '../rules/encounterHandoff';
 import type { NpcProfile } from '../rules/npcs';
 import type { UnderwaterVisibility } from '../rules/exploration';
 import type { TreasureItem, TreasureRoll } from '../rules/treasure';
@@ -170,6 +171,8 @@ export interface Stash {
   /** Vessel speed in mph (ships and airships), if this vehicle sails. */
   speedMph?: number;
   vehicle?: VehicleDetails;
+  bankId?: string;
+  bankName?: string;
   /** Where it is in the world. */
   location: string;
   capacityLb: number | null;
@@ -289,6 +292,7 @@ export interface Character {
   lifestyleOwed?: number;
   /** Last recorded station for a mount. An empty station means no location has been recorded. */
   mountStation?: string;
+  mountBoarding?: { place: string; providerId: string; provider: string; nights: number; owedGp: number; sold?: boolean };
   /** Mount speed in feet (mounts only). */
   speed: number;
   className: ClassName;
@@ -389,7 +393,7 @@ export interface Character {
   /** Absolute minute an Antitoxin's Advantage on saves against poison runs out (PHB: 1 hour). */
   antitoxinUntil?: number | null;
   /** A room rented for day-to-day play in town: its quality, and the absolute minute it must be vacated. */
-  lodging?: { tier: 'squalid' | 'poor' | 'modest' | 'comfortable' | 'wealthy' | 'aristocratic'; until: number } | null;
+  lodging?: { tier: 'squalid' | 'poor' | 'modest' | 'comfortable' | 'wealthy' | 'aristocratic'; until: number; place?: string; innId?: string; innName?: string } | null;
   /** A bad night on the street or in a flophouse (table rule): the next Long Rest removes no Exhaustion. */
   restless?: boolean;
   /** Days spent living Squalid or Wretched in a settlement in a row (table rule: after 30, respectable folk shun them). */
@@ -638,6 +642,8 @@ export interface Hireling extends NpcProfile {
   active: boolean;
   /** Absolute minute a messenger gets back from an errand. */
   busyUntil?: number;
+  hiredIn?: string;
+  hiredAt?: string;
 }
 
 export interface Project {
@@ -1082,6 +1088,7 @@ export interface Settings {
   trackGearUse: boolean;
   /** 2024 PHB: mounts in a settlement are stabled and fed for 5 SP and 5 CP a day. */
   stabling: boolean;
+  townOpeningHours: boolean;
   /** 2024 PHB: a Tent sleeps two; anyone without a place in one sleeps in the open. */
   tentSpace: boolean;
   /** Table rule: a batch of cheap crafted items counts as one item worth their total price. */
@@ -1320,6 +1327,7 @@ export interface Letter {
   delivered: boolean;
   /** Outgoing: the recipient will write back. */
   expectsReply?: boolean;
+  pickupTown?: string;
 }
 
 /** News of something that happened far away, travelling toward the party. */
@@ -1335,6 +1343,10 @@ export interface NewsItem {
 }
 
 export interface State {
+  setting?: 'eberron';
+  campaignId?: string;
+  encounterHandoffs?: EncounterHandoff[];
+  passage?: { routeId: string; departure: number; passengerIds: string[] };
   treasurePreview?: TreasureRoll & { id: string };
   version: number;
   calendar: Calendar;

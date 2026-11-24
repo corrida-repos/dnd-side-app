@@ -235,3 +235,112 @@ describe('one name per person', () => {
     }
   });
 });
+
+describe('local settlement workflows', () => {
+  const ctx = { rng: () => 0.9 };
+  function atTown(...types: string[]) {
+    const state = createDefaultState(ctx.rng);
+    state.place = { ...state.place, name: 'Greyport', settlement: true };
+    state.minutes = 12 * 60;
+    state.characters = [newCharacter({ name: 'Ada', gp: 1000 })];
+    state.log = [];
+    const town = generateTown('Greyport', 'town', true, seeded(19));
+    town.buildings = types.map((type) => ({ id: type, type, name: `Greyport ${type}`, keeper: { name: 'Morgan' } }));
+    state.towns = [town];
+    return state;
+  }
+
+  it('checks open local fare and casting providers before charging', () => {
+    let s = atTown('docks', 'magic');
+    const id = s.characters[0].id;
+    const request = { spell: 'Identify', level: 1, tradition: 'arcane' as const, here: 'town' as const, payerIds: [id], targetId: '' };
+    s = E.bookPassage(s, ctx, 'coach', [id], 100, 1);
+    expect(s.characters[0].gp).toBe(1000);
+    s = E.bookPassage(s, ctx, 'ship', [id], 100, 1);
+    s = E.buySpellcasting(s, ctx, request);
+    expect(s.characters[0].gp).toBe(840);
+    s.minutes = 0;
+    expect(E.buySpellcasting(s, ctx, request).characters[0].gp).toBe(840);
+    s.settings.townOpeningHours = false;
+    expect(E.buySpellcasting(s, ctx, request).characters[0].gp).toBe(690);
+  });
+
+  it('requires a local buyer for valuables and keeps the PHB sale rate', () => {
+    let s = atTown('general');
+    const id = s.characters[0].id;
+    s = E.addInventory(s, ctx, id, 'Ruby 500 GP');
+    const ruby = s.characters[0].inventory.find((entry) => entry.name === 'Ruby')!;
+    expect(E.sellItem(s, ctx, id, ruby.id, 1).characters[0].inventory).toContainEqual(ruby);
+    s = E.addTownBuilding(s, ctx, 'Greyport', 'jeweler');
+    s = E.sellItem(s, ctx, id, ruby.id, 1);
+    expect(s.characters[0].gp).toBe(1500);
+    expect(s.characters[0].inventory).not.toContainEqual(ruby);
+  });
+
+  it('charges a named inn rate and ties the room to the booked town', () => {
+    let s = atTown('inn');
+    s.towns![0].buildings[0].roomRates = [0.1, 0.3, 1];
+    const id = s.characters[0].id;
+    s.minutes = 0;
+    s = E.rentRooms(s, ctx, [id], 'modest', 2, 'inn');
+    expect(s.characters[0].gp).toBe(999.4);
+    expect(s.characters[0].lodging).toMatchObject({ innId: 'inn', innName: 'Greyport inn', place: 'Greyport' });
+    expect(E.hasRoom(s, s.characters[0])).toBe(true);
+    s.place.name = 'Wroat';
+    expect(E.hasRoom(s, s.characters[0])).toBe(false);
+  });
+
+  it('leaves boarded mounts with the stable and settles the bill only on local collection', () => {
+    let s = atTown('stable');
+    s.characters.push(newCharacter({ name: 'Clover', kind: 'mount', hp: 1, maxHp: 10, exhaustion: 1 }));
+    const id = s.characters[1].id;
+    s = E.boardMount(s, ctx, id, 'stable');
+    expect(E.mountWithParty(s.characters[1])).toBe(false);
+    s.place = { ...s.place, name: 'The forest', settlement: false };
+    s = E.advance(s, ctx, 12 * 60);
+    expect(s.characters[1]).toMatchObject({ hp: 10, exhaustion: 0, mountBoarding: { nights: 1, owedGp: 0.55 } });
+    expect(s.characters[0].gp).toBe(1000);
+    expect(E.collectMount(s, ctx, id).characters[1].mountBoarding).toBeDefined();
+    s.place = { ...s.place, name: 'Greyport', settlement: true };
+    s = E.collectMount(s, ctx, id);
+    expect(s.characters[0].gp).toBe(999.45);
+    expect(E.mountWithParty(s.characters[1])).toBe(true);
+  });
+
+  it('blocks deposits and withdrawals away from a vault or after it closes', () => {
+    let s = atTown('bank');
+    const id = s.characters[0].id;
+    s = E.createStash(s, ctx, 'Vault', 'bank', '', null);
+    const ref = `s:${s.stashes[0].id}`;
+    s = E.moveCoins(s, ctx, `c:${id}`, ref, 'gp', 1);
+    expect(s.stashes[0].purse.gp).toBe(1);
+    s.minutes = 0;
+    expect(E.moveCoins(s, ctx, ref, `c:${id}`, 'gp', 1).stashes[0].purse.gp).toBe(1);
+    s.place.name = 'Elsewhere';
+    s.minutes = 12 * 60;
+    expect(E.moveCoins(s, ctx, `c:${id}`, ref, 'gp', 1).stashes[0].purse.gp).toBe(1);
+    s.place.name = 'Greyport';
+    expect(E.moveCoins(s, ctx, ref, `c:${id}`, 'gp', 1).stashes[0].purse.gp).toBe(0);
+  });
+
+  it('holds posted replies until the party picks them up in the right town', () => {
+    let s = atTown('courier');
+    const id = s.characters[0].id;
+    s = E.sendLetter(s, ctx, { charId: id, contactId: null, correspondent: 'Sam', miles: 1, method: 'courier', text: 'News?', expectsReply: true });
+    s = E.advance(s, ctx, 60);
+    const reply = s.letters!.find((letter) => letter.direction === 'in')!;
+    expect(reply.pickupTown).toBe('Greyport');
+    s.dayIndex = Math.floor(reply.arrivesAt / 1440) + 1;
+    s.place.name = 'Elsewhere';
+    expect(E.collectLetter(s, ctx, reply.id).letters!.find((letter) => letter.id === reply.id)?.delivered).toBe(false);
+    s.place.name = 'Greyport';
+    expect(E.collectLetter(s, ctx, reply.id).letters!.find((letter) => letter.id === reply.id)?.delivered).toBe(true);
+  });
+
+  it('recruits hirelings through the matching local provider', () => {
+    let s = atTown('inn');
+    expect(E.employHireling(s, ctx, 'guard', 'Ari', 'party').hirelings).toHaveLength(0);
+    s = E.employHireling(s, ctx, 'porter', 'Fen', 'party');
+    expect(s.hirelings[0]).toMatchObject({ name: 'Fen', hiredAt: 'Greyport inn', hiredIn: 'Greyport' });
+  });
+});

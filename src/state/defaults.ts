@@ -1,3 +1,5 @@
+import { BRELAND, SHARN_START, type BrelishLocality } from '../rules/eberron';
+import { newBuilding, type Town } from '../rules/settlements';
 import { FACILITY_BOOKS } from '../rules/bastion';
 import type { Character, State, Task } from './types';
 import { CALENDARS, indexFromDate } from '../rules/calendar';
@@ -155,7 +157,7 @@ export function createDefaultState(rng: Rng): State {
     travel: { pace: 'normal', hoursToday: 0, milesToday: 0, lost: false, lostRecheckIn: 0, milesOffCourse: 0, navigatorId: null, gallopUsed: false },
     lastLongRestEnd: null,
     trackingStart: dayIndex * 1440 + 7 * 60,
-    settings: { autoRollSaves: true, climateAdjustedPrecip: false, fireWarmsCamp: true, fireColdLimitF: -20, fireLightingCheck: true, doubleWaterInHeat: false, wildNeedsPurifying: true, sleepInArmorPenalty: false, rawFoodRisk: true, rawFoodDC: 10, sewerPlagueAfter: 3, sightRotOdds: 6, coldNights: true, coldNightF: 32, sleepDeprivation: true, encounterOn: 0, exploreEncounterOn: 0, chargeCosts: true, moonOffset: 0, stressPerLongRest: 1, fearPerLongRest: 1, weatherDamage: false, variantEncumbrance: true, encumbrance: true, foodAndWater: true, extremeWeather: true, forcedMarch: true, navigation: true, coldGear2014: false, heavyClothing2014: false, extraCraftHelpers: false, lifestylePeriod: 'day', coinWeight: true, moneychangerFee: 0, noTimepiece: false, poorVisibilityNav: true, runningBusiness: true, encounters: true, srdEncounters: true, trackComponents: true, appraiseCrafts: true, appraiseByEye: true, appraiseOneTry: false, appraiseTime: false, appraiseMisjudge: false, improvised: true, sidekicks: true, downtimeOutcomes: true, armsTraining: true, lifestyleRisks: true, prestigeRules: true, prestigeRenownMin: false, encounterBooks: ['XMM', 'MPMM', 'FRAiF'], facilityBooks: [...FACILITY_BOOKS], regionDailyRoll: true, deathSavesResolve: true, carryDowned: true, fallbackNavigator: true, hirelingsEat: true, nightTravelSlow: true, stormsAtSea: true, debtDropsLifestyle: true, trackGearUse: true, stabling: true, tentSpace: true, batchCrafting: true, taming: true, unchartedLand: true, workWhileMarching: true, lingeringInjuries: false, madness: false, gearWear: false, duesAndTaxes: true, notoriety: true, contactsFade: true, newsTravels: true, circleMagic: true, piety: true, pathsToPower: true },
+    settings: { autoRollSaves: true, climateAdjustedPrecip: false, fireWarmsCamp: true, fireColdLimitF: -20, fireLightingCheck: true, doubleWaterInHeat: false, wildNeedsPurifying: true, sleepInArmorPenalty: false, rawFoodRisk: true, rawFoodDC: 10, sewerPlagueAfter: 3, sightRotOdds: 6, coldNights: true, coldNightF: 32, sleepDeprivation: true, encounterOn: 0, exploreEncounterOn: 0, chargeCosts: true, moonOffset: 0, stressPerLongRest: 1, fearPerLongRest: 1, weatherDamage: false, variantEncumbrance: true, encumbrance: true, foodAndWater: true, extremeWeather: true, forcedMarch: true, navigation: true, coldGear2014: false, heavyClothing2014: false, extraCraftHelpers: false, lifestylePeriod: 'day', coinWeight: true, moneychangerFee: 0, noTimepiece: false, poorVisibilityNav: true, runningBusiness: true, encounters: true, srdEncounters: true, trackComponents: true, appraiseCrafts: true, appraiseByEye: true, appraiseOneTry: false, appraiseTime: false, appraiseMisjudge: false, improvised: true, sidekicks: true, downtimeOutcomes: true, armsTraining: true, lifestyleRisks: true, prestigeRules: true, prestigeRenownMin: false, encounterBooks: ['XMM', 'MPMM', 'FRAiF'], facilityBooks: [...FACILITY_BOOKS], regionDailyRoll: true, deathSavesResolve: true, carryDowned: true, fallbackNavigator: true, hirelingsEat: true, nightTravelSlow: true, stormsAtSea: true, debtDropsLifestyle: true, trackGearUse: true, stabling: true, townOpeningHours: true, tentSpace: true, batchCrafting: true, taming: true, unchartedLand: true, workWhileMarching: true, lingeringInjuries: false, madness: false, gearWear: false, duesAndTaxes: true, notoriety: true, contactsFade: true, newsTravels: true, circleMagic: true, piety: true, pathsToPower: true },
     spellLibrary: [],
     bastions: [],
     watchOrder: [],
@@ -193,4 +195,40 @@ export function createDefaultState(rng: Rng): State {
   const ids = state.characters.map((c) => c.id);
   state.watchPlan = { count: 4, slots: autoAssign(ids, 4, 1, Object.fromEntries(state.characters.map((c) => [c.id, watchCapacity(4, c.trance)]))) };
   return state;
+}
+
+/** A new Brelish campaign starts with its wards, providers and residents already recorded. */
+export function createEberronState(rng: () => number, start = { locality: SHARN_START, year: 998, month: 0, day: 1 }): State {
+  const s = createDefaultState(rng);
+  s.setting = 'eberron';
+  s.calendar = CALENDARS.galifar;
+  s.startYear = start.year;
+  s.dayIndex = indexFromDate(s.calendar, s.startYear, start.year, start.month, start.day);
+  s.characters = [];
+  s.towns = (Object.entries(BRELAND) as [BrelishLocality, (typeof BRELAND)[BrelishLocality]][]).map(([, profile]): Town => {
+    const taken = new Set<string>();
+    return {
+      name: profile.name,
+      size: profile.size,
+      water: profile.water,
+      trait: profile.district,
+      fame: '',
+      leader: profile.authority,
+      calamity: null,
+      buildings: profile.providers.map(([type, name]) => ({ ...newBuilding(type, rng, taken, profile.size), name })),
+    };
+  });
+  s.place = brelishPlace(start.locality);
+  s.trackingStart = s.dayIndex * 1440 + s.minutes;
+  s.weather = rollWeather({ dayIndex: s.dayIndex, season: s.calendar.months[start.month].season, climate: s.place.climate, altitudeFt: s.place.altitudeFt, climateAdjustedPrecip: false }, rng);
+  s.weatherHistory = [s.weather];
+  return s;
+}
+
+export function brelishPlace(locality: BrelishLocality): State['place'] {
+  return {
+    name: BRELAND[locality].name, climate: 'temperate', altitudeFt: 0, terrain: 'urban',
+    settlement: true, shelter: 'none', onRoute: true, goodRoad: true,
+    waterSource: true, waterQuality: 'clean', danger: 'low',
+  };
 }

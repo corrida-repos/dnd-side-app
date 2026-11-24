@@ -27,12 +27,12 @@ const SIZE: Record<Settlement, number> = { village: 0, town: 1, city: 2 };
 export const spellServiceAvailable = (where: Settlement, here: Settlement): boolean => SIZE[here] >= SIZE[where];
 
 /** Common requests, with the costly components the spell consumes or needs. */
-export const COMMON_SPELL_REQUESTS: { name: string; level: number; componentGp: number; note: string }[] = [
+export const COMMON_SPELL_REQUESTS: { name: string; level: number; componentGp: number; tradition?: 'arcane' | 'either'; note: string }[] = [
   { name: 'Purify Food and Drink', level: 1, componentGp: 0, note: 'Makes food and drink in a 5-ft sphere safe (ritual).' },
-  { name: 'Identify', level: 1, componentGp: 100, note: 'A 100 GP pearl, not consumed.' },
+  { name: 'Identify', level: 1, tradition: 'arcane', componentGp: 100, note: 'A 100 GP pearl, not consumed.' },
   { name: 'Lesser Restoration', level: 2, componentGp: 0, note: 'Ends Blinded, Deafened, Paralyzed or Poisoned; cures Sight Rot.' },
   { name: 'Remove Curse', level: 3, componentGp: 0, note: 'Ends curses; lets you end attunement to a cursed item.' },
-  { name: 'Sending', level: 3, componentGp: 0, note: 'A 25-word message to someone you know, anywhere on the plane.' },
+  { name: 'Sending', level: 3, tradition: 'either', componentGp: 0, note: 'A 25-word message to someone you know, anywhere on the plane.' },
   { name: 'Revivify', level: 3, componentGp: 300, note: 'Diamonds worth 300+ GP, consumed. Within 1 minute of death.' },
   { name: 'Greater Restoration', level: 5, componentGp: 100, note: 'Diamond dust worth 100+ GP, consumed. Removes 1 Exhaustion level, or ends a curse, Charmed or Petrified, among others.' },
   { name: 'Raise Dead', level: 5, componentGp: 500, note: 'A diamond worth 500+ GP, consumed. Dead no longer than 10 days.' },

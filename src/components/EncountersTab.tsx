@@ -9,6 +9,8 @@ import { Card, Pill, Rule, Select, Toggle } from './common';
 import { senseText } from './senseView';
 import { BookAdvice } from './SettingsTab';
 import { WaysAround } from './WaysAround';
+import { encounterHandoffJson, type EncounterHandoff } from '../rules/encounterHandoff';
+import { formatDate, formatClock } from '../rules/calendar';
 import { TreasureCard } from './TreasureCard';
 
 type Act = CheckConditions['activity'];
@@ -26,6 +28,7 @@ export function EncountersTab() {
       <TableCard act={act} />
       <EncounterDistanceCard />
       <RecentCard />
+      <TacticalHandoffCard />
       <TreasureCard />
     </div>
   );
@@ -349,5 +352,64 @@ function RecentCard() {
         ))}
       </ul>
     </Card>
+  );
+}
+
+function TacticalHandoffCard() {
+  const s = useGame();
+  const snapshots = s.encounterHandoffs ?? [];
+  const [id, setId] = useState('');
+  const snapshot = snapshots.find((entry) => entry.encounterId === id) ?? snapshots[0];
+  if (!snapshot) return null;
+  return (
+    <Card title="Tactical encounter export" className="span-2">
+      <Select label="Encounter" value={snapshot.encounterId} onChange={setId} options={snapshots.map((entry) => ({
+        value: entry.encounterId,
+        label: `${entry.summary} · ${formatDate(s.calendar, s.startYear, Math.floor(entry.minute / 1440))} ${formatClock(entry.minute % 1440)}`,
+      }))} />
+      <TacticalExport key={snapshot.encounterId} snapshot={snapshot} />
+    </Card>
+  );
+}
+
+function TacticalExport({ snapshot }: { snapshot: EncounterHandoff }) {
+  const [selected, setSelected] = useState(() => new Set(snapshot.participants.map((p) => p.id)));
+  const [feedback, setFeedback] = useState('');
+  const json = () => encounterHandoffJson(snapshot, selected);
+  const download = () => {
+    const url = URL.createObjectURL(new Blob([json()], { type: 'application/json' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `encounter-${snapshot.encounterId}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+  return (
+    <details>
+      <summary>Review participants</summary>
+      <p className="small">{snapshot.environment.distanceFt} ft apart. {snapshot.attitude?.attitude}. {snapshot.surprise.narrative.trim()}</p>
+      <div className="btn-row">
+        {snapshot.participants.map((p) => (
+          <Toggle key={p.id} checked={selected.has(p.id)} label={p.name} onChange={(include) => setSelected((previous) => {
+            const next = new Set(previous);
+            if (include) next.add(p.id);
+            else next.delete(p.id);
+            return next;
+          })} />
+        ))}
+      </div>
+      <div className="btn-row">
+        <button className="small" disabled={!selected.size} onClick={download}>Download encounter</button>
+        <button className="small" disabled={!selected.size} onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(json());
+            setFeedback('Encounter copied.');
+          } catch {
+            setFeedback('Clipboard unavailable. Download the encounter instead.');
+          }
+        }}>Copy encounter</button>
+        {feedback && <span role="status" className="small">{feedback}</span>}
+      </div>
+    </details>
   );
 }

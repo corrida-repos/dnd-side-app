@@ -1,3 +1,5 @@
+import type { EncounterSurprise, HandoffParticipant } from '../rules/encounterHandoff';
+import { BRELAND, BRELAND_ROUTES, nextDeparture, type BrelishLocality } from '../rules/eberron';
 import { audibleDistance, LOCK_DC, LOCK_MINUTES, monsterBehavior, NOISE, UNDERWATER_DISTANCE, type LockDetails, type Noise } from '../rules/exploration';
 import { rollBastionTreasure, rollTreasure, type TreasureItem, type TreasureRequest } from '../rules/treasure';
 import type { LadderPos, TameTarget, ActiveEffect, Activity, CharacterSpell, InventoryItem, LogEntry, Ritual, Stash, VehicleDetails, Bastion, Business, Character, FacilityWork, Obstacle, Rival, Debt, Mark, Faction, ExhaustionCause, Facility, JourneyStage, MagicItem, Pace, PendingSave, Project, Recruit, SaveKind, Size, State, Tone } from './types';
@@ -45,7 +47,7 @@ import { canTravelAboard, detectContainer, transportMode, TRANSPORT_STATUSES } f
 import { FIRE_DAMAGE, RAT_BITE_DAMAGE, RELAXATION_NEEDS, SHAKEDOWN_DAMAGE, SHAKEDOWN_GP, SHAKEDOWN_RIVAL_ODDS, SHUNNED_AFTER_DAYS, SPOILED_FOOD_DC, TAINTED_POTION_ODDS, WATCH_FINE, WATCH_JAIL_DAYS, WEEKLY_ODDS, WRETCHED_STRESS, isLowLife } from '../rules/lowLife';
 import { BOILING_POT, CHARCOAL_WORDS, FRICTION_LIGHT_MINUTES, HIDE_WATERSKIN, LEAN_TO, BEDDING, MAKESHIFT_DC, MAKESHIFT_TORCH, POTS, POT_ALARM_DC, SNARE, SNARE_LINE, TINDERBOX, VINE_CORD, isBareback, leanToDC, ABILITY_LABEL, INK, INK_PAGES, PAPER, PERFUME, PERFUME_MINUTES, SIGNAL_WHISTLE, carriesTool, liquidCapacity, toolNamed, SPYGLASS, ALARM_LINE, ALARM_MINUTES, BELL, DIG_BY_HAND, DIG_LABEL, GATHER_MINUTES, HUNTING_TRAP, SCATTERABLE, SHOVEL, SHOVEL_MINUTES, STABLING_GP_PER_DAY, TENT, TENT_SLEEPS, TRAP_CATCH_ON, TRAP_MEAT_DICE, TRAP_SAVE_DC, needsExoticSaddle, type DigKind, MAGNIFYING_GLASS, hasSkill, proficientWith, abilityScore, PACKS, RATIONS, WATERSKIN, WATERSKIN_PINTS, packNamed, FUEL_LABEL, FUEL_MATCH, HEALERS_KIT, HEALERS_KIT_USES, OIL_MINUTES, VESSEL_MATCH, fuelFor, isHooded, isOilLight } from '../rules/gear';
 import type { DdbImport } from '../rules/ddb';
-import { INN_STAY_GP, MEAL_GP, MEALS_PER_DAY, FEED_GP_PER_DAY, HIRELING_WAGE, magicItemValue, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset, type Lifestyle } from '../rules/money';
+import { MEAL_GP, MEALS_PER_DAY, FEED_GP_PER_DAY, HIRELING_WAGE, magicItemValue, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset, type Lifestyle } from '../rules/money';
 import { STABLE_WAKE_DIE, STABILIZE_DC } from '../rules/upkeep';
 import { ARMS_COURSES, armsCue, armsEntry, canTrainArms } from '../rules/armsTraining';
 import { FORT_NEGLECT_DAYS, FORT_UPKEEP, LAND, LODGING_CAP, MARK_LABEL, PRIZE_CROWN_SHARE, RIGHTS, TITLE_RANK, TRUST_LABEL, TRUST_MAX, lifestyleBelow, lowerLifestyle, monthDue, rollLandIncome, rollLandTrouble, sameCommunity, TRAINING_KIND_LABEL, levelRenown, renownMinimum } from '../rules/prestige';
@@ -79,12 +81,12 @@ import {
   BOIL_MINUTES,
 } from '../rules/survival';
 import { isCaster, PREP_RULE, preparedCount, preparedLimit } from '../rules/spells';
-import { newCharacter, uid } from './defaults';
+import { brelishPlace, newCharacter, uid } from './defaults';
 import { sense, type SenseKey } from '../rules/senses';
 import * as Piety from '../rules/piety';
 import * as Priest from '../rules/priesthood';
 import * as Ladder from '../rules/ladders';
-import { buildTable, checkModifiers, DANGER, DIFFICULTY_LABEL, firstSign, rollOnTable, SRD_POOL, BOOK_POOL, type CheckConditions, type Danger, type EncounterCreature, type EncounterTable, type Party } from '../rules/encounters';
+import { buildTable, checkModifiers, DANGER, DIFFICULTY_LABEL, firstSign, rollOnTable, SRD_POOL, BOOK_POOL, type CheckConditions, type Danger, type EncounterCreature, type EncounterResult, type EncounterTable, type Party } from '../rules/encounters';
 import type { TerrainType } from '../rules/terrain';
 import { FESTERING_MEDICINE_DC, INJURIES, INJURY_MEDICINE_SUCCESSES, INJURY_REST_DAYS, INJURY_SPELLS, healsInjury, injuryFor, type InjuryKind } from '../rules/injuries';
 import { MADNESS, MADNESS_SAVE_DC, MADNESS_SPELLS, MADNESS_THRESHOLD, madnessEffect, type MadnessTier } from '../rules/madness';
@@ -94,9 +96,10 @@ import { DUE_PRESETS, GUILD_EXPULSION, PERIOD_DAYS, dueAmount, type DueKind, typ
 import { BRIBE_GP_PER_HEAT, CRIMES, HEAT_DECAY_PER_WEEK, RECOGNISE_ON, heatLevel, jailDaysFor, samePlace, type CrimeSeverity } from '../rules/notoriety';
 import { BOND_MAX, FAVOR_COOLDOWN_DAYS, NEGLECT_DAYS, attitudeOf, clampBond, favorDC } from '../rules/contacts';
 import { REPLY_DIE, newsDelay, type NewsRoute } from '../rules/letters';
-import { arrivalLine, buildingType, generateTown, newBuilding, rollCalamity, rollFame, rollKeeper, rollLeader, rollRuler, rollTrait, sortBuildings, type Town } from '../rules/settlements';
+import { innPrices, townBuyers, townSells, townSpecials, arrivalLine, buildingType, generateTown, newBuilding, rollCalamity, rollFame, rollKeeper, rollLeader, rollRuler, rollTrait, sortBuildings, type Town } from '../rules/settlements';
 import { npcLine, rollName, rollNpc, rollNpcProfile, type Npc } from '../rules/npcs';
-import type { Settlement } from '../rules/services';
+import { COMMON_SPELL_REQUESTS, PASSAGE, SPELL_SERVICES, spellServiceAvailable, type Settlement } from '../rules/services';
+import { ITEM_PRICES } from '../rules/itemPrices';
 
 export interface Ctx {
   rng: Rng;
@@ -276,7 +279,7 @@ export function exposure(s: State, activity: Activity, tempF: number = tempNow(s
 export const inDowntime = (s: State): boolean => s.place.settlement && s.townMode === 'downtime';
 
 /** A rented room still valid right now. */
-export const hasRoom = (s: State, c: Character): boolean => !!c.lodging && c.lodging.until > absNow(s);
+export const hasRoom = (s: State, c: Character): boolean => !!c.lodging && c.lodging.until > absNow(s) && (!c.lodging.place || (s.place.settlement && samePlace(c.lodging.place, s.place.name)));
 
 /**
  * The standard of living that sets a character's risks in town: their lifestyle during downtime; in day-to-day play,
@@ -455,7 +458,7 @@ function tickHour(s: State, ctx: Ctx, activity: Activity): void {
 
   const partyExp = exposure(s, activity, temp);
   for (const c of s.characters) {
-    if (!alive(c)) continue;
+    if (!alive(c) || !mountWithParty(c)) continue;
     const exp = personalExposure(s, c, activity, partyExp);
     if (s.settings.extremeWeather && exp.cold && temp <= 0 && !coldProtection(c, activity, s.settings.coldGear2014)) {
       const wrapped = (c.blanket || !!c.bedding) && activity === 'rest';
@@ -506,12 +509,11 @@ function dailyCosts(s: State): void {
       }
     }
     if (fed.length) log(s, `Town living covers meals and lodging for ${fed.join(', ')}.`);
-    if (s.settings.stabling) stableMounts(s);
   } else if (!s.place.settlement) {
     for (const c of adventurers(s)) if (c.lifestyleOwed) settleLifestyle(s, c, 'lodgings and meals on leaving town');
     if (s.settings.hirelingsEat && s.settings.foodAndWater) hirelingsEat(s);
   }
-  if (s.place.settlement && s.settings.stabling && !inDowntime(s)) stableMounts(s);
+  if (s.place.settlement && s.settings.stabling && !currentTown(s)) stableMounts(s);
   for (const h of s.hirelings) {
     if (h.active && h.wageGp > 0) payGold(s, h.payer === 'party' ? [] : [h.payer], h.wageGp, `${h.name}'s daily wage`);
   }
@@ -523,14 +525,44 @@ function dailyCosts(s: State): void {
   }
 }
 
-/** Stables and feeds the mounts in a settlement (2024 PHB: Stabling 5 SP, Feed 5 CP a day). */
+export const mountWithParty = (c: Character): boolean => !c.mountBoarding;
+const dailyBoardGp = STABLING_GP_PER_DAY + FEED_GP_PER_DAY;
+
+function feedStabledMount(s: State, mount: Character): void {
+  mount.ateLbToday = Math.max(mount.ateLbToday, foodNeedLb(mount));
+  mount.drankPintsToday = Math.max(mount.drankPintsToday, waterNeedPints(mount, s.weather.high >= 100, s.settings.doubleWaterInHeat));
+}
+
+/** Legacy daily stabling for settlements without a generated directory. */
 function stableMounts(s: State): void {
-  const stabled = s.characters.filter((m) => m.kind === 'mount' && alive(m));
-  for (const m of stabled) {
-    m.ateLbToday = Math.max(m.ateLbToday, foodNeedLb(m));
-    m.drankPintsToday = Math.max(m.drankPintsToday, waterNeedPints(m, false, false));
+  const stabled = s.characters.filter((m) => m.kind === 'mount' && alive(m) && mountWithParty(m));
+  for (const m of stabled) feedStabledMount(s, m);
+  if (stabled.length) payGold(s, [], round2(stabled.length * dailyBoardGp), `stabling and feed for ${stabled.map((m) => m.name).join(', ')}`);
+}
+
+function boardedMountsDaily(s: State): void {
+  for (const mount of s.characters) {
+    const boarding = mount.mountBoarding;
+    if (!boarding || !alive(mount) || boarding.sold) continue;
+    feedStabledMount(s, mount);
+    boarding.nights += 1;
+    if (s.settings.stabling && s.settings.chargeCosts) boarding.owedGp = round2(boarding.owedGp + dailyBoardGp);
+    if (boarding.nights >= 30 && boarding.owedGp > 0) {
+      boarding.sold = true;
+      boarding.owedGp = 0;
+      log(s, `${boarding.provider} sells ${mount.name} after 30 unpaid nights. Any belongings can be collected in ${boarding.place}.`, 'warn');
+    }
+    if (s.settings.foodAndWater) {
+      mount.dehydrated = false;
+      mount.malnourished = false;
+    }
+    if (mount.hp > 0 && !sewerWeakened(mount)) {
+      mount.hp = mount.maxHp;
+      mount.tempHp = 0;
+      mount.hitDiceSpent = 0;
+      recoverExhaustion(mount);
+    }
   }
-  if (stabled.length) payGold(s, [], Math.round(stabled.length * (STABLING_GP_PER_DAY + FEED_GP_PER_DAY) * 100) / 100, `stabling and feed for ${stabled.map((m) => m.name).join(', ')}`);
 }
 
 /** Switches between downtime (lifestyle covers lodging and meals) and day-to-day play (buy them as you go). */
@@ -555,16 +587,20 @@ function freeBoardPrice(s: State, c: Character, table: Record<Exclude<Lifestyle,
 }
 
 /** Rents rooms at an inn (2024 PHB Inn Stay per Day). A room keeps the weather out and sets the quality of town life. */
-export const rentRooms = act((d, _ctx, charIds: string[], tier: Exclude<Lifestyle, 'wretched'>, nights: number) => {
+export const rentRooms = act((d, _ctx, charIds: string[], tier: Exclude<Lifestyle, 'wretched'>, nights: number, innId?: string) => {
   const who = charIds.map((id) => charById(d, id)).filter((c): c is Character => !!c && c.kind !== 'mount');
   const n = Math.max(1, Math.round(nights));
   if (!who.length || !d.place.settlement) return;
+  const inns = townProviders(d, ['inn']);
+  const inn = innId ? inns.find((b) => b.id === innId) : inns[0];
+  if (currentTown(d) && !inn) return void log(d, 'There is no available inn here.', 'warn');
+  const prices = innPrices(inn);
   const now = absNow(d);
   // A night's stay runs to midday after the last night.
   const checkout = (d.dayIndex + n) * MIN_PER_DAY + 12 * 60;
   for (const c of who) {
-    payGold(d, [c.id], Math.round(freeBoardPrice(d, c, INN_STAY_GP, tier) * n * 100) / 100, `${n} night${n > 1 ? 's' : ''} at a ${LIFESTYLE_LABEL[tier].toLowerCase()} inn`);
-    c.lodging = { tier, until: Math.max(now + 60, checkout) };
+    payGold(d, [c.id], Math.round(freeBoardPrice(d, c, prices, tier) * n * 100) / 100, `${n} night${n > 1 ? 's' : ''} at ${inn?.name ?? 'the inn'}`);
+    c.lodging = { tier, until: Math.max(now + 60, checkout), place: d.place.name, innId: inn?.id, innName: inn?.name };
   }
   log(d, `${who.map((c) => c.name).join(', ')} take${who.length > 1 ? '' : 's'} ${LIFESTYLE_LABEL[tier].toLowerCase()} rooms for ${n} night${n > 1 ? 's' : ''}.`, 'good');
 });
@@ -574,6 +610,7 @@ export const buyMeals = act((d, _ctx, charIds: string[], tier: Exclude<Lifestyle
   const who = charIds.map((id) => charById(d, id)).filter((c): c is Character => !!c && c.kind !== 'mount');
   const n = Math.max(1, Math.round(meals));
   if (!who.length || !d.place.settlement) return;
+  if (!requireTownProvider(d, ['inn', 'tavern'], 'a meal')) return;
   for (const c of who) {
     payGold(d, [c.id], Math.round(freeBoardPrice(d, c, MEAL_GP, tier) * n * 100) / 100, `${n} ${LIFESTYLE_LABEL[tier].toLowerCase()} meal${n > 1 ? 's' : ''}`);
     c.ateLbToday = round2(c.ateLbToday + (foodNeedLb(c) * n) / MEALS_PER_DAY);
@@ -607,6 +644,7 @@ function hirelingsEat(s: State): void {
 
 function endOfDay(s: State, ctx: Ctx): void {
   dailyCosts(s);
+  boardedMountsDaily(s);
   patronDaily(s);
   lifestyleRisks(s, ctx);
   cityWater(s, ctx);
@@ -622,7 +660,7 @@ function endOfDay(s: State, ctx: Ctx): void {
   checkRituals(s);
   const hotDay = s.weather.high >= 100;
   for (const c of s.characters) {
-    if (!alive(c) || !s.settings.foodAndWater) {
+    if (!alive(c) || c.mountBoarding?.sold || !s.settings.foodAndWater) {
       c.ateLbToday = 0;
       c.drankPintsToday = 0;
       continue;
@@ -897,7 +935,7 @@ function checkSleepDeprivation(s: State, ctx: Ctx, before: number): void {
     const dc = sleepDeprivationDC(day);
     log(s, `The party has gone ${day * 24} hours without a Long Rest.`, 'warn');
     for (const c of s.characters) {
-      if (alive(c)) requestSave(s, ctx, c, 'sleep', dc, 'normal', `sleep deprivation (${day * 24} hours without a Long Rest)`);
+      if (alive(c) && mountWithParty(c)) requestSave(s, ctx, c, 'sleep', dc, 'normal', `sleep deprivation (${day * 24} hours without a Long Rest)`);
     }
   }
 }
@@ -1319,7 +1357,7 @@ function completeLongRest(d: State, ctx: Ctx, watched: Record<string, number>): 
   d.travel.hoursToday = 0;
   d.travel.milesToday = 0;
   for (const c of d.characters) {
-    if (!alive(c)) continue;
+    if (!alive(c) || !mountWithParty(c)) continue;
     const onWatch = watched[c.id] ?? 0;
     if (onWatch > maxWatchMinutes(c.trance)) {
       log(d, `${c.name} spent ${formatDuration(onWatch)} on watch, more than the ${formatDuration(maxWatchMinutes(c.trance))} a Long Rest allows, so they get no Long Rest benefits.`, 'warn');
@@ -1494,7 +1532,7 @@ export const interruptedRest = act((d, ctx, o: InterruptOpts) => {
     else finishShortRest(d, ctx);
     return;
   }
-  const all = d.characters.filter((c) => alive(c));
+  const all = d.characters.filter((c) => alive(c) && mountWithParty(c));
   for (const c of all) status(d, c, 'restInterrupted', `${c.name}'s ${o.kind === 'long' ? 'Long' : 'Short'} Rest is interrupted.`, 'warn');
   if (o.kind === 'short') {
     log(d, 'An interrupted Short Rest gives no benefits.', 'warn');
@@ -1520,7 +1558,7 @@ function finishShortRest(d: State, ctx: Ctx): void {
   d.travel.gallopUsed = false;
   clearAppraiseTries(d);
   for (const c of d.characters) {
-    if (!alive(c)) continue;
+    if (!alive(c) || !mountWithParty(c)) continue;
     if (c.hp <= 0) {
       log(d, `${c.name} is at 0 HP, so they get no Short Rest benefits.`, 'warn');
       continue;
@@ -1564,7 +1602,7 @@ export function carriedDowned(s: State): string[] {
   const down = s.characters.filter((c) => c.kind !== 'mount' && c.diedAt == null && (c.dying || c.stable));
   if (!down.length) return [];
   const up = (c: Character) => alive(c) && !c.dying && !c.stable;
-  const spare = s.characters.filter((c) => c.kind === 'mount' && up(c)).length - s.characters.filter((c) => c.kind !== 'mount' && up(c)).length;
+  const spare = s.characters.filter((c) => c.kind === 'mount' && mountWithParty(c) && up(c)).length - s.characters.filter((c) => c.kind !== 'mount' && up(c)).length;
   return spare >= down.length ? [] : down.map((c) => c.name);
 }
 
@@ -1596,7 +1634,7 @@ function travelsBlind(s: State): boolean {
 /** Travelers slowed to half Speed or less, which forces a Slow pace (2024 DMG "Slower Travelers"). */
 export function slowTravelers(s: State): string[] {
   return s.characters
-    .filter((c) => alive(c) && !c.dying && !c.stable)
+    .filter((c) => alive(c) && mountWithParty(c) && !c.dying && !c.stable)
     .filter((c) => {
       const base = c.speed || 30;
       const lvl = carriedLoad(s, c).level;
@@ -1667,7 +1705,7 @@ function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
   }
   breakCamp(d, ctx);
   if (d.townMode === 'downtime') setTownModeMut(d, 'active', 'Downtime is over. ');
-  for (const c of d.characters) if (c.lodging) c.lodging = null;
+  for (const c of d.characters) if (c.lodging && !c.lodging.place) c.lodging = null;
   if (vessel) return sail(d, ctx, vessel, o);
   if (o.flying && o.difficult) o = { ...o, difficult: false };
   const ground = groundDifficulty(d.place.ground, d.place.goodRoad);
@@ -1707,10 +1745,10 @@ function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
     d.travel.lost = true;
     d.travel.lostRecheckIn = die(LOST_RECHECK_DIE, ctx.rng);
   }
-  const mounts = d.characters.filter((c) => c.kind === 'mount' && alive(c)).length;
+  const mounts = d.characters.filter((c) => c.kind === 'mount' && alive(c) && mountWithParty(c)).length;
   const riders = d.characters.filter((c) => c.kind !== 'mount' && alive(c)).length;
   let gallop = !!o.gallop;
-  const bareback = d.characters.filter((m) => m.kind === 'mount' && alive(m) && isBareback(m));
+  const bareback = d.characters.filter((m) => m.kind === 'mount' && alive(m) && mountWithParty(m) && isBareback(m));
   if (gallop && bareback.length) {
     log(d, `${bareback.map((m) => m.name).join(', ')} ${bareback.length > 1 ? 'have' : 'has'} no saddle, so the party can't gallop (table rule).`, 'warn');
     gallop = false;
@@ -1750,7 +1788,7 @@ function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
     if (d.settings.forcedMarch && d.travel.hoursToday > 8) {
       const dc = 10 + (d.travel.hoursToday - 8);
       for (const c of d.characters) {
-        if (alive(c)) requestSave(d, ctx, c, 'march', dc, 'normal', `a forced march (hour ${d.travel.hoursToday})`);
+        if (alive(c) && mountWithParty(c)) requestSave(d, ctx, c, 'march', dc, 'normal', `a forced march (hour ${d.travel.hoursToday})`);
       }
     }
   }
@@ -2251,7 +2289,7 @@ export const partyEat = act((d, ctx, portion: Portion) => {
   const notes: string[] = [];
   const risky: [Character, number][] = [];
   for (const c of d.characters) {
-    if (!alive(c) || !c.needsFood) continue;
+    if (!alive(c) || !mountWithParty(c) || !c.needsFood) continue;
     const want = portionFood(c, portion);
     if (want <= 0) continue;
     const got = takeFood(d, c, want, 'auto');
@@ -2267,7 +2305,7 @@ export const partyDrink = act((d, ctx, portion: Portion) => {
   const notes: string[] = [];
   const risky: [Character, number][] = [];
   for (const c of d.characters) {
-    if (!alive(c) || !c.needsWater) continue;
+    if (!alive(c) || !mountWithParty(c) || !c.needsWater) continue;
     const need = waterNeedPints(c, hot, d.settings.doubleWaterInHeat);
     const want = portion === 'meal' ? need / 2 : portion === 'day' ? need : Math.max(0, need - c.drankPintsToday);
     if (want <= 0) continue;
@@ -2313,7 +2351,7 @@ export const cookMeal = act((d, ctx, cookId: string | null) => {
   const ate: Character[] = [];
   let cookedUnsafe = 0;
   for (const c of d.characters) {
-    if (!alive(c) || !c.needsFood) continue;
+    if (!alive(c) || !mountWithParty(c) || !c.needsFood) continue;
     const got = takeFood(d, c, foodNeedLb(c) / 2, 'cook');
     cookedUnsafe += got.unsafe;
     if (got.amount > 0) (eaters.push(c.name), ate.push(c));
@@ -3165,7 +3203,7 @@ export const resolveObstacle = act((d, ctx, stageId: string, obstacleId: string,
   const st = d.journey.find((x) => x.id === stageId);
   const ob = st?.obstacles?.find((x) => x.id === obstacleId);
   if (!st || !ob || ob.resolved) return;
-  const travelers = d.characters.filter((c) => alive(c) && !c.dying && !c.stable);
+  const travelers = d.characters.filter((c) => mountWithParty(c) && alive(c) && !c.dying && !c.stable);
   const rollers = ob.group ? travelers : travelers.filter((c) => c.id === leaderId).slice(0, 1);
   if (!rollers.length) return;
   const results = rollers.map((c) => {
@@ -3405,8 +3443,36 @@ function rivalAdvances(d: State, ctx: Ctx): void {
   if (esc) log(d, `${rival.name} ${esc}.`, 'bad');
 }
 
+export function hirelingProviders(role: HirelingRole): string[] {
+  switch (role) {
+    case 'guard': return ['barracks', 'watch'];
+    case 'guide':
+    case 'messenger': return ['courier'];
+    case 'healer': return ['healer', 'temple', 'shrine'];
+    case 'sailor': return ['docks'];
+    case 'groom': return ['stable', 'inn'];
+    case 'teamster': return ['coaching', 'stable'];
+    case 'scribe': return ['scribe', 'library', 'guildhall'];
+    case 'appraiser': return ['jeweler', 'guildhall'];
+    default: return HIRELING_ROLES[role].skilled ? ['guildhall'] : ['tavern', 'inn'];
+  }
+}
+
+export function hirelingProblem(s: State, role: HirelingRole): string | undefined {
+  const town = currentTown(s);
+  if (!town) return undefined;
+  if (!townProviders(s, hirelingProviders(role)).length) return 'Nobody is taking on that work here right now.';
+  if (town.size === 'village' && s.hirelings.filter((h) => h.active && h.hiredIn && samePlace(h.hiredIn, town.name)).length >= 3) {
+    return 'The village has no more workers to spare.';
+  }
+  return undefined;
+}
+
 export const employHireling = act((d, ctx, role: HirelingRole, name: string, payer: string) => {
+  const problem = hirelingProblem(d, role);
+  if (problem) return void log(d, problem, 'warn');
   const info = HIRELING_ROLES[role];
+  const provider = townProviders(d, hirelingProviders(role))[0];
   d.hirelings.push({
     id: uid(),
     name: name.trim() || rollName(ctx.rng),
@@ -3417,6 +3483,8 @@ export const employHireling = act((d, ctx, role: HirelingRole, name: string, pay
     wageGp: role === 'messenger' ? 0 : info.skilled ? HIRELING_WAGE.skilled : HIRELING_WAGE.untrained,
     payer,
     active: true,
+    hiredIn: provider ? d.place.name : undefined,
+    hiredAt: provider?.name,
     ...rollNpcProfile(ctx.rng),
   });
   syncPorters(d);
@@ -3520,7 +3588,7 @@ function regionRoll(d: State, ctx: Ctx, why: string): void {
   const info = REGIONS[kind];
   const roll = die(100, ctx.rng);
   const band = regionBand(kind, roll);
-  const pcs = d.characters.filter((c) => alive(c));
+  const pcs = d.characters.filter((c) => alive(c) && mountWithParty(c));
   const one = pcs.length ? pcs[die(pcs.length, ctx.rng) - 1] : undefined;
   const targets = band.target === 'one' && one ? [one] : band.target === 'all' ? pcs : [];
   log(d, `${info.name} (${why}): d100 = ${roll}. ${band.label}${targets.length === 1 ? ` (${targets[0].name})` : ''}. See Tasha's for the full effect.`, 'warn');
@@ -3537,7 +3605,7 @@ function regionRoll(d: State, ctx: Ctx, why: string): void {
     }
     case 'hourlyExhaustion': {
       const hours = die(6, ctx.rng);
-      for (let h = 0; h < hours; h++) for (const c of d.characters.filter((x) => alive(x))) if (!rollSave(c, 10, 'normal', ctx.rng).passed) gainExhaustion(d, c, 1, 'biting swarms', 'other');
+      for (let h = 0; h < hours; h++) for (const c of d.characters.filter((x) => alive(x) && mountWithParty(x))) if (!rollSave(c, 10, 'normal', ctx.rng).passed) gainExhaustion(d, c, 1, 'biting swarms', 'other');
       log(d, `The swarms last ${hours} hour(s).`, 'warn');
       break;
     }
@@ -3724,7 +3792,14 @@ function purseDebts(d: State): void {
 /** Buys equipment at its PHB price (less any discount) and adds it to the buyer's inventory. */
 export const buyItem = act((d, _ctx: Ctx, charId: string, name: string, qty: number, unitGp: number, discount: number) => {
   const c = charById(d, charId);
-  if (!c || qty < 1) return;
+  if (!c || !Number.isSafeInteger(qty) || qty < 1 || !Number.isFinite(unitGp) || unitGp < 0 || !Number.isFinite(discount) || discount < 0 || discount > 1) return;
+  const shop = localShop(d);
+  if (shop) {
+    const item = ITEM_PRICES.find((entry) => entry.name === name && entry.gp === unitGp);
+    if (!(item && townSells(shop, item).ok) && !townSpecials(shop).some((entry) => entry.ok && entry.item.name === name && entry.item.gp === unitGp)) {
+      return void log(d, `No open shop in ${shop.name} sells ${name} at that price.`, 'warn');
+    }
+  }
   const cost = Math.round(unitGp * qty * (1 - discount) * 100) / 100;
   if (c.gp < cost) return void log(d, `${c.name} can't afford ${qty} × ${name} (${fmtGp(cost)}; has ${fmtGp(c.gp)}).`, 'warn');
   spendWealth(c, cost);
@@ -3742,7 +3817,9 @@ export const buyItem = act((d, _ctx: Ctx, charId: string, name: string, qty: num
 export const sellItem = act((d, _ctx, charId: string, itemId: string, qty: number) => {
   const c = charById(d, charId);
   const it = c?.inventory.find((i) => i.id === itemId);
-  if (!c || !it) return;
+  if (!c || !it || !Number.isFinite(qty) || qty <= 0) return;
+  const buyers = localBuyers(d, it);
+  if (buyers && !buyers.length) return void log(d, `No open shop here buys ${it.name}.`, 'warn');
   const n = Math.max(1, Math.min(it.qty, Math.round(qty)));
   const unit = it.valueGp ?? priceOf(it.name);
   if (unit == null) return void log(d, `Nobody will name a price for the ${it.name} until its value is known. Set a value on the item first.`, 'warn');
@@ -3759,7 +3836,7 @@ export const sellItem = act((d, _ctx, charId: string, itemId: string, qty: numbe
   it.qty -= n;
   c.inventory = c.inventory.filter((i) => i.qty > 0);
   gainWealth(c, gp);
-  log(d, `${c.name} sells ${n} × ${it.name} for ${fmtGp(gp)} (${rate === 1 ? 'full value' : 'half price'}).${named}`, 'good');
+  log(d, `${c.name} sells ${n} × ${it.name}${buyers?.length ? ` to ${buyers[0].name}` : ''} for ${fmtGp(gp)} (${rate === 1 ? 'full value' : 'half price'}).${named}`, 'good');
 });
 
 /**
@@ -3769,12 +3846,14 @@ export const sellItem = act((d, _ctx, charId: string, itemId: string, qty: numbe
 export const sellMaterial = act((d, _ctx, materialId: string, qty: number) => {
   const m = d.materials.find((x) => x.id === materialId);
   if (!m || m.qty <= 0) return;
+  const buyers = localBuyers(d, m);
+  if (buyers && !buyers.length) return void log(d, `No open shop here buys ${m.name}.`, 'warn');
   const n = Math.min(m.qty, Math.max(0, qty));
   if (!n) return;
   m.qty = round2(m.qty - n);
   d.materials = d.materials.filter((x) => x.qty > 0);
   const gp = round2(n * m.valueGp);
-  log(d, `Sold ${n} ${m.unit}${n > 1 ? 's' : ''} of ${m.name} to a tanner, trader or crafter for ${fmtGp(gp)} (full value: trade goods).`, 'good');
+  log(d, `Sold ${n} ${m.unit}${n > 1 ? 's' : ''} of ${m.name} to ${buyers?.[0]?.name ?? 'a tanner, trader or crafter'} for ${fmtGp(gp)} (full value: trade goods).`, 'good');
   if (!d.settings.chargeCosts) return;
   receiveGold(d, [], gp, m.name);
 });
@@ -6089,6 +6168,12 @@ export const adjustTrack = act((d, ctx, charId: string, track: Track, delta: num
 });
 
 export const addMount = act((d, _ctx, preset: MountPreset, name: string, buyerId: string | null) => {
+  if (buyerId !== null) {
+    const shop = localShop(d);
+    if (shop && !townSells(shop, { name: preset.name, gp: preset.gp, group: 'Mounts' }).ok) {
+      return void log(d, `No open stable or market here sells a ${preset.name}.`, 'warn');
+    }
+  }
   const m = newCharacter({
     kind: 'mount',
     name: name || preset.name,
@@ -6111,7 +6196,7 @@ export const addMount = act((d, _ctx, preset: MountPreset, name: string, buyerId
 
 /** Buys animal feed for every mount: a full day's food each per day bought. */
 export const buyFeed = act((d, _ctx, days: number) => {
-  const mounts = d.characters.filter((c) => c.kind === 'mount' && alive(c));
+  const mounts = d.characters.filter((c) => c.kind === 'mount' && alive(c) && mountWithParty(c));
   if (!mounts.length) return;
   for (const m of mounts) m.rationsLb = Math.round((m.rationsLb + foodNeedLb(m) * days) * 100) / 100;
   log(d, `Bought ${days} day(s) of feed for ${mounts.map((m) => m.name).join(', ')}.`);
@@ -6605,7 +6690,7 @@ export function actorById(s: State, id: string): Character | undefined {
 }
 
 export const sendMessage = act((d, _ctx, hirelingId: string, miles: number, payer: string) => {
-  const h = d.hirelings.find((x) => x.id === hirelingId);
+  const h = d.hirelings.find((x) => x.id === hirelingId && x.active && x.role === 'messenger');
   if (!h || miles <= 0) return;
   log(d, `${h.name} sets off to deliver a message ${miles} mile(s) away.`);
   payGold(d, payer === 'party' ? [] : [payer], Math.round(miles * MESSENGER_GP_PER_MILE * 100) / 100, `a message carried ${miles} mile(s)`);
@@ -6625,7 +6710,7 @@ function groomTheMounts(s: State): void {
   const groom = s.hirelings.find((h) => h.active && h.role === 'groom') ?? s.hirelings.find((h) => h.active && h.role === 'teamster');
   if (!groom) return;
   const tended: string[] = [];
-  for (const m of s.characters.filter((c) => c.kind === 'mount' && alive(c))) {
+  for (const m of s.characters.filter((c) => c.kind === 'mount' && alive(c) && mountWithParty(c))) {
     const food = Math.max(0, foodNeedLb(m) - m.ateLbToday);
     const fromFeed = Math.min(food, m.rationsLb);
     m.rationsLb = Math.round((m.rationsLb - fromFeed) * 100) / 100;
@@ -6833,7 +6918,7 @@ function breakCamp(d: State, ctx: Ctx): void {
     }
   }
   if (lost.length) log(d, `Left behind on the ground: ${lost.join(', ')}.`, 'warn');
-  const unsaddled = d.characters.filter((m) => m.kind === 'mount' && alive(m) && needsExoticSaddle(m));
+  const unsaddled = d.characters.filter((m) => m.kind === 'mount' && alive(m) && mountWithParty(m) && needsExoticSaddle(m));
   if (unsaddled.length) log(d, `${unsaddled.map((m) => m.name).join(', ')} can't be ridden without an Exotic Saddle (2024 PHB): flying and swimming mounts need one.`, 'warn');
 }
 
@@ -7298,6 +7383,7 @@ export const setPurse = act((d, _ctx, charId: string, purse: Purse) => {
 export const exchangeCoins = act((d, _ctx, charId: string, from: Denom, to: Denom, count: number) => {
   const c = charById(d, charId);
   if (!c) return;
+  if (!requireTownProvider(d, ['moneylender', 'bank', 'jeweler'], 'changing coins')) return;
   const r = exchange(c.purse, from, to, count, d.settings.moneychangerFee);
   if (!r) {
     log(d, `${c.name} doesn't have ${count} ${from} to exchange.`, 'warn');
@@ -7311,13 +7397,26 @@ export const exchangeCoins = act((d, _ctx, charId: string, from: Denom, to: Deno
 /** Who holds something: a character ("c:id") or a stash or vehicle ("s:id"). */
 export type Holder = string;
 
+/** Fixed storage follows its recorded place. Old unlocated stashes can still be accessed. */
+export function storageAccessProblem(s: State, stash: Stash): string | undefined {
+  if (stash.kind === 'vehicle' || (stash.porterId && s.hirelings.some((h) => h.id === stash.porterId && h.active))) return undefined;
+  if (stash.location && !samePlace(stash.location, s.place.name)) return `Travel to ${stash.location} to reach ${stash.name}.`;
+  if (stash.kind === 'bank' && stash.location) {
+    const providers = townProviders(s, ['bank']);
+    if (!s.place.settlement || (currentTown(s) && !providers.some((b) => !stash.bankId || stash.bankId === b.id || stash.bankName === b.name))) {
+      return `${stash.bankName ?? 'The bank'} must be open to access ${stash.name}.`;
+    }
+  }
+  return undefined;
+}
+
 function holderOf(s: State, ref: Holder): { name: string; items: InventoryItem[]; purse: Purse; char?: Character; stash?: Stash } | null {
   if (ref.startsWith('c:')) {
     const c = charById(s, ref.slice(2));
-    return c ? { name: c.name, items: c.inventory, purse: c.purse, char: c } : null;
+    return c && (mountWithParty(c) || mountBoardingHere(s, c)) ? { name: c.name, items: c.inventory, purse: c.purse, char: c } : null;
   }
   const st = s.stashes.find((x) => `s:${x.id}` === ref);
-  return st ? { name: st.name, items: st.items, purse: st.purse, stash: st } : null;
+  return st && !storageAccessProblem(s, st) ? { name: st.name, items: st.items, purse: st.purse, stash: st } : null;
 }
 
 function storeTreasureItem(items: InventoryItem[], item: TreasureItem): void {
@@ -7391,8 +7490,12 @@ export const moveCoins = act((d, _ctx, from: Holder, to: Holder, denom: Denom, c
 });
 
 export const createStash = act((d, _ctx, name: string, kind: Stash['kind'], location: string, capacityLb: number | null, speedMph?: number, vehicle?: VehicleDetails) => {
-  d.stashes.push({ id: uid(), name, kind, location, capacityLb, items: [], purse: emptyPurse(), notes: '', speedMph, vehicle });
-  log(d, `New ${kind === 'vehicle' ? 'vehicle' : kind === 'bank' ? 'bank vault' : 'stash'}: ${name}${location ? `, at ${location}` : ''}.`);
+  const where = location.trim() || (kind !== 'vehicle' ? d.place.name.trim() : '');
+  const localBank = kind === 'bank' && samePlace(where, d.place.name);
+  if (localBank && (!d.place.settlement || !requireTownProvider(d, ['bank'], 'a vault'))) return;
+  const bank = localBank ? townProviders(d, ['bank'])[0] : undefined;
+  d.stashes.push({ id: uid(), name, kind, location: where, capacityLb, items: [], purse: emptyPurse(), notes: '', speedMph, vehicle, bankId: bank?.id, bankName: bank?.name });
+  log(d, `New ${kind === 'vehicle' ? 'vehicle' : kind === 'bank' ? 'bank vault' : 'stash'}: ${name}${where ? `, at ${where}` : ''}.`);
 });
 
 export const updateVehicle = act((d, _ctx, id: string, changes: Pick<Stash, 'name' | 'location' | 'notes' | 'capacityLb' | 'speedMph'> & { vehicle: VehicleDetails }) => {
@@ -7404,9 +7507,37 @@ export const updateVehicle = act((d, _ctx, id: string, changes: Pick<Stash, 'nam
 
 export const stationMount = act((d, _ctx, id: string, location: string) => {
   const mount = d.characters.find((x) => x.id === id && x.kind === 'mount' && alive(x));
-  if (!mount || (mount.mountStation ?? '') === location.trim()) return;
+  if (!mount || mount.mountBoarding || (mount.mountStation ?? '') === location.trim()) return;
   mount.mountStation = location.trim();
   log(d, mount.mountStation ? `${mount.name} is stationed at ${mount.mountStation}.` : `${mount.name}'s recorded station was cleared.`);
+});
+
+/** Leave a mount at a named provider until the party collects it. */
+export const boardMount = act((d, _ctx, id: string, providerId: string) => {
+  const mount = d.characters.find((c) => c.id === id && c.kind === 'mount' && alive(c) && mountWithParty(c));
+  const provider = townProviders(d, ['stable', 'inn']).find((b) => b.id === providerId);
+  if (!mount || mount.mountBoarding || !provider) return;
+  mount.mountBoarding = { place: d.place.name, providerId, provider: provider.name, nights: 0, owedGp: 0 };
+  log(d, `${mount.name} is left at ${provider.name}, ${d.place.name}.`);
+});
+
+export function mountBoardingHere(s: State, mount: Character): boolean {
+  return !!mount.mountBoarding && s.place.settlement && samePlace(s.place.name, mount.mountBoarding.place);
+}
+
+export function canCollectMount(s: State, mount: Character): boolean {
+  const boarding = mount.mountBoarding;
+  return !!boarding && !boarding.sold && mountBoardingHere(s, mount);
+}
+
+export const collectMount = act((d, _ctx, id: string) => {
+  const mount = d.characters.find((c) => c.id === id && c.kind === 'mount');
+  if (!mount || !alive(mount) || !canCollectMount(d, mount)) return;
+  const boarding = mount.mountBoarding!;
+  payGold(d, [], boarding.owedGp, `${mount.name}'s board at ${boarding.provider}`);
+  delete mount.mountBoarding;
+  mount.mountStation = '';
+  log(d, `${mount.name} rejoins the party after ${boarding.nights} night(s) at ${boarding.provider}.`);
 });
 
 /** Weight stored in a stash or vehicle. */
@@ -7773,7 +7904,7 @@ export function encounterConditions(s: State, activity: CheckConditions['activit
     foulWeather: s.weather.precip === 'heavy' || s.weather.wind === 'strong',
     sheltered: s.place.shelter === 'building' || s.place.shelter === 'cave' || shelterSpell,
     underground: isUnderground(s),
-    bigGroup: s.characters.filter(alive).length + s.hirelings.length > 6,
+    bigGroup: s.characters.filter((c) => alive(c) && mountWithParty(c)).length + s.hirelings.length > 6,
   };
 }
 
@@ -7825,14 +7956,14 @@ export function estimatedStealth(cr: string): number {
  * Fast pace means Disadvantage on Perception (−5 passive), Slow means Advantage (+5). Asleep, nobody but the watch notices.
  * Only Hostile creatures try to ambush; a surprised party has Disadvantage on Initiative.
  */
-function surpriseCheck(s: State, ctx: Ctx, cr: string, hostile: boolean, activity: CheckConditions['activity'], watchers: Character[]): string {
-  if (!hostile) return ' They aren’t hiding: both sides see each other at that distance.';
+function surpriseCheck(s: State, ctx: Ctx, cr: string, hostile: boolean, activity: CheckConditions['activity'], watchers: Character[]): EncounterSurprise {
+  if (!hostile) return { partySurprised: false, partyNoticed: true, narrative: ' They aren’t hiding: both sides see each other at that distance.' };
   const awake = activity === 'rest' ? watchers : s.characters.filter((c) => c.kind !== 'mount' && alive(c) && !c.dying && !c.stable);
   const pace = activity === 'travel' ? s.travel.pace : null;
   const stealth = d20('normal', ctx.rng).value + estimatedStealth(cr);
-  if (activity === 'rest' && s.place.alarm === true) return ' As they creep closer, someone or something crosses the alarm line and the Bell jangles: the camp wakes, and nobody is surprised (table rule).';
-  if (activity === 'rest' && s.place.alarm === 'pots' && stealth < POT_ALARM_DC) return ` As they creep closer (Stealth ${stealth}), they blunder into the line of pots and set it clanking: the camp wakes, and nobody is surprised (table rule).`;
-  if (!awake.length) return ` With nobody awake to notice, they approach unseen: the party is surprised (Disadvantage on Initiative).`;
+  if (activity === 'rest' && s.place.alarm === true) return { partySurprised: false, partyNoticed: true, stealth, alarm: 'bell', narrative: ' As they creep closer, someone or something crosses the alarm line and the Bell jangles: the camp wakes, and nobody is surprised (table rule).' };
+  if (activity === 'rest' && s.place.alarm === 'pots' && stealth < POT_ALARM_DC) return { partySurprised: false, partyNoticed: true, stealth, alarm: 'pots', narrative: ` As they creep closer (Stealth ${stealth}), they blunder into the line of pots and set it clanking: the camp wakes, and nobody is surprised (table rule).` };
+  if (!awake.length) return { partySurprised: true, partyNoticed: false, stealth, narrative: ' With nobody awake to notice, they approach unseen: the party is surprised (Disadvantage on Initiative).' };
   // Sight (light, Darkvision, heavy rain or snow) and pace each give Advantage or Disadvantage, which cancel and don't stack.
   const paceMode: RollMode = pace === 'fast' ? 'disadvantage' : pace === 'slow' ? 'advantage' : 'normal';
   const where = activity === 'travel' ? 'travel' : activity === 'explore' ? 'explore' : 'camp';
@@ -7845,9 +7976,59 @@ function surpriseCheck(s: State, ctx: Ctx, cr: string, hostile: boolean, activit
   const why = [top.sight.mode !== 'normal' ? top.sight.note : '', paceMode !== 'normal' ? `${pace} pace` : ''].filter(Boolean);
   const cancel = top.mode === 'normal' && why.length > 1 ? ': Advantage and Disadvantage cancel' : '';
   const best = `${top.c.name}'s passive Perception ${top.passive}${why.length ? ` (${why.join('; ')}${cancel})` : ''}`;
-  return stealth > top.passive
-    ? ` They try to ambush: Stealth ${stealth} beats ${best}. The party is surprised (Disadvantage on Initiative).`
-    : ` They try to sneak up: Stealth ${stealth} against ${best}. The party spots them in time, no surprise.`;
+  const surprised = stealth > top.passive;
+  return {
+    partySurprised: surprised, partyNoticed: !surprised, stealth, passivePerception: top.passive, noticedBy: surprised ? undefined : top.c.id,
+    narrative: surprised
+      ? ` They try to ambush: Stealth ${stealth} beats ${best}. The party is surprised (Disadvantage on Initiative).`
+      : ` They try to sneak up: Stealth ${stealth} against ${best}. The party spots them in time, no surprise.`,
+  };
+}
+
+function captureEncounter(s: State, result: EncounterResult, creature: EncounterCreature, activity: CheckConditions['activity'], watchers: Character[], surprise: EncounterSurprise, checkDetail?: string): void {
+  const encounterId = uid();
+  const campaignId = s.campaignId ??= uid();
+  const watchIds = new Set(watchers.map((w) => w.id));
+  const party: HandoffParticipant[] = s.characters.filter((c) => alive(c) && mountWithParty(c)).map((c) => ({
+    id: c.id, side: 'party', kind: c.sidekick ? 'sidekick' : c.kind === 'mount' ? 'mount' : 'character',
+    name: c.name, ddbId: c.ddbId, hp: c.hp, maxHp: c.maxHp, tempHp: c.tempHp, exhaustion: c.exhaustion,
+    dying: c.dying, stable: c.stable, surprised: surprise.partySurprised,
+    watching: watchIds.has(c.id), resting: activity === 'rest' && !watchIds.has(c.id) && !surprise.alarm,
+  }));
+  for (const h of s.hirelings) {
+    if (!h.active || (h.busyUntil ?? 0) > absNow(s)) continue;
+    const id = `h:${h.id}`;
+    party.push({
+      id, side: 'party', kind: 'hireling', name: h.name, surprised: surprise.partySurprised,
+      watching: watchIds.has(id), resting: activity === 'rest' && !watchIds.has(id) && !surprise.alarm,
+    });
+  }
+  const group = (entry: EncounterCreature, count: number, key: string): HandoffParticipant[] => Array.from({ length: count }, (_, n) => ({
+    id: `${encounterId}:${key}:${n + 1}`, side: 'encounter', kind: 'creature',
+    name: count > 1 ? `${entry.name} ${n + 1}` : entry.name,
+    creature: { name: entry.name, source: entry.source }, surprised: false,
+  }));
+  const opponents = group(creature, result.count ?? 1, 'main');
+  if (result.row.followers) opponents.push(...group(result.row.followers.creature, result.followerCount ?? 0, 'follower'));
+  const minute = absNow(s);
+  const effects = s.effects.filter((effect) => effect.endsAt == null || effect.endsAt > minute).map((effect) => ({
+    id: effect.id, name: effect.name, kind: effect.kind, targetIds: [...effect.targetIds], casterId: effect.casterId,
+    concentration: effect.concentration, concentrationIds: effect.concentrationIds,
+    remainingMinutes: effect.pausedLeft ?? (effect.endsAt == null ? null : effect.endsAt - minute),
+    paused: effect.pausedLeft != null,
+  }));
+  (s.encounterHandoffs ??= []).unshift({
+    format: 'life-manager.encounter', version: 1, campaignId, encounterId, revision: 1, rulesEdition: '2024',
+    minute, summary: result.summary, encounterRoll: result.roll, attitude: result.attitude, checkDetail, surprise,
+    environment: {
+      place: s.place.name, activity, terrain: s.place.terrain, shelter: s.place.shelter,
+      light: illumination({ phase: lightAt(s.minutes % MIN_PER_DAY, seasonOf(s)).phase, underground: isUnderground(s), lit: lightNow(s, activity === 'rest' ? 'camp' : activity), fullMoon: !isUnderground(s) && fullMoonOut(s) }).level,
+      weather: { precip: s.weather.precip, wind: s.weather.wind },
+      distanceFt: result.distanceFt, distanceExpression: result.distanceExpr,
+    },
+    participants: [...party, ...opponents], effects,
+  });
+  s.encounterHandoffs.length = Math.min(s.encounterHandoffs.length, 12);
 }
 
 export function resolveEncounter(s: State, ctx: Ctx, activity: CheckConditions['activity'], checkDetail?: string): void {
@@ -7876,7 +8057,9 @@ export function resolveEncounter(s: State, ctx: Ctx, activity: CheckConditions['
   encounterSerial += 1; // creatures, not just signs: enough to break off a long casting
   const c = res.row.creature;
   const party = table.party;
-  const dm = `${head} ${res.summary} (CR ${c.cr}${res.row.followers ? ` and ${res.row.followers.creature.cr}` : ''}, rolled ${res.row.count}${res.row.followers ? ` and ${res.row.followers.count}` : ''}; ${res.xp} XP total, ${DIFFICULTY_LABEL[res.difficulty ?? 'low']} for ${party.size} level-${party.level} characters). Starting attitude: ${res.attitude?.attitude} (d20 ${res.attitude?.roll}). They are ${res.distanceFt} feet away (${res.distanceExpr}).${watchNote}${surpriseCheck(s, ctx, c.cr, res.attitude?.attitude === 'Hostile', activity, watchers)}${res.attitude?.attitude !== 'Hostile' ? ' They can be parleyed with: an Influence check (DC 15 or the creature’s Intelligence score, whichever is higher) can shift an Indifferent creature.' : ''}`;
+  const surprise = surpriseCheck(s, ctx, c.cr, res.attitude?.attitude === 'Hostile', activity, watchers);
+  captureEncounter(s, res, c, activity, watchers, surprise, checkDetail);
+  const dm = `${head} ${res.summary} (CR ${c.cr}${res.row.followers ? ` and ${res.row.followers.creature.cr}` : ''}, rolled ${res.row.count}${res.row.followers ? ` and ${res.row.followers.count}` : ''}; ${res.xp} XP total, ${DIFFICULTY_LABEL[res.difficulty ?? 'low']} for ${party.size} level-${party.level} characters). Starting attitude: ${res.attitude?.attitude} (d20 ${res.attitude?.roll}). They are ${res.distanceFt} feet away (${res.distanceExpr}).${watchNote}${surprise.narrative}${res.attitude?.attitude !== 'Hostile' ? ' They can be parleyed with: an Influence check (DC 15 or the creature’s Intelligence score, whichever is higher) can shift an Indifferent creature.' : ''}`;
   const behavior = monsterBehavior((res.count ?? 1) + (res.followerCount ?? 0), ctx.rng);
   const portrayal = ` Personality: ${behavior.personality}.${behavior.relationship ? ` ${behavior.relationship}` : ''}`;
   const predicate = firstSign(c.type, night);
@@ -8457,7 +8640,7 @@ export const healInjury = act((d, _ctx, charId: string, injuryId: string, how: '
 /** A Long Rest after a day without travel counts as a day of rest toward internal injuries and broken ribs. */
 function injuryRestDay(s: State, rested: boolean): void {
   for (const c of s.characters) {
-    if (!alive(c)) continue;
+    if (!alive(c) || !mountWithParty(c)) continue;
     for (const x of [...(c.injuries ?? [])]) {
       if (INJURIES[x.kind].cure !== 'magicOrRest') continue;
       if (!rested) {
@@ -8715,6 +8898,8 @@ export const repairItem = act((d, ctx, ownerId: string, itemId: string, method: 
   };
   if (method === 'artisan') {
     if (!d.place.settlement) return void log(d, 'There is no smith or artisan here: repairs for hire need a settlement.', 'warn');
+    const providers = { metal: ['smithy', 'armorer', 'weaponsmith'], leather: ['leatherworker'], cloth: ['tailor', 'weaver'], wood: ['carpenter', 'bowyer'] };
+    if (!requireTownProvider(d, providers[mat], 'equipment repair')) return;
     const gp = repairCost(it.name, it.valueGp);
     payGold(d, [ownerId], gp, `repairing the ${it.name}`);
     done();
@@ -8752,6 +8937,7 @@ export const repairHull = act((d, _ctx, stashId: string, payerIds: string[]) => 
   const v = d.stashes.find((x) => x.id === stashId);
   if (!v) return;
   if (!d.place.settlement) return void log(d, `The ${v.name} needs a dock or shipyard: repairs happen in a settlement.`, 'warn');
+  if (!requireTownProvider(d, ['docks', 'shipwright'], 'hull repairs')) return;
   const pts = Math.ceil(v.hullWear ?? 0);
   if (pts <= 0 && !v.hullDamaged) return void log(d, `The ${v.name} is sound.`);
   const { gp, days } = hullRepair(v.name, pts);
@@ -8995,6 +9181,32 @@ export const callFavor = act((d, ctx, id: string, askerId: string, bonus: number
 
 // ---------------------------------------------------------------- letters and news
 
+export function letterRoute(s: State, method: CommMethod, miles: number) {
+  const courier = method === 'courier' || method === 'messenger';
+  const sivis = method === 'sivis' && s.setting === 'eberron';
+  const town = courier || sivis ? currentTown(s) : undefined;
+  const post = townProviders(s, ['courier']).find((building) => !sivis || /sivis/i.test(building.name));
+  const traveler = !!town && !post;
+  const baseDelay = commDelay(method, miles);
+  return {
+    delay: baseDelay == null || (sivis && !post) ? null : baseDelay + (traveler ? MIN_PER_DAY : 0),
+    carrier: sivis && !post ? 'No Sivis station is open here.' : traveler ? 'a passing traveler' : post?.name ?? COMMS[method].label.toLowerCase(),
+    pickupTown: post ? town?.name : undefined,
+  };
+}
+
+export const collectLetter = act((d, ctx, id: string) => {
+  const letter = (d.letters ?? []).find((entry) => entry.id === id);
+  if (!letter || letter.direction !== 'in' || !letter.pickupTown || letter.delivered || letter.arrivesAt > absNow(d)) return;
+  if (!canCollectLetter(d, letter.pickupTown)) return;
+  delete letter.pickupTown;
+  deliverLetters(d, ctx);
+});
+
+export function canCollectLetter(s: State, town: string): boolean {
+  return s.place.settlement && samePlace(s.place.name, town) && localServiceAvailable(s, ['courier']);
+}
+
 export const sendLetter = act((d, ctx, o: { charId: string; contactId: string | null; correspondent: string; miles: number; method: CommMethod; text: string; expectsReply: boolean }) => {
   const c = charById(d, o.charId);
   if (!c) return;
@@ -9002,8 +9214,8 @@ export const sendLetter = act((d, ctx, o: { charId: string; contactId: string | 
   const to = k?.name ?? (o.correspondent.trim() || 'a friend');
   const miles = Math.max(0, o.miles);
   const info = COMMS[o.method];
-  const delay = commDelay(o.method, miles);
-  if (delay == null) return void log(d, `${info.label} can't carry a letter ${miles} miles (at most ${info.maxMiles}).`, 'warn');
+  const { delay, carrier, pickupTown } = letterRoute(d, o.method, miles);
+  if (delay == null) return void log(d, info.maxMiles ? `${info.label} can't carry a letter ${miles} miles (at most ${info.maxMiles}).` : carrier, 'warn');
   if (info.needs && info.needs !== 'messenger') {
     if (!c.spells.some((x) => x.name.toLowerCase() === info.needs!.toLowerCase())) return void log(d, `${c.name} doesn't know ${info.needs}.`, 'warn');
     const ritual = o.method === 'animal';
@@ -9013,16 +9225,16 @@ export const sendLetter = act((d, ctx, o: { charId: string; contactId: string | 
   // Without a messenger of their own, a letter goes with a paid carrier at the messenger rate.
   const gp = o.method === 'courier' ? commCost('messenger', miles) : commCost(o.method, miles);
   const now = absNow(d);
-  (d.letters ??= []).push({ id: uid(), direction: 'out', contactId: k?.id ?? null, correspondent: to, charId: c.id, method: o.method, miles, sentAt: now, arrivesAt: now + delay, costGp: gp, text: o.text, delivered: false, expectsReply: o.expectsReply });
+  (d.letters ??= []).push({ id: uid(), direction: 'out', contactId: k?.id ?? null, correspondent: to, charId: c.id, method: o.method, miles, sentAt: now, arrivesAt: now + delay, costGp: gp, text: o.text, delivered: false, expectsReply: o.expectsReply, pickupTown });
   if (gp > 0) payGold(d, [c.id], gp, `a letter to ${to}`);
-  log(d, `${c.name} sends a letter to ${to} by ${info.label.toLowerCase()} (${miles} miles): ${delay === 0 ? 'it arrives at once' : `it should arrive in ${formatDuration(delay)}`}.`);
+  log(d, `${c.name} sends a letter to ${to} by ${carrier} (${miles} miles): ${delay === 0 ? 'it arrives at once' : `it should arrive in ${formatDuration(delay)}`}.`);
   deliverLetters(d, ctx);
 });
 
 function deliverLetters(s: State, ctx: Ctx): void {
   const now = absNow(s);
   for (const l of [...(s.letters ?? [])]) {
-    if (l.delivered || l.arrivesAt > now) continue;
+    if (l.delivered || l.arrivesAt > now || (l.direction === 'in' && l.pickupTown)) continue;
     l.delivered = true;
     const k = l.contactId ? (s.contacts ?? []).find((x) => x.id === l.contactId) : undefined;
     const c = charById(s, l.charId);
@@ -9032,7 +9244,7 @@ function deliverLetters(s: State, ctx: Ctx): void {
       if (l.expectsReply) {
         const back = commDelay(l.method === 'animal' || l.method === 'dream' ? 'courier' : l.method, l.miles) ?? 0;
         const writing = l.method === 'sending' ? 0 : die(REPLY_DIE, ctx.rng) * MIN_PER_DAY;
-        (s.letters ??= []).push({ id: uid(), direction: 'in', contactId: l.contactId, correspondent: l.correspondent, charId: l.charId, method: l.method === 'animal' || l.method === 'dream' ? 'courier' : l.method, miles: l.miles, sentAt: now + writing, arrivesAt: now + writing + back, costGp: 0, text: '', delivered: false });
+        (s.letters ??= []).push({ id: uid(), direction: 'in', contactId: l.contactId, correspondent: l.correspondent, charId: l.charId, method: l.method === 'animal' || l.method === 'dream' ? 'courier' : l.method, miles: l.miles, sentAt: now + writing, arrivesAt: now + writing + back, costGp: 0, text: '', delivered: false, pickupTown: l.pickupTown });
       }
     } else if (c) {
       status(s, c, 'letterArrives', `A letter from ${l.correspondent} reaches ${c.name}${l.text ? `: ${l.text}` : ' (the DM writes what it says)'}.`, 'good');
@@ -9068,6 +9280,122 @@ function deliverNews(s: State): void {
 export const currentTown = (s: State): Town | undefined => (s.place.settlement ? (s.towns ?? []).find((t) => samePlace(t.name, s.place.name)) : undefined);
 
 const townNamed = (d: State, name: string): Town | undefined => (d.towns ?? []).find((t) => samePlace(t.name, name));
+
+/** Open providers in the party's current town. */
+export function townProviders(s: State, types: readonly string[]) {
+  return currentTown(s)?.buildings.filter((b) => types.includes(b.type) && buildingOpen(s, b.type)) ?? [];
+}
+
+function buildingOpen(s: State, type: string): boolean {
+  return !s.settings.townOpeningHours || type === 'inn' || type === 'tavern' || type === 'gate' || lightAt(s.minutes, seasonOf(s)).phase === 'Day';
+}
+
+export function localShop(s: State): Town | undefined {
+  const town = currentTown(s);
+  return town && { ...town, buildings: town.buildings.filter((b) => buildingOpen(s, b.type)) };
+}
+
+export function localBuyers(s: State, item: Parameters<typeof townBuyers>[1]) {
+  const town = localShop(s);
+  return town ? townBuyers(town, item) : undefined;
+}
+
+export function localServiceAvailable(s: State, types: readonly string[]): boolean {
+  return !currentTown(s) || townProviders(s, types).length > 0;
+}
+
+function requireTownProvider(s: State, types: readonly string[], service: string): boolean {
+  if (localServiceAvailable(s, types)) return true;
+  log(s, `No provider is open here for ${service}.`, 'warn');
+  return false;
+}
+
+export function fareProviders(fare: string): string[] {
+  if (fare === 'toll') return ['gate'];
+  if (fare === 'coach' || fare === 'cityCoach') return ['coaching'];
+  return ['docks'];
+}
+
+export const bookPassage = act((d, _ctx, id: string, payerIds: string[], amount: number, passengers: number) => {
+  const fare = PASSAGE.find((entry) => entry.id === id);
+  if (!fare || !Number.isFinite(amount) || amount < 0 || !Number.isSafeInteger(passengers) || passengers < 1) return;
+  const label = fare.label.replace(/ \(.*\)/, '');
+  const types = fareProviders(id);
+  if (!requireTownProvider(d, types, label)) return;
+  const place = townProviders(d, types)[0]?.name;
+  const gp = ((fare.gpPerMile ?? fare.gpPerDay ?? 0) * amount + (fare.gpFlat ?? 0)) * passengers;
+  payGold(d, payerIds, round2(gp), `${label} for ${passengers}${place ? ` at ${place}` : ''}`);
+});
+
+type SpellTradition = 'arcane' | 'divine' | 'either';
+export function spellProviders(level: number, tradition: SpellTradition): string[] {
+  const divine = level >= 6 ? ['cathedral'] : level >= 3 ? ['temple', 'cathedral'] : ['shrine', 'temple', 'cathedral'];
+  const arcane = level >= 6 ? ['academy'] : ['academy', 'magic'];
+  return tradition === 'arcane' ? arcane : tradition === 'divine' ? divine : [...divine, ...arcane];
+}
+
+export const buySpellcasting = act((d, ctx, o: { spell: string; level: number; tradition: SpellTradition; here: Settlement; payerIds: string[]; targetId: string }) => {
+  const request = COMMON_SPELL_REQUESTS.find((entry) => entry.name === o.spell);
+  const level = request?.level ?? o.level;
+  if (!Number.isInteger(level) || level < 0 || level > 9) return;
+  const tier = [...SPELL_SERVICES].reverse().find((entry) => level >= entry.minLevel)!;
+  const town = currentTown(d);
+  if (!spellServiceAvailable(tier.where, town?.size ?? o.here)) return void log(d, 'This settlement is too small to find a caster of that level.', 'warn');
+  const name = request?.name ?? `a level ${level} spell`;
+  const providers = spellProviders(level, request ? (request.tradition ?? 'divine') : o.tradition);
+  if (!requireTownProvider(d, providers, name)) return;
+  const target = request && TARGET_SPELLS[name] ? charById(d, o.targetId) : undefined;
+  if (request && TARGET_SPELLS[name] && !target) return void log(d, 'Choose a target for the spell.', 'warn');
+  const free = d.patron && level <= (PATRONS[d.patron.kind].freeSpellLevel ?? -1);
+  const provider = townProviders(d, providers)[0];
+  payGold(d, o.payerIds, free ? 0 : tier.gp + (request?.componentGp ?? 0), `having ${name} cast${provider ? ` at ${provider.name}` : ''}`);
+  if (target) applySpellTo(d, ctx, name, target.id);
+  if (name === PURIFY_SPELL) log(d, `The hired caster purifies ${purifyAll(d)}.`, 'good');
+});
+
+export function brelishLocality(s: State): BrelishLocality | undefined {
+  if (s.setting !== 'eberron' || !s.place.settlement) return undefined;
+  return (Object.keys(BRELAND) as BrelishLocality[]).find((key) => samePlace(BRELAND[key].name, s.place.name));
+}
+
+export const bookBrelishRoute = act((d, _ctx, routeId: string) => {
+  const route = BRELAND_ROUTES.find((entry) => entry.id === routeId && entry.from === brelishLocality(d));
+  const passengers = adventurers(d);
+  if (!route || d.passage || !passengers.length) return;
+  if (route.label === 'Orien lightning rail' && !requireTownProvider(d, ['coaching'], 'lightning rail tickets')) return;
+  const departure = nextDeparture(route, absNow(d));
+  d.passage = { routeId, departure, passengerIds: passengers.map((c) => c.id) };
+  payGold(d, passengers.map((c) => c.id), route.fareGp * passengers.length, `${route.label} to ${BRELAND[route.to].name}`);
+  log(d, `${route.label} tickets booked for ${formatClock(departure % MIN_PER_DAY)} to ${BRELAND[route.to].name}.`, 'good');
+});
+
+export const cancelBrelishRoute = act((d, _ctx) => {
+  if (!d.passage) return;
+  delete d.passage;
+  log(d, 'The party gives up its tickets.');
+});
+
+export function canRideBrelishRoute(s: State): boolean {
+  const ticket = s.passage;
+  const route = BRELAND_ROUTES.find((entry) => entry.id === ticket?.routeId);
+  return !!route && !!ticket && route.from === brelishLocality(s) && ticket.departure >= absNow(s)
+    && adventurers(s).length > 0 && adventurers(s).every((c) => ticket.passengerIds.includes(c.id));
+}
+
+export const rideBrelishRoute = act((d, ctx) => {
+  const ticket = d.passage;
+  const route = BRELAND_ROUTES.find((entry) => entry.id === ticket?.routeId);
+  if (!ticket || !route || !canRideBrelishRoute(d)) return;
+  if (ticket.departure > absNow(d)) advanceMut(d, ctx, ticket.departure - absNow(d), 'work');
+  setTownModeMut(d, 'active');
+  breakCamp(d, ctx);
+  d.place = { ...brelishPlace(route.from), name: route.label, terrain: 'urban', settlement: false, shelter: 'building' };
+  log(d, `The ${route.label} departs for ${BRELAND[route.to].name}.`);
+  advanceMut(d, ctx, route.travelMinutes, 'work');
+  d.place = brelishPlace(route.to);
+  delete d.passage;
+  log(d, `The party arrives at ${d.place.name}. ${BRELAND[route.to].authority} keeps watch here.`, 'good');
+});
 
 /** Rolls up the settlement the party is in (2024 DMG Settlement Tables), replacing any earlier roll for it. */
 export const rollTown = act((d, ctx, size: Settlement, water: boolean) => {

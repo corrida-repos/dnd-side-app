@@ -4,7 +4,7 @@ import { fmtPurse } from '../rules/coins';
 import { RARITY_LABEL, type Rarity } from '../rules/crafting';
 import { fmtGp } from '../rules/money';
 import { TRADE_BARS, TREASURE_THEMES, type TreasureKind, type TreasureRequest, type TreasureTheme } from '../rules/treasure';
-import { claimTreasure, discardTreasure, previewTreasure } from '../state/engine';
+import { claimTreasure, discardTreasure, previewTreasure, storageAccessProblem } from '../state/engine';
 import { dispatch, useGame } from '../state/store';
 import { Card, Select } from './common';
 
@@ -24,7 +24,7 @@ export function TreasureCard() {
   const [recipient, setRecipient] = useState('');
   const holders = [
     ...s.characters.filter((c) => c.kind !== 'mount').map((c) => ({ value: `c:${c.id}`, label: c.name })),
-    ...s.stashes.map((stash) => ({ value: `s:${stash.id}`, label: stash.name })),
+    ...s.stashes.filter((stash) => !storageAccessProblem(s, stash)).map((stash) => ({ value: `s:${stash.id}`, label: stash.name })),
   ];
   const destination = holders.find((holder) => holder.value === recipient)?.value ?? holders[0]?.value ?? '';
   const valueKind = kind === 'hoard' ? monetary : kind;

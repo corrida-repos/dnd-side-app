@@ -1,16 +1,20 @@
 import { useRef, useState } from 'react';
-import { useGame, edit, getState, importState, resetState } from '../state/store';
+import { useGame, edit, getState, importState, resetState, startEberron } from '../state/store';
 import { parse5eToolsSpells } from '../rules/spells';
 import { countReprinted, parse5eToolsBestiary, type Creature } from '../rules/hunting';
 import { RECOMMENDED_BESTIARIES } from '../rules/encounters';
 import { parse5eToolsItems, parse5eToolsRecipes, parse5eToolsRewards, parse5eToolsSpellClasses } from '../rules/hazards';
 import { Card, Num, Select, Toggle, Rule } from './common';
 import { log } from '../state/engine';
+import { CALENDARS } from '../rules/calendar';
+import { BRELAND, SHARN_START, type BrelishLocality } from '../rules/eberron';
+import { goTo } from './nav';
 import { DetailCard } from './DetailTiers';
 
 export function SettingsTab() {
   return (
     <div className="grid">
+      <CampaignCard />
       <DetailCard />
       <RulesCard />
       <SpellLibraryCard />
@@ -18,6 +22,28 @@ export function SettingsTab() {
       <LibrariesCard />
       <SaveCard />
     </div>
+  );
+}
+
+function CampaignCard() {
+  const [locality, setLocality] = useState<BrelishLocality>(SHARN_START);
+  const [year, setYear] = useState(998);
+  const [month, setMonth] = useState(0);
+  const [day, setDay] = useState(1);
+  return (
+    <Card title="Start an Eberron campaign">
+      <div className="form-row">
+        <Select label="Starting place" value={locality} onChange={setLocality} options={(Object.keys(BRELAND) as BrelishLocality[]).map((key) => ({ value: key, label: BRELAND[key].name }))} />
+        <Num label="Day" value={day} onChange={(v) => setDay(Math.max(1, Math.min(28, Math.round(v))))} min={1} max={28} width={3} />
+        <Select label="Month" value={String(month)} onChange={(v) => setMonth(Number(v))} options={CALENDARS.galifar.months.map((m, index) => ({ value: String(index), label: m.name }))} />
+        <Num label="Year" value={year} onChange={(v) => setYear(Math.round(v))} suffix="YK" width={5} />
+      </div>
+      <button className="primary" onClick={() => {
+        if (!confirm('Start a new campaign in this browser? Export your current save first if you want to keep it.')) return;
+        startEberron({ locality, year, month, day });
+        goTo('overview');
+      }}>Start campaign</button>
+    </Card>
   );
 }
 

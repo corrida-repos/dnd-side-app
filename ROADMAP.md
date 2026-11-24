@@ -441,14 +441,22 @@ DMG random tables that fit life outside one adventure (from 5etools `book-xdmg.j
 
 Builds on the rolled-up town (Phase 9): its buildings and the people who run them decide what the party can do there. Sources in brackets; anything else is a table rule.
 
+Implemented in the current pass:
+
+- Rolled towns determine provider access for fares, paid spellcasting, repairs, rooms, meals, stabling, vaults, trade and recruiting. Shops and temples can close at dusk. Named inns store their room rates. Towns without a directory use the existing service and price rules.
+- Mounts can board at a named stable or inn and stay there while the party travels. Board includes nightly care, a running bill, local collection and sale after 30 unpaid nights.
+- Stashes and vaults follow their recorded location. Vaults require an open bank, and replies at a courier post wait for collection. A letter sent with a passing traveler takes an extra day.
+
+Storage fees and hazards, advanced mount and vehicle care, and the remaining town services are still open.
+
 ### Services follow the buildings
 - 📋 **Only where there's a building for it:** smith repairs need a smithy, ship passage and hull repairs a dock, coach rides a coaching house, stabling a stable or inn, messengers a courier post, vaults a bank, spellcasting a shrine, temple or cathedral (arcane spells an academy or magic shop). Without a rolled-up town, the size rules stay. (2024 PHB Services)
-- 📋 **Opening hours (switch):** shops and temples open dawn to dusk, inns and taverns always. (2024 DMG: Temple of the Radiant Sun)
-- 📋 **Pick your inn:** stay at a named inn with its own prices for a common room, private room or suite, matched to the lifestyle tiers. (2024 DMG Greyhawk inns: 1–2 SP, 3–5 SP, 1–3 GP a night)
+- ✅ **Opening hours (switch):** shops and temples open dawn to dusk, inns and taverns always. (2024 DMG: Temple of the Radiant Sun)
+- ✅ **Pick your inn:** stay at a named inn with its own prices for a common room, private room or suite, matched to the lifestyle tiers. (2024 DMG Greyhawk inns: 1–2 SP, 3–5 SP, 1–3 GP a night)
 
 ### Stables and mounts in town
 - 📋 **Where each mount is:** with the party, boarded at a named stable or inn, in a Bastion Stable, or aboard a vehicle. Only mounts in town are charged stabling and feed, and only a town with a stable or an inn with a stable yard takes them. (2024 PHB: Stabling 5 SP, Feed 5 CP a day; 2024 DMG: the Black Dragon Inn's stable holds a dozen steeds)
-- 📋 **Boarding while away:** leave mounts at a stable while the party goes into a dungeon, sails or teleports. The bill runs up day by day and is paid on return; unpaid for 30 days, the stable sells the animal to cover it.
+- ✅ **Boarding while away:** leave mounts at a stable while the party goes into a dungeon, sails or teleports. The bill runs up day by day and is paid on return; unpaid for 30 days, the stable sells the animal to cover it.
 - 📋 **Rest and care:** a stabled mount is fed, watered and rested: each night counts as a Long Rest (2024 PHB: regain all Hit Points, lose a level of Exhaustion). A stablehand looks after it like a groom, and a sick or injured animal can be treated (Animal Handling or Medicine).
 - 📋 **Vehicles in the yard:** carts and wagons are parked at a stable or coaching house for a small daily fee; left in the street, they and their cargo risk theft.
 - 📋 **The stable's trade:** buy, sell (half price) and trade in mounts and tack at a stable or market; barding from an armorer (any armor, four times the cost and twice the weight); horseshoes and tack repairs at a smithy; animal training and taming with a stablemaster. (2024 PHB Barding, Selling Equipment)
@@ -456,7 +464,7 @@ Builds on the rolled-up town (Phase 9): its buildings and the people who run the
 - 📋 **Thieves and the watch:** a stable with a watchman keeps mounts safe; a mount tied up outside an inn overnight may be stolen 1 time in 20 in a town and 1 in 10 in a city, which the watch may help recover.
 
 ### Keeping valuables safe
-- 📋 **Storage belongs to a place:** a stash, vault or rented room can only be reached while the party is there (and, for a bank, during opening hours). Today anything stored is reachable from anywhere.
+- ✅ **Storage belongs to a place:** a stash, vault or rented room can only be reached while the party is there (and, for a bank, during opening hours). Today anything stored is reachable from anywhere.
 - 📋 **Where to keep things, cheapest and riskiest first:**
   - **Their room at the inn:** included in the rent; a locked chest helps (Lock Quality DC). Squalid lodgings already bring theft.
   - **A trusted contact:** free, as a favor; safe while the bond holds.
@@ -475,21 +483,21 @@ Builds on the rolled-up town (Phase 9): its buildings and the people who run the
 - 📋 **Healer's care:** pay a healer to tend lingering injuries and the sick: their Medicine bonus instead of the party's, and Advantage on recuperating saves.
 
 ### Buying, selling and commissions
-- 📋 **The right buyer:** gems and art at a jeweler, hides and trophies at a tanner, herbs at an apothecary, poisons at a fence, anything at a pawnshop; no buyer in town, no sale. (2024 PHB Selling Equipment)
+- ✅ **The right buyer:** gems and art at a jeweler, hides and trophies at a tanner, herbs at an apothecary, poisons at a fence, anything at a pawnshop; no buyer in town, no sale. (2024 PHB Selling Equipment)
 - 📋 **Magic shop:** buy and sell magic items at the DMG's values by rarity, and Identify for 50 GP a casting; stock rolled weekly on the treasure tables. A switch keeps downtime deals as the only way. (2024 DMG: Unearthed Arcana, Magic Item Values)
 - 📋 **Commissions:** order gear, potions or scrolls from a keeper, who crafts them on the PHB timetable while the party waits or travels; scribes charge double for scrolls. (2024 DMG: Great Library)
 - 📋 **Limited stock:** specialty goods come in small numbers and restock weekly; a calamity (trade dispute, famine, siege) raises prices or empties shelves.
 - 📋 **Haggling:** an Influence check with the keeper moves the price by 10%. (2024 DMG Influence)
 
 ### Hiring and learning
-- 📋 **Hire from the town:** unskilled help from taverns, skilled from the guildhall, guards and mercenaries from the barracks (Guard, Warrior Veteran), guides from the courier post (Scout); a village has few to spare. (2024 PHB Hirelings)
+- ✅ **Hire from the town:** unskilled help from taverns, skilled from the guildhall, guards and mercenaries from the barracks (Guard, Warrior Veteran), guides from the courier post (Scout); a village has few to spare. (2024 PHB Hirelings)
 - 📋 **Trainers:** learning a tool, skill or language needs a trainer in town; special training takes 30 days. Optional variant: Training to Gain Levels, 10–40 days and 20–80 GP. (2024 DMG)
 - 📋 **Spells to copy:** an academy or a wizard keeper lets a Wizard copy spells for a fee, on top of the PHB's 2 hours and 50 GP per level.
 - 📋 **Research:** a library or academy is where research downtime finds its answers; without one it takes longer.
 
 ### Money, mail and property
 - 📋 **Moneychangers and credit:** a fee to change coins at a moneylender; letters of credit from a bank, honored by banks in other cities; loans become debts.
-- 📋 **Post office:** letters wait at the courier post until the party is in town; without one, mail goes with a traveler and takes longer.
+- ✅ **Post office:** letters wait at the courier post until the party is in town; without one, mail goes with a traveler and takes longer.
 - 📋 **Renting and owning:** a room by the month, a warehouse for storage, a workshop to craft in, or a house of their own with upkeep dues.
 
 ### The law and the gate
@@ -552,6 +560,8 @@ Open an Eberron campaign in Sharn on 1 Zarantyr 998 YK by default, with the Cale
 
 Use 5etools for rules and structured content. Draw revised character options, house Renown, mobile Bastions, and elemental airships from *Eberron: Forge of the Artificer*, and use *Eberron: Rising from the Last War* for Khorvaire, the postwar baseline, and Sharn. Use the 2024 edition of Keith Baker's *Exploring Eberron* for wide magic and specialized magewrights (ch. 1), identity and faith (chs. 2–3), Droaam, Dhakaan, the Mror Holds, and the Thunder Sea (ch. 4), manifest zones and planar cycles (ch. 5), and treasures and symbionts (ch. 7). Where source treatments differ, use the revised rules as the mechanical baseline and give the DM a choice for consequential variants, such as Dolurrh's influence on resurrection. [Forge of the Artificer](https://5e.tools/book.html#efa) · [Rising from the Last War](https://5e.tools/book.html#erlw) · [Exploring Eberron (2024)](https://marketplace.dndbeyond.com/category/8XTUXUM?pid=DB8XTUXUM)
 
+Settings can start a new campaign in Sharn or Wroat on an editable Galifar date. The first Breland routes cover skycoaches within Sharn and Orien lightning rail to Wroat. Tickets, named providers, residents and Sivis replies are saved with the campaign. The local fares and timetables are campaign defaults. The regional, faction, expedition and planar systems below remain planned.
+
 ### An interface built for Eberron
 
 - Start with an Eberron campaign setup and a dashboard that opens to the current district, route, or expedition. Put the next departure, outstanding services, local notices, and conditions travelers can observe where the party can act on them. Use the familiar date, local coin names, and actual service providers throughout the interface.
@@ -595,6 +605,8 @@ Use 5etools for rules and structured content. Draw revised character options, ho
 ## Phase 13: Tactical handoff to Encounter Butler 📋
 
 When play moves to six-second rounds, let the GM send the encounter from D&D Life Manager to [Encounter Butler](https://github.com/corrida-repos/owlbear-rodeo-butler) in Owlbear Rodeo. This applies to every campaign setting and detail tier. Start with random creature encounters and a **Run in Butler** action for a GM-selected scene. Reuse the same handoff for a chase, ship encounter, or timed hazard once Butler can run that encounter type. A distant sighting, an uneventful roll, or a peaceful discovery can stay on the campaign clock.
+
+Life Manager now records and exports versioned JSON snapshots for rolled creature encounters. The GM can review the roster and copy or download it from the Encounters tab. The capture preserves the original rolls, working alarm ruling, watch, scene conditions and tracked party state. Pausing the campaign clock, reviewing custom scenes, a shared fixture and live import in Butler, and the return path remain planned.
 
 ### Capture the moment play changes scale
 
@@ -654,7 +666,7 @@ This review compares the revised core books and their supplements against the ap
 
 | Source | Missing or partial coverage |
 | --- | --- |
-| *Heroes of Faerûn*, ch. 2 | The Harptos calendar inserts Shieldmeet after Midsummer every fourth year and includes the extra day in date conversions and recurring events. Regional coin names could be added as display aliases without changing denomination values. [5etools](https://5e.tools/book.html#frhof,2) |
+| *Heroes of Faerûn*, ch. 2 | Shieldmeet is implemented in Phase 9. Regional coin names could be added as display aliases without changing denomination values. [5etools](https://5e.tools/book.html#frhof,2) |
 | *Heroes of Faerûn*, chs. 4–6 | Circle Magic and the book's Bastion facilities already exist. Audit Aurora's equipment, mechanical wonders, mounts, vehicles, and fares for actionable catalog entries. Add faction templates with published Renown thresholds, benefits, and relationships on top of the existing generic tracker. [5etools](https://5e.tools/book.html#frhof,4) |
 | *Adventures in Faerûn*, ch. 3 | Add an Icewind Dale profile for regional travel terrain, hailstorms, howling winds and psionic fields. Add local hazards and track the Lichen Plague and Mudpox contagions using the existing effects engine. Ice, cold and the general DMG contagions already work. [5etools](https://5e.tools/book.html#fraif,3) |
 | *Adventures in Faerûn*, chs. 2–6 | Add Calim Desert sandstorms, mirages and sinkholes, plus guardian-permitted fairy-trod routes in the Moonshaes. Regional Renown tracks and regional Bastion event variants across the Dalelands, Icewind Dale, Calimshan, Moonshaes and Baldur's Gate can reuse the app's faction and Bastion systems. [5etools](https://5e.tools/book.html#fraif,2) |

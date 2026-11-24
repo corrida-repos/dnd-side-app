@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as E from './engine';
+import { encounterHandoffJson } from '../rules/encounterHandoff';
 import { createDefaultState, newCharacter } from './defaults';
 import type { State } from './types';
 
@@ -157,4 +158,40 @@ it('uses underwater distance instead of doubling it for a spyglass', () => {
   expect(encounter.text).toContain('Personality:');
   expect(encounter.text).not.toContain('Spyglass');
   expect(E.rollAudibleDistance(state, HIGH, 'loud').log[0].text).toContain('600 feet');
+});
+
+it('preserves rolled night encounter participants, distance and the alarm ruling in an export', () => {
+  const s = fresh((d) => {
+    d.minutes = 23 * 60;
+    d.place.alarm = true;
+    d.restStart = E.absNow(d) - 60;
+    d.watchPlan = { count: 4, slots: [[d.characters[0].id], [], [], []] };
+    d.characters[0].ddbId = 42;
+    d.characters[0].tempHp = 3;
+    d.characters[1].mountBoarding = { place: 'Greyport', provider: 'Stable', providerId: 'stable', nights: 0, owedGp: 0 };
+  });
+  const n = E.rollRandomEncounter(s, LOW, 'rest');
+  const handoff = n.encounterHandoffs?.[0];
+  expect(handoff).toMatchObject({
+    format: 'life-manager.encounter', version: 1, minute: E.absNow(s), rulesEdition: '2024',
+    environment: { activity: 'rest', distanceFt: expect.any(Number) },
+    surprise: { alarm: 'bell', partySurprised: false, partyNoticed: true },
+  });
+  expect(handoff!.participants.find((p) => p.id === s.characters[0].id)).toMatchObject({ ddbId: 42, tempHp: 3, watching: true });
+  expect(handoff!.participants.some((p) => p.id === s.characters[1].id)).toBe(false);
+  const creatures = handoff!.participants.filter((p) => p.side === 'encounter');
+  expect(creatures.length).toBeGreaterThan(0);
+  expect(new Set(creatures.map((p) => p.id)).size).toBe(creatures.length);
+  const saved = JSON.parse(JSON.stringify(n)) as State;
+  expect(saved.encounterHandoffs?.[0]).toMatchObject({ campaignId: n.campaignId, encounterId: handoff!.encounterId });
+  const selected = new Set([creatures[0].id]);
+  expect(JSON.parse(encounterHandoffJson(handoff!, selected)).participants).toHaveLength(1);
+});
+
+it('does not create a tactical export for a peaceful discovery', () => {
+  const s = fresh((d) => {
+    d.settings.srdEncounters = false;
+    d.settings.encounterBooks = [];
+  });
+  expect(E.rollRandomEncounter(s, HIGH, 'travel').encounterHandoffs).toBeUndefined();
 });
