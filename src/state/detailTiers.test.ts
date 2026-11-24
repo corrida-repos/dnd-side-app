@@ -60,7 +60,7 @@ describe('levels of detail', () => {
     expect(matchTier(E.setDetailTier(light, ctx(), 4).settings)).toBe(4);
   });
 
-  it('includes 5.5e player options in Light, with 5.5e requirements starting at Standard', () => {
+  it('includes 5.5e player options in Light, with 5.5e requirements starting at Complete', () => {
     const light = E.setDetailTier(fresh(), ctx(), 1);
     expect(light.settings).toMatchObject({
       circleMagic: true,
@@ -152,7 +152,7 @@ describe('levels of detail', () => {
     expect(trip.characters[0].exhaustion).toBe(0);
   });
 
-  it('Standard: the same day without food or water costs Exhaustion', () => {
+  it('Complete: the same day without food or water costs Exhaustion', () => {
     const s = E.setDetailTier(fresh(), ctx(), 2);
     const day = E.advance(s, ctx(0), 24 * 60);
     expect(day.characters[0].exhaustion).toBeGreaterThan(0);

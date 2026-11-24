@@ -1,7 +1,7 @@
 import type { Settings } from '../state/types';
 import { FACILITY_BOOKS } from './bastion';
 
-/** Light includes 5.5e player options. Standard adds 5.5e checks, costs and tracking. Higher tiers add legacy and table rules. */
+/** Light includes 5.5e player options. Complete adds 5.5e checks, costs and tracking. Higher tiers add legacy and table rules. */
 export type TierId = 1 | 2 | 3 | 4 | 5;
 
 export interface Tier {
@@ -22,7 +22,7 @@ export const TIERS: Tier[] = [
   },
   {
     id: 2,
-    name: 'Standard',
+    name: 'Complete',
     tagline: 'Adds 5.5e requirements for survival, travel, carrying gear and paying costs.',
     load: 'Log meals and supplies, pay expenses, and roll saves and checks as conditions call for them.',
   },
@@ -68,7 +68,7 @@ export const MECHANICS: Mechanic[] = [
   // ---- Light: published 5.5e player options.
   { key: 'circleMagic', tier: 1, area: 'Magic', source: 'Forgotten Realms: Heroes of Faerûn', label: 'Circle Magic: secondary casters can join eligible spells with a casting time of 1 minute or longer', cost: 'When the party casts a spell as a circle, choose the secondary casters and its effect.' },
 
-  // ---- Standard: published 5.5e checks, costs and bookkeeping.
+  // ---- Complete: published 5.5e checks, costs and bookkeeping.
   { key: 'foodAndWater', tier: 2, area: 'Survival', source: '2024 DMG', label: 'Food and water: dehydration and malnutrition at midnight', cost: 'Meals and drinks to log for every character and mount each day; missing them gives Exhaustion that only full meals can lift.' },
   { key: 'extremeWeather', tier: 2, area: 'Weather', source: '2024 DMG', label: 'Extreme cold and heat: hourly Constitution saves', cost: 'A save per character per hour outdoors at 0 °F or below, or 100 °F or above. Rare in mild climates, constant in harsh ones.' },
   { key: 'forcedMarch', tier: 2, area: 'Travel', source: '2024 PHB', label: 'Forced march: a Con save each hour past 8 hours of travel', cost: 'A save per character per extra hour, only when the party pushes on.' },

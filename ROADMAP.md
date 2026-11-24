@@ -546,6 +546,63 @@ The campaign's long game: characters rise in socioeconomic power by one of three
 
 ---
 
+## 5etools rules audit
+
+This review compares the revised core books and their supplements against the app at `8622f19`. It covers rules for travel, time, survival, equipment, downtime, factions, and Bastions, including features that exist in the app but only cover part of a published rule. The book links open the 5etools chapters used for the comparison. The audit records implementation gaps.
+
+### Revised core rules
+
+| Rule and source | What the app covers | Gap |
+| --- | --- | --- |
+| Journey stages and travel challenges | Planned legs and staged obstacles based on the DMG examples, with table-rule DCs and consequences. | Add the published Journey Stage Challenges as selectable templates and distinguish their suggested outcomes from the existing table-rule obstacles. [2024 DMG, ch. 2](https://5e.tools/book.html#xdmg,1) |
+| Exploration distances and doors | Visibility, signals, a standard Lock and general tool checks. | Add the Audible Distance and Underwater Encounter Distance tables, plus lock quality and complexity for varying the DC and time. Audible distance and locks are already in Phase 9. [2024 DMG, chs. 2–3](https://5e.tools/book.html#xdmg,1) |
+| Training to Gain Levels | Level edits, Xanathar's proficiency training, and DMG special training rewards. | Offer the separate opt-in advancement rule. Earning enough XP opens a training project with a per-band cost and duration, and the new level takes effect upon completion. Already in Phase 10. [2024 DMG, ch. 2](https://5e.tools/book.html#xdmg,1) |
+| Environmental effects and persistent hazards | Extreme temperatures, altitude, wind, precipitation, frigid water, ice, deep water, and several encounter hazards. | Add missing rules where they affect the exploration clock or persist afterward, such as Dead Magic and Wild Magic zones, River Styx exposure, and the environmental aftermath of an inferno. Audit the remaining hazard templates for useful encounter hooks. [2024 DMG, ch. 3](https://5e.tools/book.html#xdmg,2) |
+| Planar travel and adventuring | Portals and travel magic can be described with existing spells and notes. | Add structured portal destinations and keys, planar effects such as Planar Dissonance after a Long Rest, and Astral psychic-wind outcomes for planar journeys. [2024 DMG, ch. 6](https://5e.tools/book.html#xdmg,5) |
+| Treasure and loot | Coins, manually recorded valuables, appraisal, and generic Bastion treasure results. | Generate individual and hoard treasure by CR, choose actual items from the four treasure themes, and let the DM confirm what enters inventory. Include gemstones, art objects and trade bars. This is already in Phase 9. [2024 DMG, chs. 4, 7–8](https://5e.tools/book.html#xdmg,6) |
+| Magic item state | Identification, attunement, item charges, recharge timing and imported item metadata. | Add structured rarity and properties to generated items and support lasting effects from curses, sentient item conflict, and artifact properties where they affect tracked characters. Connect results to the Effects and Gear tabs. [2024 DMG, ch. 7](https://5e.tools/book.html#xdmg,6) |
+| Rest and class resources | Generic resource pools, spell slots, rest resets and some feature-specific shortcuts. | Audit class and subclass resource triggers as a separate pass. Start with 2024 features that restore only part of a pool on a rest, gain benefits on completing a rest, or convert one resource into another. Track the character's choices before applying a benefit. [2024 PHB, ch. 3](https://5e.tools/book.html#xphb,3) |
+| Equipment and paid services | The core gear catalog, tools, consumables, vehicles, and pricing tiers for hired spellcasting. | Close the workflows already listed in Phase 10 for named providers, stabled mounts, paid commissions and stock. Preserve the distinction between general PHB service prices, local DMG examples, and proposed table rules. [2024 PHB, ch. 6](https://5e.tools/book.html#xphb,6) · [2024 DMG, ch. 5](https://5e.tools/book.html#xdmg,4) |
+
+### Revised supplements and setting rules
+
+| Source | Missing or partial coverage |
+| --- | --- |
+| *Heroes of Faerûn*, ch. 2 | The Harptos calendar has the five annual holidays. It uses a fixed 365-day year, so Shieldmeet never follows Midsummer in the fourth year. Account for the extra day in both date conversion directions and recurring events. Regional coin names could be added as display aliases without changing denomination values. [5etools](https://5e.tools/book.html#frhof,2) |
+| *Heroes of Faerûn*, chs. 4–6 | Circle Magic and the book's Bastion facilities already exist. Audit Aurora's equipment, mechanical wonders, mounts, vehicles, and fares for actionable catalog entries. Add faction templates with published Renown thresholds, benefits, and relationships on top of the existing generic tracker. [5etools](https://5e.tools/book.html#frhof,4) |
+| *Adventures in Faerûn*, ch. 3 | Add an Icewind Dale profile for regional travel terrain, hailstorms, howling winds and psionic fields. Add local hazards and track the Lichen Plague and Mudpox contagions using the existing effects engine. Ice, cold and the general DMG contagions already work. [5etools](https://5e.tools/book.html#fraif,3) |
+| *Adventures in Faerûn*, chs. 2–6 | Add Calim Desert sandstorms, mirages and sinkholes, plus guardian-permitted fairy-trod routes in the Moonshaes. Regional Renown tracks and regional Bastion event variants across the Dalelands, Icewind Dale, Calimshan, Moonshaes and Baldur's Gate can reuse the app's faction and Bastion systems. [5etools](https://5e.tools/book.html#fraif,2) |
+| *Eberron: Forge of the Artificer*, ch. 3 | The published facilities and helm orders exist. The Lyrandar Helm reports miles traveled in a turn. Represent the Bastion as a persistent vehicle with a destination and daily position, enforce the propulsion requirement and defensive-wall restriction, and connect travel events to the journey. [5etools](https://5e.tools/book.html#efa,3) |
+| *Eberron: Forge of the Artificer*, chs. 5–7 | Add Dragonmarked House Renown and favors, Morgrave patron benefits, elemental-airship operation, airship upgrades and travel hazards. The existing vehicle speed and wear tracking cover part of the travel workflow. [5etools](https://5e.tools/book.html#efa,5) |
+| *Ravenloft: The Horrors Within*, chs. 2–3 | Add Haunted facilities and the once-per-turn haunt procedure for orders and Maintain, plus all eight published facilities. Reuse the Bastion order queue. Add domain-specific travel through the Mists and Tarokka tools as setting options. General Fear, Stress and haunted-region tracking already exist. [5etools](https://5e.tools/book.html#rhw,3) |
+| *Arcana Unleashed*, chs. 3–5 | Add six magical patron types and their benefits, school-based faction Renown and services, and evolving item progression. Support evolution by milestone or by a crafting project that charges the difference between the old and new rarity. Keep the item's identity and history as its properties change. [5etools](https://5e.tools/book.html#au,5) |
+| *World of Warcraft*, chs. 3–4 | The standard crafting system and generic Renown provide a starting point. Add opt-in profession ranks, time spent gathering resources, production recipes and Azeroth's faction and subfaction benefits. [5etools](https://5e.tools/book.html#wow,3) |
+| *Netheril's Fall*, chs. 2–3 | Catalog the reusable magical zones and hazards, then support time gates with explicit departure and arrival dates if the campaign uses them. Keep scheduled events tied to the timeline the party is on. [5etools](https://5e.tools/book.html#nf,2) |
+| *Lorwyn: First Light*, introduction | Add a setting profile for crossing between Lorwyn and Shadowmoor, including the inhabitants' transformation and the effects of protections that prevent it. [5etools](https://5e.tools/book.html#lfl,0) |
+
+The revised *Monster Manual* already feeds the encounter catalog. A follow-up there belongs with encounter personality, relationships and treasure rather than a second bestiary. *Astarion's Book of Hungers* and *Project Lamordia* were screened for reusable options such as rest-linked feats and tracked character changes. Their adventure-specific systems are lower priority than the shared workflows above. The revised DM screens and *Sage Advice Compendium* serve as reference and clarification sources. [Monster Manual](https://5e.tools/book.html#xmm) · [Astarion's Book of Hungers](https://5e.tools/book.html#abh) · [Project Lamordia](https://5e.tools/book.html#pl) · [Sage Advice Compendium](https://5e.tools/book.html#xsac)
+
+### Legacy systems to keep optional
+
+- *Acquisitions Incorporated* adds franchise advancement, recurring headquarters costs, company positions and delegated tasks. The app has businesses and Bastions. A franchise would tie those together with its own rank, operating budget and staff. [5etools](https://5e.tools/book.html#ai,1)
+- *Astral Adventurer's Guide* adds spelljamming travel, air envelopes, gravity planes and shipboard chores. These could reuse a shared vehicle and journey model with Eberron airships while applying their own campaign rules. [5etools](https://5e.tools/book.html#aag,2)
+- *Tasha's Cauldron of Everything* has the sidekick classes, patrons and supernatural-region effects already represented in the app. Changing a skill or subclass still needs a dedicated training workflow. [5etools](https://5e.tools/book.html#tce,1)
+- *Mythic Odysseys of Theros* supplies published deity-specific Piety milestones and benefits. The app has a generic Piety score and table-rule consequences. It could add Theros deity profiles without changing existing faiths. [5etools](https://5e.tools/book.html#mot,2)
+- *Van Richten's Guide to Ravenloft* adds Dark Gifts and the lingering effects of curses and domain travel. Keep this an opt-in legacy ruleset alongside the revised Haunted Bastions. [5etools](https://5e.tools/book.html#vrgr,1)
+- *Strixhaven: A Curriculum of Chaos* adds term-based jobs, extracurricular benefits, relationships and exams. Existing employment and contacts cover parts of student life. A school term would coordinate commitments and rewards on the calendar. [5etools](https://5e.tools/book.html#scc,1)
+- *Explorer's Guide to Wildemount* and *Bigby Presents: Glory of the Giants* supply evolving items through Vestiges and giant rune items. Reuse the item progression model after the revised *Arcana Unleashed* rules are supported. [5etools Wildemount](https://5e.tools/book.html#egw,7) · [5etools Bigby](https://5e.tools/book.html#bgg,5)
+
+### Suggested build order
+
+1. Add the Ravenloft facilities and fill the core treasure workflow. Both reuse existing UI and benefit parties at every tier.
+2. Add Eberron vehicle state and Faerûn regional profiles to the existing journey and Bastion engines.
+3. Build shared support for published faction rewards and evolving items, then load the setting-specific options that use them.
+4. Add Shieldmeet and the small core exploration tables. Keep development of optional advancement, planar clocks and legacy campaign systems separate so a campaign can opt in to each.
+
+Use Light for revised player options and setting-specific benefits, Complete for revised checks, costs and tracking, and Gritty or higher for legacy and table rules. Keep DM-selected variants, regional rules and setting-specific catalogs optional within their applicable tiers.
+
+---
+
 ## Verified correct ✅
 
 No change needed. These match the 2024 data:

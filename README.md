@@ -19,12 +19,12 @@ A control bar stays on screen on every tab: the time, +10 minutes, +1 hour, +4 h
 
 ## Levels of detail
 
-**Settings → Level of detail** offers five cumulative presets. Light includes supported 5.5e player options. Standard adds 5.5e requirements and consequences. The three higher levels add increasingly involved legacy and table rules.
+**Settings → Level of detail** offers five cumulative presets. Light includes supported 5.5e player options. Complete adds 5.5e requirements and consequences. The three higher levels add increasingly involved legacy and table rules.
 
 | Tier | What it adds |
 | --- | --- |
 | **1. Light** | Core tracking for the clock, rests, weather and timers, plus Circle Magic and Bastion facilities from the 2024 DMG, *Forgotten Realms: Heroes of Faerûn*, and *Eberron: Forge of the Artificer*. |
-| **2. Standard** | Food and water, extreme weather saves, forced marches, navigation checks, encounters, carrying capacity, coin weight, tent capacity, expenses, spell components and consumable gear. |
+| **2. Complete** | Food and water, extreme weather saves, forced marches, navigation checks, encounters, carrying capacity, coin weight, tent capacity, expenses, spell components and consumable gear. |
 | **3. Gritty** (new games start here) | Campfire protection, unsafe food and water, weapon and armor training, legacy sidekicks and downtime complications. |
 | **4. Hardcore** | Weather modifiers to damage rolls, stricter appraisals and penalties for sleeping in armor. |
 | **5. Brutal** | Lingering injuries, madness, and wear on gear and ships. |
