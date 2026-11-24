@@ -2,7 +2,7 @@ import { tacticalFromHandoff, type EncounterHandoff, type EncounterSurprise, typ
 import { BRELAND, BRELAND_ROUTES, nextDeparture, type BrelishLocality } from '../rules/eberron';
 import { audibleDistance, LOCK_DC, LOCK_MINUTES, monsterBehavior, NOISE, UNDERWATER_DISTANCE, type LockDetails, type Noise } from '../rules/exploration';
 import { rollBastionTreasure, rollTreasure, type TreasureItem, type TreasureRequest } from '../rules/treasure';
-import type { Disposition, TacticalCondition, TacticalResult, TacticalVitals } from '../rules/butler';
+import { fightOrFlightText, type Disposition, type FightOrFlight, type TacticalCondition, type TacticalResult, type TacticalVitals } from '../rules/butler';
 import type { LadderPos, TameTarget, ActiveEffect, Activity, CharacterSpell, InventoryItem, LogEntry, Ritual, Stash, VehicleDetails, Bastion, Business, Character, FacilityWork, Obstacle, Rival, Debt, Mark, Faction, ExhaustionCause, Facility, JourneyStage, MagicItem, Pace, PendingSave, Project, Recruit, SaveKind, Size, State, Tone } from './types';
 import { BASIC_BUILD, BASTION_TURN_DAYS, defaultSize, ENLARGE, rollBastionEvent, SIZE_LABEL, SPECIAL_FACILITIES, type FacilitySize } from '../rules/bastion';
 import { d20, die, combineModes, rollDice, rollExpr, signed, type Rng, type RollMode } from '../rules/dice';
@@ -8095,6 +8095,24 @@ function tacticalVitals(s: State, c: Character): TacticalVitals {
 export const selectTacticalEncounter = act((d, _ctx, id: string) => {
   const snapshot = d.encounterHandoffs?.find((entry) => entry.encounterId === id);
   if (!d.tacticalEncounter && snapshot && !d.resolvedTacticalEncounters?.includes(id)) d.tacticalEncounter = tacticalFromHandoff(snapshot);
+});
+
+type FightOrFlightChoice = { kind: 'committed' } | { kind: 'save'; leaderId: string; modifier: number };
+
+export const decideFightOrFlight = act((d, ctx, encounterId: string, choice: FightOrFlightChoice) => {
+  const encounter = d.tacticalEncounter;
+  if (encounter?.id !== encounterId || encounter.fightOrFlight) return;
+  let decision: FightOrFlight;
+  if (choice.kind === 'committed') decision = { kind: 'committed' };
+  else {
+    const leader = encounter.participants.find((p) => p.side === 'encounter' && p.id === choice.leaderId);
+    if (!leader || !Number.isInteger(choice.modifier) || Math.abs(choice.modifier) > 99) return;
+    decision = { kind: 'save', leader: leader.name, roll: die(20, ctx.rng), modifier: choice.modifier };
+  }
+  encounter.fightOrFlight = decision;
+  const snapshot = d.encounterHandoffs?.find((entry) => entry.encounterId === encounterId);
+  if (snapshot) snapshot.fightOrFlight = decision;
+  log(d, `Fight or flight · ${encounter.title}. ${fightOrFlightText(decision)}`);
 });
 
 export const dismissTacticalEncounter = act((d, _ctx, disposition?: Disposition) => {

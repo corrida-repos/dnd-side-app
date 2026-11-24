@@ -1,4 +1,4 @@
-import type { TacticalEncounter, TacticalVitals } from './butler';
+import type { FightOrFlight, TacticalEncounter, TacticalVitals } from './butler';
 import type { ActiveEffect, Shelter } from '../state/types';
 import type { CheckConditions, EncounterResult } from './encounters';
 import type { TerrainType } from './terrain';
@@ -46,6 +46,7 @@ export interface EncounterHandoff {
   encounterRoll: number;
   checkDetail?: string;
   attitude: EncounterResult['attitude'];
+  fightOrFlight?: FightOrFlight;
   surprise: EncounterSurprise;
   environment: {
     place: string;
@@ -86,7 +87,7 @@ export function tacticalFromHandoff(handoff: EncounterHandoff, context?: string)
     schema: 'life-manager/encounter@1', rules: handoff.rulesEdition, campaignId: handoff.campaignId,
     id: handoff.encounterId, at: handoff.minute, title: handoff.summary,
     activity: e.activity, place: e.place || e.terrain, distanceFt: e.distanceFt,
-    attitude: handoff.attitude?.attitude,
+    attitude: handoff.attitude?.attitude, fightOrFlight: handoff.fightOrFlight,
     context: `${context ?? handoff.surprise.narrative.trim()} ${summary}${effects}`.slice(0, 4000),
     participants: handoff.participants.map((p) => ({
       id: p.id, name: p.name, side: p.side, ddbId: p.ddbId,

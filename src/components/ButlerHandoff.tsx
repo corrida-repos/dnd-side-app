@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { DISPOSITIONS, parseTacticalResult, type Disposition, type TacticalResult } from '../rules/butler';
+import { DISPOSITIONS, FIGHT_OR_FLIGHT_DC, fightOrFlightText, parseTacticalResult, type Disposition, type TacticalEncounter, type TacticalResult } from '../rules/butler';
 import { dispatch, edit, useGame } from '../state/store';
-import { absNow, applyTacticalResult, dismissTacticalEncounter, selectTacticalEncounter, tacticalResultProblem } from '../state/engine';
+import { absNow, applyTacticalResult, decideFightOrFlight, dismissTacticalEncounter, selectTacticalEncounter, tacticalResultProblem } from '../state/engine';
 import { formatClock, formatDate } from '../rules/calendar';
 import { Card, Select, Toggle } from './common';
 
@@ -59,6 +59,10 @@ export function ButlerHandoff() {
       </> : <p className="small muted">Roll a creature encounter here to prepare a handoff.</p>) : <>
         <p><strong>{encounter.title}</strong> near {encounter.place}, {encounter.distanceFt} ft away.</p>
         {encounter.attitude && <p className="small">Starting attitude: {encounter.attitude}. Decide whether to approach, parley, withdraw, or take the encounter into rounds.</p>}
+        <FightOrFlightReview key={encounter.id} encounter={encounter} onResolve={(outcome) => {
+          dispatch((d, c) => dismissTacticalEncounter(d, c, outcome));
+          setNotice(outcome + '.');
+        }} />
         <details>
           <summary>Review participants</summary>
           {encounter.participants.map((p) => <Toggle key={p.id} checked={!excluded.includes(p.id)}
@@ -112,4 +116,41 @@ export function ButlerHandoff() {
       {notice && <p role="status">{notice}</p>}
     </Card>
   );
+}
+
+
+function FightOrFlightReview({ encounter, onResolve }: { encounter: TacticalEncounter; onResolve: (outcome: Disposition) => void }) {
+  const opponents = encounter.participants.filter((p) => p.side === 'encounter');
+  const [leaderId, setLeaderId] = useState(opponents[0]?.id ?? '');
+  const [modifier, setModifier] = useState('');
+  const valid = modifier.trim() !== '' && Number.isInteger(Number(modifier)) && Math.abs(Number(modifier)) <= 99;
+  const decision = encounter.fightOrFlight;
+  const failed = decision?.kind === 'save' && decision.roll + decision.modifier < FIGHT_OR_FLIGHT_DC;
+  if (!opponents.length) return null;
+  return <fieldset>
+    <legend>Fight or Flight</legend>
+    {decision ? <>
+      <p role="status">{fightOrFlightText(decision)}</p>
+      {failed && <div className="btn-row">
+        <button onClick={() => onResolve('Creatures fled')}>Record flight</button>
+        <button onClick={() => onResolve('Parleyed')}>Record parley</button>
+      </div>}
+      {failed && <p className="small">If the party pursues or talks break down, you can still send the encounter to Butler.</p>}
+    </> : <>
+      <p className="small">Use the save if the creatures are unsure about fighting. For a group, choose the leader and enter their Wisdom saving throw modifier.</p>
+      <div className="form-row">
+        <Select label={opponents.length > 1 ? 'Group leader' : 'Creature'} value={leaderId} options={opponents.map((p) => ({ value: p.id, label: p.name }))}
+          onChange={(id) => { setLeaderId(id); setModifier(''); }} />
+        <label>Wisdom save modifier <input type="number" min={-99} max={99} step={1} value={modifier}
+          onChange={(event) => setModifier(event.target.value)} /></label>
+      </div>
+      <div className="btn-row">
+        <button disabled={!valid} onClick={() => dispatch((d, c) => decideFightOrFlight(d, c, encounter.id,
+          { kind: 'save', leaderId, modifier: Number(modifier) }))}>Roll DC {FIGHT_OR_FLIGHT_DC} Wisdom save</button>
+        <button onClick={() => dispatch((d, c) => decideFightOrFlight(d, c, encounter.id, { kind: 'committed' }))}>
+          They are committed to fighting
+        </button>
+      </div>
+    </>}
+  </fieldset>;
 }
