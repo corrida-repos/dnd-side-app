@@ -175,3 +175,15 @@ describe('navigation aids, maps, mending and languages', () => {
     expect(said(s, 'secret')).toBe(false);
   });
 });
+
+it('uses DMG lock quality and complexity for Thieves’ Tools', () => {
+  const state = camp();
+  state.characters[0].inventory.push(tool("Thieves' Tools"));
+  const id = state.characters[0].id;
+  const simple = E.useTool(state, ctx(0.5), id, "Thieves' Tools", 0, 0, false, 'chest', { quality: 'Inferior', complexity: 'Simple' });
+  expect(E.absNow(simple)).toBe(E.absNow(state));
+  expect(said(simple, 'DC 10, 1 action')).toBe(true);
+  const complex = E.useTool(simple, ctx(0.5), id, "Thieves' Tools", 0, 0, false, 'vault', { quality: 'Superior', complexity: 'Complex' });
+  expect(E.absNow(complex)).toBe(E.absNow(simple) + 1);
+  expect(said(complex, 'DC 20, 1 min')).toBe(true);
+});

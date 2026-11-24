@@ -1,3 +1,4 @@
+import { LOCK_DC, LOCK_MINUTES, type LockDetails } from '../rules/exploration';
 import { useState } from 'react';
 import { useGame, dispatch } from '../state/store';
 import * as E from '../state/engine';
@@ -29,6 +30,11 @@ export function ToolsCard() {
   const [perfBonus, setPerfBonus] = useState(0);
   const [mapId, setMapId] = useState('');
   const [bookName, setBookName] = useState('');
+  const [quality, setQuality] = useState<LockDetails['quality']>('Good');
+  const [complexity, setComplexity] = useState<LockDetails['complexity']>('Complex');
+  const lock = tool.name === "Thieves' Tools" && use === tool.uses[0] ? { quality, complexity } : undefined;
+  const dc = lock ? LOCK_DC[lock.quality] : use.dc;
+  const minutes = lock ? LOCK_MINUTES[lock.complexity] : use.minutes;
   if (!c) return null;
   const maps = c.inventory.filter((i) => /^map of /i.test(i.name));
   const mapPick = maps.find((m) => m.id === mapId) ?? maps[0];
@@ -51,21 +57,27 @@ export function ToolsCard() {
       <div className="form-row">
         <Select label="Who" value={c.id} onChange={(v) => (setWho(v), setToolName(''), reset())} options={pcs.map((x) => ({ value: x.id, label: x.name }))} />
         <Select label="Tool" value={tool.name} onChange={(v) => (setToolName(v), setUseIdx(0), reset())} options={options} />
-        <Select label="Use" value={String(Math.min(useIdx, tool.uses.length - 1))} onChange={(v) => (setUseIdx(Number(v)), reset())} options={tool.uses.map((u, i) => ({ value: String(i), label: `${u.text} (DC ${u.dc})` }))} />
+        <Select label="Use" value={String(Math.min(useIdx, tool.uses.length - 1))} onChange={(v) => (setUseIdx(Number(v)), reset())} options={tool.uses.map((u, i) => ({ value: String(i), label: `${u.text}${tool.name === "Thieves' Tools" && i === 0 ? '' : ` (DC ${u.dc})`}` }))} />
       </div>
       <div className="form-row">
+        {lock && (
+          <>
+            <Select label="Lock quality" value={quality} onChange={setQuality} options={Object.keys(LOCK_DC) as LockDetails['quality'][]} />
+            <Select label="Lock complexity" value={complexity} onChange={setComplexity} options={Object.keys(LOCK_MINUTES) as LockDetails['complexity'][]} />
+          </>
+        )}
         <Text label="On what (optional)" value={what} onChange={setWhat} placeholder="e.g. the strongbox, the captain's letter" />
         <Num label={`${ABILITY_LABEL[tool.ability]} bonus`} value={b} onChange={(v) => setBonus(Math.round(v))} width={2} />
         <Toggle checked={a} onChange={setAdv} label={`Advantage${use.skill ? ` (also proficient in ${use.skill})` : ' (a skill also applies)'}`} />
       </div>
       <p className="small muted">
         {has ? <Pill tone="good">has the tool</Pill> : <Pill tone="warn">no {tool.name} in the inventory</Pill>} {prof ? <Pill tone="good">proficient</Pill> : prof === false ? <Pill tone="muted">not proficient</Pill> : null} From the sheet: {sheet?.why}.
-        {!has && (s.settings.improvised ? ` Improvised: DC ${use.dc + IMPROVISED_DC}, twice the time (table rule).` : ' Improvised attempts are off in Settings.')}
+        {!has && (s.settings.improvised ? ` Improvised: DC ${dc + IMPROVISED_DC}, twice the time (table rule).` : ' Improvised attempts are off in Settings.')}
       </p>
       <div className="btn-row tight">
-        <button className="small primary" disabled={!has && !s.settings.improvised} onClick={() => dispatch((st, cx) => E.useTool(st, cx, c.id, tool.name, Math.min(useIdx, tool.uses.length - 1), b, a, what))}>
-          Roll (DC {has ? use.dc : use.dc + IMPROVISED_DC}
-          {use.minutes ? `, ${use.minutes * (has ? 1 : 2)} min` : ''})
+        <button className="small primary" disabled={!has && !s.settings.improvised} onClick={() => dispatch((st, cx) => E.useTool(st, cx, c.id, tool.name, Math.min(useIdx, tool.uses.length - 1), b, a, what, lock))}>
+          Roll (DC {has ? dc : dc + IMPROVISED_DC}
+          {minutes ? `, ${minutes * (has ? 1 : 2)} min` : lock ? `, ${has ? '1 action' : '2 actions'}` : ''})
         </button>
       </div>
       <div className="btn-row tight">

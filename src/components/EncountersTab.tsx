@@ -1,3 +1,4 @@
+import { NOISE, UNDERWATER_DISTANCE, type Noise, type UnderwaterVisibility } from '../rules/exploration';
 import { useState } from 'react';
 import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
@@ -8,6 +9,7 @@ import { Card, Pill, Rule, Select, Toggle } from './common';
 import { senseText } from './senseView';
 import { BookAdvice } from './SettingsTab';
 import { WaysAround } from './WaysAround';
+import { TreasureCard } from './TreasureCard';
 
 type Act = CheckConditions['activity'];
 const ACT_LABEL: Record<Act, string> = { travel: 'Travelling', camp: 'In camp', rest: 'Long Rest', explore: 'Exploring a dungeon' };
@@ -22,7 +24,9 @@ export function EncountersTab() {
       <ConditionsCard act={act} setAct={setAct} />
       <WhenCard />
       <TableCard act={act} />
+      <EncounterDistanceCard />
       <RecentCard />
+      <TreasureCard />
     </div>
   );
 }
@@ -296,6 +300,32 @@ function TableCard({ act }: { act: Act }) {
         Leaders bring followers, solitary creatures come alone, only swimmers and fliers reach a ship, tame animals are left out, and legendary creatures are rare outside their lairs. When a
         creature turns up, the app rolls how many, their starting attitude (from alignment), and how far away they are (DMG Travel Terrain table). Creatures from the System Reference Document 5.2 (CC BY 4.0).
       </Rule>
+    </Card>
+  );
+}
+
+function EncounterDistanceCard() {
+  const s = useGame();
+  const [noise, setNoise] = useState<Noise>('normal');
+  const underwater = s.place.underwaterVisibility;
+  const lastNoise = s.log.find((entry) => entry.text.endsWith('(Audible Distance).'));
+  return (
+    <Card title="Audible and underwater distances" className="span-2">
+      <div className="form-row">
+        <Select label="Noise" value={noise} onChange={setNoise} options={Object.entries(NOISE).map(([value, entry]) => ({ value: value as Noise, label: entry.label }))} />
+        <button className="small" onClick={() => dispatch((state, ctx) => E.rollAudibleDistance(state, ctx, noise))}>Roll audible distance</button>
+        <Select<UnderwaterVisibility | ''>
+          label="Encounter visibility"
+          value={underwater ?? ''}
+          onChange={(v) => edit((state) => { state.place.underwaterVisibility = v || undefined; })}
+          options={[
+            { value: '', label: 'Above water (use terrain)' },
+            ...Object.entries(UNDERWATER_DISTANCE).map(([value, entry]) => ({ value: value as UnderwaterVisibility, label: `${entry.label} (${entry.feet} ft)` })),
+          ]}
+        />
+      </div>
+      {lastNoise && <p className="small" aria-live="polite">{lastNoise.text}</p>}
+      <Rule>Audible distance measures how far a sound carries from camp or another source. Underwater visibility sets the starting distance for encounter rolls.</Rule>
     </Card>
   );
 }

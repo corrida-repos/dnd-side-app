@@ -1,3 +1,6 @@
+import type { NpcProfile } from '../rules/npcs';
+import type { UnderwaterVisibility } from '../rules/exploration';
+import type { TreasureItem, TreasureRoll } from '../rules/treasure';
 import type { Danger } from '../rules/encounters';
 import type { ArmsKind } from '../rules/armsTraining';
 import type { ClimateId, Weather } from '../rules/weather';
@@ -122,6 +125,7 @@ export interface InventoryItem {
   source: WeightSource;
   /** Value of one in GP, if known (gems, art, trade goods, or a price in the pasted text). */
   valueGp?: number;
+  treasure?: Pick<TreasureItem, 'kind' | 'rarity' | 'attunement' | 'consumable'>;
   /** The party doesn't know its value yet; valueGp, if set, is the DM's secret true value. Appraising reveals it. */
   valueHidden?: boolean;
   /** A misjudged appraisal: what the party wrongly believes one is worth (optional table rule). */
@@ -570,6 +574,7 @@ export interface Place {
   goodRoad: boolean;
   /** Older free-text description of the terrain. */
   terrainNote?: string;
+  underwaterVisibility?: UnderwaterVisibility;
   waterSource: boolean;
   waterQuality: WaterQuality;
   /** In a town or city: lifestyle expenses are charged and cover meals. */
@@ -619,7 +624,7 @@ export interface PendingSave {
   city?: boolean;
 }
 
-export interface Hireling {
+export interface Hireling extends NpcProfile {
   id: string;
   name: string;
   role: HirelingRole;
@@ -740,8 +745,9 @@ export type BastionDecision =
   | { kind: 'opportunity' }
   | { kind: 'aid' };
 
-export interface BastionGuest {
+export interface BastionGuest extends NpcProfile {
   id: string;
+  name?: string;
   kind: 'renown' | 'sanctuary' | 'mercenary' | 'monster' | 'spellcaster' | 'refugees';
   label: string;
   /** Day index when they leave (none: until sent away). */
@@ -847,7 +853,7 @@ export interface Mark {
   landId?: string;
 }
 
-export interface Rival {
+export interface Rival extends NpcProfile {
   id: string;
   name: string;
   /** Who they are (idea), what they want, and what they can bring to bear. */
@@ -1274,7 +1280,7 @@ export interface Notoriety {
 }
 
 /** Someone the party knows. */
-export interface Contact {
+export interface Contact extends NpcProfile {
   id: string;
   name: string;
   role: string;
@@ -1329,6 +1335,7 @@ export interface NewsItem {
 }
 
 export interface State {
+  treasurePreview?: TreasureRoll & { id: string };
   version: number;
   calendar: Calendar;
   startYear: number;
@@ -1386,7 +1393,7 @@ export interface State {
   /** Messages travelling to and from distant Bastions. */
   dispatches: Dispatch[];
   /** The party's group patron (Tasha's). */
-  patron?: { kind: PatronKind; name: string; joinedDay: number; luxuryYear: number | null; luxuryUntilDay?: number } | null;
+  patron?: { kind: PatronKind; name: string; representative?: NpcProfile & { name: string }; joinedDay: number; luxuryYear: number | null; luxuryUntilDay?: number } | null;
   /** Money owed to creditors (table rule). */
   debts: Debt[];
   /** Rivals working against the party during downtime (Xanathar's). */

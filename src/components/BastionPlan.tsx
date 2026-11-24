@@ -1,3 +1,4 @@
+import { NpcProfile } from './NpcProfile';
 import { useState } from 'react';
 import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
@@ -154,11 +155,12 @@ export function BastionPeople({ b }: { b: Bastion }) {
         <ul className="plain small">
           {b.guests!.map((g) => (
             <li key={g.id}>
-              {g.label}
+              {g.name && <><b>{g.name}</b> · </>}{g.label}
               {g.untilDay != null && ` · leaves in ${Math.max(0, g.untilDay - s.dayIndex)} day(s)`}{' '}
               <button className="ghost tiny" onClick={() => dispatch((st, cx) => E.dismissGuest(st, cx, b.id, g.id))}>
                 Send away
               </button>
+              <NpcProfile profile={g} />
             </li>
           ))}
         </ul>

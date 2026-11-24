@@ -1,3 +1,4 @@
+import type { TreasureKind } from './treasure';
 import { GEM, APPRAISE_DC } from './shop';
 
 /** What sort of valuable an item is, for working out who can appraise it. */
@@ -6,7 +7,10 @@ export type ValuableKind = 'gem' | 'jewelry' | 'art' | 'other';
 export const JEWELRY = /\b(jewel(ry|lery)?|rings?|necklaces?|bracelets?|bangles?|brooch(es)?|circlets?|crowns?|tiaras?|pendants?|lockets?|earrings?|anklets?|torcs?|chains? of (gold|silver|platinum)|ingots?|bars? of (gold|silver|platinum)|(gold|silver|platinum|electrum) (bar|ingot|chain|cup|coin)s?)\b/i;
 export const ART = /\b(art object|statuettes?|statues?|paintings?|portraits?|tapestr(y|ies)|idols?|chalices?|goblets?|carvings?|figurines?|masks?|vases?|urns?|busts?|icons?|reliefs?|rugs?|scrolls? of (art|calligraphy)|music box(es)?)\b/i;
 
-export const valuableKind = (name: string): ValuableKind => (GEM.test(name) ? 'gem' : JEWELRY.test(name) ? 'jewelry' : ART.test(name) ? 'art' : 'other');
+export function valuableKind(name: string, treasure?: TreasureKind): ValuableKind {
+  if (treasure) return treasure === 'bar' ? 'jewelry' : treasure === 'magic' ? 'other' : treasure;
+  return GEM.test(name) ? 'gem' : JEWELRY.test(name) ? 'jewelry' : ART.test(name) ? 'art' : 'other';
+}
 
 /** How someone tries to learn an item's value. */
 export type AppraiseMethod = 'tools' | 'eye' | 'merchant' | 'dm';
@@ -34,8 +38,8 @@ export interface AppraiseCheck {
 }
 
 /** Which check (and DC) a method calls for on this item, under the table's switches. */
-export function appraiseCheck(name: string, method: 'tools' | 'eye', sw: AppraiseSwitches): AppraiseCheck {
-  const kind = valuableKind(name);
+export function appraiseCheck(name: string, method: 'tools' | 'eye', sw: AppraiseSwitches, treasure?: TreasureKind): AppraiseCheck {
+  const kind = valuableKind(name, treasure);
   if (method === 'tools') {
     if (kind === 'gem') return { ok: true, dc: APPRAISE_DC, label: "Intelligence check with Jeweler's Tools", canAdvantage: true, tableRule: false };
     if (kind === 'jewelry' && sw.appraiseCrafts) return { ok: true, dc: APPRAISE_DC, label: "Intelligence check with Jeweler's Tools", canAdvantage: true, tableRule: true };

@@ -146,3 +146,15 @@ describe('built-in books', () => {
     expect(fights.length).toBeGreaterThanOrEqual(6);
   });
 });
+
+it('uses underwater distance instead of doubling it for a spyglass', () => {
+  const state = fresh((s) => {
+    s.place.underwaterVisibility = 'murky';
+    s.characters[0].inventory.push({ id: 'spyglass', name: 'Spyglass', qty: 1, weight: 1, source: 'manual' });
+  });
+  const encounter = encounters(E.rollRandomEncounter(state, LOW, 'travel'))[0];
+  expect(encounter.text).toContain('10 feet away (Underwater Encounter Distance)');
+  expect(encounter.text).toContain('Personality:');
+  expect(encounter.text).not.toContain('Spyglass');
+  expect(E.rollAudibleDistance(state, HIGH, 'loud').log[0].text).toContain('600 feet');
+});

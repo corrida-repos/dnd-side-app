@@ -1,9 +1,10 @@
+import type { TreasureKind } from './treasure';
 import { ITEM_PRICES } from './itemPrices';
 import type { Settlement } from './services';
 
 /** 2024 PHB "Selling Treasure": equipment fetches half its price; gems, jewelry, art and trade goods keep full value. Table rule: pelts, furs, hides, trophies, Rations, foraged goods and route maps count as trade goods. */
 export const FULL_VALUE = /\b(gem|gems|diamond|ruby|pearl|emerald|sapphire|opal|jade|jewel|jewelry|jewellery|amethyst|garnet|topaz|onyx|jacinth|gemstones?|art object|statuette|painting|tapestry|idol|chalice|trade goods|ingot|bar of (gold|silver)|spices?|silk|pelts?|furs?|hides?|trophy|trophies|rations|honeycomb|mushrooms|herbs|fossils?|map of)\b/i;
-export const saleRate = (name: string): number => (FULL_VALUE.test(name) ? 1 : 0.5);
+export const saleRate = (name: string, kind?: TreasureKind): number => ((kind ? kind !== 'magic' : FULL_VALUE.test(name)) ? 1 : 0.5);
 
 /** Gemstones, whose value Jeweler's Tools can discern (2024 PHB). */
 export const GEM = /\b(gem|gems|gemstones?|diamonds?|rub(y|ies)|pearls?|emeralds?|sapphires?|opals?|jade|amethysts?|garnets?|topaz|onyx|jacinths?|jewels?)\b/i;
@@ -16,6 +17,7 @@ interface Valued {
   valueHidden?: boolean;
   valueBelieved?: number;
   damaged?: boolean;
+  treasure?: { kind: TreasureKind };
 }
 
 /**
@@ -37,6 +39,7 @@ export const valueSecret = (i: Valued): boolean => valueUnknown(i) || misjudged(
 export const sameStack = (a: Valued, b: Valued): boolean =>
   a.name.toLowerCase() === b.name.toLowerCase() &&
   !!a.damaged === !!b.damaged &&
+  a.treasure?.kind === b.treasure?.kind &&
   valueSecret(a) === valueSecret(b) &&
   (valueSecret(a) ? (a.valueGp ?? null) === (b.valueGp ?? null) && (a.valueBelieved ?? null) === (b.valueBelieved ?? null) : a.valueGp == null || b.valueGp == null || a.valueGp === b.valueGp);
 

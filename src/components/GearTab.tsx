@@ -252,6 +252,7 @@ function InventoryBlock({ c }: { c: Character }) {
                 <span>
                   {i.containerId && <span className="muted">↳ </span>}
                   {i.name} {i.qty > 1 && <span className="muted">×{i.qty}</span>}{' '}
+                  {i.treasure?.rarity && <Pill tone="info">{RARITY_LABEL[i.treasure.rarity]}</Pill>}{' '}
                   {i.container && (
                     <Pill tone="info" title={i.container.note}>
                       {i.container.weightless ? 'weightless inside' : 'container'}
@@ -438,8 +439,8 @@ function AppraiseBlock({ c }: { c: Character }) {
   const person = pcs.find((x) => x.id === whoId);
   const hasTools = pro ? true : person ? toolsOf(person) : false;
   const tried = !!(st.appraiseOneTry && it?.appraiseTried?.includes(whoId));
-  const tools = it ? appraiseCheck(it.name, 'tools', st) : null;
-  const eye = it ? appraiseCheck(it.name, 'eye', st) : null;
+  const tools = it ? appraiseCheck(it.name, 'tools', st, it.treasure?.kind) : null;
+  const eye = it ? appraiseCheck(it.name, 'eye', st, it.treasure?.kind) : null;
   const go = (m: E.AppraiseMethod) => dispatch((st2, cx) => E.appraiseItem(st2, cx, c.id, it!.id, m, whoId, bonus, it!.valueGp == null && trueGp > 0 ? trueGp : undefined, adv));
   if (!secret.length && !hideable.length) return null;
   const mins = st.appraiseTime ? `, ${APPRAISE_MINUTES} min` : '';

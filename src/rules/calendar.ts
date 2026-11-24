@@ -128,26 +128,59 @@ export interface DateParts {
   dayOfYear: number;
 }
 
-export function dateFromIndex(c: Calendar, startYear: number, dayIndex: number): DateParts {
-  const yl = yearLength(c);
-  const yearOffset = Math.floor(dayIndex / yl);
-  let rest = dayIndex - yearOffset * yl;
-  const dayOfYear = rest;
-  for (let i = 0; i < c.months.length; i++) {
-    const mo = c.months[i];
-    if (rest < mo.days) return { year: startYear + yearOffset, monthIndex: i, month: mo, day: rest + 1, dayOfYear };
-    rest -= mo.days;
+const SHIELDMEET = m('Shieldmeet', 1, 'summer', true);
+
+export function calendarMonths(c: Calendar, year: number) {
+  const months = c.months.map((month, index) => ({ month, index }));
+  // Keep the saved indices of all ordinary months and festivals.
+  if (c.id === 'harptos' && year % 4 === 0) {
+    const midsummer = months.findIndex(({ month }) => month.name === 'Midsummer');
+    months.splice(midsummer + 1, 0, { month: SHIELDMEET, index: c.months.length });
   }
-  // Unreachable for a valid calendar.
-  const last = c.months.length - 1;
-  return { year: startYear + yearOffset, monthIndex: last, month: c.months[last], day: c.months[last].days, dayOfYear };
+  return months;
+}
+
+function yearStart(c: Calendar, startYear: number, year: number): number {
+  const ordinaryDays = (year - startYear) * yearLength(c);
+  if (c.id !== 'harptos') return ordinaryDays;
+  return ordinaryDays + Math.floor((year - 1) / 4) - Math.floor((startYear - 1) / 4);
+}
+
+export function dateFromIndex(c: Calendar, startYear: number, dayIndex: number): DateParts {
+  const averageYear = yearLength(c) + (c.id === 'harptos' ? 0.25 : 0);
+  let year = startYear + Math.floor(dayIndex / averageYear);
+  while (yearStart(c, startYear, year) > dayIndex) year--;
+  while (yearStart(c, startYear, year + 1) <= dayIndex) year++;
+  const dayOfYear = dayIndex - yearStart(c, startYear, year);
+  let remaining = dayOfYear;
+  const months = calendarMonths(c, year);
+  for (const { month, index } of months) {
+    if (remaining < month.days) return { year, monthIndex: index, month, day: remaining + 1, dayOfYear };
+    remaining -= month.days;
+  }
+  // Calendars always contain at least one month.
+  const { month, index } = months[months.length - 1];
+  return { year, monthIndex: index, month, day: month.days, dayOfYear };
 }
 
 export function indexFromDate(c: Calendar, startYear: number, year: number, monthIndex: number, day: number): number {
-  let idx = (year - startYear) * yearLength(c);
-  for (let i = 0; i < monthIndex && i < c.months.length; i++) idx += c.months[i].days;
-  const mo = c.months[Math.min(monthIndex, c.months.length - 1)];
-  return idx + Math.min(Math.max(day, 1), mo.days) - 1;
+  const months = calendarMonths(c, year);
+  const match = months.findIndex(({ index }) => index === monthIndex);
+  const position = match >= 0 ? match : c.id === 'harptos' && monthIndex === c.months.length
+    ? months.findIndex(({ month }) => month.name === 'Midsummer')
+    : months.length - 1;
+  const offset = months.slice(0, position).reduce((sum, { month }) => sum + month.days, 0);
+  return yearStart(c, startYear, year) + offset + Math.min(Math.max(day, 1), months[position].month.days) - 1;
+}
+
+export function daysUntilHoliday(c: Calendar, startYear: number, todayIndex: number, holiday: CalendarHoliday): number {
+  const { year } = dateFromIndex(c, startYear, todayIndex);
+  for (let candidate = year - 1; candidate <= year + 4; candidate++) {
+    if (!calendarMonths(c, candidate).some(({ index }) => index === holiday.monthIndex)) continue;
+    const date = indexFromDate(c, startYear, candidate, holiday.monthIndex, holiday.day);
+    if (todayIndex < date + (holiday.days ?? 1)) return Math.max(0, date - todayIndex);
+  }
+  return Infinity;
 }
 
 export function formatDate(c: Calendar, startYear: number, dayIndex: number): string {

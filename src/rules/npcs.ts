@@ -132,7 +132,17 @@ export function rollName(rng: Rng, style?: string): string {
   return `${t.given[die(12, rng) - 1]} ${t.surname[die(12, rng) - 1]}`;
 }
 
-export interface Npc {
+export interface NpcProfile {
+  appearance?: string;
+  /** DM only. */
+  secret?: string;
+}
+
+export function rollNpcProfile(rng: Rng): Required<NpcProfile> {
+  return { appearance: APPEARANCE[die(12, rng) - 1], secret: SECRETS[die(10, rng) - 1] };
+}
+
+export interface Npc extends NpcProfile {
   name: string;
   /** What they do here: innkeeper, high priest, captain of the watch. */
   role?: string;
@@ -140,9 +150,6 @@ export interface Npc {
   stat?: string;
   align?: AlignCode;
   traits?: string[];
-  appearance?: string;
-  /** DM only. */
-  secret?: string;
 }
 
 /**
@@ -157,8 +164,7 @@ export function rollNpc(role: string, stat: string, lean: Lean, rng: Rng, style?
     stat,
     align,
     traits: rollTraits(align, rng),
-    appearance: APPEARANCE[die(12, rng) - 1],
-    secret: SECRETS[die(10, rng) - 1],
+    ...rollNpcProfile(rng),
   };
 }
 

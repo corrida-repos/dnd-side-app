@@ -1,3 +1,4 @@
+import { NpcProfile } from './NpcProfile';
 import { useState } from 'react';
 import { ContactsCard, LettersCard, NotorietyCard } from './LifeCards';
 import { PietyCard } from './PietyCard';
@@ -5,7 +6,7 @@ import { PowerCard } from './PowerCard';
 import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
 import { uid } from '../state/defaults';
-import { CALENDARS, dateFromIndex, formatClock, formatDate, formatDuration, indexFromDate } from '../rules/calendar';
+import { CALENDARS, calendarMonths, daysUntilHoliday, dateFromIndex, formatClock, formatDate, formatDuration, indexFromDate } from '../rules/calendar';
 import { GIFT_TYPES, type GiftType } from '../rules/hazards';
 import { DIVINATION_SPELLS, divinationFailChance, moonPhase, RESURRECTION_SPELLS, RITUAL_PRESETS } from '../rules/longterm';
 import { Card, Meter, Num, Pill, Select, Text, Toggle, Rule } from './common';
@@ -74,8 +75,12 @@ function CalendarSetup() {
         options={Object.values(CALENDARS).map((c) => ({ value: c.id, label: c.name }))}
       />
       <div className="form-row">
-        <Num label="Year" value={d.year} onChange={(v) => edit((st) => void (st.startYear = Math.round(v) - Math.floor(st.dayIndex / st.calendar.months.reduce((a, m) => a + m.days, 0))))} width={5} />
-        <Select label="Month" value={String(d.monthIndex)} onChange={(v) => setDate(d.year, Number(v), d.day)} options={s.calendar.months.map((m, i) => ({ value: String(i), label: m.name }))} />
+        <Num label="Year" value={d.year} onChange={(v) => edit((st) => {
+          const year = Math.round(v);
+          st.startYear += year - d.year;
+          st.dayIndex = Math.max(0, indexFromDate(st.calendar, st.startYear, year, d.monthIndex, d.day));
+        })} width={5} />
+        <Select label="Month" value={String(d.monthIndex)} onChange={(v) => setDate(d.year, Number(v), d.day)} options={calendarMonths(s.calendar, d.year).map(({ month, index }) => ({ value: String(index), label: month.name }))} />
         <Num label="Day" value={d.day} onChange={(v) => setDate(d.year, d.monthIndex, Math.round(v))} min={1} max={d.month.days} width={3} />
       </div>
       <div className="form-row">
@@ -103,18 +108,13 @@ function SkyCard() {
   const [name, setName] = useState('');
   const [month, setMonth] = useState(0);
   const [day, setDay] = useState(1);
-  const yearLen = s.calendar.months.reduce((a, m) => a + m.days, 0);
   const builtIn = (s.calendar.holidays ?? []).map((h) => ({ id: `cal-${h.name}`, name: h.name, monthIndex: h.monthIndex, day: h.day, days: h.days ?? 1, builtIn: true }));
+  if (s.calendar.id === 'harptos') builtIn.push({ id: 'cal-Shieldmeet', name: 'Shieldmeet', monthIndex: s.calendar.months.length, day: 1, days: 1, builtIn: true });
   const upcoming = [...builtIn, ...s.holidays.map((h) => ({ ...h, days: 1, builtIn: false }))]
-    .map((h) => {
-      const start = s.calendar.months.slice(0, h.monthIndex).reduce((a, m) => a + m.days, 0) + h.day - 1;
-      const sinceStart = (today.dayOfYear - start + yearLen) % yearLen;
-      const ongoing = sinceStart < h.days;
-      const inDays = ongoing ? 0 : (start - today.dayOfYear + yearLen) % yearLen;
-      return { ...h, inDays };
-    })
+    .map((h) => ({ ...h, inDays: daysUntilHoliday(s.calendar, s.startYear, s.dayIndex, h) }))
+    .filter((h) => Number.isFinite(h.inDays))
     .sort((a, b) => a.inDays - b.inDays);
-  const todays = [...(today.month.festival ? [today.month.name] : []), ...upcoming.filter((h) => h.inDays === 0).map((h) => h.name)];
+  const todays = [...new Set([...(today.month.festival ? [today.month.name] : []), ...upcoming.filter((h) => h.inDays === 0).map((h) => h.name)])];
   return (
     <Card title="Calendar, moon and holidays">
       <p>
@@ -149,8 +149,7 @@ function SkyCard() {
         {upcoming.map((h) => (
           <li key={h.id} className="armor-row">
             <span>
-              <b>{h.name}</b> · {h.day}
-              {h.days > 1 ? `–${h.day + h.days - 1}` : ''} {s.calendar.months[h.monthIndex]?.name} · {h.inDays === 0 ? 'today' : `in ${h.inDays} day(s)`}
+              <b>{h.name}</b> · {h.id !== 'cal-Shieldmeet' && `${h.day}${h.days > 1 ? `–${h.day + h.days - 1}` : ''} ${s.calendar.months[h.monthIndex]?.name ?? ''} · `} {h.inDays === 0 ? 'today' : `in ${h.inDays} day(s)`}
             </span>
             {h.builtIn ? (
               <Pill tone="muted">calendar</Pill>
@@ -447,6 +446,7 @@ function RivalsCard() {
                 </button>
               </span>
             </div>
+            <NpcProfile profile={r} />
             {r.active && (
               <>
                 <div className="form-row">
@@ -500,6 +500,12 @@ function PatronCard() {
           <p>
             <b>{p.name}</b> <Pill tone="info">{info.label}</Pill>
           </p>
+          {p.representative && (
+            <>
+              <p className="small">Contact: <b>{p.representative.name}</b></p>
+              <NpcProfile profile={p.representative} />
+            </>
+          )}
           <div className="btn-row tight">
             {info.assignmentShare && (
               <>

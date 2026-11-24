@@ -1,8 +1,8 @@
+import { NpcProfile } from './NpcProfile';
 import { useState } from 'react';
 import { DuesCard } from './LifeCards';
 import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
-import { uid } from '../state/defaults';
 import { fmtGp, HIRELING_WAGE, INN_STAY_GP, LIFESTYLE_GP, LIFESTYLE_LABEL, MEAL_GP, MEALS_PER_DAY, MOUNT_PRESETS, FEED_GP_PER_DAY, type Lifestyle } from '../rules/money';
 
 type Tier = Exclude<Lifestyle, 'wretched'>;
@@ -290,6 +290,7 @@ function HirelingsCard() {
                   </button>
                 </span>
               </div>
+              <NpcProfile profile={h} />
               <p className="small muted">
                 {r.does}
                 {r.hook ? ` ${r.hook}` : ''}
@@ -326,20 +327,7 @@ function HirelingsCard() {
       </p>
       <button
         onClick={() => {
-          edit((d) => {
-            d.hirelings.push({
-                id: uid(),
-                name: name.trim() || info.label,
-                role,
-                bonus: info.skilled ? 4 : 0,
-                passivePerception: role === 'guard' ? 12 : 10,
-                skilled: info.skilled,
-                wageGp: role === 'messenger' ? 0 : info.skilled ? HIRELING_WAGE.skilled : HIRELING_WAGE.untrained,
-                payer,
-                active: true,
-              });
-            E.syncPorters(d);
-          });
+          dispatch((state, ctx) => E.employHireling(state, ctx, role, name, payer));
           setName('');
         }}
       >
@@ -576,7 +564,7 @@ function ShopCard() {
             <Num label="Qty" value={sellQty} onChange={(v) => setSellQty(Math.max(1, Math.round(v)))} min={1} width={3} />
           </div>
           <button className="small" disabled={sellUnit == null} onClick={() => dispatch((st, cx) => E.sellItem(st, cx, whoId, sell!.id, sellQty))}>
-            {sellUnit == null ? 'Value unknown' : valueUnknown(sell!) ? 'Sell (value unknown: the buyer names a price)' : `Sell for ${fmtGp(Math.round(sellUnit * Math.min(sellQty, sell!.qty) * saleRate(sell!.name) * 100) / 100)}`}
+            {sellUnit == null ? 'Value unknown' : valueUnknown(sell!) ? 'Sell (value unknown: the buyer names a price)' : `Sell for ${fmtGp(Math.round(sellUnit * Math.min(sellQty, sell!.qty) * saleRate(sell!.name, sell!.treasure?.kind) * 100) / 100)}`}
           </button>
         </>
       )}

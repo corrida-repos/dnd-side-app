@@ -231,13 +231,3 @@ export const ALL_IS_WELL = [
   'Some practical joker has been putting rotten eggs in people’s boots.',
   'Someone thought they saw a ghost.',
 ];
-
-export const TREASURE_TABLE: { upTo: number; what: string; valueGp?: number }[] = [
-  { upTo: 40, what: 'Art object (25 GP table)', valueGp: 25 },
-  { upTo: 63, what: 'Art object (250 GP table)', valueGp: 250 },
-  { upTo: 73, what: 'Art object (750 GP table)', valueGp: 750 },
-  { upTo: 75, what: 'Art object (2,500 GP table)', valueGp: 2500 },
-  { upTo: 90, what: 'Common magic item (Arcana, Armaments, Implements or Relics table)' },
-  { upTo: 98, what: 'Uncommon magic item (Arcana, Armaments, Implements or Relics table)' },
-  { upTo: 100, what: 'Rare magic item (Arcana, Armaments, Implements or Relics table)' },
-];

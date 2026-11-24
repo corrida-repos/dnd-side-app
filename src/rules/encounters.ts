@@ -575,7 +575,7 @@ export function rollOnTable(t: EncounterTable, rng: Rng, underwaterVisibilityFt?
   if (!t.rows.length) return null;
   const roll = die(100, rng);
   const row = t.rows.find((r) => roll >= r.from && roll <= r.to) ?? t.rows[t.rows.length - 1];
-  const distanceExpr = TERRAIN[t.terrain].encounterDistance;
+  const distanceExpr = underwaterVisibilityFt == null ? TERRAIN[t.terrain].encounterDistance : 'Underwater Encounter Distance';
   const m = distanceExpr.match(/^(\d+d\d+) × 10/);
   const distanceFt = underwaterVisibilityFt ?? (m ? (rollExpr(m[1], rng) ?? 1) * 10 : 60);
   if (row.kind === 'peaceful' || !row.creature || !row.count) return { roll, row, distanceFt, distanceExpr, summary: row.text };

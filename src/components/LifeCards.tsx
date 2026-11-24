@@ -1,3 +1,4 @@
+import { NpcProfile } from './NpcProfile';
 import { useState } from 'react';
 import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
@@ -430,6 +431,7 @@ function ContactRow({ id }: { id: string }) {
           {k.owesParty > 0 && <Pill tone="good">owes {k.owesParty}</Pill>} {k.partyOwes > 0 && <Pill tone="warn">party owes {k.partyOwes}</Pill>} <Pill tone={cooling ? 'warn' : 'muted'}>last word {since} day(s) ago</Pill> {resting && <Pill tone="muted">no favors for {k.cooldownUntilDay! - s.dayIndex} day(s)</Pill>}
         </span>
       </div>
+      <NpcProfile profile={k} />
       {k.notes && <p className="small muted">{k.notes}</p>}
       <div className="btn-row tight">
         <button className="small" title="Table rule: warms the bond by one step, once every 30 days" onClick={() => dispatch((d, cx) => E.keepInTouch(d, cx, k.id))}>
@@ -481,14 +483,14 @@ export function ContactsCard() {
       </ul>
       <h3>Add a contact</h3>
       <div className="form-row">
-        <Text label="Name" value={name} onChange={setName} placeholder="Vel the fence" />
+        <Text label="Name" value={name} onChange={setName} placeholder="Leave blank to roll a name" />
         <Select label="Role" value={role} onChange={setRole} options={CONTACT_ROLES} />
         <Text label="Where" value={place} onChange={setPlace} placeholder={s.place.name} />
         <Num label="Miles away" value={miles} onChange={(v) => setMiles(Math.max(0, Math.round(v)))} min={0} width={4} />
         <Select label="Attitude" value={String(bond)} onChange={(v) => setBond(Number(v))} options={[{ value: '2', label: 'Friendly (close)' }, { value: '1', label: 'Friendly' }, { value: '0', label: 'Indifferent' }, { value: '-1', label: 'Hostile' }]} />
         <Select label="Known by" value={who} onChange={setWho} options={[{ value: 'party', label: 'Everyone' }, ...pcs.map((c) => ({ value: c.id, label: c.name }))]} />
       </div>
-      <button className="small" disabled={!name.trim()} onClick={() => (dispatch((d, cx) => E.addContact(d, cx, { name: name.trim(), role, place: place.trim() || s.place.name, bond, knownBy: who === 'party' ? [] : [who], notes: '', distanceMiles: miles })), setName(''))}>
+      <button className="small" onClick={() => (dispatch((d, cx) => E.addContact(d, cx, { name: name.trim(), role, place: place.trim() || s.place.name, bond, knownBy: who === 'party' ? [] : [who], notes: '', distanceMiles: miles })), setName(''))}>
         Add
       </button>
       <Rule>

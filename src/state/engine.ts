@@ -1,3 +1,5 @@
+import { audibleDistance, LOCK_DC, LOCK_MINUTES, monsterBehavior, NOISE, UNDERWATER_DISTANCE, type LockDetails, type Noise } from '../rules/exploration';
+import { rollBastionTreasure, rollTreasure, type TreasureItem, type TreasureRequest } from '../rules/treasure';
 import type { LadderPos, TameTarget, ActiveEffect, Activity, CharacterSpell, InventoryItem, LogEntry, Ritual, Stash, VehicleDetails, Bastion, Business, Character, FacilityWork, Obstacle, Rival, Debt, Mark, Faction, ExhaustionCause, Facility, JourneyStage, MagicItem, Pace, PendingSave, Project, Recruit, SaveKind, Size, State, Tone } from './types';
 import { BASIC_BUILD, BASTION_TURN_DAYS, defaultSize, ENLARGE, rollBastionEvent, SIZE_LABEL, SPECIAL_FACILITIES, type FacilitySize } from '../rules/bastion';
 import { d20, die, combineModes, rollDice, rollExpr, signed, type Rng, type RollMode } from '../rules/dice';
@@ -9,13 +11,13 @@ import { LOST_RECHECK_DIE, navigationDC } from '../rules/navigation';
 import { CHART_DC, OVERDUE_NOTE, arrivalNote, intoTheUnknown, trueDistance } from '../rules/uncharted';
 import { TERRAIN, clampPace } from '../rules/terrain';
 import { readSky, SKY_DC } from '../rules/skyclock';
-import { MESSENGER_GP_PER_MILE } from '../rules/hirelings';
+import { HIRELING_ROLES, MESSENGER_GP_PER_MILE, type HirelingRole } from '../rules/hirelings';
 import { COMMS, commCost, commDelay, type CommMethod } from '../rules/comms';
 import { CONTAGIONS, RECUPERATE_DAYS, RECUPERATE_DC, SIGHT_ROT_CURE_HOURS, type ContagionKind } from '../rules/contagion';
 import { neglectLimit } from '../rules/bastion';
 import { MARCH_WRITING_DC, marchWork } from '../rules/marchWork';
 import { isSoloWork, RARITY_LABEL, magicItemCrafting, nonmagicalCrafting, SCROLL_CRAFTING, type Rarity } from '../rules/crafting';
-import { ALL_IS_WELL, BARRACK_ROOM, BASTION_CHARMS, CONSTRUCTS, CREATURE_ROOM, GROVE_ROOM, GROVE_UNITS, MUSEUM_ORIGINS, NECROPOLIS_ROOM, EVENT_PREFERENCE, FACILITY_OPTIONS, GARDEN_PRODUCTS, GUILDS, MENAGERIE_CREATURES, MENAGERIE_ROOM, SHIPS, TRAINERS, TREASURE_TABLE, facilityHirelings, stableMarkup, storehouseLimit, storehouseMarkup, type GardenType } from '../rules/bastionOrders';
+import { ALL_IS_WELL, BARRACK_ROOM, BASTION_CHARMS, CONSTRUCTS, CREATURE_ROOM, GROVE_ROOM, GROVE_UNITS, MUSEUM_ORIGINS, NECROPOLIS_ROOM, EVENT_PREFERENCE, FACILITY_OPTIONS, GARDEN_PRODUCTS, GUILDS, MENAGERIE_CREATURES, MENAGERIE_ROOM, SHIPS, TRAINERS, facilityHirelings, stableMarkup, storehouseLimit, storehouseMarkup, type GardenType } from '../rules/bastionOrders';
 import { knownValue, misjudged, priceOf, saleRate, sameStack, valueSecret, valueUnknown } from '../rules/shop';
 import { APPRAISE_MINUTES, JEWELER_TOOLS, appraiseCheck, misjudgedValue, valuableKind, type AppraiseMethod } from '../rules/appraise';
 import { groundDifficulty, meltInches, mudAfter, snowfallInches } from '../rules/ground';
@@ -93,7 +95,7 @@ import { BRIBE_GP_PER_HEAT, CRIMES, HEAT_DECAY_PER_WEEK, RECOGNISE_ON, heatLevel
 import { BOND_MAX, FAVOR_COOLDOWN_DAYS, NEGLECT_DAYS, attitudeOf, clampBond, favorDC } from '../rules/contacts';
 import { REPLY_DIE, newsDelay, type NewsRoute } from '../rules/letters';
 import { arrivalLine, buildingType, generateTown, newBuilding, rollCalamity, rollFame, rollKeeper, rollLeader, rollRuler, rollTrait, sortBuildings, type Town } from '../rules/settlements';
-import { npcLine, rollNpc, type Npc } from '../rules/npcs';
+import { npcLine, rollName, rollNpc, rollNpcProfile, type Npc } from '../rules/npcs';
 import type { Settlement } from '../rules/services';
 
 export interface Ctx {
@@ -3403,24 +3405,43 @@ function rivalAdvances(d: State, ctx: Ctx): void {
   if (esc) log(d, `${rival.name} ${esc}.`, 'bad');
 }
 
+export const employHireling = act((d, ctx, role: HirelingRole, name: string, payer: string) => {
+  const info = HIRELING_ROLES[role];
+  d.hirelings.push({
+    id: uid(),
+    name: name.trim() || rollName(ctx.rng),
+    role,
+    bonus: info.skilled ? 4 : 0,
+    passivePerception: role === 'guard' ? 12 : 10,
+    skilled: info.skilled,
+    wageGp: role === 'messenger' ? 0 : info.skilled ? HIRELING_WAGE.skilled : HIRELING_WAGE.untrained,
+    payer,
+    active: true,
+    ...rollNpcProfile(ctx.rng),
+  });
+  syncPorters(d);
+});
+
 export const addRival = act((d, ctx, name: string, idea: string) => {
   const i = idea || RIVAL_IDEAS[die(RIVAL_IDEAS.length, ctx.rng) - 1];
-  d.rivals.push({ id: uid(), name: name || i.split(' ').slice(1, 3).join(' '), idea: i, goal: '', assets: '', plans: [], pressure: 0, active: true });
-  log(d, `A rival emerges: ${name || i}.`, 'warn');
+  const rivalName = name.trim() || rollName(ctx.rng);
+  d.rivals.push({ id: uid(), name: rivalName, idea: i, goal: '', assets: '', plans: [], pressure: 0, active: true, ...rollNpcProfile(ctx.rng) });
+  log(d, `A rival emerges: ${rivalName}.`, 'warn');
 });
 
 export const advanceRival = act((d, ctx) => rivalAdvances(d, ctx));
 
 // ---------------------------------------------------------------- group patrons and supernatural regions (Tasha's)
 
-export const setPatron = act((d, _ctx, kind: PatronKind | null, name: string) => {
+export const setPatron = act((d, ctx, kind: PatronKind | null, name: string) => {
   if (!kind) {
     if (d.patron) log(d, `The party parts ways with ${d.patron.name}.`);
     d.patron = null;
     for (const c of d.characters) c.resources = c.resources.filter((r) => r.name !== GROUP_ASSISTANCE);
     return;
   }
-  d.patron = { kind, name: name || PATRONS[kind].label, joinedDay: d.dayIndex, luxuryYear: null };
+  const representative = { name: rollName(ctx.rng), ...rollNpcProfile(ctx.rng) };
+  d.patron = { kind, name: name || PATRONS[kind].label, representative, joinedDay: d.dayIndex, luxuryYear: null };
   for (const c of adventurers(d)) {
     if (!c.resources.some((r) => r.name === GROUP_ASSISTANCE)) c.resources.push({ id: uid(), name: GROUP_ASSISTANCE, max: 1, current: 1, recharge: 'long' });
   }
@@ -3731,7 +3752,7 @@ export const sellItem = act((d, _ctx, charId: string, itemId: string, qty: numbe
       ? ` The buyer values it at ${fmtGp(unit)} each, not the ${fmtGp(it.valueBelieved!)} the party thought.`
       : '';
   // Table rule: a crafter sells their own new work as its maker, at full price.
-  const base = it.crafted ? 1 : saleRate(it.name);
+  const base = it.crafted ? 1 : saleRate(it.name, it.treasure?.kind);
   const bonus = d.patron && base < 1 ? (PATRONS[d.patron.kind].saleBonus ?? 0) : 0;
   const rate = base * (1 + bonus);
   const gp = Math.round(unit * n * rate * 100) / 100;
@@ -4560,6 +4581,10 @@ export const enlargeFacility = act((d, _ctx, bastionId: string, facilityId: stri
 // ---- Bastion orders, defenders and events (2024 DMG chapter 8)
 
 /** The Bastion's own storage, where finished goods wait until claimed. */
+function guestProfile(ctx: Ctx) {
+  return { name: rollName(ctx.rng), ...rollNpcProfile(ctx.rng) };
+}
+
 export function bastionStash(s: State, b: Bastion): Stash {
   let st = s.stashes.find((x) => x.id === `bastion-${b.id}`);
   if (!st) {
@@ -5075,7 +5100,7 @@ function finishWork(s: State, ctx: Ctx, b: Bastion, f: Facility, w: FacilityWork
     case 'Teleportation Circle/invite': {
       const r = die(6, ctx.rng);
       if (r % 2) return done(`the invited spellcaster declines (die ${r}).`, 'info');
-      b.guests = [...(b.guests ?? []), { id: uid(), kind: 'spellcaster', label: `Visiting spellcaster: casts one Wizard spell of level ${lvl >= 17 ? 8 : 4} or lower for you (you pay costly components)`, untilDay: today + 14 }];
+      b.guests = [...(b.guests ?? []), { id: uid(), ...guestProfile(ctx), kind: 'spellcaster', label: `Visiting spellcaster: casts one Wizard spell of level ${lvl >= 17 ? 8 : 4} or lower for you (you pay costly components)`, untilDay: today + 14 }];
       return done(`a Friendly spellcaster arrives through the circle (die ${r}) and stays 14 days or until they cast a spell for you.`);
     }
     case 'War Room/lieutenant':
@@ -5182,20 +5207,20 @@ function bastionEvent(s: State, ctx: Ctx, b: Bastion, excludeOpportunity = false
     case 'Guest': {
       const r = die(4, ctx.rng);
       if (r === 1) {
-        b.guests = [...(b.guests ?? []), { id: uid(), kind: 'renown', label: 'Renowned guest (leaves a letter of recommendation)', untilDay: s.dayIndex + 7 }];
+        b.guests = [...(b.guests ?? []), { id: uid(), ...guestProfile(ctx), kind: 'renown', label: 'Renowned guest (leaves a letter of recommendation)', untilDay: s.dayIndex + 7 }];
         return say('A guest of great renown stays 7 days and will leave a letter of recommendation.', 'good');
       }
       if (r === 2) {
         const gp = die(6, ctx.rng) * 100;
-        b.guests = [...(b.guests ?? []), { id: uid(), kind: 'sanctuary', label: `Guest in sanctuary (gift of ${gp} GP on leaving)`, untilDay: s.dayIndex + 7 }];
+        b.guests = [...(b.guests ?? []), { id: uid(), ...guestProfile(ctx), kind: 'sanctuary', label: `Guest in sanctuary (gift of ${gp} GP on leaving)`, untilDay: s.dayIndex + 7 }];
         receiveGold(s, [b.ownerId], gp, `a grateful guest at ${b.name}`);
         return say(`A guest seeks sanctuary for 7 days and offers a gift of ${gp} GP.`, 'good');
       }
       if (r === 3) {
-        b.guests = [...(b.guests ?? []), { id: uid(), kind: 'mercenary', label: 'Mercenary guest (counts as a Bastion Defender)' }];
+        b.guests = [...(b.guests ?? []), { id: uid(), ...guestProfile(ctx), kind: 'mercenary', label: 'Mercenary guest (counts as a Bastion Defender)' }];
         return say('A mercenary arrives and serves as an extra Bastion Defender until sent away or killed.', 'good');
       }
-      b.guests = [...(b.guests ?? []), { id: uid(), kind: 'monster', label: 'Friendly monster guest (defends once, then leaves)' }];
+      b.guests = [...(b.guests ?? []), { id: uid(), ...guestProfile(ctx), kind: 'monster', label: 'Friendly monster guest (defends once, then leaves)' }];
       return say('A Friendly monster comes to stay. If the Bastion is attacked it defends, no defenders are lost, and then it leaves.', 'good');
     }
     case 'Lost Hirelings': {
@@ -5209,7 +5234,7 @@ function bastionEvent(s: State, ctx: Ctx, b: Bastion, excludeOpportunity = false
     case 'Refugees': {
       const n = rollDice(2, 4, ctx.rng);
       const gp = die(6, ctx.rng) * 100;
-      b.guests = [...(b.guests ?? []).filter((g) => g.kind !== 'refugees'), { id: uid(), kind: 'refugees', label: `${n} refugees (stay until rehomed or the Bastion is attacked)` }];
+      b.guests = [...(b.guests ?? []).filter((g) => g.kind !== 'refugees'), { id: uid(), ...guestProfile(ctx), kind: 'refugees', label: `${n} refugees (stay until rehomed or the Bastion is attacked)` }];
       receiveGold(s, [b.ownerId], gp, `refugees sheltering at ${b.name}`);
       return say(`${n} refugees seek shelter and pay ${gp} GP for your protection.`, 'good');
     }
@@ -5217,10 +5242,9 @@ function bastionEvent(s: State, ctx: Ctx, b: Bastion, excludeOpportunity = false
       b.decision = { kind: 'aid' };
       return say(`A local leader asks for help. Send Bastion Defenders (1d6 each; 10+ solves it for a 1d6 × 100 GP reward, less halves the reward and costs a defender), or refuse.`);
     case 'Treasure': {
-      const r = die(100, ctx.rng);
-      const t = TREASURE_TABLE.find((x) => r <= x.upTo)!;
-      stashAdd(s, b, t.what, 1, t.valueGp);
-      return say(`d100 = ${r}: ${t.what}. ${t.valueGp ? '' : 'Roll on the matching magic item table. '}It waits in the Bastion stores.`, 'good');
+      const item = rollBastionTreasure(ctx.rng);
+      storeTreasureItem(bastionStash(s, b).items, item);
+      return say(`The hirelings find ${item.name} (${fmtGp(item.valueGp)}). It waits in the Bastion stores.`, 'good');
     }
   }
   say('See the DMG.');
@@ -6895,15 +6919,16 @@ export function waterContainers(s: State): number {
  * A tool's Utilize use (2024 PHB): ability check against the tool's DC, with the Proficiency Bonus if proficient and
  * Advantage if a skill also applies. Without the tool, an improvised try at DC +5 and twice the time (table rule).
  */
-export const useTool = act((d, ctx, charId: string, toolName: string, useIndex: number, bonus: number, advantage: boolean, what: string) => {
+export const useTool = act((d, ctx, charId: string, toolName: string, useIndex: number, bonus: number, advantage: boolean, what: string, lock?: LockDetails) => {
   const c = charById(d, charId);
   const tool = toolNamed(toolName);
   const use = tool?.uses[useIndex];
   if (!c || !tool || !use) return;
   const has = carriesTool(c, tool.name);
   if (!has && !d.settings.improvised) return void log(d, `${c.name} has no ${tool.name} (improvised attempts are off).`, 'warn');
-  const dc = use.dc + (has ? 0 : IMPROVISED_DC);
-  const minutes = (use.minutes ?? 0) * (has ? 1 : IMPROVISED_TIME);
+  const pick = tool.name === "Thieves' Tools" && useIndex === 0 ? lock : undefined;
+  const dc = (pick ? LOCK_DC[pick.quality] : use.dc) + (has ? 0 : IMPROVISED_DC);
+  const minutes = (pick ? LOCK_MINUTES[pick.complexity] : use.minutes ?? 0) * (has ? 1 : IMPROVISED_TIME);
   if (minutes) advanceMut(d, ctx, minutes, 'camp');
   const me = charById(d, charId)!;
   const mode = advantage && has ? 'advantage' : 'normal';
@@ -6911,7 +6936,7 @@ export const useTool = act((d, ctx, charId: string, toolName: string, useIndex: 
   const mod = bonus - 2 * me.exhaustion;
   const total = r.value + mod;
   const on = what.trim() ? ` (${what.trim()})` : '';
-  const roll = `${ABILITY_LABEL[tool.ability]}${has ? ` with ${tool.name}` : `, improvised without ${tool.name}`} ${r.rolls.join('/')}${mode === 'advantage' ? ' with Advantage' : ''} ${signed(mod)} = ${total} against DC ${dc}${minutes ? `, ${formatDuration(minutes)}` : ''}`;
+  const roll = `${ABILITY_LABEL[tool.ability]}${has ? ` with ${tool.name}` : `, improvised without ${tool.name}`} ${r.rolls.join('/')}${mode === 'advantage' ? ' with Advantage' : ''} ${signed(mod)} = ${total} against DC ${dc}${minutes ? `, ${formatDuration(minutes)}` : pick ? (has ? ', 1 action' : ', 2 actions') : ''}`;
   if (total >= dc) {
     log(d, `${me.name} tries to ${use.text.charAt(0).toLowerCase()}${use.text.slice(1)}${on} and ${use.success}: ${roll}.`, 'good');
     if (use.effect) {
@@ -7295,6 +7320,37 @@ function holderOf(s: State, ref: Holder): { name: string; items: InventoryItem[]
   return st ? { name: st.name, items: st.items, purse: st.purse, stash: st } : null;
 }
 
+function storeTreasureItem(items: InventoryItem[], item: TreasureItem): void {
+  const { name, qty, valueGp, weight, kind, rarity, attunement, consumable } = item;
+  const estimate = estimateWeight(name);
+  items.push({
+    id: uid(), name, qty, valueGp, weight: weight ?? estimate.weight,
+    source: weight == null ? estimate.source : 'book',
+    container: detectContainer(name), ammo: isAmmo(name) ? { spent: 0 } : null,
+    treasure: { kind, rarity, attunement, consumable },
+  });
+}
+
+export const previewTreasure = act((d, ctx, request: TreasureRequest) => {
+  d.treasurePreview = { ...rollTreasure(request, ctx.rng), id: uid() };
+});
+
+export const claimTreasure = act((d, _ctx, previewId: string, recipient: Holder) => {
+  const preview = d.treasurePreview;
+  const holder = holderOf(d, recipient);
+  if (!preview || preview.id !== previewId || !holder || holder.char?.kind === 'mount') return;
+  Object.assign(holder.purse, addCoins(holder.purse, preview.coins));
+  if (holder.char) holder.char.gp = Math.round((holder.char.gp + purseValue(preview.coins)) * 100) / 100;
+  for (const item of preview.items) storeTreasureItem(holder.items, item);
+  delete d.treasurePreview;
+  const found = [...(coinCount(preview.coins) ? [fmtPurse(preview.coins)] : []), ...preview.items.map((item) => `${item.qty} × ${item.name}`)];
+  log(d, `${holder.name} receives ${found.join(', ')}.`, 'good');
+});
+
+export const discardTreasure = act((d, _ctx, previewId: string) => {
+  if (d.treasurePreview?.id === previewId) delete d.treasurePreview;
+});
+
 /** Moves items (and anything packed inside them) between characters, stashes and vehicles. */
 export const moveItem = act((d, _ctx, from: Holder, to: Holder, itemId: string, qty: number) => {
   const a = holderOf(d, from);
@@ -7419,7 +7475,7 @@ export const appraiseItem = act((d, ctx, ownerId: string, itemId: string, method
   }
   const who = appraiserId ? appraiserOf(d, appraiserId) : undefined;
   if (!who) return;
-  const check = appraiseCheck(it.name, method, st);
+  const check = appraiseCheck(it.name, method, st, it.treasure?.kind);
   if (!check.ok) return void log(d, `${check.why}. For the ${it.name}, try another way, ask a merchant, or the DM.`, 'warn');
   if (method === 'tools' && !who.tools) return void log(d, `${who.name} needs Jeweler's Tools to appraise the ${it.name}.`, 'warn');
   if (st.appraiseOneTry && it.appraiseTried?.includes(who.id)) return void log(d, `${who.name} has already tried to value the ${it.name}. They need a rest before trying again (table rule), or someone else can try.`, 'warn');
@@ -7435,7 +7491,7 @@ export const appraiseItem = act((d, ctx, ownerId: string, itemId: string, method
   const studies = method === 'tools' ? `${who.name} studies the ${it.name} through a loupe${roll}` : `${who.name} looks the ${it.name} over carefully${roll}`;
   if (total >= check.dc) return reveal(`${studies} and judges its worth`);
   if (secret && total <= check.dc - 5 && it.valueGp != null) {
-    const guess = misjudgedValue(it.valueGp, valuableKind(it.name), ctx.rng() >= 0.5);
+    const guess = misjudgedValue(it.valueGp, valuableKind(it.name, it.treasure?.kind), ctx.rng() >= 0.5);
     it.valueHidden = true;
     it.valueBelieved = guess;
     delete it.appraiseTried;
@@ -7796,7 +7852,8 @@ function surpriseCheck(s: State, ctx: Ctx, cr: string, hostile: boolean, activit
 
 export function resolveEncounter(s: State, ctx: Ctx, activity: CheckConditions['activity'], checkDetail?: string): void {
   const table = encounterTable(s);
-  const res = rollOnTable(table, ctx.rng);
+  const underwater = s.place.underwaterVisibility;
+  const res = rollOnTable(table, ctx.rng, underwater ? UNDERWATER_DISTANCE[underwater]?.feet : undefined);
   if (!res) {
     log(s, 'Random encounter, but the table is empty: switch on the SRD creatures or more books in the Encounters tab.', 'warn');
     return;
@@ -7808,7 +7865,7 @@ export function resolveEncounter(s: State, ctx: Ctx, activity: CheckConditions['
   const head = `Random encounter ${when}${checkDetail ? ` (${checkDetail})` : ''}. d100 = ${res.roll}:`;
   // Table rule: in daylight outdoors, someone awake with a Spyglass spots them at twice the distance.
   const lookouts = (activity === 'rest' ? watchers : s.characters.filter((x) => x.kind !== 'mount' && alive(x) && !x.dying && !x.stable)).filter((x) => x.inventory.some((i) => SPYGLASS.test(i.name)));
-  if (lookouts.length && !night && !isUnderground(s)) {
+  if (lookouts.length && !night && !isUnderground(s) && !underwater) {
     res.distanceFt *= 2;
     res.distanceExpr = `${res.distanceExpr}, doubled: ${lookouts[0].name} spots them through a Spyglass (table rule)`;
   }
@@ -7820,10 +7877,16 @@ export function resolveEncounter(s: State, ctx: Ctx, activity: CheckConditions['
   const c = res.row.creature;
   const party = table.party;
   const dm = `${head} ${res.summary} (CR ${c.cr}${res.row.followers ? ` and ${res.row.followers.creature.cr}` : ''}, rolled ${res.row.count}${res.row.followers ? ` and ${res.row.followers.count}` : ''}; ${res.xp} XP total, ${DIFFICULTY_LABEL[res.difficulty ?? 'low']} for ${party.size} level-${party.level} characters). Starting attitude: ${res.attitude?.attitude} (d20 ${res.attitude?.roll}). They are ${res.distanceFt} feet away (${res.distanceExpr}).${watchNote}${surpriseCheck(s, ctx, c.cr, res.attitude?.attitude === 'Hostile', activity, watchers)}${res.attitude?.attitude !== 'Hostile' ? ' They can be parleyed with: an Influence check (DC 15 or the creature’s Intelligence score, whichever is higher) can shift an Indifferent creature.' : ''}`;
+  const behavior = monsterBehavior((res.count ?? 1) + (res.followerCount ?? 0), ctx.rng);
+  const portrayal = ` Personality: ${behavior.personality}.${behavior.relationship ? ` ${behavior.relationship}` : ''}`;
   const predicate = firstSign(c.type, night);
-  log(s, dm, res.attitude?.attitude === 'Hostile' ? 'bad' : 'warn', { charIds: watchers.map((w) => w.id), status: false, sense: predicate });
+  log(s, dm + portrayal, res.attitude?.attitude === 'Hostile' ? 'bad' : 'warn', { charIds: watchers.map((w) => w.id), status: false, sense: predicate });
   for (const w of watchers) s.statusLog.unshift({ id: uid(), stamp: stamp(s), at: absNow(s), charId: w.id, kind: 'encounter', text: `On watch, ${w.name} spots ${res.summary}.`, sense: predicate, tone: 'warn' });
 }
+
+export const rollAudibleDistance = act((d, ctx, noise: Noise) => {
+  log(d, `${NOISE[noise].label} carries ${audibleDistance(noise, ctx.rng)} feet (Audible Distance).`);
+});
 
 /** Roll a random encounter check by hand, using what the party is doing now. */
 export const checkForEncounter = act((d, ctx, activity: CheckConditions['activity'] = 'camp') => {
@@ -8842,13 +8905,14 @@ export const surrender = act((d, _ctx, id: string) => {
 
 // ---------------------------------------------------------------- contacts and relationships
 
-function addContactMut(d: State, o: { name: string; role: string; place: string; bond: number; knownBy: string[]; notes: string; distanceMiles?: number }): void {
-  (d.contacts ??= []).push({ id: uid(), name: o.name || 'Someone', role: o.role, place: o.place, distanceMiles: o.distanceMiles ?? 0, bond: clampBond(o.bond), knownBy: o.knownBy, lastHeardDay: d.dayIndex, owesParty: 0, partyOwes: 0, notes: o.notes });
+function addContactMut(d: State, o: { name: string; role: string; place: string; bond: number; knownBy: string[]; notes: string; distanceMiles?: number }, ctx?: Ctx): void {
+  (d.contacts ??= []).push({ id: uid(), name: o.name || (ctx ? rollName(ctx.rng) : 'Someone'), role: o.role, place: o.place, distanceMiles: o.distanceMiles ?? 0, bond: clampBond(o.bond), knownBy: o.knownBy, lastHeardDay: d.dayIndex, owesParty: 0, partyOwes: 0, notes: o.notes, ...(ctx ? rollNpcProfile(ctx.rng) : {}) });
 }
 
-export const addContact = act((d, _ctx, o: { name: string; role: string; place: string; bond: number; knownBy: string[]; notes: string; distanceMiles: number }) => {
-  addContactMut(d, o);
-  log(d, `${o.name || 'A new contact'} (${o.role}${o.place ? `, ${o.place}` : ''}) joins the party's acquaintances.`);
+export const addContact = act((d, ctx, o: { name: string; role: string; place: string; bond: number; knownBy: string[]; notes: string; distanceMiles: number }) => {
+  addContactMut(d, o, ctx);
+  const contact = d.contacts!.at(-1)!;
+  log(d, `${contact.name} (${o.role}${o.place ? `, ${o.place}` : ''}) joins the party's acquaintances.`);
 });
 
 function contactsDaily(s: State): void {
