@@ -1,4 +1,5 @@
 import type { Danger } from '../rules/encounters';
+import type { ArmsKind } from '../rules/armsTraining';
 import type { ClimateId, Weather } from '../rules/weather';
 import type { Calendar } from '../rules/calendar';
 import type { ProjectKind } from '../rules/crafting';
@@ -366,6 +367,8 @@ export interface Character {
   contagions: Contagion[];
   /** Languages and tools learned through downtime training. */
   trainedProficiencies?: string[];
+  /** Armor training and weapon proficiencies: "Light armor", "Shields", "Martial weapons", or a single weapon's name. */
+  armsProfs?: string[];
   /** Tool proficiencies (2024 PHB tool names); undefined until recorded or imported. */
   toolProfs?: string[];
   /** Skill proficiencies; undefined until recorded or imported. */
@@ -559,6 +562,8 @@ export interface Project {
   learn?: string;
   /** Special training (2024 DMG Marks of Prestige): what `learn` is, so it lands in the right proficiency list. */
   learnKind?: TrainingKind;
+  /** Arms training (table rule): the armor, shield or weapon course; `learn` names the weapon for a single Martial weapon. */
+  armsKind?: ArmsKind;
   /** A finished activity waiting for its checks, and what came of it. */
   awaitingOutcome?: boolean;
   outcome?: string;
@@ -929,6 +934,8 @@ export interface Settings {
   prestigeRenownMin: boolean;
   /** Optional Xanathar's rules resolve downtime activities with checks and tables. */
   downtimeOutcomes: boolean;
+  /** Table rule: armor training and weapon proficiency can be learned in downtime. */
+  armsTraining: boolean;
   /** Costly Material components must be in the caster's inventory and are used up (2024 PHB). */
   trackComponents: boolean;
   /** Table rule: Jeweler's Tools also cover jewelry and precious metals; Intelligence (History) values art objects at DC 15. */

@@ -43,6 +43,7 @@ import { BOILING_POT, CHARCOAL_WORDS, FRICTION_LIGHT_MINUTES, HIDE_WATERSKIN, LE
 import type { DdbImport } from '../rules/ddb';
 import { INN_STAY_GP, MEAL_GP, MEALS_PER_DAY, FEED_GP_PER_DAY, HIRELING_WAGE, magicItemValue, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset, type Lifestyle } from '../rules/money';
 import { STABLE_WAKE_DIE, STABILIZE_DC } from '../rules/upkeep';
+import { ARMS_COURSES, armsCue, armsEntry, canTrainArms } from '../rules/armsTraining';
 import { FORT_NEGLECT_DAYS, FORT_UPKEEP, LAND, LODGING_CAP, MARK_LABEL, PRIZE_CROWN_SHARE, RIGHTS, TITLE_RANK, TRUST_LABEL, TRUST_MAX, lifestyleBelow, lowerLifestyle, monthDue, rollLandIncome, rollLandTrouble, sameCommunity, TRAINING_KIND_LABEL, levelRenown, renownMinimum } from '../rules/prestige';
 import { RITUAL_EXTRA_MINUTES as RITUAL_TAG_MINUTES, spellInfo } from '../rules/rituals';
 import { circleBeginsText, circleBrokenText, circleEligible, circleEndsText, circleOption, CIRCLE_RANGE_FT, helperProblem, optionProblem, prolongMinutes, slotNeedText, spellCircle, supplantDiscount, type CircleOptionId, type HelperSlot } from '../rules/circle';
@@ -2321,7 +2322,7 @@ function workOnTheMarch(s: State, ctx: Ctx, hours: number, navigatorId: string |
       if (!who.length) continue;
     }
     // Same helper limit as a day at the workbench; training is time with the trainer, so trainees don't add up.
-    const workers = p.learnKind || isSoloWork(p.kind) ? 1 : s.settings.extraCraftHelpers ? who.length : Math.min(2, who.length);
+    const workers = p.learnKind || p.armsKind || isSoloWork(p.kind) ? 1 : s.settings.extraCraftHelpers ? who.length : Math.min(2, who.length);
     const got = hours * MARCH_WORK_RATE * workers;
     let bank = (p.marchWorkHours ?? 0) + got;
     const days = Math.min(p.daysRequired - p.daysDone, Math.floor(bank / WORKDAY_HOURS));
@@ -2349,7 +2350,7 @@ function progress(s: State, p: Project, ctx?: Ctx): void {
   if (hired > 0) payGold(s, p.charIds, hired * HIRELING_WAGE.skilled, `${hired} hired artisan${hired > 1 ? 's' : ''} on ${p.name}`);
   // Normally only one other character can help (the DM can allow more). Training is time with the trainer: trainees don't speed each other up.
   // Activities are each participant's own week (carousing together doesn't make the week shorter).
-  const amount = p.learnKind || isSoloWork(p.kind) || (p.kind === 'activity' && activityOf(p.name)) ? 1 : Math.max(1, s.settings.extraCraftHelpers ? crafters : Math.min(2, crafters));
+  const amount = p.learnKind || p.armsKind || isSoloWork(p.kind) || (p.kind === 'activity' && activityOf(p.name)) ? 1 : Math.max(1, s.settings.extraCraftHelpers ? crafters : Math.min(2, crafters));
   p.daysDone = Math.min(p.daysRequired, p.daysDone + amount);
   if (p.daysDone >= p.daysRequired) progressFinish(s, p, ctx);
   else log(s, `A day's work on ${p.name}: ${p.daysDone}/${p.daysRequired} workdays.`);
@@ -2359,8 +2360,9 @@ function progressFinish(s: State, p: Project, ctx?: Ctx): void {
   {
     p.done = true;
     log(s, `Downtime project complete: ${p.name}.`, 'good');
-    const act = p.kind === 'activity' && !p.learnKind ? activityOf(p.name) : null;
+    const act = p.kind === 'activity' && !p.learnKind && !p.armsKind ? activityOf(p.name) : null;
     if (p.learnKind) finishSpecialTraining(s, p);
+    else if (p.armsKind) finishArmsTraining(s, p, ctx);
     else if (act && s.settings.downtimeOutcomes) {
       if (act === 'Training') {
         const learn = (p.learn || p.name.split(':')[1] || '').trim();
@@ -5610,6 +5612,15 @@ export const frigidWater = act((d, ctx, charId: string, minutes: number) => {
 
 /** Starts a downtime project and pays for its materials up front (buying and selling settle on completion). */
 export const startProject = act((d, _ctx, p: Project) => {
+  // Arms training: everyone on the course must be ready for it (Light before Medium before Heavy, and so on).
+  if (p.armsKind) {
+    const blocked = p.charIds
+      .map((id) => charById(d, id))
+      .filter((c): c is Character => !!c)
+      .map((c) => ({ c, r: canTrainArms(c.armsProfs, p.armsKind!, p.learn) }))
+      .filter((x) => !x.r.ok);
+    if (blocked.length) return void log(d, `Can't start ${p.name}: ${blocked.map((x) => `${x.c.name} ${x.r.reason}`).join('; ')}.`, 'warn');
+  }
   // Take the chosen materials out of the stash; their value counts toward the cost.
   const used: NonNullable<Project['materialsUsed']> = [];
   for (const u of p.materialsUsed ?? []) {
@@ -7209,6 +7220,8 @@ export const importDdb = act((d, _ctx, imp: DdbImport, parts: DdbParts) => {
       features: imp.features.length ? imp.features : c.features,
       toolProfs: imp.toolProfs,
       skillProfs: imp.skillProfs,
+      // Keep arms learned in downtime here even if D&D Beyond doesn't list them yet.
+      armsProfs: [...new Set([...(c.armsProfs ?? []), ...(imp.armsProfs ?? [])])],
       abilities: { str: imp.stats.strength, dex: imp.stats.dexterity, con: imp.stats.constitution, int: imp.stats.intelligence, wis: imp.stats.wisdom, cha: imp.stats.charisma },
     });
   }
@@ -7494,6 +7507,29 @@ function finishSpecialTraining(s: State, p: Project): void {
     else if (p.learnKind === 'tool') c.toolProfs = add(c.toolProfs);
     else c.trainedProficiencies = add(c.trainedProficiencies);
     log(s, `${c.name} finishes a month of rare training and ${p.learnKind === 'language' ? `can now speak and read ${learn}` : `is now proficient ${p.learnKind === 'skill' ? 'in' : 'with'} ${learn}`} (${TRAINING_KIND_LABEL[p.learnKind]}).`, 'good');
+  }
+}
+
+/** Arms training (table rule): the course is over and the body has learned it. */
+function finishArmsTraining(s: State, p: Project, ctx?: Ctx): void {
+  const kind = p.armsKind!;
+  const entry = armsEntry(kind, p.learn);
+  if (!entry) return void log(s, `${p.name} is done. Record the weapon learned on the character sheet.`);
+  for (const id of p.charIds) {
+    const c = charById(s, id);
+    if (!c) continue;
+    c.armsProfs = [...new Set([...(c.armsProfs ?? []), entry])];
+    log(s, `${c.name} finishes ${p.name} and now has ${kind === 'One martial weapon' ? `proficiency with ${entry}` : ARMS_COURSES[kind].grants} (table rule). ${c.name} notices ${armsCue(kind, p.learn)}.`, 'good', { charIds: [c.id] });
+  }
+  // Xanathar's training complication: 10% for each ten workweeks.
+  if (ctx && s.settings.downtimeOutcomes) {
+    for (let i = 0; i < Math.floor(p.daysRequired / 50); i++) {
+      if (die(10, ctx.rng) !== 1) continue;
+      const comp = COMPLICATIONS.Training[die(COMPLICATIONS.Training.length, ctx.rng) - 1];
+      const c = charById(s, p.charIds[0]);
+      if (c) applyComplication(s, ctx, c, comp);
+      break;
+    }
   }
 }
 

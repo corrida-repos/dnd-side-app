@@ -9,6 +9,8 @@ import { CLASSES } from './spells';
 import { detectContainer } from './containers';
 import { estimateWeight } from './encumbrance';
 import { PACKS, SKILLS, packNamed, toolNamed } from './gear';
+import { armsFromProficiencies } from './armsTraining';
+import { GEAR_CATALOG } from './crafting';
 
 type J = Record<string, unknown>;
 const obj = (v: unknown): J => (v && typeof v === 'object' ? (v as J) : {});
@@ -60,6 +62,8 @@ export interface DdbImport {
   toolProfs: string[];
   /** Skill proficiencies (and expertise). */
   skillProfs: string[];
+  /** Armor training and weapon proficiencies ("Light armor", "Martial weapons", a weapon's name). */
+  armsProfs: string[];
   warnings: string[];
 }
 
@@ -258,6 +262,7 @@ export function parseDdbCharacter(raw: unknown): DdbImport {
     .map((m) => str(m.friendlySubtypeName) || str(m.subType).replace(/-/g, ' '));
   const toolProfs = [...new Set(profNames.map((n) => toolNamed(n)?.name).filter((n): n is string => !!n))];
   const skillProfs = SKILLS.filter((sk) => profNames.some((n) => n.toLowerCase() === sk.toLowerCase()));
+  const armsProfs = armsFromProficiencies(profNames, GEAR_CATALOG.filter((g) => g.group === 'Weapons').map((g) => g.name));
 
   return {
     ddbId: num(d.id),
@@ -293,6 +298,7 @@ export function parseDdbCharacter(raw: unknown): DdbImport {
     features,
     toolProfs,
     skillProfs,
+    armsProfs,
     warnings,
   };
 }

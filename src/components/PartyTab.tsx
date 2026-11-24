@@ -201,7 +201,7 @@ function CharacterCard({ c }: { c: Character }) {
       {c.kind === 'pc' && (
         <details>
           <summary>
-            Tools, skills and ability scores{' '}
+            Tools, skills, armor, weapons and ability scores{' '}
             <span className="muted small">
               {c.toolProfs?.length ? `${c.toolProfs.length} tool${c.toolProfs.length > 1 ? 's' : ''}` : 'tools not recorded'}
               {c.skillProfs?.length ? `, ${c.skillProfs.length} skills` : ''}
@@ -215,6 +215,7 @@ function CharacterCard({ c }: { c: Character }) {
               placeholder="e.g. Thieves' Tools, Herbalism Kit, Lute"
             />
             <ListInput label="Skill proficiencies" value={c.skillProfs ?? []} onChange={(v) => set({ skillProfs: v.map((x) => SKILLS.find((k) => k.toLowerCase() === x.toLowerCase()) ?? x) })} placeholder="e.g. Survival, Stealth" />
+            <ListInput label="Armor and weapons" value={c.armsProfs ?? []} onChange={(v) => set({ armsProfs: v })} placeholder="e.g. Light armor, Shields, Simple weapons, Longsword" />
           </div>
           <div className="form-row">
             {(Object.keys(ABILITY_LABEL) as AbilityKey[]).map((k) => (
