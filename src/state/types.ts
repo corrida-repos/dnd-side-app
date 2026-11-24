@@ -453,6 +453,12 @@ export interface Devotion {
   lastOfferingDay?: number;
   /** Recent changes, newest first. */
   history: string[];
+  /** The faith as a tracked faction: deeds for the god earn renown with it (table rule). */
+  factionId?: string | null;
+  /** Ranks reached whose gift the DM hasn't granted yet. */
+  giftsDue?: ('favored' | 'exalted' | 'chosen')[];
+  /** Gifts this god granted (effect ids), so estrangement can name them. */
+  giftIds?: string[];
 }
 
 export interface Injury {

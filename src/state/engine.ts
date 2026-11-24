@@ -7356,12 +7356,19 @@ export const buildWalls = act((d, _ctx, bastionId: string, squares: number) => {
 
 /** A supernatural gift or curse: a lasting effect on the character, and limited uses for a Charm. */
 export const grantGift = act((d, _ctx, charId: string, type: GiftType, name: string, uses: number, notes: string) => {
+  grantGiftMut(d, charId, type, name, uses, notes);
+});
+
+/** Adds a supernatural gift or curse as a long effect (Charms also get limited uses); returns the effect id. */
+function grantGiftMut(d: State, charId: string, type: GiftType, name: string, uses: number, notes: string): string | null {
   const c = charById(d, charId);
-  if (!c || !name.trim()) return;
-  d.effects.push({ id: uid(), name: `${type}: ${name}`, kind: type === 'Curse' ? 'curse' : 'gift', targetIds: [c.id], casterId: null, concentration: false, shelter: false, startedAt: absNow(d), endsAt: null, notes });
+  if (!c || !name.trim()) return null;
+  const id = uid();
+  d.effects.push({ id, name: `${type}: ${name}`, kind: type === 'Curse' ? 'curse' : 'gift', targetIds: [c.id], casterId: null, concentration: false, shelter: false, startedAt: absNow(d), endsAt: null, notes });
   if (type === 'Charm' && uses > 0) c.resources.push({ id: uid(), name: `Charm: ${name}`, max: uses, current: uses, recharge: 'manual' });
   log(d, `${c.name} ${type === 'Curse' ? 'is cursed' : 'receives a supernatural gift'}: ${type} of ${name}${type === 'Charm' && uses ? ` (${uses} use${uses > 1 ? 's' : ''})` : ''}.`, type === 'Curse' ? 'bad' : 'good');
-});
+  return id;
+}
 
 // ---------------------------------------------------------------- random encounters
 
@@ -8801,6 +8808,7 @@ function pietyChange(s: State, c: Character, delta: number, why: string): void {
   const dv = c.devotion;
   if (!dv || !delta) return;
   const before = Piety.pietyRank(dv.piety);
+  const fresh = Piety.giftRanksReached(dv.best, dv.piety + delta);
   dv.piety += delta;
   dv.best = Math.max(dv.best, dv.piety);
   if (delta > 0) dv.lastDevotionDay = s.dayIndex;
@@ -8808,7 +8816,8 @@ function pietyChange(s: State, c: Character, delta: number, why: string): void {
   const after = Piety.pietyRank(dv.piety);
   const score = `piety ${signed(delta)}, now ${dv.piety}, ${after.label}; table rule`;
   if (after.id === 'estranged' && before.id !== 'estranged') {
-    status(s, c, 'estranged', `${dv.deity} turns away from ${c.name}: ${why} (${score}). ${after.boon}`, 'bad');
+    const gifts = s.effects.filter((e) => (dv.giftIds ?? []).includes(e.id)).map((e) => e.name);
+    status(s, c, 'estranged', `${dv.deity} turns away from ${c.name}: ${why} (${score}). ${after.boon}${gifts.length ? ` The DM may withdraw the god’s gifts until they atone: ${gifts.join(', ')}.` : ''}`, 'bad');
   } else if (after.min > before.min && after.id !== 'faithful') {
     status(s, c, 'pietyRankUp', `${c.name} is now ${after.label} in the eyes of ${dv.deity}: ${why} (${score}). ${after.boon}`, 'good');
   } else if (after.min !== before.min) {
@@ -8816,7 +8825,63 @@ function pietyChange(s: State, c: Character, delta: number, why: string): void {
   } else {
     status(s, c, delta > 0 ? 'pietyUp' : 'pietyDown', `${dv.deity} ${delta > 0 ? 'is pleased with' : 'is displeased with'} ${c.name}: ${why} (${score}).`, delta > 0 ? 'good' : 'warn');
   }
+  if (!s.settings.piety) return;
+  for (const r of fresh) {
+    dv.giftsDue = [...(dv.giftsDue ?? []).filter((x) => x !== r), r];
+    log(s, `${dv.deity} offers ${c.name} ${Piety.RANK_GIFT[r].text} for becoming ${Piety.PIETY_RANKS.find((x) => x.id === r)!.label} (table rule). Grant it from the Piety card.`, 'good');
+  }
 }
+
+/** The faith's faction, when the devotion is tied to one. */
+function faithOf(s: State, c: Character): Faction | undefined {
+  return c.devotion?.factionId ? s.factions.find((f) => f.id === c.devotion!.factionId) : undefined;
+}
+
+/** Ties a devotion to a tracked faction (the god's temple or church), or unties it. */
+export const linkFaith = act((d, _ctx, charId: string, factionId: string | null) => {
+  const c = charById(d, charId);
+  if (!c?.devotion) return;
+  c.devotion.factionId = factionId && d.factions.some((f) => f.id === factionId) ? factionId : null;
+  const f = faithOf(d, c);
+  if (f) log(d, `${c.name}'s deeds for ${c.devotion.deity} now count toward renown with ${f.name} (table rule).`);
+});
+
+/** Starts tracking the god's faith as a faction. Clerics, Paladins and acolytes are already members (renown 1). */
+export const trackFaith = act((d, _ctx, charId: string, name: string) => {
+  const c = charById(d, charId);
+  if (!c?.devotion) return;
+  const tie = Piety.divineTie(c);
+  const renown = tie === 'cleric' || tie === 'paladin' || tie === 'acolyte' ? 1 : 0;
+  const f: Faction = { id: uid(), name: name.trim() || `The faith of ${c.devotion.deity}`, renown, notes: `The church of ${c.devotion.deity}.` };
+  d.factions.push(f);
+  c.devotion.factionId = f.id;
+  log(d, `${f.name} is tracked as a faction (renown ${renown}); ${c.name}'s deeds for ${c.devotion.deity} count toward it (table rule).`);
+});
+
+/** Grants the gift a rank earned: a Charm or Blessing on the Gifts card, remembered as the god's. */
+export const grantPietyGift = act((d, _ctx, charId: string, rank: Piety.GiftRank, name: string, notes: string, type?: 'Charm' | 'Blessing') => {
+  const c = charById(d, charId);
+  const dv = c?.devotion;
+  if (!c || !dv || !(dv.giftsDue ?? []).includes(rank) || !name.trim()) return;
+  const g = Piety.RANK_GIFT[rank];
+  const kind = type ?? g.type;
+  const id = grantGiftMut(d, c.id, kind, name.trim(), kind === 'Charm' ? Math.max(1, g.uses) : 0, [`From ${dv.deity}.`, notes.trim()].filter(Boolean).join(' '));
+  if (!id) return;
+  dv.giftIds = [...(dv.giftIds ?? []), id];
+  dv.giftsDue = (dv.giftsDue ?? []).filter((x) => x !== rank);
+  dv.history = [`${stamp(d)}: ${kind} of ${name.trim()} from ${dv.deity}`, ...dv.history].slice(0, 30);
+});
+
+/** The DM settles a rank's gift another way (for the Chosen, the god acting directly once). */
+export const settlePietyGift = act((d, _ctx, charId: string, rank: Piety.GiftRank, how: string) => {
+  const c = charById(d, charId);
+  const dv = c?.devotion;
+  if (!c || !dv || !(dv.giftsDue ?? []).includes(rank)) return;
+  dv.giftsDue = (dv.giftsDue ?? []).filter((x) => x !== rank);
+  const what = how.trim() || 'a guaranteed Divine Intervention, once';
+  dv.history = [`${stamp(d)}: ${what} from ${dv.deity}`, ...dv.history].slice(0, 30);
+  log(d, `${dv.deity} grants ${c.name} ${what} (table rule).`, 'good');
+});
 
 /** Starts (or edits) a character's devotion to a god. A new devotion starts where the table rule says unless a score is given. */
 export const setDevotion = act((d, _ctx, charId: string, o: { deity: string; ideals?: string; anathema?: string; piety?: number }) => {
@@ -8843,7 +8908,12 @@ export const removeDevotion = act((d, _ctx, charId: string) => {
 export const pietyDeed = act((d, _ctx, charId: string, delta: number, why: string) => {
   const c = charById(d, charId);
   if (!c?.devotion || !delta) return;
-  pietyChange(d, c, Math.round(delta), why.trim() || (delta > 0 ? 'a deed in the god’s name' : 'a deed against the god’s ideals'));
+  const text = why.trim() || (delta > 0 ? 'a deed in the god’s name' : 'a deed against the god’s ideals');
+  pietyChange(d, c, Math.round(delta), text);
+  const f = d.settings.piety ? faithOf(d, c) : undefined;
+  const r = Piety.faithRenownDelta(Math.round(delta));
+  if (f && r > 0) gainRenown(d, f, r, `${c.name}: ${text}`);
+  if (f && r < 0) loseRenown(d, f, -r, `${c.name}: ${text}`, true);
 });
 
 /** Why a costly offering can't be made now, or null if it can. */
@@ -8884,6 +8954,14 @@ function templeServicePiety(s: State, c: Character, weeks: number): void {
   dv.lastDevotionDay = s.dayIndex;
   const gain = Piety.cappedGain(dv.piety, Piety.SERVICE_PIETY_PER_WEEK * weeks, Piety.SERVICE_PIETY_CAP);
   if (gain) pietyChange(s, c, gain, `${weeks} week${weeks > 1 ? 's' : ''} of service in the temple`);
+  // DMG group involvement: with renown 1+, days among the faith's members count toward the next point.
+  const f = faithOf(s, c);
+  if (!f || f.renown < 1) return;
+  f.involvementDays = (f.involvementDays ?? 0) + Piety.SERVICE_INVOLVEMENT_DAYS_PER_WEEK * weeks;
+  while (f.involvementDays >= involvementDaysNeeded(f)) {
+    f.involvementDays -= involvementDaysNeeded(f);
+    gainRenown(s, f, 1, `${c.name}'s weeks of service in the temple`);
+  }
 }
 
 /** A tithe paid counts as devotion; one missed costs piety. */

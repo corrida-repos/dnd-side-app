@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as E from './engine';
 import { createDefaultState, newCharacter } from './defaults';
 import type { Project, State } from './types';
-import { divineTie, pietyRank, startingPiety, cappedGain } from '../rules/piety';
+import { divineTie, pietyRank, startingPiety, cappedGain, giftRanksReached, faithRenownDelta } from '../rules/piety';
 
 const ctx = (v = 0.5): E.Ctx => ({ rng: () => v });
 const project = (p: Partial<Project>): Project => ({ id: 'p', name: 'Job', kind: 'activity', charIds: [], daysRequired: 5, daysDone: 0, costGp: 0, notes: '', done: false, ...p });
@@ -62,8 +62,9 @@ describe('piety in play', () => {
     s = E.pietyDeed(s, ctx(), id, 4, 'recovered the Dawnstone');
     s = E.pietyDeed(s, ctx(), id, 3, 'drove the undead from Fenwick');
     expect(s.characters[0].devotion).toMatchObject({ piety: 10, best: 10 });
-    expect(s.log[0].text).toMatch(/now Favored/);
-    expect(s.log[0].sense).toBeTruthy();
+    expect(s.log[0].text).toMatch(/offers Ada a Charm/);
+    expect(s.log[1].text).toMatch(/now Favored/);
+    expect(s.log[1].sense).toBeTruthy();
     s = E.pietyDeed(s, ctx(), id, -5, 'struck down a priest');
     s = E.pietyDeed(s, ctx(), id, -6, 'served a rival god');
     expect(s.characters[0].devotion?.piety).toBe(-1);
@@ -127,5 +128,73 @@ describe('piety in play', () => {
     s = E.addDue(s, ctx(), { kind: 'tithe', label: '', payerId: s.characters[0].id, gp: 10, period: 'month', firstInDays: 1, collector: 'the Temple of Dawn', notes: '' });
     s = days(s, 1);
     expect(s.characters[0].devotion?.piety).toBe(2);
+  });
+});
+
+describe('gifts from the god', () => {
+  it('each high rank earns its gift once, the first time it is reached', () => {
+    expect(giftRanksReached(3, 26)).toEqual(['favored', 'exalted']);
+    expect(giftRanksReached(12, 11)).toEqual([]);
+    let s = devoted();
+    const id = s.characters[0].id;
+    s = E.pietyDeed(s, ctx(), id, 4, 'a great deed');
+    s = E.pietyDeed(s, ctx(), id, 4, 'another');
+    expect(s.characters[0].devotion?.giftsDue).toEqual(['favored']);
+    s = E.grantPietyGift(s, ctx(), id, 'favored', 'Restoration', 'heal a friend once');
+    expect(s.characters[0].devotion?.giftsDue).toEqual([]);
+    expect(s.effects.some((e) => e.kind === 'gift' && e.name === 'Charm: Restoration' && /From Lathander/.test(e.notes))).toBe(true);
+    expect(s.characters[0].resources.find((r) => r.name === 'Charm: Restoration')?.max).toBe(1);
+    s = E.pietyDeed(s, ctx(), id, -5, 'fell away');
+    s = E.pietyDeed(s, ctx(), id, 4, 'came back');
+    expect(s.characters[0].devotion?.giftsDue).toEqual([]);
+  });
+
+  it('estrangement names the god’s gifts the DM may withdraw', () => {
+    let s = devoted();
+    const id = s.characters[0].id;
+    s = E.pietyDeed(s, ctx(), id, 7, 'great deeds');
+    s = E.grantPietyGift(s, ctx(), id, 'favored', 'Dawnlight', '');
+    s = E.pietyDeed(s, ctx(), id, -11, 'betrayed the faith');
+    expect(s.log.find((l) => /turns away/.test(l.text))?.text).toMatch(/Charm: Dawnlight/);
+  });
+
+  it('the Chosen can take a guaranteed Divine Intervention instead of a Blessing', () => {
+    let s = devoted();
+    const id = s.characters[0].id;
+    s.characters[0].devotion!.best = 49;
+    s.characters[0].devotion!.piety = 49;
+    s = E.pietyDeed(s, ctx(), id, 1, 'the last step');
+    expect(s.characters[0].devotion?.giftsDue).toEqual(['chosen']);
+    s = E.settlePietyGift(s, ctx(), id, 'chosen', '');
+    expect(s.characters[0].devotion?.giftsDue).toEqual([]);
+    expect(s.log[0].text).toMatch(/Divine Intervention/);
+  });
+});
+
+describe('renown with the faith', () => {
+  it('maps deeds to DMG renown: good deeds count, lapses don’t, sins are serious offenses', () => {
+    expect([2, 1, -1, -2, -5].map(faithRenownDelta)).toEqual([2, 1, 0, -2, -5]);
+  });
+
+  it('tracking the faith makes a Cleric a member, and deeds move its renown', () => {
+    let s = devoted();
+    const id = s.characters[0].id;
+    s = E.trackFaith(s, ctx(), id, 'Church of the Morninglord');
+    expect(s.factions[0]).toMatchObject({ name: 'Church of the Morninglord', renown: 1 });
+    s = E.pietyDeed(s, ctx(), id, 3, 'saved the temple');
+    expect(s.factions[0].renown).toBe(4);
+    s = E.pietyDeed(s, ctx(), id, -1, 'skipped dawn prayers');
+    expect(s.factions[0].renown).toBe(4);
+    s = E.pietyDeed(s, ctx(), id, -2, 'aided a rival cult');
+    expect(s.factions[0].renown).toBe(2);
+  });
+
+  it('Religious Service weeks count as days among the faith’s members', () => {
+    let s = devoted();
+    const id = s.characters[0].id;
+    s = E.trackFaith(s, ctx(), id, '');
+    s.projects = [project({ name: 'Religious service', charIds: [id], done: true, awaitingOutcome: true })];
+    s = E.resolveActivityProject(s, ctx(0.99), 'p', { bonuses: [5], weeks: 2 });
+    expect(s.factions[0]).toMatchObject({ renown: 2, involvementDays: 4 });
   });
 });

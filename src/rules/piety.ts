@@ -49,21 +49,21 @@ export const PIETY_RANKS: PietyRank[] = [
     id: 'favored',
     min: 10,
     label: 'Favored',
-    boon: 'The god’s priests cast spells for them at cost (only the components are paid) and offer counsel. Once between Long Rests the DM may let a dream, omen or sign answer a question about the god’s will.',
+    boon: 'The god’s priests cast spells for them at cost (only the components are paid) and offer counsel. Reaching this rank the first time, the god grants a Charm (2024 DMG Supernatural Gifts) with one use.',
     feel: 'Small signs follow them: a bird of the god’s colour on the windowsill, a candle that will not gutter, a dream that lingers after waking.',
   },
   {
     id: 'exalted',
     min: 25,
     label: 'Exalted',
-    boon: 'A champion of the faith: temples shelter them from secular law, lend acolytes or temple guards for a holy task, and open sealed archives. The DM may grant a Blessing (2024 DMG Supernatural Gifts).',
+    boon: 'A champion of the faith: temples shelter them from secular law, lend acolytes or temple guards for a holy task, and open sealed archives. Reaching this rank the first time, the god grants a Blessing (2024 DMG Supernatural Gifts).',
     feel: 'The god’s presence is never far. Their voice carries in holy places, and the devout bow without knowing why.',
   },
   {
     id: 'chosen',
     min: 50,
     label: 'Chosen',
-    boon: 'The god’s chosen: the faith will spend what it has on their cause, and the DM may let the god act directly once, as a guaranteed Divine Intervention or a Charm (2024 DMG Supernatural Gifts).',
+    boon: 'The god’s chosen: the faith will spend what it has on their cause. Reaching this rank the first time, the god grants a second Blessing, or acts directly once as a guaranteed Divine Intervention (the DM’s choice).',
     feel: 'They are certain, past doubt, that the god watches through their eyes. Their shadow sometimes falls the wrong way, toward the nearest altar.',
   },
 ];
@@ -151,3 +151,36 @@ export function startingPiety(tie: DivineTie | null): number {
 export function cappedGain(score: number, gain: number, cap: number): number {
   return Math.max(0, Math.min(gain, cap - score));
 }
+
+// ---------------------------------------------------------------- supernatural gifts (table rule)
+
+export type GiftRank = 'favored' | 'exalted' | 'chosen';
+
+/** The gift a god grants the first time a character reaches each high rank (2024 DMG Blessings and Charms). */
+export const RANK_GIFT: Record<GiftRank, { type: 'Charm' | 'Blessing'; uses: number; text: string }> = {
+  favored: { type: 'Charm', uses: 1, text: 'a Charm with one use: a small miracle to call on when it matters' },
+  exalted: { type: 'Blessing', uses: 0, text: 'a Blessing: a lasting mark of the god’s favor' },
+  chosen: { type: 'Blessing', uses: 0, text: 'a second Blessing, or one direct act of the god (a guaranteed Divine Intervention)' },
+};
+
+export const isGiftRank = (id: PietyRankId): id is GiftRank => id in RANK_GIFT;
+
+/** Ranks newly reached between two scores, given the best score reached before (gifts come once per rank). */
+export function giftRanksReached(best: number, now: number): GiftRank[] {
+  return PIETY_RANKS.filter((r) => isGiftRank(r.id) && r.min > best && r.min <= now).map((r) => r.id as GiftRank);
+}
+
+// ---------------------------------------------------------------- renown with the faith (table rule)
+
+/**
+ * When a devotion is tied to a faction (the god's temple or church), deeds for the god advance the faith too:
+ * positive deeds add the same renown (the deed scale is the DMG's renown awards), sins and grave sins are
+ * serious offenses that cost renown, and lapses cost nothing (the DMG: disagreements don't cost renown).
+ * Religious Service weeks count as days among its members (DMG group involvement).
+ */
+export function faithRenownDelta(delta: number): number {
+  if (delta > 0) return delta;
+  return delta <= -2 ? delta : 0;
+}
+
+export const SERVICE_INVOLVEMENT_DAYS_PER_WEEK = 7;
