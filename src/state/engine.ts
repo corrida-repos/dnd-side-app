@@ -1,4 +1,4 @@
-import type { LadderPos, TameTarget, ActiveEffect, Activity, CharacterSpell, InventoryItem, LogEntry, Ritual, Stash, Bastion, Business, Character, FacilityWork, Obstacle, Rival, Debt, Mark, Faction, ExhaustionCause, Facility, JourneyStage, MagicItem, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
+import type { LadderPos, TameTarget, ActiveEffect, Activity, CharacterSpell, InventoryItem, LogEntry, Ritual, Stash, Bastion, Business, Character, FacilityWork, Obstacle, Rival, Debt, Mark, Faction, ExhaustionCause, Facility, JourneyStage, MagicItem, Pace, PendingSave, Project, SaveKind, Size, State, Tone } from './types';
 import { BASIC_BUILD, BASTION_TURN_DAYS, defaultSize, ENLARGE, rollBastionEvent, SIZE_LABEL, SPECIAL_FACILITIES, type FacilitySize } from '../rules/bastion';
 import { d20, die, combineModes, rollDice, rollExpr, signed, type Rng, type RollMode } from '../rules/dice';
 import { dateFromIndex, formatClock, formatDate, formatDuration, lightAt, sunriseMinutes } from '../rules/calendar';
@@ -35,6 +35,7 @@ import { FEED_LB_PER_DAY, MOUNT_CAPACITY, carryingCapacity, COINS_PER_LB, estima
 import { bigEnoughToRide, canBeSidekick, canTame, currentDC, dayOutcome, missedDays, NO_AIDS, resultGain, sessionAttitude, sessionResult, tameCheck, tameDC, TRUST_PER_DAY_MAX, TAME_MAX_FAILS, TAME_RETRY_MINUTES, TAME_SESSION_MINUTES, trainingNeeded, TRAINING_LABEL, trustCue, trustNeeded, type TameAids, type TamerFacts, type TameTraining } from '../rules/taming';
 import { BUTCHER_DC, BUTCHER_MINUTES, isEdible, MEAT_LB, STRANGE_TYPES, yieldsHide, type Creature } from '../rules/hunting';
 import { CURE_DC, CURE_LB_PER_RATION, CURE_MAX_LB, CURE_MINUTES, curedRations, FEAST_FEAR_RELIEF, FEAST_STRESS_RELIEF, feastTempHp, HEARTY_SAVES, isFeast, MEAL_BUFF_MINUTES, MEAL_STRESS_RELIEF, tastyTempHp, WARM_SAVES } from '../rules/cooking';
+import { featuresAt, hpForLevel, HIT_DIE_BY_SIZE, NEEDS_LANGUAGE, SIDEKICK_CLASS_LABEL, SIDEKICK_MAX_CR, sidekickLevelFor, sidekickResources, type SidekickClass, type SidekickRole } from '../rules/sidekicks';
 import { PORTER_LB, SAILOR_BONUS, SAILOR_MAX, CATCH_UP_WARMS_EVERY_DAYS, LABORER_FUEL_DICE, RECUPERATE_EXHAUSTION, RECUPERATE_STRESS, BOOK_GP, BOOK_PAGES, COPY_MAP_DC, COPY_MAP_MINUTES, PERFORM_MINUTES, performTake, RESEARCH_IDENTIFY_AT, RESEARCH_LEAD_AT, ROUTE_MAP_GP, AMMO_SEARCH_DC, ammoRecovered, CAROUSING_STRESS_PER_WEEK, DIG_FIND_ON, FINE_FUR, FINE_FUR_ODDS, FORECAST_MARGIN, forageBonusDice, HIDE_GP, isExceptional, KEPT_GEAR_MINUTES, KEPT_GEAR_NOTE, poisonYield, REINFORCE_MARGIN, rollFind, SERVICE_FEAR_PER_WEEK, SERVICE_STRESS_PER_WEEK, SMALL_PELT, trophyFor, WATCH_CATCH_DC, WATCH_CATCH_DICE, type Chore } from '../rules/chorePayoffs';
 import { addCoins, COIN_GP, coinCount, coinsFor, emptyPurse, exchange, fmtPurse, purseValue, spend, type Denom, type Purse } from '../rules/coins';
 import { detectContainer } from '../rules/containers';
@@ -168,6 +169,7 @@ export function gainWealth(c: Character, gp: number): void {
 export function payGold(s: State, payerIds: string[], amount: number, what: string): void {
   if (!s.settings.chargeCosts || amount <= 0) return;
   let payers = payerIds.map((id) => charById(s, id)).filter((c): c is Character => !!c && c.kind !== 'mount');
+  if (!payers.length) payers = adventurers(s).filter((c) => !c.sidekick);
   if (!payers.length) payers = adventurers(s);
   if (!payers.length) return;
   const share = Math.round((amount / payers.length) * 100) / 100;
@@ -188,6 +190,7 @@ export const payForService = act((d, _ctx, payerIds: string[], gp: number, what:
 export function receiveGold(s: State, payeeIds: string[], amount: number, what: string): void {
   if (!s.settings.chargeCosts || amount <= 0) return;
   let payees = payeeIds.map((id) => charById(s, id)).filter((c): c is Character => !!c && c.kind !== 'mount');
+  if (!payees.length) payees = adventurers(s).filter((c) => !c.sidekick);
   if (!payees.length) payees = adventurers(s);
   const share = Math.round((amount / payees.length) * 100) / 100;
   for (const c of payees) gainWealth(c, share);
@@ -508,6 +511,12 @@ function dailyCosts(s: State): void {
   if (s.place.settlement && s.settings.stabling && !inDowntime(s)) stableMounts(s);
   for (const h of s.hirelings) {
     if (h.active && h.wageGp > 0) payGold(s, h.payer === 'party' ? [] : [h.payer], h.wageGp, `${h.name}'s daily wage`);
+  }
+  // Table rule: a hired sidekick's pay goes into their own purse; they pay their own way from it.
+  for (const k of s.characters) {
+    if (!k.sidekick || !alive(k) || k.sidekick.wageGp <= 0 || !s.settings.chargeCosts) continue;
+    payGold(s, k.sidekick.payerId === 'party' ? [] : [k.sidekick.payerId], k.sidekick.wageGp, `${k.name}'s pay as a co-adventurer`);
+    gainWealth(k, k.sidekick.wageGp);
   }
 }
 
@@ -910,6 +919,130 @@ function expireConditions(s: State): void {
 }
 
 /** Moves the clock forward, firing the hourly and end-of-day checks along the way. */
+// ---------------------------------------------------------------- sidekicks (optional rule, Tasha's Cauldron)
+
+/** The adventurers whose levels set a sidekick's: player characters who aren't sidekicks themselves. */
+const levelSetters = (s: State): Character[] => s.characters.filter((c) => c.kind === 'pc' && !c.sidekick);
+
+/** Applies one sidekick level: a Hit Die rolled for HP, the class features of that level, and its resources. */
+function gainSidekickLevel(s: State, ctx: Ctx, c: Character, quiet = false): string {
+  const k = c.sidekick!;
+  c.level += 1;
+  const roll = die(c.hitDie, ctx.rng);
+  const hp = hpForLevel(roll, abilityMod(c.conScore));
+  c.maxHp += hp;
+  c.hp += hp;
+  const feats = featuresAt(k.cls, c.level);
+  for (const f of feats) c.features = [...c.features.filter((x) => x !== `${f.name} (level ${c.level})`), `${f.name} (level ${c.level}): ${f.text}`];
+  for (const r of sidekickResources(k.cls, c.level)) {
+    const have = c.resources.find((x) => x.name === r.name);
+    if (have) {
+      have.current += Math.max(0, r.max - have.max);
+      have.max = r.max;
+    } else c.resources.push({ id: uid(), name: r.name, max: r.max, current: r.max, recharge: r.recharge });
+  }
+  const line = `level ${c.level}: +${hp} HP (d${c.hitDie} ${roll} ${signed(abilityMod(c.conScore))}), proficiency +${proficiencyBonus(c.level)}${feats.length ? `; ${feats.map((f) => f.name).join(', ')}` : ''}`;
+  if (!quiet) status(s, c, 'renownUp', `${c.name} has grown with the party and reaches ${SIDEKICK_CLASS_LABEL[k.cls]} ${line} (Tasha's).`, 'good');
+  return line;
+}
+
+/** Tasha's: whenever the party's average level goes up, each sidekick gains a level. */
+function levelSidekicks(s: State, ctx: Ctx): void {
+  if (!s.settings.sidekicks) return;
+  const target = sidekickLevelFor(levelSetters(s).map((c) => c.level));
+  for (const c of s.characters) {
+    if (!c.sidekick || !alive(c)) continue;
+    let guard = 0;
+    while (c.level < target && guard++ < 20) gainSidekickLevel(s, ctx, c);
+  }
+}
+
+export interface SidekickOpts {
+  name: string;
+  creature: string;
+  cr: string;
+  size: Size;
+  /** The stat block's Hit Points and Constitution score, and whether it speaks a language. */
+  baseHp: number;
+  conScore: number;
+  passivePerception: number;
+  darkvision: number;
+  speaks: boolean;
+  cls: SidekickClass;
+  role: SidekickRole | null;
+  /** Table rule: daily pay (0 for a friend who joins for nothing) and who pays it. */
+  wageGp: number;
+  payerId: string;
+}
+
+const crNum = (cr: string): number => {
+  const [a, b] = cr.split('/').map(Number);
+  return b ? a / b : a;
+};
+
+/** Why a creature can't take this sidekick class, or null if it can. */
+export function sidekickBlocked(cr: string, cls: SidekickClass, speaks: boolean): string | null {
+  if (!(crNum(cr) <= SIDEKICK_MAX_CR)) return `a sidekick's stat block must be CR 1/2 or lower (this is CR ${cr})`;
+  if (NEEDS_LANGUAGE[cls] && !speaks) return `the ${SIDEKICK_CLASS_LABEL[cls]} class needs a creature that speaks a language`;
+  return null;
+}
+
+/** Brings a creature into the party as a sidekick at the party's average level (Tasha's), hired for pay or as a friend. */
+export const hireSidekick = act((d, ctx, o: SidekickOpts) => {
+  if (!d.settings.sidekicks) return void log(d, 'Sidekicks are switched off in Settings.', 'warn');
+  const why = sidekickBlocked(o.cr, o.cls, o.speaks);
+  if (why) return void log(d, `${o.name || o.creature} can't join as a sidekick: ${why}.`, 'warn');
+  const c = newCharacter({
+    name: o.name.trim() || o.creature,
+    className: 'Other',
+    level: 0,
+    species: o.creature,
+    subclass: `${SIDEKICK_CLASS_LABEL[o.cls]} sidekick${o.role ? ` (${o.role})` : ''}`,
+    size: o.size,
+    hitDie: HIT_DIE_BY_SIZE[o.size],
+    conScore: o.conScore,
+    hp: Math.max(1, o.baseHp),
+    maxHp: Math.max(1, o.baseHp),
+    passivePerception: o.passivePerception,
+    darkvision: o.darkvision,
+    gp: 0,
+    features: [],
+    resources: [],
+    tasks: [],
+  });
+  c.sidekick = { cls: o.cls, role: o.role, creature: o.creature, cr: o.cr, wageGp: Math.max(0, o.wageGp), payerId: o.payerId || 'party', since: absNow(d) };
+  const target = sidekickLevelFor(levelSetters(d).map((x) => x.level));
+  const lines: string[] = [];
+  while (c.level < target) lines.push(gainSidekickLevel(d, ctx, c, true));
+  d.characters.push(c);
+  const pay = c.sidekick.wageGp > 0 ? ` They're paid ${fmtGp(c.sidekick.wageGp)} a day into their own purse (table rule), and pay their own way from it.` : ' They join as a friend, for a share of the road rather than pay.';
+  log(d, `${c.name} (${o.creature}, CR ${o.cr}) joins the party as a ${SIDEKICK_CLASS_LABEL[o.cls]} sidekick at level ${c.level}, the party's average (Tasha's): ${c.maxHp} HP. ${lines.length ? `Levels: ${lines.join('; ')}.` : ''}${pay}`, 'good');
+});
+
+/** Gives an existing companion, such as a tamed creature, a sidekick class (Tasha's), at the party's average level. */
+export const makeSidekick = act((d, ctx, charId: string, cls: SidekickClass, role: SidekickRole | null, cr: string, speaks: boolean) => {
+  const c = charById(d, charId);
+  if (!c || c.sidekick || !d.settings.sidekicks) return;
+  const why = sidekickBlocked(cr, cls, speaks);
+  if (why) return void log(d, `${c.name} can't become a sidekick: ${why}.`, 'warn');
+  c.sidekick = { cls, role, creature: c.species || c.name, cr, wageGp: 0, payerId: 'party', since: absNow(d) };
+  c.level = 0;
+  c.hitDie = HIT_DIE_BY_SIZE[c.size];
+  c.subclass = `${SIDEKICK_CLASS_LABEL[cls]} sidekick${role ? ` (${role})` : ''}`;
+  const target = sidekickLevelFor(levelSetters(d).map((x) => x.level));
+  const lines: string[] = [];
+  while (c.level < target) lines.push(gainSidekickLevel(d, ctx, c, true));
+  log(d, `${c.name} has earned a place beside the party: a ${SIDEKICK_CLASS_LABEL[cls]} sidekick at level ${c.level} (Tasha's). ${lines.join('; ')}.`, 'good');
+});
+
+/** A sidekick leaves the party, taking what they carry. */
+export const dismissSidekick = act((d, _ctx, charId: string) => {
+  const c = charById(d, charId);
+  if (!c?.sidekick) return;
+  d.characters = d.characters.filter((x) => x.id !== charId);
+  log(d, `${c.name} parts ways with the party${c.sidekick.wageGp ? ', paid up and taking their gear' : ''}.`);
+});
+
 /**
  * Table rule: each active porter carries a load of their own (a stash with the party on the Storage tab). A porter
  * who is let go leaves their load behind where they were dismissed, still the party's.
@@ -926,6 +1059,7 @@ export function syncPorters(s: State): void {
 
 export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activity, opts: { exploring?: boolean } = {}): void {
   syncPorters(s);
+  levelSidekicks(s, ctx);
   let remaining = Math.max(0, Math.round(minutes));
   if (remaining > 0 && s.settings.deathSavesResolve) resolveDying(s, ctx);
   while (remaining > 0) {

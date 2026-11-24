@@ -248,6 +248,19 @@ export interface Holiday {
   day: number;
 }
 
+export interface SidekickInfo {
+  cls: import('../rules/sidekicks').SidekickClass;
+  role: import('../rules/sidekicks').SidekickRole | null;
+  /** The stat block it's built on, and its challenge rating. */
+  creature: string;
+  cr: string;
+  /** Table rule: daily pay for a hired co-adventurer (0 for a friend who joins unpaid), and who pays it. */
+  wageGp: number;
+  payerId: string;
+  /** Absolute minute it joined. */
+  since: number;
+}
+
 export interface Character {
   id: string;
   /** Mounts and animals use the same survival rules but skip spells, tasks and watches. */
@@ -296,6 +309,8 @@ export interface Character {
   ddbId?: number;
   /** When it was last synced from D&D Beyond. */
   ddbSyncedAt?: string;
+  /** Optional rule (Tasha's): this character is a sidekick with a sidekick class that levels with the party. */
+  sidekick?: SidekickInfo | null;
   /** Personal renown, fear and stress trackers. */
   renown: number;
   fear: number;
@@ -1019,6 +1034,8 @@ export interface Settings {
   appraiseMisjudge: boolean;
   /** Table rule: without the right tool, try anyway at DC +5, taking twice as long where time matters. */
   improvised: boolean;
+  /** Optional rule (Tasha's Cauldron): sidekicks with the Expert, Spellcaster or Warrior class, levelling with the party. */
+  sidekicks: boolean;
   /** Optional 2014 DMG rule: running a business as a downtime activity. */
   runningBusiness: boolean;
   /** Roll random encounter checks automatically by the location's danger while travelling, camping, resting and exploring. */

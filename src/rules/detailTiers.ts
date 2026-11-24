@@ -54,7 +54,7 @@ export const TIERS: Tier[] = [
 /** Settings that are plain on/off switches. */
 export type SwitchKey = { [K in keyof Settings]: Settings[K] extends boolean ? K : never }[keyof Settings];
 
-export type MechanicArea = 'Survival' | 'Weather' | 'Travel' | 'Camp' | 'Rest' | 'Gear' | 'Money' | 'Downtime' | 'Magic' | 'World' | 'Combat';
+export type MechanicArea = 'Survival' | 'Weather' | 'Travel' | 'Camp' | 'Rest' | 'Gear' | 'Money' | 'Downtime' | 'Magic' | 'World' | 'Combat' | 'Party';
 
 export interface Mechanic {
   key: SwitchKey;
@@ -63,7 +63,7 @@ export interface Mechanic {
   area: MechanicArea;
   label: string;
   /** Where the rule comes from. */
-  source: '2024 PHB' | '2024 DMG' | 'Table rule' | "Xanathar's" | '2014 rule' | '2014 DMG';
+  source: '2024 PHB' | '2024 DMG' | 'Table rule' | "Xanathar's" | "Tasha's" | '2014 rule' | '2014 DMG';
   /** What it costs at the table, and why it sits in its tier. */
   cost: string;
 }
@@ -111,6 +111,7 @@ export const MECHANICS: Mechanic[] = [
   { key: 'prestigeRules', tier: 3, area: 'World', source: 'Table rule', label: 'Marks of Prestige carry obligations: land brings income and trouble, titles must be lived up to, and neglect costs the grantor’s trust', cost: 'A monthly roll for each parcel of land and a check on each title holder’s lifestyle.' },
   { key: 'regionDailyRoll', tier: 3, area: 'World', source: 'Table rule', label: 'Supernatural regions roll their table each dawn', cost: 'A daily roll and its effect while in a supernatural region.' },
   { key: 'appraiseCrafts', tier: 3, area: 'Money', source: 'Table rule', label: 'Jeweler’s Tools also value jewelry; History values art objects at DC 15', cost: 'More appraisal rolls before selling treasure.' },
+  { key: 'sidekicks', tier: 2, area: 'Party', source: "Tasha's", label: 'Sidekicks: hire or befriend a co-adventurer (CR 1/2 or lower) with the Expert, Spellcaster or Warrior class, levelling with the party', cost: 'One more character to run; levels, Hit Points and features are handled for you.' },
   { key: 'improvised', tier: 3, area: 'Gear', source: 'Table rule', label: 'Improvised attempts without the right tool: DC +5, twice as long', cost: 'More checks become possible without the proper kit, each slower and harder.' },
   { key: 'duesAndTaxes', tier: 3, area: 'Money', source: 'Table rule', label: 'Taxes, tithes, rent and guild dues are charged when due; unpaid ones become debts', cost: 'Recurring charges to set up and pay.' },
   { key: 'notoriety', tier: 3, area: 'World', source: 'Table rule', label: 'Crimes raise heat with the law in a place; the watch may recognise the party there; heat cools week by week', cost: 'A daily recognition roll while in a place where the party is wanted.' },

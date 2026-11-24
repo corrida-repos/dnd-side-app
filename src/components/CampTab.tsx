@@ -777,7 +777,12 @@ function TameCard() {
                 trained {TRAINING_LABEL[k]}
               </Pill>
             ))}
-            {t.stage === 'tamed' && canBeSidekick(t.cr) && <Pill tone="info">can be a sidekick (Tasha's)</Pill>}
+            {t.stage === 'tamed' && canBeSidekick(t.cr) && !s.characters.find((c) => c.id === t.mountId)?.sidekick && <Pill tone="info">can be a sidekick (Tasha's)</Pill>}
+            {t.stage === 'tamed' && canBeSidekick(t.cr) && t.mountId && s.settings.sidekicks && !s.characters.find((c) => c.id === t.mountId)?.sidekick && (
+              <button className="small" onClick={() => dispatch((st, cx) => E.makeSidekick(st, cx, t.mountId!, 'warrior', 'attacker', t.cr, false))}>
+                Make it a Warrior sidekick
+              </button>
+            )}
             {t.fails > 0 && (
               <Pill tone="bad">
                 {t.fails} bad day{t.fails > 1 ? 's' : ''} in a row
