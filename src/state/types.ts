@@ -1146,6 +1146,8 @@ export interface Contact {
   knownBy: string[];
   /** Day the party last saw or heard from them. */
   lastHeardDay: number;
+  /** Table rule: the day catching up last warmed the bond. */
+  lastWarmedDay?: number;
   /** Favors they owe the party, and the party owes them. */
   owesParty: number;
   partyOwes: number;

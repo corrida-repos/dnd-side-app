@@ -399,7 +399,7 @@ function ContagionCard() {
                       })()}
                     </>
                   )}
-                  <button className="small" onClick={() => dispatch((st, cx) => E.recuperate(st, cx, c.id))}>
+                  <button className="small" title={`DC ${RECUPERATE_DC} Con save: Advantage against contagions for 24 hours; table rule: also lifts 1 Exhaustion level and eases Stress by 2`} onClick={() => dispatch((st, cx) => E.recuperate(st, cx, c.id))}>
                     Recuperate {RECUPERATE_DAYS} days
                   </button>
                   <button className="small ghost" onClick={() => dispatch((st, cx) => E.cureContagion(st, cx, c.id, x.id, x.kind === 'sightRot' ? 'Heal or Lesser Restoration' : 'magic or the DM'))}>
