@@ -31,8 +31,6 @@ function RulesCard() {
         <Rule>When this is off, saves wait on the Dashboard so players can roll their own dice.</Rule>
         <Toggle checked={s.settings.noTimepiece} onChange={(v) => set('noTimepiece', v)} label="Nobody has a timepiece: show the time as nature's cues" />
         <Rule>The header and the time bar show the part of the day (Dawn, Mid-morning, Dusk and so on) instead of the exact clock. The DM can peek at the exact time on the Dashboard&apos;s Rest and the sky card. The calendar, date and time are set on the World tab.</Rule>
-        <Toggle checked={(s.settings.facilityBooks ?? []).includes('FRHoF')} onChange={(v) => edit((d) => void (d.settings.facilityBooks = [...(d.settings.facilityBooks ?? []).filter((x) => x !== 'FRHoF'), ...(v ? (['FRHoF'] as const) : [])]))} label="Bastion facilities from Forgotten Realms: Heroes of Faerûn" />
-        <Toggle checked={(s.settings.facilityBooks ?? []).includes('EFA')} onChange={(v) => edit((d) => void (d.settings.facilityBooks = [...(d.settings.facilityBooks ?? []).filter((x) => x !== 'EFA'), ...(v ? (['EFA'] as const) : [])]))} label="Bastion facilities from Eberron: Forge of the Artificer" />
         <div className="form-row">
           <Num label="Stress removed per Long Rest" value={s.settings.stressPerLongRest} onChange={(v) => edit((d) => void (d.settings.stressPerLongRest = Math.max(0, Math.round(v))))} min={0} width={2} />
           <Num label="Fear removed per Long Rest" value={s.settings.fearPerLongRest} onChange={(v) => edit((d) => void (d.settings.fearPerLongRest = Math.max(0, Math.round(v))))} min={0} width={2} />

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { useGame, edit, dispatch } from '../state/store';
 import * as E from '../state/engine';
 import { ALWAYS_ON, MECHANICS, ON_DEMAND, TIERS, closestTier, matchTier, tierName, type SwitchKey, type TierId } from '../rules/detailTiers';
+import { FACILITY_BOOK_LABEL, FACILITY_BOOKS } from '../rules/bastion';
 import type { Settings } from '../state/types';
 import { Card, Num, Toggle, Rule } from './common';
 
@@ -125,6 +126,17 @@ export function DetailCard() {
                         <p className="rule">{x.more}</p>
                       </details>
                     )}
+                  </li>
+                );
+              })}
+              {t.id === 2 && FACILITY_BOOKS.map((book) => {
+                const on = (s.settings.facilityBooks ?? FACILITY_BOOKS).includes(book);
+                return (
+                  <li key={book} className={on ? '' : 'tier-off'}>
+                    <Toggle checked={on} label={`Bastion facilities from ${FACILITY_BOOK_LABEL[book]}`} onChange={(enabled) => edit((d) => {
+                      const books = (d.settings.facilityBooks ?? FACILITY_BOOKS).filter((entry) => entry !== book);
+                      d.settings.facilityBooks = enabled ? [...books, book] : books;
+                    })} />
                   </li>
                 );
               })}

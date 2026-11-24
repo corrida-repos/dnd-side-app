@@ -24,12 +24,12 @@ A control bar stays on screen on every tab: the time, +10 minutes, +1 hour, +4 h
 | Tier | What it enables |
 | --- | --- |
 | **1. Light** | Basic tracking for the clock, rests, weather and timers. |
-| **2. Standard** | Published 5.5e mechanics, including food and water, extreme weather, forced marches, carrying capacity, coin weight, tent capacity and Circle Magic from *Forgotten Realms: Heroes of Faerûn*. |
+| **2. Standard** | Published 5.5e mechanics, including food and water, extreme weather, forced marches, carrying capacity, coin weight, tent capacity and Circle Magic from *Forgotten Realms: Heroes of Faerûn*. Includes Bastion facilities from the 2024 DMG, *Heroes of Faerûn*, and *Eberron: Forge of the Artificer*. |
 | **3. Gritty** (new games start here) | Options such as automatic death-save resolution, campfire protection, raw food and unsafe water, weapon and armor training, and legacy sidekicks and downtime outcomes. |
 | **4. Hardcore** | Additional weather and appraisal rules, legacy gear and clothing effects, and penalties for sleeping in armor. |
 | **5. Brutal** | Legacy lingering injuries and madness, plus table rules for gear and hull wear. |
 
-You can undo a preset change or adjust individual switches. Book selections, numeric thresholds and DM choices such as allowing extra crafting helpers are campaign settings. Bastions, crafting, diseases, poisons and hunting are available when the table uses them.
+You can undo a preset change or adjust individual switches. Encounter book selections, numeric thresholds and DM choices such as allowing extra crafting helpers are campaign settings. Bastions, crafting, diseases, poisons and hunting are available when the table uses them.
 
 ## What it tracks
 

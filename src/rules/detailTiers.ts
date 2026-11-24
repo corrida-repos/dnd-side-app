@@ -1,4 +1,5 @@
 import type { Settings } from '../state/types';
+import { FACILITY_BOOKS } from './bastion';
 
 /** Rules from Wizards of the Coast’s 5.5e books enter at Standard. Legacy and table rules enter at higher tiers. */
 export type TierId = 1 | 2 | 3 | 4 | 5;
@@ -22,7 +23,7 @@ export const TIERS: Tier[] = [
   {
     id: 2,
     name: 'Standard',
-    tagline: 'Rules from Wizards of the Coast’s 5.5e core and supplemental books, including Circle Magic.',
+    tagline: 'Rules from Wizards of the Coast’s 5.5e core and supplemental books, including supplemental Bastion facilities and Circle Magic.',
     load: 'A few automatic saves a day, meals to log, coins spent. The app rolls most of it.',
   },
   {
@@ -155,24 +156,32 @@ export const ON_DEMAND: string[] = [
   'Hirelings, mounts, vehicles and storage',
 ];
 
-/** Every switch a tier sets: on if the rule's tier is at or below the chosen one. */
-export function tierPreset(tier: TierId): Pick<Settings, SwitchKey> {
-  return Object.fromEntries(MECHANICS.map((m) => [m.key, m.tier <= tier])) as Pick<Settings, SwitchKey>;
+/** The switches and supplemental facility catalog included at this tier. */
+export function tierPreset(tier: TierId): Pick<Settings, SwitchKey | 'facilityBooks'> {
+  const switches = Object.fromEntries(MECHANICS.map((m) => [m.key, m.tier <= tier])) as Pick<Settings, SwitchKey>;
+  return { ...switches, facilityBooks: tier >= 2 ? [...FACILITY_BOOKS] : [] };
 }
 
-/** Sets every tiered switch to match a tier. Other settings include numeric thresholds, DM rulings and book selections. */
+/** Applies a preset while preserving numeric thresholds, DM rulings and other book selections. */
 export function applyTier(settings: Settings, tier: TierId): void {
   Object.assign(settings, tierPreset(tier));
 }
 
+function tierDifferences(settings: Settings, tier: TierId): number {
+  const switches = MECHANICS.filter((m) => !!settings[m.key] !== (m.tier <= tier)).length;
+  const books = settings.facilityBooks ?? FACILITY_BOOKS;
+  const supplementalFacilities = FACILITY_BOOKS.filter((book) => books.includes(book) !== (tier >= 2)).length;
+  return switches + supplementalFacilities;
+}
+
 /** The tier the current switches match exactly, or null if they've been mixed by hand. */
 export function matchTier(settings: Settings): TierId | null {
-  return TIERS.find((t) => MECHANICS.every((m) => !!settings[m.key] === m.tier <= t.id))?.id ?? null;
+  return TIERS.find((t) => tierDifferences(settings, t.id) === 0)?.id ?? null;
 }
 
 /** The tier the current switches are closest to, and how many switches differ from it. */
 export function closestTier(settings: Settings): { tier: TierId; differences: number } {
-  return TIERS.map((t) => ({ tier: t.id, differences: MECHANICS.filter((m) => !!settings[m.key] !== m.tier <= t.id).length })).reduce((a, b) => (b.differences < a.differences ? b : a));
+  return TIERS.map((t) => ({ tier: t.id, differences: tierDifferences(settings, t.id) })).reduce((a, b) => (b.differences < a.differences ? b : a));
 }
 
 export const tierName = (id: TierId): string => TIERS.find((t) => t.id === id)!.name;

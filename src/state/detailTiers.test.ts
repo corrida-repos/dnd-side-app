@@ -49,12 +49,12 @@ describe('levels of detail', () => {
   it('sets every tiered switch, preserves campaign selections, and logs it', () => {
     const s = fresh((d) => {
       d.settings.coldGear2014 = true;
-      d.settings.facilityBooks = ['EFA'];
+      d.settings.encounterBooks = ['XMM'];
       d.settings.extraCraftHelpers = true;
     });
     const light = E.setDetailTier(s, ctx(), 1);
     expect(matchTier(light.settings)).toBe(1);
-    expect(light.settings).toMatchObject({ foodAndWater: false, encounters: false, deathSavesResolve: false, coldGear2014: false, facilityBooks: ['EFA'], extraCraftHelpers: true });
+    expect(light.settings).toMatchObject({ foodAndWater: false, encounters: false, deathSavesResolve: false, coldGear2014: false, facilityBooks: [], encounterBooks: ['XMM'], extraCraftHelpers: true });
     expect(light.log.at(-1)?.text).toMatch(/Light/);
     expect(matchTier(E.setDetailTier(light, ctx(), 4).settings)).toBe(4);
   });
@@ -79,6 +79,19 @@ describe('levels of detail', () => {
     });
     expect(tierPreset(3)).toMatchObject({ coinWeight: true, tentSpace: true, circleMagic: true, armsTraining: true, sidekicks: true, taming: true });
     expect(tierPreset(4)).toMatchObject({ coldGear2014: true, heavyClothing2014: true, climateAdjustedPrecip: true });
+  });
+
+  it('enables all supported 5.5e Bastion books at Standard and higher', () => {
+    const s = fresh((d) => { d.settings.facilityBooks = []; });
+    const standard = E.setDetailTier(s, ctx(), 2);
+    expect(standard.settings.facilityBooks).toEqual(['FRHoF', 'EFA']);
+    expect(matchTier(standard.settings)).toBe(2);
+
+    standard.settings.facilityBooks = ['FRHoF'];
+    expect(matchTier(standard.settings)).toBeNull();
+    expect(closestTier(standard.settings)).toEqual({ tier: 2, differences: 1 });
+    expect(E.setDetailTier(standard, ctx(), 2).settings.facilityBooks).toEqual(['FRHoF', 'EFA']);
+    expect(tierPreset(5).facilityBooks).toEqual(['FRHoF', 'EFA']);
   });
 
   it('Light: no hunger, thirst, cold saves, forced march or getting lost', () => {

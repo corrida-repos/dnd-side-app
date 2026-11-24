@@ -7,6 +7,7 @@ import {
   BASTION_MIN_LEVEL,
   BASTION_TURN_DAYS,
   ENLARGE,
+  FACILITY_BOOKS,
   ORDERS,
   SIZE_LABEL,
   SIZE_SQUARES,
@@ -317,7 +318,7 @@ function AddFacility({ b, ownerLevel, slotsLeft }: { b: Bastion; ownerLevel: num
   const [special, setSpecial] = useState('');
   const [already, setAlready] = useState(false);
   const s0 = useGame();
-  const books = s0.settings.facilityBooks ?? ['FRHoF', 'EFA'];
+  const books = s0.settings.facilityBooks ?? FACILITY_BOOKS;
   const allowed = SPECIAL_FACILITIES.filter((f) => f.level <= ownerLevel && (!f.book || books.includes(f.book)) && !b.facilities.some((x) => x.name === f.name));
   const specialChoice = allowed.find((f) => f.name === special)?.name ?? allowed[0]?.name ?? '';
   const cost = BASIC_BUILD[size];

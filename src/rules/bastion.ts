@@ -39,6 +39,7 @@ export interface SpecialFacility {
 }
 
 export const FACILITY_BOOK_LABEL = { FRHoF: 'Forgotten Realms: Heroes of Faerûn', EFA: 'Eberron: Forge of the Artificer' } as const;
+export const FACILITY_BOOKS = Object.keys(FACILITY_BOOK_LABEL) as (keyof typeof FACILITY_BOOK_LABEL)[];
 
 export const SPECIAL_FACILITIES: SpecialFacility[] = [
   { name: 'Arcane Study', level: 5, order: 'Craft' },
