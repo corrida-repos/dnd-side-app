@@ -77,7 +77,7 @@ export function trophyFor(c: Creature): Trophy | null {
 
 // ---------------------------------------------------------------- lucky finds
 
-export type Chore = 'forage' | 'wood' | 'dig';
+export type Chore = 'forage' | 'wood' | 'dig' | 'search';
 
 export type FindReward =
   | { kind: 'coins'; dice: string; unit: 'cp' | 'sp' | 'gp' }
@@ -121,6 +121,16 @@ export const CHORE_FINDS: Record<Chore, Find[]> = {
     { text: "a magpie's nest with a tarnished ring woven into it", reward: { kind: 'item', name: 'Tarnished ring', valueGp: 25, weight: 0, hidden: true } },
     { text: "a bird's nest with eggs still warm", reward: { kind: 'food', dice: '1', raw: true } },
     { text: 'dry bracket fungus that makes fine tinder', reward: { kind: 'fuel', dice: '1' } },
+  ],
+  search: [
+    { text: 'a purse wedged behind a loose stone, dropped by someone long gone', reward: { kind: 'coins', dice: '3d6', unit: 'sp' } },
+    { text: 'a small cache under a flagstone, coins wrapped in oilcloth', reward: { kind: 'coins', dice: '2d6', unit: 'gp' } },
+    { text: 'a ring caught in a crack in the floor', reward: { kind: 'item', name: 'Lost ring', valueGp: 25, weight: 0, hidden: true } },
+    { text: 'a stone that glitters among the rubble', reward: gem },
+    { text: 'a sealed flask someone hid and forgot: still good to drink', reward: { kind: 'item', name: 'Flask of fine brandy', valueGp: 10, weight: 1 } },
+    { text: 'a bundle of unused arrows in a dry corner', reward: { kind: 'item', name: 'Arrows', valueGp: 0.05, weight: 0.05 } },
+    { text: 'an old silver locket, the portrait inside faded', reward: { kind: 'item', name: 'Silver locket', valueGp: 25, weight: 0, hidden: true } },
+    { text: 'a scatter of copper and silver in the dust', reward: { kind: 'coins', dice: '4d6', unit: 'sp' } },
   ],
   dig: [
     { text: 'a handful of old coins in the spoil, green with age', reward: { kind: 'coins', dice: '3d6', unit: 'sp' } },
@@ -246,3 +256,15 @@ export const RESEARCH_EXTRA_LORE = 1;
 export const RESEARCH_LEAD_AT = 16;
 /** A total this high on research about an unidentified magic item the party holds identifies it. */
 export const RESEARCH_IDENTIFY_AT = 15;
+
+// ---------------------------------------------------------------- tracking, contacts, recuperating, laborers
+
+/** Following a fresh trail leads to game: Advantage on the next foraging check. */
+export const TRACK_GIVES_FORAGE_ADVANTAGE = true;
+/** Catching up with a contact warms the bond by one step, at most once in this many days. */
+export const CATCH_UP_WARMS_EVERY_DAYS = 30;
+/** Recuperating successfully also lifts Exhaustion and eases Stress by these amounts. */
+export const RECUPERATE_EXHAUSTION = 1;
+export const RECUPERATE_STRESS = 2;
+/** Each laborer at a wild camp gathers this much firewood (hours of fuel) before the Long Rest, and digs the fire pit. */
+export const LABORER_FUEL_DICE = '1d6+2';

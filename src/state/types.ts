@@ -1,4 +1,5 @@
 import type { Danger } from '../rules/encounters';
+import type { ArmsKind } from '../rules/armsTraining';
 import type { ClimateId, Weather } from '../rules/weather';
 import type { Calendar } from '../rules/calendar';
 import type { ProjectKind } from '../rules/crafting';
@@ -366,6 +367,8 @@ export interface Character {
   contagions: Contagion[];
   /** Languages and tools learned through downtime training. */
   trainedProficiencies?: string[];
+  /** Armor training and weapon proficiencies: "Light armor", "Shields", "Martial weapons", or a single weapon's name. */
+  armsProfs?: string[];
   /** Tool proficiencies (2024 PHB tool names); undefined until recorded or imported. */
   toolProfs?: string[];
   /** Skill proficiencies; undefined until recorded or imported. */
@@ -429,6 +432,33 @@ export interface Character {
   longevityPotions?: number;
   /** Gold earned since the last tithe was paid (for tithes that take a share). */
   earnedGp?: number;
+  /** Standing with their god (table rule, piety switch). */
+  devotion?: Devotion | null;
+}
+
+/** A character's standing with the god they serve (table rule). */
+export interface Devotion {
+  /** The god, e.g. "Lathander, god of dawn". */
+  deity: string;
+  /** What pleases the god, in a few words, e.g. "new beginnings, healing, driving back the undead". */
+  ideals: string;
+  /** What angers the god. */
+  anathema: string;
+  piety: number;
+  /** Highest score reached. */
+  best: number;
+  /** Day of the last act of devotion (or the day it was set up), for neglect. */
+  lastDevotionDay: number;
+  /** Day of the last costly offering. */
+  lastOfferingDay?: number;
+  /** Recent changes, newest first. */
+  history: string[];
+  /** The faith as a tracked faction: deeds for the god earn renown with it (table rule). */
+  factionId?: string | null;
+  /** Ranks reached whose gift the DM hasn't granted yet. */
+  giftsDue?: ('favored' | 'exalted' | 'chosen')[];
+  /** Gifts this god granted (effect ids), so estrangement can name them. */
+  giftIds?: string[];
 }
 
 export interface Injury {
@@ -559,6 +589,8 @@ export interface Project {
   learn?: string;
   /** Special training (2024 DMG Marks of Prestige): what `learn` is, so it lands in the right proficiency list. */
   learnKind?: TrainingKind;
+  /** Arms training (table rule): the armor, shield or weapon course; `learn` names the weapon for a single Martial weapon. */
+  armsKind?: ArmsKind;
   /** A finished activity waiting for its checks, and what came of it. */
   awaitingOutcome?: boolean;
   outcome?: string;
@@ -929,6 +961,8 @@ export interface Settings {
   prestigeRenownMin: boolean;
   /** Optional Xanathar's rules resolve downtime activities with checks and tables. */
   downtimeOutcomes: boolean;
+  /** Table rule: armor training and weapon proficiency can be learned in downtime. */
+  armsTraining: boolean;
   /** Costly Material components must be in the caster's inventory and are used up (2024 PHB). */
   trackComponents: boolean;
   /** Table rule: Jeweler's Tools also cover jewelry and precious metals; Intelligence (History) values art objects at DC 15. */
@@ -993,6 +1027,8 @@ export interface Settings {
   contactsFade: boolean;
   /** Table rule: news of distant events reaches the party only as fast as word travels. */
   newsTravels: boolean;
+  /** Table rule: piety measures a character's standing with their god, with ranks, boons and estrangement. */
+  piety: boolean;
 }
 
 /** A wild creature someone is trying to tame or train (table rule). */
@@ -1139,6 +1175,8 @@ export interface Contact {
   knownBy: string[];
   /** Day the party last saw or heard from them. */
   lastHeardDay: number;
+  /** Table rule: the day catching up last warmed the bond. */
+  lastWarmedDay?: number;
   /** Favors they owe the party, and the party owes them. */
   owesParty: number;
   partyOwes: number;

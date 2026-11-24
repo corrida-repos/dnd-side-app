@@ -413,6 +413,10 @@ Always on, not a switch: realistic work earns realistic rewards.
 - ✅ **Maps and copies** (table rule): a charted route map is worth 25 GP; copy one in an hour with Cartographer's Tools (DC 10, a sheet). A fair copy of a Book (50 sheets) is worth 25 GP, sold as the copyist's own work.
 - ✅ **Working a trade** (table rule on Xanathar's): 1 GP more for each point above 10.
 - ✅ **Research** (table rules on Xanathar's): always at least one more piece of lore; each piece is Advantage on an Intelligence check about the topic; 15+ identifies a matching unidentified magic item the party holds; 16+ brings a scholar as an allied contact.
+- ✅ **Searching and tracking** (table rules): a sharp search (natural 20 or beating the DC by 5) also turns up a find (a lost purse, a cache, a ring or locket); a successful tracking check leads to game, Advantage on the next foraging check.
+- ✅ **Keeping in touch** (table rule): a visit or letter warms a contact's bond by one step, once every 30 days.
+- ✅ **Recuperating** (table rule on top of the DC 15 save): success also lifts 1 Exhaustion level and eases Stress by 2.
+- ✅ **Laborers** (table rule): before each Long Rest at a wild camp, each hired laborer gathers 1d6 + 2 hours of firewood and digs a sheltered fire pit.
 - ✅ **Cooking** (table rule): any hot meal gives 8 hours of Advantage on saves against extreme cold and cold nights. A tasty meal also gives Advantage on forced-march saves, Stress −2 and Temporary HP equal to the cook's Proficiency Bonus. A feast (natural 20 or beating the DC by 5) gives Temporary HP equal to the cook's level plus Wisdom modifier, Stress −3 and Fear −1. Smoking meat over the fire (4 hours, Survival or Cook's Utensils DC 10) turns every 3 lb from the stores into a day of Rations that keep and sell for 5 SP (half on a failure, up to 30 lb a batch).
 
 ## Phase 9: Random tables from the 2024 DMG 📋
@@ -552,6 +556,7 @@ Table rules under "Lifestyle risks in town". Renown 3+ spares the Wretched, as b
 - ✅ **Wear and repair** (table rule, Brutal tier): hard travel, rain and salt water wear gear and hulls; upkeep, tools, artisans and docks repair them.
 - ✅ **Taxes, tithes and dues** (table rule): recurring charges that become debts when unpaid.
 - ✅ **Notoriety with the law** (table rule): heat and bounties by place, daily recognition, cooling, bribes, fines and surrender.
+- ✅ **Piety** (table rule, Gritty tier): a character's standing with their god on the DMG renown steps (Devoted 3, Favored 10, Exalted 25, Chosen 50, Estranged below 0), with boons as DM guidance. Clerics, Paladins, celestial and fiend patrons, Divine Soul sorcerers, acolytes and Magic Initiate (Cleric) are recognised. Deeds, Religious Service downtime, costly offerings and tithes raise it; sins, missed tithes and 60 days of neglect lower it; atonement brings the estranged back. Favored, Exalted and Chosen each earn a gift from the god once (a Charm, a Blessing, then a second Blessing or a guaranteed Divine Intervention); tied to a faction for the god's church, deeds earn renown with it and Religious Service counts as group involvement.
 - ✅ **Contacts and relationships**: bonds and attitudes, favors with 2024 DMG Influence DCs; table rule for neglect and the wait between favors.
 - ✅ **Letters and news**: personal letters by the Bastion message methods with replies; distant news that travels at a table-rule speed.
 

@@ -432,7 +432,7 @@ function ContactRow({ id }: { id: string }) {
       </div>
       {k.notes && <p className="small muted">{k.notes}</p>}
       <div className="btn-row tight">
-        <button className="small" onClick={() => dispatch((d, cx) => E.keepInTouch(d, cx, k.id))}>
+        <button className="small" title="Table rule: warms the bond by one step, once every 30 days" onClick={() => dispatch((d, cx) => E.keepInTouch(d, cx, k.id))}>
           Visited or wrote
         </button>
         <button className="small" onClick={() => dispatch((d, cx) => E.doFavorFor(d, cx, k.id))}>

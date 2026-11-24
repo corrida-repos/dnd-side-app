@@ -26,10 +26,11 @@ import { MAGIC_ITEM_VALUE, fmtGp } from '../rules/money';
 import { SPELLBOOK_COPY, ACTIVITY_PRESETS } from '../rules/longterm';
 import { AWAY_PROGRESS, BUILDING_PRESETS, BUSINESS_DEBT_PENALTY, BUSINESS_MAX_DAYS, BUSINESS_PRESETS } from '../rules/business';
 import { WaysAround } from './WaysAround';
-import { BOOK, SKILLS, TOOLS, carriesTool, hasSkill, proficientWith } from '../rules/gear';
+import { BOOK, SKILLS, TOOLS, abilityScore, carriesTool, hasSkill, proficientWith, type AbilityKey } from '../rules/gear';
 import { isLowLife } from '../rules/lowLife';
 import { TRAINING_KIND_LABEL, type TrainingKind } from '../rules/prestige';
 import { marchWork } from '../rules/marchWork';
+import { ARMS_COURSES, ARMS_KINDS, ARMS_WEEK_DAYS, armsCost, armsModifier, armsWeeks, canTrainArms, type ArmsKind } from '../rules/armsTraining';
 
 const anRarity = (r: Rarity): string => `${/^[aeiou]/i.test(RARITY_LABEL[r]) ? 'an' : 'a'} ${RARITY_LABEL[r].toLowerCase()}`;
 const cap = (t: string): string => t[0].toUpperCase() + t.slice(1);
@@ -203,6 +204,8 @@ function NewProject() {
   const [newLevel, setNewLevel] = useState(3);
   const [returning, setReturning] = useState(false);
   const [intMod, setIntMod] = useState(0);
+  const [armsKind, setArmsKind] = useState<ArmsKind>('Light armor');
+  const [armsMod, setArmsMod] = useState(0);
   const [cost, setCost] = useState(0);
   const [crafters, setCrafters] = useState<string[]>([]);
   const [deal, setDeal] = useState<number | null>(null);
@@ -277,6 +280,24 @@ function NewProject() {
       break;
     }
     default:
+      if (name.startsWith('Arms training')) {
+        const course = ARMS_COURSES[armsKind];
+        const who = crafters.map((id) => s.characters.find((c) => c.id === id)).filter((c): c is NonNullable<typeof c> => !!c);
+        // Trainees on one course keep the slowest one's pace.
+        const m = who.length
+          ? Math.min(...who.map((c) => armsModifier(armsKind, Object.fromEntries((['str', 'dex'] as AbilityKey[]).map((k) => [k, abilityScore(c, k) ?? undefined])))))
+          : armsMod;
+        const weeks = armsWeeks(armsKind, m);
+        const pat = s.patron ? PATRONS[s.patron.kind] : null;
+        const weapon = armsKind === 'One martial weapon' && learn.trim() ? `: ${learn.trim()}` : '';
+        calc = {
+          days: Math.ceil(weeks * ARMS_WEEK_DAYS * (pat?.trainingHalfTime ? 0.5 : 1)),
+          gp: armsCost(weeks) * (pat?.trainingHalfCost ? 0.5 : 1) * Math.max(1, who.length),
+          label: `Arms training: ${armsKind}${weapon}`,
+          note: `Table rule (the 2024 PHB gives armor training and weapon proficiency only through class, species, multiclassing or feats such as Lightly, Moderately and Heavily Armored and Martial Weapon Training). ${course.weeks} workweeks with a trainer, less the ${course.abilities.map((a) => (a === 'str' ? 'Strength' : 'Dexterity')).join(' or ')} modifier (${m >= 0 ? '+' : ''}${m}; never under half), at 25 GP a week for each trainee. Grants ${course.grants}${course.needs ? `; needs ${ARMS_COURSES[course.needs].grants} first` : ''}. Weapon Mastery is not taught: it stays a class feature.${s.settings.downtimeOutcomes ? " Xanathar's: a 10% chance of a complication for each ten workweeks." : ''}`,
+        };
+        break;
+      }
       calc = {
         days,
         gp: cost,
@@ -291,7 +312,7 @@ function NewProject() {
   const canUntrained = s.settings.improvised && (kind === 'nonmagical' || kind === 'potion');
   if (canUntrained && untrained) calc = { ...calc, days: calc.days * 2, note: `${calc.note} Not proficient: twice the workdays (table rule; the 2024 PHB needs proficiency with the tool).` };
   const solo = isSoloWork(kind);
-  const ownWeek = kind === 'activity' && !!activityOf(name);
+  const ownWeek = kind === 'activity' && (!!activityOf(name) || name.startsWith('Arms training'));
   const cal = calendarDays(calc.days, solo || ownWeek ? 1 : crafters.length, s.settings.extraCraftHelpers);
   const productFor = (): { name: string; qty: number; magic?: boolean; valueGp?: number } | undefined => {
     if (kind === 'nonmagical') {
@@ -383,7 +404,7 @@ function NewProject() {
                   setCost(a.gp);
                 }
               }}
-              options={[{ value: '', label: 'Custom…' }, ...ACTIVITY_PRESETS.map((a) => ({ value: a.name, label: a.name }))]}
+              options={[{ value: '', label: 'Custom…' }, ...ACTIVITY_PRESETS.filter((a) => s.settings.armsTraining || !a.name.startsWith('Arms training')).map((a) => ({ value: a.name, label: a.name }))]}
             />
             {name.startsWith('Change subclass') && (
               <>
@@ -421,6 +442,13 @@ function NewProject() {
                 ) : (
                   <Text label="Language" value={learn} onChange={setLearn} placeholder="e.g. Draconic" />
                 )}
+              </>
+            )}
+            {name.startsWith('Arms training') && (
+              <>
+                <Select label="Course" value={armsKind} onChange={(v: ArmsKind) => (setArmsKind(v), setLearn(''))} options={ARMS_KINDS.map((k) => ({ value: k, label: `${k} (${ARMS_COURSES[k].weeks} weeks)` }))} />
+                {armsKind === 'One martial weapon' && <Text label="Weapon" value={learn} onChange={setLearn} placeholder="e.g. Longsword" />}
+                {!crafters.length && <Num label="Str/Dex modifier" value={armsMod} onChange={(v) => setArmsMod(Math.round(v))} width={3} />}
               </>
             )}
             {name.startsWith('Training') && (
@@ -496,6 +524,14 @@ function NewProject() {
       {kind === 'activity' && name.startsWith('Relaxation') && s.settings.lifestyleRisks && crafters.some((id) => isLowLife(s.characters.find((c) => c.id === id)?.lifestyle ?? '')) && (
         <p className="small warn-text">Relaxation needs a Modest lifestyle or better (Xanathar&apos;s): anyone living Squalid or Wretched gets nothing from the week.</p>
       )}
+      {kind === 'activity' && name.startsWith('Arms training') && (() => {
+        const bad = crafters
+          .map((id) => s.characters.find((c) => c.id === id))
+          .filter((c): c is NonNullable<typeof c> => !!c)
+          .map((c) => ({ c, r: canTrainArms(c.armsProfs, armsKind, learn) }))
+          .filter((x) => !x.r.ok);
+        return bad.length ? <p className="small warn-text">Can&apos;t start yet: {bad.map((x) => `${x.c.name} ${x.r.reason}`).join('; ')}.</p> : null;
+      })()}
       {canUntrained && <Toggle checked={untrained} onChange={setUntrained} label="Not proficient with the tool: improvised, twice the workdays (table rule)" />}
       <Rule>{calc.note}</Rule>
       <button
@@ -515,6 +551,7 @@ function NewProject() {
             ...(trade ? { rarity, dealGp: calc.gp, consumable, ...(name.trim() ? { itemName: name.trim() } : {}) } : {}),
             ...(kind === 'spellcopy' ? { spell: { name: spellName.trim() || 'Unnamed spell', level: spellLevel } } : {}),
             ...(kind === 'activity' && name.startsWith('Training') && learn.trim() ? { learn: learn.trim(), name: `Training: ${learn.trim()}` } : {}),
+            ...(kind === 'activity' && name.startsWith('Arms training') ? { armsKind, ...(learn.trim() ? { learn: learn.trim() } : {}) } : {}),
             ...(kind === 'activity' && name.startsWith('Special training') ? { learnKind, ...(learn.trim() ? { learn: learn.trim(), name: `Special training: ${learn.trim()}` } : {}) } : {}),
             product: productFor(),
             materialsUsed: Object.entries(useMats)

@@ -35,7 +35,7 @@ import { FEED_LB_PER_DAY, MOUNT_CAPACITY, carryingCapacity, COINS_PER_LB, estima
 import { bigEnoughToRide, canBeSidekick, canTame, currentDC, dayOutcome, missedDays, NO_AIDS, resultGain, sessionAttitude, sessionResult, tameCheck, tameDC, TRUST_PER_DAY_MAX, TAME_MAX_FAILS, TAME_RETRY_MINUTES, TAME_SESSION_MINUTES, trainingNeeded, TRAINING_LABEL, trustCue, trustNeeded, type TameAids, type TamerFacts, type TameTraining } from '../rules/taming';
 import { BUTCHER_DC, BUTCHER_MINUTES, isEdible, MEAT_LB, STRANGE_TYPES, yieldsHide, type Creature } from '../rules/hunting';
 import { CURE_DC, CURE_LB_PER_RATION, CURE_MAX_LB, CURE_MINUTES, curedRations, FEAST_FEAR_RELIEF, FEAST_STRESS_RELIEF, feastTempHp, HEARTY_SAVES, isFeast, MEAL_BUFF_MINUTES, MEAL_STRESS_RELIEF, tastyTempHp, WARM_SAVES } from '../rules/cooking';
-import { BOOK_GP, BOOK_PAGES, COPY_MAP_DC, COPY_MAP_MINUTES, PERFORM_MINUTES, performTake, RESEARCH_IDENTIFY_AT, RESEARCH_LEAD_AT, ROUTE_MAP_GP, AMMO_SEARCH_DC, ammoRecovered, CAROUSING_STRESS_PER_WEEK, DIG_FIND_ON, FINE_FUR, FINE_FUR_ODDS, FORECAST_MARGIN, forageBonusDice, HIDE_GP, isExceptional, KEPT_GEAR_MINUTES, KEPT_GEAR_NOTE, poisonYield, REINFORCE_MARGIN, rollFind, SERVICE_FEAR_PER_WEEK, SERVICE_STRESS_PER_WEEK, SMALL_PELT, trophyFor, WATCH_CATCH_DC, WATCH_CATCH_DICE, type Chore } from '../rules/chorePayoffs';
+import { CATCH_UP_WARMS_EVERY_DAYS, LABORER_FUEL_DICE, RECUPERATE_EXHAUSTION, RECUPERATE_STRESS, BOOK_GP, BOOK_PAGES, COPY_MAP_DC, COPY_MAP_MINUTES, PERFORM_MINUTES, performTake, RESEARCH_IDENTIFY_AT, RESEARCH_LEAD_AT, ROUTE_MAP_GP, AMMO_SEARCH_DC, ammoRecovered, CAROUSING_STRESS_PER_WEEK, DIG_FIND_ON, FINE_FUR, FINE_FUR_ODDS, FORECAST_MARGIN, forageBonusDice, HIDE_GP, isExceptional, KEPT_GEAR_MINUTES, KEPT_GEAR_NOTE, poisonYield, REINFORCE_MARGIN, rollFind, SERVICE_FEAR_PER_WEEK, SERVICE_STRESS_PER_WEEK, SMALL_PELT, trophyFor, WATCH_CATCH_DC, WATCH_CATCH_DICE, type Chore } from '../rules/chorePayoffs';
 import { addCoins, COIN_GP, coinCount, coinsFor, emptyPurse, exchange, fmtPurse, purseValue, spend, type Denom, type Purse } from '../rules/coins';
 import { detectContainer } from '../rules/containers';
 import { FIRE_DAMAGE, RAT_BITE_DAMAGE, RELAXATION_NEEDS, SHAKEDOWN_DAMAGE, SHAKEDOWN_GP, SHAKEDOWN_RIVAL_ODDS, SHUNNED_AFTER_DAYS, SPOILED_FOOD_DC, TAINTED_POTION_ODDS, WATCH_FINE, WATCH_JAIL_DAYS, WEEKLY_ODDS, WRETCHED_STRESS, isLowLife } from '../rules/lowLife';
@@ -43,6 +43,7 @@ import { BOILING_POT, CHARCOAL_WORDS, FRICTION_LIGHT_MINUTES, HIDE_WATERSKIN, LE
 import type { DdbImport } from '../rules/ddb';
 import { INN_STAY_GP, MEAL_GP, MEALS_PER_DAY, FEED_GP_PER_DAY, HIRELING_WAGE, magicItemValue, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset, type Lifestyle } from '../rules/money';
 import { STABLE_WAKE_DIE, STABILIZE_DC } from '../rules/upkeep';
+import { ARMS_COURSES, armsCue, armsEntry, canTrainArms } from '../rules/armsTraining';
 import { FORT_NEGLECT_DAYS, FORT_UPKEEP, LAND, LODGING_CAP, MARK_LABEL, PRIZE_CROWN_SHARE, RIGHTS, TITLE_RANK, TRUST_LABEL, TRUST_MAX, lifestyleBelow, lowerLifestyle, monthDue, rollLandIncome, rollLandTrouble, sameCommunity, TRAINING_KIND_LABEL, levelRenown, renownMinimum } from '../rules/prestige';
 import { RITUAL_EXTRA_MINUTES as RITUAL_TAG_MINUTES, spellInfo } from '../rules/rituals';
 import { circleBeginsText, circleBrokenText, circleEligible, circleEndsText, circleOption, CIRCLE_RANGE_FT, helperProblem, optionProblem, prolongMinutes, slotNeedText, spellCircle, supplantDiscount, type CircleOptionId, type HelperSlot } from '../rules/circle';
@@ -76,6 +77,7 @@ import {
 import { isCaster, PREP_RULE, preparedCount, preparedLimit } from '../rules/spells';
 import { newCharacter, uid } from './defaults';
 import { sense, type SenseKey } from '../rules/senses';
+import * as Piety from '../rules/piety';
 import { buildTable, checkModifiers, DANGER, DIFFICULTY_LABEL, firstSign, rollOnTable, SRD_POOL, BOOK_POOL, type CheckConditions, type Danger, type EncounterCreature, type EncounterTable, type Party } from '../rules/encounters';
 import type { TerrainType } from '../rules/terrain';
 import { FESTERING_MEDICINE_DC, INJURIES, INJURY_MEDICINE_SUCCESSES, INJURY_REST_DAYS, INJURY_SPELLS, healsInjury, injuryFor, type InjuryKind } from '../rules/injuries';
@@ -84,7 +86,7 @@ import { MAGIC_AGING, SLOW_AGING_FACTOR, STAGE_LABEL, STAGE_SENSE, ageStage, bod
 import { HULL_LIMIT, DAMAGED_HULL_SPEED, MAINTAIN_MINUTES, REPAIR_DC, REPAIR_MINUTES, REPAIR_TOOL, WEAR_HOURS, WEAR_LIMIT, hullRepair, materialOf, repairCost, wearCauses } from '../rules/wear';
 import { DUE_PRESETS, GUILD_EXPULSION, PERIOD_DAYS, dueAmount, type DueKind, type DuePeriod } from '../rules/dues';
 import { BRIBE_GP_PER_HEAT, CRIMES, HEAT_DECAY_PER_WEEK, RECOGNISE_ON, heatLevel, jailDaysFor, samePlace, type CrimeSeverity } from '../rules/notoriety';
-import { FAVOR_COOLDOWN_DAYS, NEGLECT_DAYS, attitudeOf, clampBond, favorDC } from '../rules/contacts';
+import { BOND_MAX, FAVOR_COOLDOWN_DAYS, NEGLECT_DAYS, attitudeOf, clampBond, favorDC } from '../rules/contacts';
 import { REPLY_DIE, newsDelay, type NewsRoute } from '../rules/letters';
 import { arrivalLine, buildingType, generateTown, newBuilding, rollCalamity, rollFame, rollKeeper, rollLeader, rollRuler, rollTrait, sortBuildings, type Town } from '../rules/settlements';
 import { npcLine, rollNpc, type Npc } from '../rules/npcs';
@@ -599,6 +601,7 @@ function endOfDay(s: State, ctx: Ctx): void {
   if ((s.dayIndex + 1) % 7 === 0) debtsWeekly(s, ctx);
   festeringWounds(s);
   notorietyDaily(s, ctx);
+  pietyDaily(s);
   contactsDaily(s);
   groomTheMounts(s);
   checkRituals(s);
@@ -1014,12 +1017,30 @@ export const longRest = act((d, ctx, force = false) => {
   const outside = tentShortfall(d);
   if (outside.length) noticed(d, 'coldNight', outside, `Not enough tent space (a Tent sleeps two): ${outside.map((c) => c.name).join(', ')} sleep${outside.length > 1 ? '' : 's'} in the open tonight.`, 'warn');
   clearAppraiseTries(d);
+  laborersMakeCamp(d, ctx);
   const watched = standWatches(d, ctx);
   d.restStart = absNow(d);
   advanceMut(d, ctx, 8 * 60, 'rest');
   d.restStart = null;
   completeLongRest(d, ctx, watched);
 });
+
+/** Table rule: hired laborers at a wild camp gather firewood and dig a sheltered fire pit before the party beds down. */
+function laborersMakeCamp(d: State, ctx: Ctx): void {
+  if (d.place.settlement || d.place.shelter === 'building') return;
+  const now = absNow(d);
+  const crew = d.hirelings.filter((h) => h.active && h.role === 'laborer' && !(h.busyUntil && h.busyUntil > now));
+  if (!crew.length) return;
+  let fuel = 0;
+  for (let i = 0; i < crew.length; i++) fuel += rollExpr(LABORER_FUEL_DICE, ctx.rng) ?? 5;
+  d.fire.fuelHours += fuel;
+  const pit = !d.fire.sheltered && !CLIMATES[d.weather.climate].noWeather;
+  if (pit) {
+    d.fire.sheltered = true;
+    d.place.dug = [...(d.place.dug ?? []).filter((x) => x !== DIG_LABEL.firePit.label), DIG_LABEL.firePit.label];
+  }
+  log(d, `${crew.map((h) => h.name).join(', ')} make${crew.length > 1 ? '' : 's'} camp: ${fuel} hours of firewood stacked${pit ? ' and a sheltered fire pit dug' : ''} (table rule: laborers' work).`, 'good');
+}
 
 /** Everything that happens when a Long Rest finishes. */
 function completeLongRest(d: State, ctx: Ctx, watched: Record<string, number>): void {
@@ -1520,6 +1541,14 @@ export const searchCheck = act((d, ctx, charId: string, what: 'search' | 'track'
   const total = r.value + bonus - 2 * c.exhaustion;
   const hindered = mode === 'disadvantage' ? `, Disadvantage: ${sight.note}` : '';
   log(d, `${c.name} ${doing}: ${what === 'track' ? 'Wisdom (Survival)' : 'Wisdom (Perception)'} ${r.rolls.join('/')} ${signed(bonus - 2 * c.exhaustion)} = ${total} against DC ${dc} (${TERRAIN[d.place.terrain].label}${hindered}). ${total >= dc ? 'Found!' : 'Nothing.'}`, total >= dc ? 'good' : 'warn');
+  if (total < dc) return;
+  // Table rules: a fresh trail leads to game, and a sharp-eyed search turns up something nobody hid on purpose.
+  if (what === 'track') {
+    d.travel.reconAdvantage = true;
+    log(d, `${c.name} reads the trail: where the animals water, feed and bed down. Advantage on the next foraging check (table rule).`, 'good');
+  }
+  const me = charById(d, charId);
+  if (what === 'search' && me && isExceptional(r.value, total, dc)) grantFind(d, ctx, me, 'search');
 });
 
 /** Runs a planned journey stage day by day: travel up to 8 hours, then (optionally) eat, drink and Long Rest overnight. */
@@ -2321,7 +2350,7 @@ function workOnTheMarch(s: State, ctx: Ctx, hours: number, navigatorId: string |
       if (!who.length) continue;
     }
     // Same helper limit as a day at the workbench; training is time with the trainer, so trainees don't add up.
-    const workers = p.learnKind || isSoloWork(p.kind) ? 1 : s.settings.extraCraftHelpers ? who.length : Math.min(2, who.length);
+    const workers = p.learnKind || p.armsKind || isSoloWork(p.kind) ? 1 : s.settings.extraCraftHelpers ? who.length : Math.min(2, who.length);
     const got = hours * MARCH_WORK_RATE * workers;
     let bank = (p.marchWorkHours ?? 0) + got;
     const days = Math.min(p.daysRequired - p.daysDone, Math.floor(bank / WORKDAY_HOURS));
@@ -2349,7 +2378,7 @@ function progress(s: State, p: Project, ctx?: Ctx): void {
   if (hired > 0) payGold(s, p.charIds, hired * HIRELING_WAGE.skilled, `${hired} hired artisan${hired > 1 ? 's' : ''} on ${p.name}`);
   // Normally only one other character can help (the DM can allow more). Training is time with the trainer: trainees don't speed each other up.
   // Activities are each participant's own week (carousing together doesn't make the week shorter).
-  const amount = p.learnKind || isSoloWork(p.kind) || (p.kind === 'activity' && activityOf(p.name)) ? 1 : Math.max(1, s.settings.extraCraftHelpers ? crafters : Math.min(2, crafters));
+  const amount = p.learnKind || p.armsKind || isSoloWork(p.kind) || (p.kind === 'activity' && activityOf(p.name)) ? 1 : Math.max(1, s.settings.extraCraftHelpers ? crafters : Math.min(2, crafters));
   p.daysDone = Math.min(p.daysRequired, p.daysDone + amount);
   if (p.daysDone >= p.daysRequired) progressFinish(s, p, ctx);
   else log(s, `A day's work on ${p.name}: ${p.daysDone}/${p.daysRequired} workdays.`);
@@ -2359,8 +2388,9 @@ function progressFinish(s: State, p: Project, ctx?: Ctx): void {
   {
     p.done = true;
     log(s, `Downtime project complete: ${p.name}.`, 'good');
-    const act = p.kind === 'activity' && !p.learnKind ? activityOf(p.name) : null;
+    const act = p.kind === 'activity' && !p.learnKind && !p.armsKind ? activityOf(p.name) : null;
     if (p.learnKind) finishSpecialTraining(s, p);
+    else if (p.armsKind) finishArmsTraining(s, p, ctx);
     else if (act && s.settings.downtimeOutcomes) {
       if (act === 'Training') {
         const learn = (p.learn || p.name.split(':')[1] || '').trim();
@@ -2947,6 +2977,7 @@ export const resolveActivityProject = act((d, ctx, projectId: string, o: Activit
   const wks = r.jailDays ? 1 : weeks;
   if (id === 'Carousing') easeMind(d, c, CAROUSING_STRESS_PER_WEEK * wks, 0, 'feels lighter after nights of drink, song and laughter');
   if (id === 'Religious service') easeMind(d, c, SERVICE_STRESS_PER_WEEK * wks, SERVICE_FEAR_PER_WEEK * wks, 'finds a steadiness in the hymns and quiet ritual');
+  if (id === 'Religious service' && d.settings.piety) templeServicePiety(d, c, wks);
   for (const comp of r.complications ?? (r.complication ? [r.complication] : [])) applyComplication(d, ctx, c, comp);
   rivalAdvances(d, ctx);
 });
@@ -3922,7 +3953,13 @@ export const recuperate = act((d, ctx, charId: string) => {
   if (!c || !alive(c)) return;
   const r = rollSave(c, RECUPERATE_DC, 'normal', ctx.rng);
   log(d, `${c.name} spends ${RECUPERATE_DAYS} days recuperating, then makes a DC ${RECUPERATE_DC} Con save. ${r.detail}${r.passed ? 'Advantage on saves against contagions for the next 24 hours.' : 'No benefit this time.'}`, r.passed ? 'good' : 'warn');
-  if (r.passed) c.recuperatedUntil = absNow(d) + 24 * 60;
+  if (!r.passed) return;
+  c.recuperatedUntil = absNow(d) + 24 * 60;
+  // Table rule: three days of real rest also lift a level of Exhaustion and ease the mind.
+  let lifted = 0;
+  for (let i = 0; i < RECUPERATE_EXHAUSTION; i++) if (recoverExhaustion(c)) lifted++;
+  if (lifted) status(d, c, 'exhaustionEases', `${c.name} gets up from three days of rest stronger: ${lifted} Exhaustion level${lifted > 1 ? 's' : ''} lifted, now ${c.exhaustion} (table rule).`, 'good');
+  easeMind(d, c, RECUPERATE_STRESS, 0, 'feels the days of rest settle the nerves');
 });
 
 // ---------------------------------------------------------------- businesses
@@ -5610,6 +5647,15 @@ export const frigidWater = act((d, ctx, charId: string, minutes: number) => {
 
 /** Starts a downtime project and pays for its materials up front (buying and selling settle on completion). */
 export const startProject = act((d, _ctx, p: Project) => {
+  // Arms training: everyone on the course must be ready for it (Light before Medium before Heavy, and so on).
+  if (p.armsKind) {
+    const blocked = p.charIds
+      .map((id) => charById(d, id))
+      .filter((c): c is Character => !!c)
+      .map((c) => ({ c, r: canTrainArms(c.armsProfs, p.armsKind!, p.learn) }))
+      .filter((x) => !x.r.ok);
+    if (blocked.length) return void log(d, `Can't start ${p.name}: ${blocked.map((x) => `${x.c.name} ${x.r.reason}`).join('; ')}.`, 'warn');
+  }
   // Take the chosen materials out of the stash; their value counts toward the cost.
   const used: NonNullable<Project['materialsUsed']> = [];
   for (const u of p.materialsUsed ?? []) {
@@ -7209,6 +7255,8 @@ export const importDdb = act((d, _ctx, imp: DdbImport, parts: DdbParts) => {
       features: imp.features.length ? imp.features : c.features,
       toolProfs: imp.toolProfs,
       skillProfs: imp.skillProfs,
+      // Keep arms learned in downtime here even if D&D Beyond doesn't list them yet.
+      armsProfs: [...new Set([...(c.armsProfs ?? []), ...(imp.armsProfs ?? [])])],
       abilities: { str: imp.stats.strength, dex: imp.stats.dexterity, con: imp.stats.constitution, int: imp.stats.intelligence, wis: imp.stats.wisdom, cha: imp.stats.charisma },
     });
   }
@@ -7308,12 +7356,19 @@ export const buildWalls = act((d, _ctx, bastionId: string, squares: number) => {
 
 /** A supernatural gift or curse: a lasting effect on the character, and limited uses for a Charm. */
 export const grantGift = act((d, _ctx, charId: string, type: GiftType, name: string, uses: number, notes: string) => {
+  grantGiftMut(d, charId, type, name, uses, notes);
+});
+
+/** Adds a supernatural gift or curse as a long effect (Charms also get limited uses); returns the effect id. */
+function grantGiftMut(d: State, charId: string, type: GiftType, name: string, uses: number, notes: string): string | null {
   const c = charById(d, charId);
-  if (!c || !name.trim()) return;
-  d.effects.push({ id: uid(), name: `${type}: ${name}`, kind: type === 'Curse' ? 'curse' : 'gift', targetIds: [c.id], casterId: null, concentration: false, shelter: false, startedAt: absNow(d), endsAt: null, notes });
+  if (!c || !name.trim()) return null;
+  const id = uid();
+  d.effects.push({ id, name: `${type}: ${name}`, kind: type === 'Curse' ? 'curse' : 'gift', targetIds: [c.id], casterId: null, concentration: false, shelter: false, startedAt: absNow(d), endsAt: null, notes });
   if (type === 'Charm' && uses > 0) c.resources.push({ id: uid(), name: `Charm: ${name}`, max: uses, current: uses, recharge: 'manual' });
   log(d, `${c.name} ${type === 'Curse' ? 'is cursed' : 'receives a supernatural gift'}: ${type} of ${name}${type === 'Charm' && uses ? ` (${uses} use${uses > 1 ? 's' : ''})` : ''}.`, type === 'Curse' ? 'bad' : 'good');
-});
+  return id;
+}
 
 // ---------------------------------------------------------------- random encounters
 
@@ -7494,6 +7549,29 @@ function finishSpecialTraining(s: State, p: Project): void {
     else if (p.learnKind === 'tool') c.toolProfs = add(c.toolProfs);
     else c.trainedProficiencies = add(c.trainedProficiencies);
     log(s, `${c.name} finishes a month of rare training and ${p.learnKind === 'language' ? `can now speak and read ${learn}` : `is now proficient ${p.learnKind === 'skill' ? 'in' : 'with'} ${learn}`} (${TRAINING_KIND_LABEL[p.learnKind]}).`, 'good');
+  }
+}
+
+/** Arms training (table rule): the course is over and the body has learned it. */
+function finishArmsTraining(s: State, p: Project, ctx?: Ctx): void {
+  const kind = p.armsKind!;
+  const entry = armsEntry(kind, p.learn);
+  if (!entry) return void log(s, `${p.name} is done. Record the weapon learned on the character sheet.`);
+  for (const id of p.charIds) {
+    const c = charById(s, id);
+    if (!c) continue;
+    c.armsProfs = [...new Set([...(c.armsProfs ?? []), entry])];
+    log(s, `${c.name} finishes ${p.name} and now has ${kind === 'One martial weapon' ? `proficiency with ${entry}` : ARMS_COURSES[kind].grants} (table rule). ${c.name} notices ${armsCue(kind, p.learn)}.`, 'good', { charIds: [c.id] });
+  }
+  // Xanathar's training complication: 10% for each ten workweeks.
+  if (ctx && s.settings.downtimeOutcomes) {
+    for (let i = 0; i < Math.floor(p.daysRequired / 50); i++) {
+      if (die(10, ctx.rng) !== 1) continue;
+      const comp = COMPLICATIONS.Training[die(COMPLICATIONS.Training.length, ctx.rng) - 1];
+      const c = charById(s, p.charIds[0]);
+      if (c) applyComplication(s, ctx, c, comp);
+      break;
+    }
   }
 }
 
@@ -8355,6 +8433,7 @@ function duesDaily(s: State): void {
         addDebtMut(s, c.id, due.collector, DUE_PRESETS[due.kind].creditor, Math.round((share - can) * 100) / 100);
       }
     }
+    if (due.kind === 'tithe' && s.settings.piety) for (const c of payers) titheKept(s, c, !short, due.collector);
     if (!short) {
       due.missed = 0;
       log(s, `${payers.map((c) => c.name).join(', ')} pay${payers.length > 1 ? '' : 's'} ${due.label.toLowerCase()}: ${fmtGp(amount)} to ${due.collector} (table rule).`);
@@ -8485,7 +8564,13 @@ export const keepInTouch = act((d, _ctx, id: string) => {
   const k = (d.contacts ?? []).find((x) => x.id === id);
   if (!k) return;
   k.lastHeardDay = d.dayIndex;
-  log(d, `The party catches up with ${k.name}.`);
+  // Table rule: time spent together warms the bond, once a month.
+  const warm = k.bond < BOND_MAX && (k.lastWarmedDay == null || d.dayIndex - k.lastWarmedDay >= CATCH_UP_WARMS_EVERY_DAYS);
+  if (warm) {
+    k.bond = clampBond(k.bond + 1);
+    k.lastWarmedDay = d.dayIndex;
+  }
+  log(d, `The party catches up with ${k.name}${warm ? `, and the time together counts: now ${attitudeOf(k.bond)} (bond ${signed(k.bond)}; table rule)` : ''}.`, warm ? 'good' : 'info');
 });
 
 /** Doing something for a contact: the bond grows and they owe the party a favor. */
@@ -8715,3 +8800,185 @@ export const townNpcToContact = act((d, _ctx, townName: string, ref: TownNpcRef)
 /** A short description of an NPC, for the DM. */
 export const describeNpc = (n: Npc): string => npcLine(n);
 
+
+// ---------------------------------------------------------------- piety (table rule)
+
+/** Changes a character's piety, logging what they feel and any change of rank. */
+function pietyChange(s: State, c: Character, delta: number, why: string): void {
+  const dv = c.devotion;
+  if (!dv || !delta) return;
+  const before = Piety.pietyRank(dv.piety);
+  const fresh = Piety.giftRanksReached(dv.best, dv.piety + delta);
+  dv.piety += delta;
+  dv.best = Math.max(dv.best, dv.piety);
+  if (delta > 0) dv.lastDevotionDay = s.dayIndex;
+  dv.history = [`${stamp(s)}: ${signed(delta)}, ${why}`, ...dv.history].slice(0, 30);
+  const after = Piety.pietyRank(dv.piety);
+  const score = `piety ${signed(delta)}, now ${dv.piety}, ${after.label}; table rule`;
+  if (after.id === 'estranged' && before.id !== 'estranged') {
+    const gifts = s.effects.filter((e) => (dv.giftIds ?? []).includes(e.id)).map((e) => e.name);
+    status(s, c, 'estranged', `${dv.deity} turns away from ${c.name}: ${why} (${score}). ${after.boon}${gifts.length ? ` The DM may withdraw the god’s gifts until they atone: ${gifts.join(', ')}.` : ''}`, 'bad');
+  } else if (after.min > before.min && after.id !== 'faithful') {
+    status(s, c, 'pietyRankUp', `${c.name} is now ${after.label} in the eyes of ${dv.deity}: ${why} (${score}). ${after.boon}`, 'good');
+  } else if (after.min !== before.min) {
+    status(s, c, delta > 0 ? 'atoned' : 'pietyDown', `${c.name} is now ${after.label} in the eyes of ${dv.deity}: ${why} (${score}).`, delta > 0 ? 'good' : 'warn');
+  } else {
+    status(s, c, delta > 0 ? 'pietyUp' : 'pietyDown', `${dv.deity} ${delta > 0 ? 'is pleased with' : 'is displeased with'} ${c.name}: ${why} (${score}).`, delta > 0 ? 'good' : 'warn');
+  }
+  if (!s.settings.piety) return;
+  for (const r of fresh) {
+    dv.giftsDue = [...(dv.giftsDue ?? []).filter((x) => x !== r), r];
+    log(s, `${dv.deity} offers ${c.name} ${Piety.RANK_GIFT[r].text} for becoming ${Piety.PIETY_RANKS.find((x) => x.id === r)!.label} (table rule). Grant it from the Piety card.`, 'good');
+  }
+}
+
+/** The faith's faction, when the devotion is tied to one. */
+function faithOf(s: State, c: Character): Faction | undefined {
+  return c.devotion?.factionId ? s.factions.find((f) => f.id === c.devotion!.factionId) : undefined;
+}
+
+/** Ties a devotion to a tracked faction (the god's temple or church), or unties it. */
+export const linkFaith = act((d, _ctx, charId: string, factionId: string | null) => {
+  const c = charById(d, charId);
+  if (!c?.devotion) return;
+  c.devotion.factionId = factionId && d.factions.some((f) => f.id === factionId) ? factionId : null;
+  const f = faithOf(d, c);
+  if (f) log(d, `${c.name}'s deeds for ${c.devotion.deity} now count toward renown with ${f.name} (table rule).`);
+});
+
+/** Starts tracking the god's faith as a faction. Clerics, Paladins and acolytes are already members (renown 1). */
+export const trackFaith = act((d, _ctx, charId: string, name: string) => {
+  const c = charById(d, charId);
+  if (!c?.devotion) return;
+  const tie = Piety.divineTie(c);
+  const renown = tie === 'cleric' || tie === 'paladin' || tie === 'acolyte' ? 1 : 0;
+  const f: Faction = { id: uid(), name: name.trim() || `The faith of ${c.devotion.deity}`, renown, notes: `The church of ${c.devotion.deity}.` };
+  d.factions.push(f);
+  c.devotion.factionId = f.id;
+  log(d, `${f.name} is tracked as a faction (renown ${renown}); ${c.name}'s deeds for ${c.devotion.deity} count toward it (table rule).`);
+});
+
+/** Grants the gift a rank earned: a Charm or Blessing on the Gifts card, remembered as the god's. */
+export const grantPietyGift = act((d, _ctx, charId: string, rank: Piety.GiftRank, name: string, notes: string, type?: 'Charm' | 'Blessing') => {
+  const c = charById(d, charId);
+  const dv = c?.devotion;
+  if (!c || !dv || !(dv.giftsDue ?? []).includes(rank) || !name.trim()) return;
+  const g = Piety.RANK_GIFT[rank];
+  const kind = type ?? g.type;
+  const id = grantGiftMut(d, c.id, kind, name.trim(), kind === 'Charm' ? Math.max(1, g.uses) : 0, [`From ${dv.deity}.`, notes.trim()].filter(Boolean).join(' '));
+  if (!id) return;
+  dv.giftIds = [...(dv.giftIds ?? []), id];
+  dv.giftsDue = (dv.giftsDue ?? []).filter((x) => x !== rank);
+  dv.history = [`${stamp(d)}: ${kind} of ${name.trim()} from ${dv.deity}`, ...dv.history].slice(0, 30);
+});
+
+/** The DM settles a rank's gift another way (for the Chosen, the god acting directly once). */
+export const settlePietyGift = act((d, _ctx, charId: string, rank: Piety.GiftRank, how: string) => {
+  const c = charById(d, charId);
+  const dv = c?.devotion;
+  if (!c || !dv || !(dv.giftsDue ?? []).includes(rank)) return;
+  dv.giftsDue = (dv.giftsDue ?? []).filter((x) => x !== rank);
+  const what = how.trim() || 'a guaranteed Divine Intervention, once';
+  dv.history = [`${stamp(d)}: ${what} from ${dv.deity}`, ...dv.history].slice(0, 30);
+  log(d, `${dv.deity} grants ${c.name} ${what} (table rule).`, 'good');
+});
+
+/** Starts (or edits) a character's devotion to a god. A new devotion starts where the table rule says unless a score is given. */
+export const setDevotion = act((d, _ctx, charId: string, o: { deity: string; ideals?: string; anathema?: string; piety?: number }) => {
+  const c = charById(d, charId);
+  const deity = o.deity.trim();
+  if (!c || !deity) return;
+  if (c.devotion) {
+    Object.assign(c.devotion, { deity, ideals: o.ideals ?? c.devotion.ideals, anathema: o.anathema ?? c.devotion.anathema });
+    return;
+  }
+  const piety = o.piety ?? Piety.startingPiety(Piety.divineTie(c));
+  c.devotion = { deity, ideals: o.ideals?.trim() ?? '', anathema: o.anathema?.trim() ?? '', piety, best: piety, lastDevotionDay: d.dayIndex, history: [`${stamp(d)}: devoted to ${deity}, piety ${piety}`] };
+  log(d, `${c.name} serves ${deity}: piety ${piety} (${Piety.pietyRank(piety).label}; table rule).`);
+});
+
+export const removeDevotion = act((d, _ctx, charId: string) => {
+  const c = charById(d, charId);
+  if (!c?.devotion) return;
+  log(d, `${c.name} no longer tracks piety with ${c.devotion.deity}.`);
+  c.devotion = null;
+});
+
+/** A deed for or against the god (the DM's call), weighed like DMG renown. */
+export const pietyDeed = act((d, _ctx, charId: string, delta: number, why: string) => {
+  const c = charById(d, charId);
+  if (!c?.devotion || !delta) return;
+  const text = why.trim() || (delta > 0 ? 'a deed in the god’s name' : 'a deed against the god’s ideals');
+  pietyChange(d, c, Math.round(delta), text);
+  const f = d.settings.piety ? faithOf(d, c) : undefined;
+  const r = Piety.faithRenownDelta(Math.round(delta));
+  if (f && r > 0) gainRenown(d, f, r, `${c.name}: ${text}`);
+  if (f && r < 0) loseRenown(d, f, -r, `${c.name}: ${text}`, true);
+});
+
+/** Why a costly offering can't be made now, or null if it can. */
+export function offeringBlocked(s: State, c: Character): string | null {
+  const dv = c.devotion;
+  if (!dv) return 'No god chosen.';
+  if (dv.lastOfferingDay != null && s.dayIndex - dv.lastOfferingDay < Piety.OFFERING_EVERY_DAYS) return `The last offering was ${s.dayIndex - dv.lastOfferingDay} day(s) ago; the god expects devotion, not a stream of coin (once each ${Piety.OFFERING_EVERY_DAYS} days).`;
+  if (c.gp < Piety.offeringGp(c.level)) return `An offering worth notice costs ${fmtGp(Piety.offeringGp(c.level))} (${Piety.OFFERING_GP_PER_LEVEL} GP per level).`;
+  return null;
+}
+
+/** A costly offering at the god's altar: 25 GP per level, once each 30 days, worth +1 piety up to Devoted. */
+export const makeOffering = act((d, _ctx, charId: string) => {
+  const c = charById(d, charId);
+  const dv = c?.devotion;
+  if (!c || !dv || offeringBlocked(d, c)) return;
+  const gp = Piety.offeringGp(c.level);
+  payGold(d, [c.id], gp, `an offering to ${dv.deity}`);
+  dv.lastOfferingDay = d.dayIndex;
+  dv.lastDevotionDay = d.dayIndex;
+  const gain = Piety.cappedGain(dv.piety, 1, Piety.OFFERING_PIETY_CAP);
+  if (gain) pietyChange(d, c, gain, `a costly offering of ${fmtGp(gp)}`);
+  else log(d, `${c.name} lays ${fmtGp(gp)} on the altar of ${dv.deity}. The priests are grateful, but gold alone won’t raise ${c.name} higher in the god’s eyes (table rule: offerings count up to piety ${Piety.OFFERING_PIETY_CAP}).`);
+});
+
+/** Atonement (a penance or quest the DM set) is done: an estranged character is welcomed back at piety 0. */
+export const atone = act((d, _ctx, charId: string, why: string) => {
+  const c = charById(d, charId);
+  const dv = c?.devotion;
+  if (!c || !dv || dv.piety >= 0) return;
+  pietyChange(d, c, Piety.ATONED_PIETY - dv.piety, why.trim() || 'atonement completed');
+});
+
+/** Religious Service downtime: +1 piety a week, up to Favored; after that, the service still counts as devotion. */
+function templeServicePiety(s: State, c: Character, weeks: number): void {
+  const dv = c.devotion;
+  if (!dv) return;
+  dv.lastDevotionDay = s.dayIndex;
+  const gain = Piety.cappedGain(dv.piety, Piety.SERVICE_PIETY_PER_WEEK * weeks, Piety.SERVICE_PIETY_CAP);
+  if (gain) pietyChange(s, c, gain, `${weeks} week${weeks > 1 ? 's' : ''} of service in the temple`);
+  // DMG group involvement: with renown 1+, days among the faith's members count toward the next point.
+  const f = faithOf(s, c);
+  if (!f || f.renown < 1) return;
+  f.involvementDays = (f.involvementDays ?? 0) + Piety.SERVICE_INVOLVEMENT_DAYS_PER_WEEK * weeks;
+  while (f.involvementDays >= involvementDaysNeeded(f)) {
+    f.involvementDays -= involvementDaysNeeded(f);
+    gainRenown(s, f, 1, `${c.name}'s weeks of service in the temple`);
+  }
+}
+
+/** A tithe paid counts as devotion; one missed costs piety. */
+function titheKept(s: State, c: Character, paid: boolean, collector: string): void {
+  if (!c.devotion) return;
+  if (paid) c.devotion.lastDevotionDay = s.dayIndex;
+  else pietyChange(s, c, -Piety.MISSED_TITHE_PIETY, `the tithe to ${collector} went unpaid`);
+}
+
+/** Neglect: 60 days with nothing done for the god costs 1 piety, but never takes it below 0. */
+function pietyDaily(s: State): void {
+  if (!s.settings.piety) return;
+  const today = s.dayIndex + 1;
+  for (const c of s.characters) {
+    const dv = c.devotion;
+    if (!dv || !alive(c) || today - dv.lastDevotionDay < Piety.NEGLECT_DAYS) continue;
+    dv.lastDevotionDay = today;
+    if (dv.piety > 0) pietyChange(s, c, -1, `${Piety.NEGLECT_DAYS} days with nothing done for the god`);
+  }
+}
