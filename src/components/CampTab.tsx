@@ -18,7 +18,7 @@ import { ALCHEMIST, ALCHEMIST_FIRE_DC, IMPROVISED_COOK_DC, IMPROVISED_HARVEST_DC
 import { WaysAround } from './WaysAround';
 import { useGate } from './gate';
 import { ATTITUDE_LABEL, GIFT_MIN_GP, HELPED_TRUST, RECRUIT_MAX_FAILS, recruitCue, recruitDC, TRUST_NEEDED, type RecruitAttitude } from '../rules/recruiting';
-import { ROLE_LABEL, SIDEKICK_CLASS_LABEL, SIDEKICK_KIND_IDS, SIDEKICK_KINDS, type SidekickKind } from '../rules/sidekicks';
+import { ROLE_LABEL, SIDEKICK_ANIMALS, SIDEKICK_CLASS_LABEL, SIDEKICK_KIND_IDS, SIDEKICK_KINDS, type SidekickKind } from '../rules/sidekicks';
 import type { Recruit } from '../state/types';
 import { SRD_POOL } from '../rules/encounters';
 import { AID_LABEL, bigEnoughToRide, canBeSidekick, canTame, charmSpellsFor, currentDC, NO_AIDS, TAME_MIN_DC, TRUST_PER_DAY_MAX, sessionAttitude, STABLE_DAYS, TAMED_RULES, tameCheck, tameDC, TAME_MAX_FAILS, TAME_MAX_INT, TAMEABLE_TYPES, TRAINING_LABEL, trainingNeeded, trustCue, trustNeeded, type Attitude, type TameAids, type TameTraining } from '../rules/taming';
@@ -726,7 +726,9 @@ function RecruitCard() {
   const s = useGame();
   const pcs = s.characters.filter((c) => c.kind === 'pc' && !c.sidekick && E.alive(c));
   const recruits = s.recruits ?? [];
-  const [kind, setKind] = useState<SidekickKind>('scout');
+  const [kind, setKind] = useState<SidekickKind | 'animal'>('scout');
+  const [animalName, setAnimalName] = useState(SIDEKICK_ANIMALS[1].name);
+  const [temper, setTemper] = useState<'attacker' | 'defender'>('attacker');
   const [name, setName] = useState('');
   const [attitude, setAttitude] = useState<RecruitAttitude>('indifferent');
   const [contactId, setContactId] = useState('');
@@ -734,7 +736,11 @@ function RecruitCard() {
   const recruiterId = pcs.find((c) => c.id === who)?.id ?? pcs[0]?.id ?? '';
   const contacts = (s.contacts ?? []).filter((k) => k.bond >= 0);
   const contact = contacts.find((k) => k.id === contactId);
-  const k = SIDEKICK_KINDS[kind];
+  const beast = SIDEKICK_ANIMALS.find((a) => a.name === animalName) ?? SIDEKICK_ANIMALS[0];
+  const k =
+    kind === 'animal'
+      ? { label: beast.name, blurb: '', cls: 'warrior' as const, role: temper, creature: beast.name, cr: beast.cr, hp: beast.hp, con: beast.con, int: beast.int, passivePerception: beast.passivePerception }
+      : SIDEKICK_KINDS[kind];
   return (
     <Card title="Winning someone over">
       {recruits.map((r) => (
@@ -744,31 +750,47 @@ function RecruitCard() {
       <div className="form-row">
         <Select label="From a contact" value={contactId} onChange={(v) => (setContactId(v), setName(contacts.find((x) => x.id === v)?.name ?? name))} options={[{ value: '', label: 'No: someone new' }, ...contacts.map((x) => ({ value: x.id, label: `${x.name} (bond ${x.bond >= 0 ? '+' : ''}${x.bond})` }))]} />
         <Text label="Name" value={name} onChange={setName} placeholder="What they're called" />
-        <Select label="What are they?" value={kind} onChange={setKind} options={SIDEKICK_KIND_IDS.map((id) => ({ value: id, label: `${SIDEKICK_KINDS[id].label}: ${SIDEKICK_KINDS[id].blurb}` }))} />
+        <Select label="What are they?" value={kind} onChange={setKind} options={[...SIDEKICK_KIND_IDS.map((id) => ({ value: id as SidekickKind | 'animal', label: `${SIDEKICK_KINDS[id].label}: ${SIDEKICK_KINDS[id].blurb}` })), { value: 'animal', label: 'An animal (talked round with Speak with Animals)' }]} />
+        {kind === 'animal' && <Select label="Animal" value={beast.name} onChange={setAnimalName} options={SIDEKICK_ANIMALS.map((a) => ({ value: a.name, label: `${a.name} (CR ${a.cr}, ${a.size}, ${a.hp} HP)` }))} />}
+        {kind === 'animal' && <Select label="Temperament" value={temper} onChange={setTemper} options={[{ value: 'attacker', label: 'Fierce: Attacker' }, { value: 'defender', label: 'Protective: Defender' }]} />}
       </div>
       <div className="form-row">
         {!contact && <Select label="Their attitude" value={attitude} onChange={setAttitude} options={(Object.keys(ATTITUDE_LABEL) as RecruitAttitude[]).map((a) => ({ value: a, label: ATTITUDE_LABEL[a] }))} />}
         <Select label="Doing the talking" value={recruiterId} onChange={setWho} options={pcs.map((c) => ({ value: c.id, label: c.name }))} />
       </div>
       <p className="small">
-        A {k.label.toLowerCase()} would join as a <b>{SIDEKICK_CLASS_LABEL[k.cls]}</b> sidekick{k.role ? ` (${ROLE_LABEL[k.role]})` : ''} ({k.creature} stat block, CR {k.cr}).{' '}
+        {kind === 'animal' ? (
+          <>
+            With no language of its own, a {beast.name.toLowerCase()} can only join as a <b>Warrior</b> sidekick (Tasha&apos;s), {ROLE_LABEL[temper]}. Every session needs Speak with Animals on the talker (a ritual), or a firbolg.{' '}
+          </>
+        ) : (
+          <>
+            A {k.label.toLowerCase()} would join as a <b>{SIDEKICK_CLASS_LABEL[k.cls]}</b> sidekick{k.role ? ` (${ROLE_LABEL[k.role]})` : ''} ({k.creature} stat block, CR {k.cr}).{' '}
+          </>
+        )}
         {contact
           ? `${contact.name} already knows the party: they start ${contact.bond >= 1 ? 'Friendly' : 'Indifferent'} with ${Math.max(0, contact.bond)} trust.`
           : `${ATTITUDE_LABEL[attitude]}: DC ${recruitDC(attitude, k.int)} a day, ${TRUST_NEEDED[attitude]} trust to win over${attitude === 'hostile' ? ', after first calming them' : ''}.`}
       </p>
       <button
         className="primary"
-        disabled={!recruiterId || !(name.trim() || contact)}
+        disabled={!recruiterId || !(name.trim() || contact || kind === 'animal')}
         onClick={() =>
           dispatch((st, cx) =>
-            E.startRecruit(st, cx, { name: name.trim() || contact?.name || k.label, creature: k.creature, cr: k.cr, size: 'Medium', type: 'humanoid', int: k.int, baseHp: k.hp, conScore: k.con, passivePerception: k.passivePerception, darkvision: 0, speaks: true, cls: k.cls, role: k.role, attitude, recruiterId, ...(contact ? { contactId: contact.id } : {}) }),
+            E.startRecruit(
+              st,
+              cx,
+              kind === 'animal'
+                ? { name: name.trim() || beast.name, creature: beast.name, cr: beast.cr, size: beast.size, type: 'beast', animal: true, int: beast.int, baseHp: beast.hp, conScore: beast.con, passivePerception: beast.passivePerception, darkvision: beast.darkvision, speaks: false, cls: 'warrior', role: temper, attitude, recruiterId }
+                : { name: name.trim() || contact?.name || k.label, creature: k.creature, cr: k.cr, size: 'Medium', type: 'humanoid', int: k.int, baseHp: k.hp, conScore: k.con, passivePerception: k.passivePerception, darkvision: 0, speaks: true, cls: k.cls, role: k.role, attitude, recruiterId, ...(contact ? { contactId: contact.id } : {}) },
+            ),
           )
         }
       >
         Try to win them over
       </button>
       <Rule>
-        Table rule, built on the 2024 DMG Influence action and Tasha&apos;s rule that a sidekick must be a friend: spend an hour a day in their company and make an Influence check (Persuasion, Performance or Deception, whichever fits) against DC 15 or their Intelligence, whichever is higher (10 once Friendly; a Hostile one must first be calmed at DC 20). A success adds 1 trust, beating the DC by 5 adds 2; a gift of {GIFT_MIN_GP} GP or more, or danger faced together, gives Advantage. Doing something real for them is worth {HELPED_TRUST} trust once. Failing by 5 or more is a bad day; {RECRUIT_MAX_FAILS} in a row and they send the party away. Once won over they join as what they are, a Tasha&apos;s sidekick at the party&apos;s average level, for a share of the road or for pay. Animals are tamed, not talked round.
+        Table rule, built on the 2024 DMG Influence action and Tasha&apos;s rule that a sidekick must be a friend: spend an hour a day in their company and make an Influence check (Persuasion, Performance or Deception, whichever fits) against DC 15 or their Intelligence, whichever is higher (10 once Friendly; a Hostile one must first be calmed at DC 20). A success adds 1 trust, beating the DC by 5 adds 2; a gift of {GIFT_MIN_GP} GP or more, or danger faced together, gives Advantage. Doing something real for them is worth {HELPED_TRUST} trust once. Failing by 5 or more is a bad day; {RECRUIT_MAX_FAILS} in a row and they send the party away. Once won over they join as what they are, a Tasha&apos;s sidekick at the party&apos;s average level, for a share of the road or for pay. An animal can be talked round too with Speak with Animals (2024 PHB: any Influence skill works with Beasts), and joins as a Warrior; without the spell, tame it instead.
       </Rule>
     </Card>
   );
@@ -783,6 +805,7 @@ function RecruitRow({ r }: { r: Recruit }) {
   const [danger, setDanger] = useState(false);
   const [helped, setHelped] = useState('');
   const [wage, setWage] = useState(0);
+  const [speaking, setSpeaking] = useState(false);
   const today = r.lastSessionDay === s.dayIndex;
   const whoId = pcs.find((c) => c.id === who)?.id ?? pcs[0]?.id ?? '';
   return (
@@ -797,7 +820,7 @@ function RecruitRow({ r }: { r: Recruit }) {
       <p className="small">{recruitCue(r.name, r.trust, r.needed, r.attitude)}</p>
       {r.willing ? (
         <div className="btn-row tight">
-          <Num label="Asks for pay a day" value={wage} onChange={(v) => setWage(Math.max(0, v))} min={0} suffix="GP" width={3} />
+          {!r.animal && <Num label="Asks for pay a day" value={wage} onChange={(v) => setWage(Math.max(0, v))} min={0} suffix="GP" width={3} />}
           <button className="primary" onClick={() => dispatch((st, cx) => E.recruitJoin(st, cx, r.id, wage, 'party'))}>
             Welcome {r.name} to the party
           </button>
@@ -809,7 +832,8 @@ function RecruitRow({ r }: { r: Recruit }) {
             <Num label="Influence bonus" value={bonus} onChange={(v) => setBonus(Math.round(v))} width={2} />
             <Num label="Gift" value={gift} onChange={(v) => setGift(Math.max(0, v))} min={0} suffix="GP" width={3} />
             <Toggle checked={danger} onChange={setDanger} label="Faced danger together" />
-            <button className="small" disabled={today || !whoId} title={today ? 'Once a day' : ''} onClick={() => dispatch((st, cx) => E.recruitSession(st, cx, r.id, whoId, bonus, { giftGp: gift, sharedDanger: danger }))}>
+            {r.animal && <Toggle checked={speaking} onChange={setSpeaking} label="Speak with Animals" />}
+            <button className="small" disabled={today || !whoId} title={today ? 'Once a day' : ''} onClick={() => dispatch((st, cx) => E.recruitSession(st, cx, r.id, whoId, bonus, { giftGp: gift, sharedDanger: danger, speaking }))}>
               Spend time together (1 h, DC {recruitDC(r.attitude, r.int)})
             </button>
           </div>

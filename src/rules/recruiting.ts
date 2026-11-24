@@ -32,7 +32,12 @@ export interface RecruitAids {
   giftGp: number;
   /** The party stood by them in danger since the last session. */
   sharedDanger: boolean;
+  /** Speak with Animals is active on the talker (2024 PHB: any Influence skill works with Beasts). Needed to talk an animal round. */
+  speaking?: boolean;
 }
+
+/** Who can talk to animals without the spell: a firbolg's Speech of Beast and Leaf. */
+export const TALKS_TO_BEASTS = /firbolg|speech of beast|speak with (small )?(beasts|animals)/i;
 
 /** Table rule: a gift of at least this much, or danger faced together, gives Advantage on the session's check. */
 export const GIFT_MIN_GP = 5;

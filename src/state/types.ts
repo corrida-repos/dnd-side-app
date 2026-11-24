@@ -1110,6 +1110,8 @@ export interface Recruit {
   speaks: boolean;
   /** Creature type from the stat block, when known. */
   type?: string;
+  /** An animal: talked round only with Speak with Animals, and joins as a Warrior. */
+  animal?: boolean;
   attitude: import('../rules/recruiting').RecruitAttitude;
   trust: number;
   needed: number;

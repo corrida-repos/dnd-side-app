@@ -171,3 +171,36 @@ export const SIDEKICK_KINDS: Record<SidekickKind, SidekickKindInfo> = {
 };
 
 export const SIDEKICK_KIND_IDS = Object.keys(SIDEKICK_KINDS) as SidekickKind[];
+
+// ---------------------------------------------------------------- animals that can be won over (Speak with Animals)
+
+export interface SidekickAnimal {
+  name: string;
+  cr: string;
+  size: Size;
+  hp: number;
+  con: number;
+  int: number;
+  passivePerception: number;
+  darkvision: number;
+}
+
+/** Common animal companions of CR 1/2 or lower (2024 Monster Manual). With no language, an animal can only be a Warrior (Tasha's). */
+export const SIDEKICK_ANIMALS: SidekickAnimal[] = [
+  { name: 'Mastiff', cr: '1/8', size: 'Medium', hp: 5, con: 12, int: 3, passivePerception: 15, darkvision: 60 },
+  { name: 'Wolf', cr: '1/4', size: 'Medium', hp: 11, con: 12, int: 3, passivePerception: 15, darkvision: 60 },
+  { name: 'Panther', cr: '1/4', size: 'Medium', hp: 13, con: 10, int: 3, passivePerception: 14, darkvision: 60 },
+  { name: 'Boar', cr: '1/4', size: 'Medium', hp: 13, con: 14, int: 2, passivePerception: 9, darkvision: 0 },
+  { name: 'Giant Badger', cr: '1/4', size: 'Medium', hp: 15, con: 17, int: 2, passivePerception: 13, darkvision: 60 },
+  { name: 'Giant Wolf Spider', cr: '1/4', size: 'Medium', hp: 11, con: 13, int: 3, passivePerception: 13, darkvision: 60 },
+  { name: 'Riding Horse', cr: '1/4', size: 'Large', hp: 13, con: 12, int: 2, passivePerception: 10, darkvision: 0 },
+  { name: 'Black Bear', cr: '1/2', size: 'Medium', hp: 19, con: 14, int: 2, passivePerception: 15, darkvision: 60 },
+  { name: 'Ape', cr: '1/2', size: 'Medium', hp: 19, con: 14, int: 6, passivePerception: 13, darkvision: 0 },
+  { name: 'Giant Goat', cr: '1/2', size: 'Large', hp: 19, con: 12, int: 3, passivePerception: 13, darkvision: 60 },
+  { name: 'Warhorse', cr: '1/2', size: 'Large', hp: 19, con: 13, int: 2, passivePerception: 11, darkvision: 0 },
+  { name: 'Crocodile', cr: '1/2', size: 'Large', hp: 13, con: 13, int: 2, passivePerception: 10, darkvision: 0 },
+  { name: 'Hawk', cr: '0', size: 'Tiny', hp: 1, con: 8, int: 2, passivePerception: 16, darkvision: 0 },
+  { name: 'Owl', cr: '0', size: 'Tiny', hp: 1, con: 8, int: 2, passivePerception: 15, darkvision: 120 },
+  { name: 'Raven', cr: '0', size: 'Tiny', hp: 2, con: 10, int: 5, passivePerception: 13, darkvision: 0 },
+  { name: 'Cat', cr: '0', size: 'Tiny', hp: 2, con: 10, int: 3, passivePerception: 13, darkvision: 60 },
+];

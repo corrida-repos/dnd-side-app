@@ -67,6 +67,27 @@ describe('winning someone over', () => {
     expect(t.recruits![0]).toMatchObject({ attitude: 'indifferent', trust: 2 });
   });
 
+  it('an animal can be talked round with Speak with Animals, and joins as a Warrior companion', () => {
+    let s = party();
+    const wolf = { name: 'Grey', creature: 'Wolf', cr: '1/4', size: 'Medium' as const, type: 'beast', animal: true, int: 3, baseHp: 11, conScore: 12, passivePerception: 15, darkvision: 60, speaks: false, attitude: 'indifferent' as const, cls: 'warrior' as const, role: 'attacker' as const, recruiterId: s.characters[0].id };
+    s = E.startRecruit(s, ctx(), wolf);
+    const id = s.recruits![0].id;
+    s = E.recruitSession(s, ctx(0.99), id, s.characters[0].id, 5, noAid);
+    expect(s.recruits![0].trust).toBe(0); // can't understand each other
+    s = E.recruitSession(s, ctx(0.99), id, s.characters[0].id, 5, { ...noAid, speaking: true });
+    s = E.advance(s, ctx(), 24 * 60);
+    s = E.recruitSession(s, ctx(0.99), id, s.characters[0].id, 5, { ...noAid, speaking: true });
+    expect(s.recruits![0].willing).toBe(true);
+    s = E.recruitJoin(s, ctx(0.5), id, 10, 'party');
+    const k = s.characters.find((c) => c.sidekick)!;
+    expect(k).toMatchObject({ name: 'Grey', kind: 'mount', level: 3 });
+    expect(k.sidekick).toMatchObject({ cls: 'warrior', wageGp: 0 });
+    // and no animal Expert
+    let t = party();
+    t = E.startRecruit(t, ctx(), { ...wolf, recruiterId: t.characters[0].id, cls: 'expert', role: null });
+    expect(t.recruits ?? []).toHaveLength(0);
+  });
+
   it('won’t court anyone above CR 1/2', () => {
     let s = party();
     s = E.startRecruit(s, ctx(), scout(s, { cr: '2' }));
