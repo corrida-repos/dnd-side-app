@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react';
 import type { State } from './types';
 import { createDefaultState, newCharacter, SAVE_VERSION } from './defaults';
 import { coinsFor } from '../rules/coins';
+import { MECHANICS, applyTier } from '../rules/detailTiers';
 import { ensureWeather, type Ctx } from './engine';
 import { TERRAIN_FOR_CLIMATE } from '../rules/terrain';
 
@@ -22,6 +23,8 @@ function migrate(raw: unknown): State | null {
       const st = { ...base.settings, weatherDamage: true, ...parsed.settings };
       // Version 2 moved lingering injuries and madness to the Brutal tier: saves that only had them on by default turn them off.
       if ((parsed.version ?? 1) < 2 && !st.gearWear) Object.assign(st, { lingeringInjuries: false, madness: false });
+      // The former Light preset disabled every tier switch and both supplemental Bastion books.
+      if ((parsed.version ?? 1) < 3 && st.facilityBooks?.length === 0 && MECHANICS.every((m) => !st[m.key])) applyTier(st, 1);
       return st;
     })(),
     travel: { ...base.travel, ...parsed.travel },

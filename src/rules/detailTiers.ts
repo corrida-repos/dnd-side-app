@@ -1,7 +1,7 @@
 import type { Settings } from '../state/types';
 import { FACILITY_BOOKS } from './bastion';
 
-/** Rules from Wizards of the Coast’s 5.5e books enter at Standard. Legacy and table rules enter at higher tiers. */
+/** Light includes 5.5e player options. Standard adds 5.5e checks, costs and tracking. Higher tiers add legacy and table rules. */
 export type TierId = 1 | 2 | 3 | 4 | 5;
 
 export interface Tier {
@@ -17,31 +17,31 @@ export const TIERS: Tier[] = [
   {
     id: 1,
     name: 'Light',
-    tagline: 'Time, rests and timers run themselves with minimal bookkeeping.',
-    load: 'Almost no extra rolls or entries: skip ahead freely.',
+    tagline: 'Core tracking and 5.5e player options, including Circle Magic and all supported Bastion facilities.',
+    load: 'The clock, rests and timers run with minimal bookkeeping.',
   },
   {
     id: 2,
     name: 'Standard',
-    tagline: 'Rules from Wizards of the Coast’s 5.5e core and supplemental books, including supplemental Bastion facilities and Circle Magic.',
-    load: 'A few automatic saves a day, meals to log, coins spent. The app rolls most of it.',
+    tagline: 'Adds 5.5e requirements for survival, travel, carrying gear and paying costs.',
+    load: 'Log meals and supplies, pay expenses, and roll saves and checks as conditions call for them.',
   },
   {
     id: 3,
     name: 'Gritty',
-    tagline: 'Legacy and table rules on top: campfires, cold nights, sidekicks and downtime complications.',
+    tagline: 'Adds legacy and table rules for camp, sidekicks and downtime.',
     load: 'Daily chores at camp and in town, more saves, closer inventory keeping.',
   },
   {
     id: 4,
     name: 'Hardcore',
-    tagline: 'The fiddliest rules on top of Gritty: weather modifying every damage die, secret and one-shot appraisals, armor that spoils sleep.',
+    tagline: 'Adds detailed rules for weather damage, appraisals and sleeping in armor.',
     load: 'Adds work in combat and at every sale. For tables that enjoy the simulation.',
   },
   {
     id: 5,
     name: 'Brutal',
-    tagline: 'The hardest: wounds that linger for weeks, minds that break, and gear that wears out on the road.',
+    tagline: 'Adds lingering injuries, madness, and wear on gear and ships.',
     load: 'Injuries to heal, madness to play out and gear to keep up, on top of everything in Hardcore.',
   },
 ];
@@ -60,12 +60,15 @@ export type Mechanic = {
   label: string;
   cost: string;
 } & (
-  | { source: PublishedSource; tier: 2 }
+  | { source: PublishedSource; tier: 1 | 2 }
   | { source: OtherSource; tier: 3 | 4 | 5 }
 );
 
 export const MECHANICS: Mechanic[] = [
-  // ---- Standard: published 5.5e mechanics.
+  // ---- Light: published 5.5e player options.
+  { key: 'circleMagic', tier: 1, area: 'Magic', source: 'Forgotten Realms: Heroes of Faerûn', label: 'Circle Magic: secondary casters can join eligible spells with a casting time of 1 minute or longer', cost: 'When the party casts a spell as a circle, choose the secondary casters and its effect.' },
+
+  // ---- Standard: published 5.5e checks, costs and bookkeeping.
   { key: 'foodAndWater', tier: 2, area: 'Survival', source: '2024 DMG', label: 'Food and water: dehydration and malnutrition at midnight', cost: 'Meals and drinks to log for every character and mount each day; missing them gives Exhaustion that only full meals can lift.' },
   { key: 'extremeWeather', tier: 2, area: 'Weather', source: '2024 DMG', label: 'Extreme cold and heat: hourly Constitution saves', cost: 'A save per character per hour outdoors at 0 °F or below, or 100 °F or above. Rare in mild climates, constant in harsh ones.' },
   { key: 'forcedMarch', tier: 2, area: 'Travel', source: '2024 PHB', label: 'Forced march: a Con save each hour past 8 hours of travel', cost: 'A save per character per extra hour, only when the party pushes on.' },
@@ -78,7 +81,6 @@ export const MECHANICS: Mechanic[] = [
   { key: 'encounters', tier: 2, area: 'Travel', source: '2024 DMG', label: 'Random encounter checks by the location’s danger', cost: 'Checks roll by themselves, but every encounter they find is a scene to run.' },
   { key: 'coinWeight', tier: 2, area: 'Gear', source: '2024 PHB', label: 'Coins count toward carried weight (50 per pound)', cost: 'Big hoards need carrying, banking or changing into gems.' },
   { key: 'tentSpace', tier: 2, area: 'Camp', source: '2024 PHB', label: 'A Tent sleeps two: anyone without a place sleeps in the open', cost: 'Tents to count against the party when camping in them.' },
-  { key: 'circleMagic', tier: 2, area: 'Magic', source: 'Forgotten Realms: Heroes of Faerûn', label: 'Circle Magic: secondary casters can join eligible spells with a casting time of 1 minute or longer', cost: 'When the party casts a spell as a circle, choose the secondary casters and its effect.' },
 
   // ---- Gritty: legacy and table rules.
   { key: 'deathSavesResolve', tier: 3, area: 'Rest', source: 'Table rule', label: 'Time can’t pass while someone is dying: their death saves roll at once', cost: 'Saves work: skipping time never leaves a character stuck at 0 HP waiting for rolls.' },
@@ -159,7 +161,7 @@ export const ON_DEMAND: string[] = [
 /** The switches and supplemental facility catalog included at this tier. */
 export function tierPreset(tier: TierId): Pick<Settings, SwitchKey | 'facilityBooks'> {
   const switches = Object.fromEntries(MECHANICS.map((m) => [m.key, m.tier <= tier])) as Pick<Settings, SwitchKey>;
-  return { ...switches, facilityBooks: tier >= 2 ? [...FACILITY_BOOKS] : [] };
+  return { ...switches, facilityBooks: [...FACILITY_BOOKS] };
 }
 
 /** Applies a preset while preserving numeric thresholds, DM rulings and other book selections. */
@@ -170,7 +172,7 @@ export function applyTier(settings: Settings, tier: TierId): void {
 function tierDifferences(settings: Settings, tier: TierId): number {
   const switches = MECHANICS.filter((m) => !!settings[m.key] !== (m.tier <= tier)).length;
   const books = settings.facilityBooks ?? FACILITY_BOOKS;
-  const supplementalFacilities = FACILITY_BOOKS.filter((book) => books.includes(book) !== (tier >= 2)).length;
+  const supplementalFacilities = FACILITY_BOOKS.filter((book) => !books.includes(book)).length;
   return switches + supplementalFacilities;
 }
 

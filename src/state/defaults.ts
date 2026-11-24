@@ -8,7 +8,7 @@ import { autoAssign, watchCapacity } from '../rules/watch';
 import { coinsFor } from '../rules/coins';
 import type { Rng } from '../rules/dice';
 
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 
 export const uid = (): string => Math.random().toString(36).slice(2, 10);
 

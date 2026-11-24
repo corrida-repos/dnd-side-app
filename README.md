@@ -19,15 +19,15 @@ A control bar stays on screen on every tab: the time, +10 minutes, +1 hour, +4 h
 
 ## Levels of detail
 
-**Settings → Level of detail** groups switchable mechanics by source. Standard includes supported mechanics from all Wizards of the Coast 5.5e books, including supplements and setting books. Gritty, Hardcore and Brutal add legacy and table rules.
+**Settings → Level of detail** offers five cumulative presets. Light includes supported 5.5e player options. Standard adds 5.5e requirements and consequences. The three higher levels add increasingly involved legacy and table rules.
 
-| Tier | What it enables |
+| Tier | What it adds |
 | --- | --- |
-| **1. Light** | Basic tracking for the clock, rests, weather and timers. |
-| **2. Standard** | Published 5.5e mechanics, including food and water, extreme weather, forced marches, carrying capacity, coin weight, tent capacity and Circle Magic from *Forgotten Realms: Heroes of Faerûn*. Includes Bastion facilities from the 2024 DMG, *Heroes of Faerûn*, and *Eberron: Forge of the Artificer*. |
-| **3. Gritty** (new games start here) | Options such as automatic death-save resolution, campfire protection, raw food and unsafe water, weapon and armor training, and legacy sidekicks and downtime outcomes. |
-| **4. Hardcore** | Additional weather and appraisal rules, legacy gear and clothing effects, and penalties for sleeping in armor. |
-| **5. Brutal** | Legacy lingering injuries and madness, plus table rules for gear and hull wear. |
+| **1. Light** | Core tracking for the clock, rests, weather and timers, plus Circle Magic and Bastion facilities from the 2024 DMG, *Forgotten Realms: Heroes of Faerûn*, and *Eberron: Forge of the Artificer*. |
+| **2. Standard** | Food and water, extreme weather saves, forced marches, navigation checks, encounters, carrying capacity, coin weight, tent capacity, expenses, spell components and consumable gear. |
+| **3. Gritty** (new games start here) | Campfire protection, unsafe food and water, weapon and armor training, legacy sidekicks and downtime complications. |
+| **4. Hardcore** | Weather modifiers to damage rolls, stricter appraisals and penalties for sleeping in armor. |
+| **5. Brutal** | Lingering injuries, madness, and wear on gear and ships. |
 
 You can undo a preset change or adjust individual switches. Encounter book selections, numeric thresholds and DM choices such as allowing extra crafting helpers are campaign settings. Bastions, crafting, diseases, poisons and hunting are available when the table uses them.
 

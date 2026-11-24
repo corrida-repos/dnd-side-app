@@ -1204,7 +1204,7 @@ export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activi
   }
 }
 
-/** Sets every tiered rule switch to match a level of detail (Light, Standard, Gritty or Hardcore). */
+/** Sets every tiered rule switch to match the selected level of detail. */
 export const setDetailTier = act((d, _ctx, tier: TierId) => {
   applyTier(d.settings, tier);
   log(d, `Level of detail set to ${tierName(tier)}: ${TIERS.find((t) => t.id === tier)!.tagline}`);

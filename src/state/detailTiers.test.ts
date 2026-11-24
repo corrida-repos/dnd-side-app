@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as E from './engine';
 import { createDefaultState, newCharacter } from './defaults';
 import type { State } from './types';
+import { getState, importState, undo } from './store';
 import { MECHANICS, TIERS, closestTier, matchTier, tierPreset } from '../rules/detailTiers';
 
 const ctx = (v = 0.5): E.Ctx => ({ rng: () => v });
@@ -54,13 +55,29 @@ describe('levels of detail', () => {
     });
     const light = E.setDetailTier(s, ctx(), 1);
     expect(matchTier(light.settings)).toBe(1);
-    expect(light.settings).toMatchObject({ foodAndWater: false, encounters: false, deathSavesResolve: false, coldGear2014: false, facilityBooks: [], encounterBooks: ['XMM'], extraCraftHelpers: true });
+    expect(light.settings).toMatchObject({ foodAndWater: false, encounters: false, deathSavesResolve: false, coldGear2014: false, circleMagic: true, facilityBooks: ['FRHoF', 'EFA'], encounterBooks: ['XMM'], extraCraftHelpers: true });
     expect(light.log.at(-1)?.text).toMatch(/Light/);
     expect(matchTier(E.setDetailTier(light, ctx(), 4).settings)).toBe(4);
   });
 
-  it('puts 5.5e core and supplemental mechanics in Standard and legacy and table rules above it', () => {
-    const s = E.setDetailTier(fresh(), ctx(), 2);
+  it('includes 5.5e player options in Light, with 5.5e requirements starting at Standard', () => {
+    const light = E.setDetailTier(fresh(), ctx(), 1);
+    expect(light.settings).toMatchObject({
+      circleMagic: true,
+      foodAndWater: false,
+      extremeWeather: false,
+      forcedMarch: false,
+      navigation: false,
+      encumbrance: false,
+      chargeCosts: false,
+      trackComponents: false,
+      trackGearUse: false,
+      stabling: false,
+      encounters: false,
+      coinWeight: false,
+      tentSpace: false,
+    });
+    const s = E.setDetailTier(light, ctx(), 2);
     expect(s.settings).toMatchObject({
       coinWeight: true,
       tentSpace: true,
@@ -81,17 +98,47 @@ describe('levels of detail', () => {
     expect(tierPreset(4)).toMatchObject({ coldGear2014: true, heavyClothing2014: true, climateAdjustedPrecip: true });
   });
 
-  it('enables all supported 5.5e Bastion books at Standard and higher', () => {
-    const s = fresh((d) => { d.settings.facilityBooks = []; });
-    const standard = E.setDetailTier(s, ctx(), 2);
-    expect(standard.settings.facilityBooks).toEqual(['FRHoF', 'EFA']);
-    expect(matchTier(standard.settings)).toBe(2);
+  it('enables all supported 5.5e Bastion books at every tier and recognises custom selections', () => {
+    for (const { id } of TIERS) expect(tierPreset(id).facilityBooks).toEqual(['FRHoF', 'EFA']);
+    const s = fresh();
+    const withBastion = E.foundBastion(s, ctx(), s.characters[0].id, 'Keep');
+    const withForge = E.addFacility(withBastion, ctx(), withBastion.bastions[0].id, {
+      kind: 'special',
+      name: 'Construct Forge',
+      size: 'roomy',
+      alreadyBuilt: true,
+    });
+    expect(withForge.bastions[0].facilities.some((facility) => facility.name === 'Construct Forge')).toBe(true);
+    const light = E.setDetailTier(withForge, ctx(), 1);
+    expect(light.bastions).toEqual(withForge.bastions);
+    expect(matchTier(light.settings)).toBe(1);
 
-    standard.settings.facilityBooks = ['FRHoF'];
-    expect(matchTier(standard.settings)).toBeNull();
-    expect(closestTier(standard.settings)).toEqual({ tier: 2, differences: 1 });
-    expect(E.setDetailTier(standard, ctx(), 2).settings.facilityBooks).toEqual(['FRHoF', 'EFA']);
-    expect(tierPreset(5).facilityBooks).toEqual(['FRHoF', 'EFA']);
+    light.settings.facilityBooks = ['FRHoF'];
+    expect(matchTier(light.settings)).toBeNull();
+    expect(closestTier(light.settings)).toEqual({ tier: 1, differences: 1 });
+    expect(E.setDetailTier(light, ctx(), 1).settings.facilityBooks).toEqual(['FRHoF', 'EFA']);
+  });
+
+  it('upgrades saves using the previous Light preset and preserves custom selections', () => {
+    const oldLight = E.setDetailTier(fresh(), ctx(), 1);
+    oldLight.version = 2;
+    oldLight.settings.circleMagic = false;
+    oldLight.settings.facilityBooks = [];
+
+    expect(importState(oldLight)).toBe(true);
+    try {
+      expect(matchTier(getState().settings)).toBe(1);
+    } finally {
+      undo();
+    }
+
+    oldLight.settings.facilityBooks = ['EFA'];
+    expect(importState(oldLight)).toBe(true);
+    try {
+      expect(getState().settings).toMatchObject({ circleMagic: false, facilityBooks: ['EFA'] });
+    } finally {
+      undo();
+    }
   });
 
   it('Light: no hunger, thirst, cold saves, forced march or getting lost', () => {

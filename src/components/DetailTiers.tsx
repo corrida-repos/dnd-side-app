@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { useGame, edit, dispatch } from '../state/store';
 import * as E from '../state/engine';
-import { ALWAYS_ON, MECHANICS, ON_DEMAND, TIERS, closestTier, matchTier, tierName, type SwitchKey, type TierId } from '../rules/detailTiers';
+import { ALWAYS_ON, MECHANICS, ON_DEMAND, TIERS, closestTier, matchTier, tierName, type SwitchKey } from '../rules/detailTiers';
 import { FACILITY_BOOK_LABEL, FACILITY_BOOKS } from '../rules/bastion';
 import type { Settings } from '../state/types';
 import { Card, Num, Toggle, Rule } from './common';
@@ -55,14 +55,6 @@ function extras(s: Settings): Partial<Record<SwitchKey, { inline?: ReactNode; mo
   };
 }
 
-const TIER_BLURB: Record<TierId, string> = {
-  1: 'Core tracking with optional switches off.',
-  2: 'Published 5.5e core and supplemental mechanics.',
-  3: 'Legacy and table rules.',
-  4: 'The fiddliest rules: work in combat and at every sale.',
-  5: 'The hardest: lasting injuries, madness and gear that wears out.',
-};
-
 /** Pick a preset and customise its individual mechanics. */
 export function DetailCard() {
   const s = useGame();
@@ -73,7 +65,7 @@ export function DetailCard() {
   return (
     <Card title="Level of detail" className="span-all">
       <Rule>
-        Standard enables mechanics from all Wizards of the Coast 5.5e books supported by the app. Gritty, Hardcore and Brutal add legacy and table rules. Pick a preset to apply its switches, then adjust individual rules below. You can undo a preset change.
+        Each preset includes the rules from the levels below it. Pick a preset, then adjust individual rules below. You can undo a preset change.
       </Rule>
       <div className="tier-picker" role="radiogroup" aria-label="Level of detail">
         {TIERS.map((t) => (
@@ -107,41 +99,39 @@ export function DetailCard() {
       {TIERS.map((t) => (
         <section key={t.id} className="tier-group">
           <h3>
-            Tier {t.id} · {t.name} <span className="muted small">{TIER_BLURB[t.id]}</span>
+            Tier {t.id} · {t.name}
           </h3>
-          {t.id !== 1 && (
-            <ul className="plain tier-list">
-              {MECHANICS.filter((m) => m.tier === t.id).map((m) => {
-                const x = ex[m.key];
-                const on = !!s.settings[m.key];
-                return (
-                  <li key={m.key} className={on ? '' : 'tier-off'}>
-                    <Toggle checked={on} onChange={(v) => set(m.key, v)} label={m.label} />
-                    <span className="pill pill-info">{m.source}</span>
-                    <div className="small muted tier-cost">{m.cost}</div>
-                    {on && x?.inline && <div className="form-row">{x.inline}</div>}
-                    {x?.more && (
-                      <details className="small">
-                        <summary>Rule details</summary>
-                        <p className="rule">{x.more}</p>
-                      </details>
-                    )}
-                  </li>
-                );
-              })}
-              {t.id === 2 && FACILITY_BOOKS.map((book) => {
-                const on = (s.settings.facilityBooks ?? FACILITY_BOOKS).includes(book);
-                return (
-                  <li key={book} className={on ? '' : 'tier-off'}>
-                    <Toggle checked={on} label={`Bastion facilities from ${FACILITY_BOOK_LABEL[book]}`} onChange={(enabled) => edit((d) => {
-                      const books = (d.settings.facilityBooks ?? FACILITY_BOOKS).filter((entry) => entry !== book);
-                      d.settings.facilityBooks = enabled ? [...books, book] : books;
-                    })} />
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+          <ul className="plain tier-list">
+            {MECHANICS.filter((m) => m.tier === t.id).map((m) => {
+              const x = ex[m.key];
+              const on = !!s.settings[m.key];
+              return (
+                <li key={m.key} className={on ? '' : 'tier-off'}>
+                  <Toggle checked={on} onChange={(v) => set(m.key, v)} label={m.label} />
+                  <span className="pill pill-info">{m.source}</span>
+                  <div className="small muted tier-cost">{m.cost}</div>
+                  {on && x?.inline && <div className="form-row">{x.inline}</div>}
+                  {x?.more && (
+                    <details className="small">
+                      <summary>Rule details</summary>
+                      <p className="rule">{x.more}</p>
+                    </details>
+                  )}
+                </li>
+              );
+            })}
+            {t.id === 1 && FACILITY_BOOKS.map((book) => {
+              const on = (s.settings.facilityBooks ?? FACILITY_BOOKS).includes(book);
+              return (
+                <li key={book} className={on ? '' : 'tier-off'}>
+                  <Toggle checked={on} label={`Bastion facilities from ${FACILITY_BOOK_LABEL[book]}`} onChange={(enabled) => edit((d) => {
+                    const books = (d.settings.facilityBooks ?? FACILITY_BOOKS).filter((entry) => entry !== book);
+                    d.settings.facilityBooks = enabled ? [...books, book] : books;
+                  })} />
+                </li>
+              );
+            })}
+          </ul>
         </section>
       ))}
       <div className="grid tier-notes">
