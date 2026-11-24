@@ -114,6 +114,7 @@ export const MECHANICS: Mechanic[] = [
   { key: 'duesAndTaxes', tier: 3, area: 'Money', source: 'Table rule', label: 'Taxes, tithes, rent and guild dues are charged when due; unpaid ones become debts', cost: 'Recurring charges to set up and pay.' },
   { key: 'notoriety', tier: 3, area: 'World', source: 'Table rule', label: 'Crimes raise heat with the law in a place; the watch may recognise the party there; heat cools week by week', cost: 'A daily recognition roll while in a place where the party is wanted.' },
   { key: 'contactsFade', tier: 3, area: 'World', source: 'Table rule', label: 'Friendly contacts cool after 60 days without word, and won’t do a second favor within 30 days', cost: 'Letters and visits to keep contacts warm.' },
+  { key: 'piety', tier: 3, area: 'World', source: 'Table rule', label: 'Piety: deeds, offerings and temple service raise a character’s standing with their god; neglect and sins lower it, and below 0 the god turns away', cost: 'Deeds to award after sessions; a check every 60 days for neglect.' },
   { key: 'newsTravels', tier: 3, area: 'World', source: 'Table rule', label: 'News of distant events reaches the party only as fast as word travels', cost: 'Nothing to roll: news simply arrives later.' },
   { key: 'appraiseByEye', tier: 3, area: 'Money', source: 'Table rule', label: 'Anyone can judge a valuable’s worth by eye at DC 20', cost: 'More appraisal rolls before selling treasure.' },
 

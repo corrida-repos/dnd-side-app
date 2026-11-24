@@ -552,6 +552,7 @@ Table rules under "Lifestyle risks in town". Renown 3+ spares the Wretched, as b
 - ✅ **Wear and repair** (table rule, Brutal tier): hard travel, rain and salt water wear gear and hulls; upkeep, tools, artisans and docks repair them.
 - ✅ **Taxes, tithes and dues** (table rule): recurring charges that become debts when unpaid.
 - ✅ **Notoriety with the law** (table rule): heat and bounties by place, daily recognition, cooling, bribes, fines and surrender.
+- ✅ **Piety** (table rule, Gritty tier): a character's standing with their god on the DMG renown steps (Devoted 3, Favored 10, Exalted 25, Chosen 50, Estranged below 0), with boons as DM guidance. Clerics, Paladins, celestial and fiend patrons, Divine Soul sorcerers, acolytes and Magic Initiate (Cleric) are recognised. Deeds, Religious Service downtime, costly offerings and tithes raise it; sins, missed tithes and 60 days of neglect lower it; atonement brings the estranged back.
 - ✅ **Contacts and relationships**: bonds and attitudes, favors with 2024 DMG Influence DCs; table rule for neglect and the wait between favors.
 - ✅ **Letters and news**: personal letters by the Bastion message methods with replies; distant news that travels at a table-rule speed.
 

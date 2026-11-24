@@ -429,6 +429,27 @@ export interface Character {
   longevityPotions?: number;
   /** Gold earned since the last tithe was paid (for tithes that take a share). */
   earnedGp?: number;
+  /** Standing with their god (table rule, piety switch). */
+  devotion?: Devotion | null;
+}
+
+/** A character's standing with the god they serve (table rule). */
+export interface Devotion {
+  /** The god, e.g. "Lathander, god of dawn". */
+  deity: string;
+  /** What pleases the god, in a few words, e.g. "new beginnings, healing, driving back the undead". */
+  ideals: string;
+  /** What angers the god. */
+  anathema: string;
+  piety: number;
+  /** Highest score reached. */
+  best: number;
+  /** Day of the last act of devotion (or the day it was set up), for neglect. */
+  lastDevotionDay: number;
+  /** Day of the last costly offering. */
+  lastOfferingDay?: number;
+  /** Recent changes, newest first. */
+  history: string[];
 }
 
 export interface Injury {
@@ -993,6 +1014,8 @@ export interface Settings {
   contactsFade: boolean;
   /** Table rule: news of distant events reaches the party only as fast as word travels. */
   newsTravels: boolean;
+  /** Table rule: piety measures a character's standing with their god, with ranks, boons and estrangement. */
+  piety: boolean;
 }
 
 /** A wild creature someone is trying to tame or train (table rule). */

@@ -76,6 +76,7 @@ import {
 import { isCaster, PREP_RULE, preparedCount, preparedLimit } from '../rules/spells';
 import { newCharacter, uid } from './defaults';
 import { sense, type SenseKey } from '../rules/senses';
+import * as Piety from '../rules/piety';
 import { buildTable, checkModifiers, DANGER, DIFFICULTY_LABEL, firstSign, rollOnTable, SRD_POOL, BOOK_POOL, type CheckConditions, type Danger, type EncounterCreature, type EncounterTable, type Party } from '../rules/encounters';
 import type { TerrainType } from '../rules/terrain';
 import { FESTERING_MEDICINE_DC, INJURIES, INJURY_MEDICINE_SUCCESSES, INJURY_REST_DAYS, INJURY_SPELLS, healsInjury, injuryFor, type InjuryKind } from '../rules/injuries';
@@ -599,6 +600,7 @@ function endOfDay(s: State, ctx: Ctx): void {
   if ((s.dayIndex + 1) % 7 === 0) debtsWeekly(s, ctx);
   festeringWounds(s);
   notorietyDaily(s, ctx);
+  pietyDaily(s);
   contactsDaily(s);
   groomTheMounts(s);
   checkRituals(s);
@@ -2947,6 +2949,7 @@ export const resolveActivityProject = act((d, ctx, projectId: string, o: Activit
   const wks = r.jailDays ? 1 : weeks;
   if (id === 'Carousing') easeMind(d, c, CAROUSING_STRESS_PER_WEEK * wks, 0, 'feels lighter after nights of drink, song and laughter');
   if (id === 'Religious service') easeMind(d, c, SERVICE_STRESS_PER_WEEK * wks, SERVICE_FEAR_PER_WEEK * wks, 'finds a steadiness in the hymns and quiet ritual');
+  if (id === 'Religious service' && d.settings.piety) templeServicePiety(d, c, wks);
   for (const comp of r.complications ?? (r.complication ? [r.complication] : [])) applyComplication(d, ctx, c, comp);
   rivalAdvances(d, ctx);
 });
@@ -8355,6 +8358,7 @@ function duesDaily(s: State): void {
         addDebtMut(s, c.id, due.collector, DUE_PRESETS[due.kind].creditor, Math.round((share - can) * 100) / 100);
       }
     }
+    if (due.kind === 'tithe' && s.settings.piety) for (const c of payers) titheKept(s, c, !short, due.collector);
     if (!short) {
       due.missed = 0;
       log(s, `${payers.map((c) => c.name).join(', ')} pay${payers.length > 1 ? '' : 's'} ${due.label.toLowerCase()}: ${fmtGp(amount)} to ${due.collector} (table rule).`);
@@ -8715,3 +8719,114 @@ export const townNpcToContact = act((d, _ctx, townName: string, ref: TownNpcRef)
 /** A short description of an NPC, for the DM. */
 export const describeNpc = (n: Npc): string => npcLine(n);
 
+
+// ---------------------------------------------------------------- piety (table rule)
+
+/** Changes a character's piety, logging what they feel and any change of rank. */
+function pietyChange(s: State, c: Character, delta: number, why: string): void {
+  const dv = c.devotion;
+  if (!dv || !delta) return;
+  const before = Piety.pietyRank(dv.piety);
+  dv.piety += delta;
+  dv.best = Math.max(dv.best, dv.piety);
+  if (delta > 0) dv.lastDevotionDay = s.dayIndex;
+  dv.history = [`${stamp(s)}: ${signed(delta)}, ${why}`, ...dv.history].slice(0, 30);
+  const after = Piety.pietyRank(dv.piety);
+  const score = `piety ${signed(delta)}, now ${dv.piety}, ${after.label}; table rule`;
+  if (after.id === 'estranged' && before.id !== 'estranged') {
+    status(s, c, 'estranged', `${dv.deity} turns away from ${c.name}: ${why} (${score}). ${after.boon}`, 'bad');
+  } else if (after.min > before.min && after.id !== 'faithful') {
+    status(s, c, 'pietyRankUp', `${c.name} is now ${after.label} in the eyes of ${dv.deity}: ${why} (${score}). ${after.boon}`, 'good');
+  } else if (after.min !== before.min) {
+    status(s, c, delta > 0 ? 'atoned' : 'pietyDown', `${c.name} is now ${after.label} in the eyes of ${dv.deity}: ${why} (${score}).`, delta > 0 ? 'good' : 'warn');
+  } else {
+    status(s, c, delta > 0 ? 'pietyUp' : 'pietyDown', `${dv.deity} ${delta > 0 ? 'is pleased with' : 'is displeased with'} ${c.name}: ${why} (${score}).`, delta > 0 ? 'good' : 'warn');
+  }
+}
+
+/** Starts (or edits) a character's devotion to a god. A new devotion starts where the table rule says unless a score is given. */
+export const setDevotion = act((d, _ctx, charId: string, o: { deity: string; ideals?: string; anathema?: string; piety?: number }) => {
+  const c = charById(d, charId);
+  const deity = o.deity.trim();
+  if (!c || !deity) return;
+  if (c.devotion) {
+    Object.assign(c.devotion, { deity, ideals: o.ideals ?? c.devotion.ideals, anathema: o.anathema ?? c.devotion.anathema });
+    return;
+  }
+  const piety = o.piety ?? Piety.startingPiety(Piety.divineTie(c));
+  c.devotion = { deity, ideals: o.ideals?.trim() ?? '', anathema: o.anathema?.trim() ?? '', piety, best: piety, lastDevotionDay: d.dayIndex, history: [`${stamp(d)}: devoted to ${deity}, piety ${piety}`] };
+  log(d, `${c.name} serves ${deity}: piety ${piety} (${Piety.pietyRank(piety).label}; table rule).`);
+});
+
+export const removeDevotion = act((d, _ctx, charId: string) => {
+  const c = charById(d, charId);
+  if (!c?.devotion) return;
+  log(d, `${c.name} no longer tracks piety with ${c.devotion.deity}.`);
+  c.devotion = null;
+});
+
+/** A deed for or against the god (the DM's call), weighed like DMG renown. */
+export const pietyDeed = act((d, _ctx, charId: string, delta: number, why: string) => {
+  const c = charById(d, charId);
+  if (!c?.devotion || !delta) return;
+  pietyChange(d, c, Math.round(delta), why.trim() || (delta > 0 ? 'a deed in the god’s name' : 'a deed against the god’s ideals'));
+});
+
+/** Why a costly offering can't be made now, or null if it can. */
+export function offeringBlocked(s: State, c: Character): string | null {
+  const dv = c.devotion;
+  if (!dv) return 'No god chosen.';
+  if (dv.lastOfferingDay != null && s.dayIndex - dv.lastOfferingDay < Piety.OFFERING_EVERY_DAYS) return `The last offering was ${s.dayIndex - dv.lastOfferingDay} day(s) ago; the god expects devotion, not a stream of coin (once each ${Piety.OFFERING_EVERY_DAYS} days).`;
+  if (c.gp < Piety.offeringGp(c.level)) return `An offering worth notice costs ${fmtGp(Piety.offeringGp(c.level))} (${Piety.OFFERING_GP_PER_LEVEL} GP per level).`;
+  return null;
+}
+
+/** A costly offering at the god's altar: 25 GP per level, once each 30 days, worth +1 piety up to Devoted. */
+export const makeOffering = act((d, _ctx, charId: string) => {
+  const c = charById(d, charId);
+  const dv = c?.devotion;
+  if (!c || !dv || offeringBlocked(d, c)) return;
+  const gp = Piety.offeringGp(c.level);
+  payGold(d, [c.id], gp, `an offering to ${dv.deity}`);
+  dv.lastOfferingDay = d.dayIndex;
+  dv.lastDevotionDay = d.dayIndex;
+  const gain = Piety.cappedGain(dv.piety, 1, Piety.OFFERING_PIETY_CAP);
+  if (gain) pietyChange(d, c, gain, `a costly offering of ${fmtGp(gp)}`);
+  else log(d, `${c.name} lays ${fmtGp(gp)} on the altar of ${dv.deity}. The priests are grateful, but gold alone won’t raise ${c.name} higher in the god’s eyes (table rule: offerings count up to piety ${Piety.OFFERING_PIETY_CAP}).`);
+});
+
+/** Atonement (a penance or quest the DM set) is done: an estranged character is welcomed back at piety 0. */
+export const atone = act((d, _ctx, charId: string, why: string) => {
+  const c = charById(d, charId);
+  const dv = c?.devotion;
+  if (!c || !dv || dv.piety >= 0) return;
+  pietyChange(d, c, Piety.ATONED_PIETY - dv.piety, why.trim() || 'atonement completed');
+});
+
+/** Religious Service downtime: +1 piety a week, up to Favored; after that, the service still counts as devotion. */
+function templeServicePiety(s: State, c: Character, weeks: number): void {
+  const dv = c.devotion;
+  if (!dv) return;
+  dv.lastDevotionDay = s.dayIndex;
+  const gain = Piety.cappedGain(dv.piety, Piety.SERVICE_PIETY_PER_WEEK * weeks, Piety.SERVICE_PIETY_CAP);
+  if (gain) pietyChange(s, c, gain, `${weeks} week${weeks > 1 ? 's' : ''} of service in the temple`);
+}
+
+/** A tithe paid counts as devotion; one missed costs piety. */
+function titheKept(s: State, c: Character, paid: boolean, collector: string): void {
+  if (!c.devotion) return;
+  if (paid) c.devotion.lastDevotionDay = s.dayIndex;
+  else pietyChange(s, c, -Piety.MISSED_TITHE_PIETY, `the tithe to ${collector} went unpaid`);
+}
+
+/** Neglect: 60 days with nothing done for the god costs 1 piety, but never takes it below 0. */
+function pietyDaily(s: State): void {
+  if (!s.settings.piety) return;
+  const today = s.dayIndex + 1;
+  for (const c of s.characters) {
+    const dv = c.devotion;
+    if (!dv || !alive(c) || today - dv.lastDevotionDay < Piety.NEGLECT_DAYS) continue;
+    dv.lastDevotionDay = today;
+    if (dv.piety > 0) pietyChange(s, c, -1, `${Piety.NEGLECT_DAYS} days with nothing done for the god`);
+  }
+}

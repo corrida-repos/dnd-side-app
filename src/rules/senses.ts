@@ -72,7 +72,12 @@ export type SenseKey =
   | 'recognised'
   | 'letterArrives'
   | 'newsArrives'
-  | 'contactCools';
+  | 'contactCools'
+  | 'pietyUp'
+  | 'pietyDown'
+  | 'pietyRankUp'
+  | 'estranged'
+  | 'atoned';
 
 /** How the change reaches the character: felt in the body, noticed with the senses, or not noticed at all. */
 export type Awareness = 'feels' | 'notices' | 'unaware';
@@ -156,6 +161,11 @@ export const SENSES: Record<SenseKey, SenseDef> = {
   letterArrives: N('notices a familiar hand on a folded, travel-worn letter', 'is handed a letter, its seal a little cracked from the road'),
   newsArrives: N('hears travellers talking of events far away', 'notices a crowd gathered round a crier with fresh news'),
   contactCools: U('has no idea an old acquaintance has stopped thinking of them fondly', 'doesn’t know a contact has drifted away'),
+  pietyUp: F('feels their next prayer come easily, and something answer it with quiet approval', 'feels a small warmth behind the ribs when they speak their god’s name'),
+  pietyDown: F('feels their prayers thin out, as if spoken into an empty room', 'feels a faint chill when they touch their holy symbol'),
+  pietyRankUp: F('feels the world go bright and still for a heartbeat, and knows without words that they have been seen', 'feels a presence settle close beside them, patient and pleased'),
+  estranged: F('feels only silence where their god used to answer, and holy places turn cold around them', 'feels the god’s name catch in their throat, the holy symbol only metal now'),
+  atoned: F('feels a weight lift as the old warmth returns to their prayers', 'feels, at the end of the penance, that someone is listening again'),
   encounter: N('notices movement at the edge of sight', 'hears something approaching'),
 };
 

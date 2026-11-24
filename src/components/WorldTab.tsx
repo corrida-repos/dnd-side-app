@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ContactsCard, LettersCard, NotorietyCard } from './LifeCards';
+import { PietyCard } from './PietyCard';
 import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
 import { uid } from '../state/defaults';
@@ -19,12 +20,16 @@ import type { Mark, State } from '../state/types';
 
 export function WorldTab() {
   const s = useGame();
-  const gate = useGate([{ name: 'Wanted by the law', idle: !s.settings.notoriety && !(s.notoriety ?? []).length }]);
+  const gate = useGate([
+    { name: 'Wanted by the law', idle: !s.settings.notoriety && !(s.notoriety ?? []).length },
+    { name: 'Piety and the gods', idle: !s.settings.piety && !s.characters.some((c) => c.devotion) },
+  ]);
   return (
     <div className="grid">
       <SkyCard />
       <FactionsCard />
       <MarksCard />
+      {gate.show('Piety and the gods') && <PietyCard />}
       <RivalsCard />
       {gate.show('Wanted by the law') && <NotorietyCard />}
       <ContactsCard />
