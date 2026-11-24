@@ -87,7 +87,7 @@ import { sense, type SenseKey } from '../rules/senses';
 import * as Piety from '../rules/piety';
 import * as Priest from '../rules/priesthood';
 import * as Ladder from '../rules/ladders';
-import { buildTable, checkModifiers, DANGER, DIFFICULTY_LABEL, firstSign, rollOnTable, SRD_POOL, BOOK_POOL, type CheckConditions, type Danger, type EncounterCreature, type EncounterResult, type EncounterTable, type Party } from '../rules/encounters';
+import { buildTable, checkModifiers, encounterIntervalMinutes, naturalNeeded, nextEncounterMinutes, DANGER, DIFFICULTY_LABEL, firstSign, rollOnTable, SRD_POOL, BOOK_POOL, type CheckConditions, type Danger, type EncounterCreature, type EncounterResult, type EncounterTable, type Party } from '../rules/encounters';
 import type { TerrainType } from '../rules/terrain';
 import { FESTERING_MEDICINE_DC, INJURIES, INJURY_MEDICINE_SUCCESSES, INJURY_REST_DAYS, INJURY_SPELLS, healsInjury, injuryFor, type InjuryKind } from '../rules/injuries';
 import { MADNESS, MADNESS_SAVE_DC, MADNESS_SPELLS, MADNESS_THRESHOLD, madnessEffect, type MadnessTier } from '../rules/madness';
@@ -1213,15 +1213,20 @@ export function syncPorters(s: State): void {
   }
 }
 
-export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activity, opts: { exploring?: boolean; tactical?: boolean; combat?: boolean; travelHour?: boolean } = {}): void {
+export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activity, opts: { exploring?: boolean; tactical?: boolean; combat?: boolean; travelHour?: boolean; encounterActivity?: 'travel' } = {}): void {
   if (opts.tactical && s.pauseForButler && s.tacticalEncounter) return;
   syncPorters(s);
   levelSidekicks(s, ctx);
   let remaining = Math.max(0, Math.round(minutes));
   if (remaining > 0 && s.settings.deathSavesResolve && !opts.combat) resolveDying(s, ctx);
+  const checkOverland = s.settings.encounters && activity !== 'work' && !opts.exploring && !opts.combat && !opts.travelHour;
+  const encounterActivity = opts.encounterActivity ?? (activity === 'travel' || activity === 'rest' ? activity : 'camp');
   while (remaining > 0) {
     const toNextHour = 60 - (s.minutes % 60);
-    const step = Math.min(remaining, toNextHour);
+    const untilEncounter = checkOverland
+      ? nextEncounterMinutes(encounterIntervalMinutes(s.place.danger, encounterConditions(s, encounterActivity)), s.encounterClock)
+      : Infinity;
+    const step = Math.min(remaining, toNextHour, untilEncounter);
     const before = absNow(s);
     s.minutes += step;
     remaining -= step;
@@ -1242,8 +1247,8 @@ export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activi
     tickPoisons(s, ctx);
     if (s.minutes % 60 === 0) tickHour(s, ctx, activity);
     if (s.minutes >= MIN_PER_DAY) endOfDay(s, ctx);
-    if (s.settings.encounters && activity !== 'work' && !opts.exploring && !opts.combat) {
-      if (!opts.travelHour) overlandEncounterClock(s, ctx, step, activity, opts.tactical && s.pauseForButler);
+    if (checkOverland) {
+      overlandEncounterClock(s, ctx, step, encounterActivity, opts.tactical && s.pauseForButler);
       if (opts.tactical && s.pauseForButler && s.tacticalEncounter) {
         s.tacticalRemainingMinutes = remaining;
         break;
@@ -1780,6 +1785,7 @@ function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
     }
     advanceMut(d, ctx, 60, 'travel', { travelHour: !!d.pauseForButler });
     traveledHours++;
+    delete d.place.encounterStuck;
     d.travel.hoursToday += altitude ? 2 : 1;
     const burst = gallop && i === 0 ? 2 : 1;
     if (burst === 2) {
@@ -1840,8 +1846,9 @@ function sail(d: State, ctx: Ctx, v: Stash, o: TravelOpts): number {
   }
   log(d, `Aboard the ${v.name}, the party travels for ${o.hours} hour(s) at ${mph} mph${note ? ` (${note})` : ''}.`);
   const start = absNow(d);
-  advanceMut(d, ctx, o.hours * 60, d.pauseForButler ? 'travel' : 'camp', { tactical: true });
+  advanceMut(d, ctx, o.hours * 60, 'camp', { tactical: true, encounterActivity: 'travel' });
   const hours = (absNow(d) - start) / 60;
+  if (hours > 0) delete d.place.encounterStuck;
   let miles = Math.round(mph * hours * 10) / 10;
   const mode = transportMode(v);
   if (mode === 'sea' && d.settings.stormsAtSea && d.weather.wind === 'strong' && d.weather.precip === 'heavy') {
@@ -7920,7 +7927,7 @@ const isUnderground = (s: State): boolean => !!CLIMATES[s.weather.climate].noWea
 export function encounterConditions(s: State, activity: CheckConditions['activity']): CheckConditions {
   const now = absNow(s);
   const lightOn = s.fire.lit || s.effects.some((e) => e.kind === 'light' && e.pausedLeft == null && (e.endsAt == null || e.endsAt > now));
-  const shelterSpell = s.effects.some((e) => e.shelter && (e.endsAt == null || e.endsAt > now));
+  const shelterSpell = s.effects.some((e) => e.shelter && e.pausedLeft == null && (e.endsAt == null || e.endsAt > now));
   return {
     activity,
     night: isNight(s),
@@ -7930,17 +7937,20 @@ export function encounterConditions(s: State, activity: CheckConditions['activit
     foulWeather: s.weather.precip === 'heavy' || s.weather.wind === 'strong',
     sheltered: s.place.shelter === 'building' || s.place.shelter === 'cave' || shelterSpell,
     underground: isUnderground(s),
-    bigGroup: s.characters.filter((c) => alive(c) && mountWithParty(c)).length + s.hirelings.length > 6,
+    bigGroup: s.characters.filter((c) => alive(c) && mountWithParty(c)).length +
+      s.hirelings.filter((h) => h.active && (h.busyUntil ?? 0) <= now).length > 6,
+    stuck: !!s.place.encounterStuck,
+    vulnerable: s.characters.some((c) => c.kind !== 'mount' && alive(c) && (c.dying || c.stable)),
   };
 }
 
 /** Accumulates overland time and rolls a check each time the danger level's interval passes. */
-function overlandEncounterClock(s: State, ctx: Ctx, step: number, activity: Activity, tactical = false): void {
-  const every = DANGER[s.place.danger].everyHours * 60;
+function overlandEncounterClock(s: State, ctx: Ctx, step: number, activity: 'travel' | 'rest' | 'camp', tactical = false): void {
+  const every = encounterIntervalMinutes(s.place.danger, encounterConditions(s, activity));
   s.encounterClock = Math.min(s.encounterClock, every) + step;
   while (s.encounterClock >= every) {
     s.encounterClock -= every;
-    encounterCheck(s, ctx, activity === 'rest' ? 'rest' : activity === 'travel' ? 'travel' : 'camp', false, tactical);
+    encounterCheck(s, ctx, activity, false, tactical);
     if (tactical && s.tacticalEncounter) break;
   }
 }
@@ -7961,7 +7971,7 @@ export function encounterCheck(s: State, ctx: Ctx, activity: CheckConditions['ac
   const r = die(20, ctx.rng);
   const total = r + mod;
   const detail = `d20 ${r}${mod ? ` ${signed(mod)} (${mods.map((m) => `${m.label} ${signed(m.value)}`).join(', ')}) = ${total}` : ''}, encounter on ${info.on}+ or a natural 20 (${info.label} danger)`;
-  if (total < info.on && r < 20) {
+  if (r < naturalNeeded(info.on, mod)) {
     if (announce) log(s, `Random encounter check: ${detail}. Nothing comes.`);
     return false;
   }

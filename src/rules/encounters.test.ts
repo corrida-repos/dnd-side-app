@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { apportion, budget, buildTable, FOLLOWERS, RECOMMENDED_BESTIARIES, checkChance, checkModifiers, countExpr, difficultyOf, encountersPerDay, habitat, maxGroup, maxOf, plural, rollOnTable, SRD_POOL, xpFor, DANGERS, type CheckConditions } from './encounters';
+import { apportion, budget, buildTable, FOLLOWERS, RECOMMENDED_BESTIARIES, checkChance, checkModifiers, countExpr, difficultyOf, encounterIntervalMinutes, encounterRisk, encountersPerDay, habitat, maxGroup, maxOf, plural, rollOnTable, SRD_POOL, xpFor, DANGERS, type CheckConditions } from './encounters';
 import { parse5eToolsBestiary } from './hunting';
 
 const base: CheckConditions = { activity: 'travel', night: false, lightAtNight: false, pace: 'normal', goodRoad: false, foulWeather: false, sheltered: false, underground: false, bigGroup: false };
@@ -24,10 +24,37 @@ describe('random encounter rules', () => {
   it('turns conditions into modifiers', () => {
     expect(checkModifiers(base)).toEqual([]);
     const night = checkModifiers({ ...base, activity: 'camp', night: true, lightAtNight: true, sheltered: true });
-    expect(night.map((m) => m.label)).toEqual(['Night', 'Light in the dark', 'Sheltered camp']);
+    expect(night.map((m) => m.label)).toEqual(['Night', 'Sheltered camp']);
     expect(checkModifiers({ ...base, pace: 'slow', goodRoad: true }).reduce((a, m) => a + m.value, 0)).toBe(-2);
     // Underground there is no day or night, and no weather.
     expect(checkModifiers({ ...base, night: true, foulWeather: true, underground: true })).toEqual([]);
+  });
+
+  it('distinguishes exposed and sheltered rest, moving, and being stranded', () => {
+    const rest = { ...base, activity: 'rest', night: true } as const;
+    const camp = { ...rest, activity: 'camp' } as const;
+    expect(encounterIntervalMinutes('moderate', base)).toBe(240);
+    expect(encounterIntervalMinutes('moderate', camp)).toBe(150);
+    expect(encounterIntervalMinutes('moderate', rest)).toBe(120);
+    expect(encounterIntervalMinutes('moderate', { ...rest, sheltered: true })).toBe(240);
+    expect(encounterIntervalMinutes('moderate', { ...camp, sheltered: true, stuck: true })).toBe(120);
+    expect(checkModifiers({ ...rest, stuck: true, vulnerable: true }).map((m) => m.value)).toEqual([1, 2, 1]);
+    for (const danger of DANGERS.slice(1)) {
+      expect(encounterIntervalMinutes(danger, rest)).toBeLessThan(encounterIntervalMinutes(danger, base));
+    }
+  });
+
+  it('computes cumulative risk using the actual creature and attitude weights', () => {
+    const table = buildTable(SRD_POOL, 'forest', 'moderate', { level: 3, size: 4 });
+    const rest = { ...base, activity: 'rest', night: true } as const;
+    const estimate = encounterRisk(table, rest, 480, 0);
+    expect(estimate.checks).toBe(4);
+    expect(estimate.encounter).toBeCloseTo(1 - 0.8 ** 4);
+    expect(estimate.hostile).toBeLessThan(estimate.creature);
+    expect(estimate.creature).toBeLessThan(estimate.encounter);
+    expect(encounterRisk(table, { ...rest, lightAtNight: true }, 480, 0).hostile).toBeGreaterThan(estimate.hostile);
+    expect(encounterRisk(table, { ...rest, sheltered: true }, 480, 0).hostile).toBeLessThan(estimate.hostile);
+    expect(encounterRisk(table, rest, 60, 60).checks).toBe(1);
   });
 
   it('places creatures in the terrains they live in', () => {

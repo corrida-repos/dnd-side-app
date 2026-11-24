@@ -2,7 +2,7 @@ import { NOISE, UNDERWATER_DISTANCE, type Noise, type UnderwaterVisibility } fro
 import { useState } from 'react';
 import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
-import { BOOK_POOL, BOOKS, checkChance, checkModifiers, naturalNeeded, DANGER, DANGERS, DIFFICULTY_LABEL, encountersPerDay, type CheckConditions, type Danger, type Difficulty } from '../rules/encounters';
+import { BOOK_POOL, BOOKS, checkChance, checkModifiers, naturalNeeded, DANGER, DANGERS, DIFFICULTY_LABEL, encounterIntervalMinutes, encounterRisk, nextEncounterMinutes, type CheckConditions, type Danger, type Difficulty } from '../rules/encounters';
 import { TERRAIN, type TerrainType } from '../rules/terrain';
 import { formatDuration } from '../rules/calendar';
 import { Card, Pill, Rule, Select, Toggle } from './common';
@@ -39,8 +39,7 @@ function DangerCard() {
   const s = useGame();
   const info = DANGER[s.place.danger];
   const party = E.encounterParty(s);
-  const nextIn = Math.max(0, info.everyHours * 60 - s.encounterClock);
-  const turnsLeft = Math.max(1, info.everyTurns - s.exploreTurns);
+
   return (
     <Card title="Location danger">
       <div className="form-row">
@@ -52,7 +51,7 @@ function DangerCard() {
       </p>
       {s.settings.encounters ? (
         <p className="small">
-          Next overland check in <strong>{formatDuration(nextIn)}</strong> of travel, camp or rest. In a dungeon, next check after <strong>{turnsLeft}</strong> more exploration turn{turnsLeft === 1 ? '' : 's'}.
+          Automatic checks use the activity and conditions at the party’s location. Select an activity to see the current odds.
         </p>
       ) : (
         <p className="small warn-text">Automatic checks are off. Roll by hand below, or use the per-watch and per-turn numbers on the Camp and Effects & Ailments tabs.</p>
@@ -118,11 +117,12 @@ function WhenCard() {
           <thead>
             <tr>
               <th>Danger</th>
-              <th>Overland check</th>
-              <th>Dungeon check</th>
-              <th>Encounter on d20</th>
-              <th>Per check</th>
-              <th>About per day</th>
+              <th>Travel</th>
+              <th>Exposed camp</th>
+              <th>Exposed rest</th>
+              <th>Sheltered rest</th>
+              <th>Dungeon</th>
+              <th>Base d20</th>
               <th>Tables built for</th>
             </tr>
           </thead>
@@ -137,13 +137,12 @@ function WhenCard() {
                     {i.label}
                     <div className="small muted">{i.examples}</div>
                   </td>
-                  <td>every {i.everyHours} h</td>
-                  <td>
-                    every {i.everyTurns} turn{i.everyTurns > 1 ? 's' : ''} ({i.everyTurns * 10} min)
-                  </td>
+                  <td>Every {i.travelHours} h</td>
+                  <td>Every {formatDuration(i.campHours * 60)}</td>
+                  <td>Every {i.restHours} h</td>
+                  <td>Every {i.shelteredRestHours} h</td>
+                  <td>Every {i.everyTurns * 10} min</td>
                   <td>{i.on === 20 ? '20' : `${i.on}–20`}</td>
-                  <td>{pct(checkChance(i.on, 0))}</td>
-                  <td>{encountersPerDay(d).toFixed(1)}</td>
                   <td>
                     <Pill tone={DIFF_TONE[i.builtFor]}>{DIFFICULTY_LABEL[i.builtFor]}</Pill>
                   </td>
@@ -154,9 +153,8 @@ function WhenCard() {
         </table>
       </div>
       <Rule>
-        Table rule. The 2024 DMG says to roll on a random encounter table but leaves how often to you; this uses the classic d20 check and scales it with danger. Overland checks run during travel, waiting in camp
-        and Long Rests (each one names who is on watch), but not during downtime work. In a dungeon, use exploration turns on the Effects & Ailments tab. Group sizes follow the 2024 DMG XP budget for the chosen difficulty;
-        a Deadly area goes past High.
+        Table rule. Travel, camp, and rest share elapsed time toward the next check. Sheltered camps use the travel interval. Being stuck while stopped uses the exposed rest interval. Downtime work skips encounter checks.
+        Dungeon checks use exploration turns on the Effects & Ailments tab. Group size follows the 2024 DMG XP budget, with Deadly above High.
       </Rule>
     </Card>
   );
@@ -164,7 +162,10 @@ function WhenCard() {
 
 const ALL_MODS: { label: string; value: number; when: string }[] = [
   { label: 'Night', value: 1, when: 'outdoors after dark' },
-  { label: 'Light in the dark', value: 1, when: 'campfire or light burning at night or underground, while stopped' },
+  { label: 'Exposed underground', value: 1, when: 'camping or resting underground without shelter' },
+  { label: 'Light in the dark', value: 1, when: 'unshielded campfire or light at night or underground, while stopped' },
+  { label: 'Stuck in place', value: 2, when: 'stranded while stopped' },
+  { label: 'Downed companion', value: 1, when: 'a living companion is at 0 HP and dying or stable' },
   { label: 'Fast pace', value: 1, when: 'travelling fast' },
   { label: 'Large group', value: 1, when: 'more than 6 in the party, counting mounts and hirelings' },
   { label: 'Slow pace', value: -1, when: 'travelling slowly (stealthily)' },
@@ -176,7 +177,13 @@ const ALL_MODS: { label: string; value: number; when: string }[] = [
 function ConditionsCard({ act, setAct }: { act: Act; setAct: (a: Act) => void }) {
   const s = useGame();
   const info = DANGER[s.place.danger];
-  const mods = checkModifiers(E.encounterConditions(s, act));
+  const conditions = E.encounterConditions(s, act);
+  const mods = checkModifiers(conditions);
+  const interval = encounterIntervalMinutes(s.place.danger, conditions);
+  const banked = act === 'explore' ? s.exploreTurns * 10 : s.encounterClock;
+  const nextIn = act === 'explore' ? Math.max(10, interval - banked) : nextEncounterMinutes(interval, banked);
+  const windowHours = act === 'explore' ? 1 : act === 'camp' ? 4 : 8;
+  const risk = encounterRisk(E.encounterTable(s), conditions, windowHours * 60, banked);
   const total = mods.reduce((a, m) => a + m.value, 0);
   const active = new Set(mods.map((m) => m.label));
   const need = naturalNeeded(info.on, total);
@@ -185,6 +192,9 @@ function ConditionsCard({ act, setAct }: { act: Act; setAct: (a: Act) => void })
       <div className="form-row">
         <Select label="The party is" value={act} onChange={(v: Act) => setAct(v)} options={(Object.keys(ACT_LABEL) as Act[]).map((k) => ({ value: k, label: ACT_LABEL[k] }))} />
       </div>
+      {act !== 'travel' && <Toggle checked={!!s.place.encounterStuck}
+        onChange={(stuck) => edit((d) => { d.place.encounterStuck = stuck; })}
+        label="The party is stuck in place" />}
       <ul className="plain small">
         {ALL_MODS.map((m) => (
           <li key={m.label} className={active.has(m.label) ? '' : 'muted'}>
@@ -195,6 +205,11 @@ function ConditionsCard({ act, setAct }: { act: Act; setAct: (a: Act) => void })
       <p className="small">
         Right now: d20 {total ? (total > 0 ? `+${total}` : total) : '+0'}. An encounter on a natural {need === 20 ? '20' : `${need}–20`} ({pct(checkChance(info.on, total))} a check).
       </p>
+      {s.settings.encounters && <div className="small">
+        <p>Checks every {formatDuration(interval)}. Next check in {formatDuration(nextIn)}.</p>
+        <p>Over {windowHours} h at current conditions ({risk.checks} checks): <strong>{(risk.encounter * 100).toFixed(1)}%</strong> any result, <strong>{(risk.creature * 100).toFixed(1)}%</strong> any creature group, <strong>{(risk.hostile * 100).toFixed(1)}%</strong> a Hostile group.</p>
+        <p className="muted">Hostile is the starting attitude. The GM decides whether the creatures attack, negotiate, or use Fight or Flight.</p>
+      </div>}
       <div className="btn-row">
         <button className="primary" onClick={() => dispatch((st, cx) => E.checkForEncounter(st, cx, act))}>
           Roll encounter check

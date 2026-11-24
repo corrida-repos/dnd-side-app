@@ -35,7 +35,7 @@ describe('random encounters by location danger', () => {
     expect(encounters(n)).toHaveLength(2); // every 4 hours
     expect(encounters(E.travel(s, LOW, { hours: 8, pace: 'normal', difficult: false, foragerIds: [] }))).toHaveLength(0);
     const deadly = E.travel(fresh((d) => (d.place.danger = 'deadly')), HIGH, { hours: 3, pace: 'normal', difficult: false, foragerIds: [] });
-    expect(encounters(deadly)).toHaveLength(3);
+    expect(encounters(deadly)).toHaveLength(1); // moving in a Deadly area checks every 2 hours
   });
 
   it('carries partial time over to the next check', () => {
@@ -66,6 +66,16 @@ describe('random encounters by location danger', () => {
     expect(hits).toHaveLength(4);
     expect(hits.every((l) => /On watch: (A|B)/.test(l.text))).toBe(true);
     expect(n.restStart).toBeNull();
+  });
+
+  it('checks a Moderate exposed rest four times, a sheltered rest twice, and a stranded camp sooner', () => {
+    const exposed = fresh((d) => { d.place.danger = 'moderate'; d.place.shelter = 'none'; });
+    expect(encounters(E.longRest(exposed, HIGH, true))).toHaveLength(4);
+    const sheltered = { ...exposed, place: { ...exposed.place, shelter: 'building' as const } };
+    expect(encounters(E.longRest(sheltered, HIGH, true))).toHaveLength(2);
+    const stuck = { ...sheltered, encounterClock: 110, place: { ...sheltered.place, encounterStuck: true } };
+    expect(encounters(E.advance(stuck, HIGH, 9, 'camp'))).toHaveLength(0);
+    expect(encounters(E.advance(stuck, HIGH, 10, 'camp'))).toHaveLength(1);
   });
 
   it('uses the danger level for exploration turns', () => {

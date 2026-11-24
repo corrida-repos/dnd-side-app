@@ -17,8 +17,11 @@ export const DIFFICULTY_LABEL: Record<Difficulty, string> = { trivial: 'Trivial'
 export interface DangerInfo {
   label: string;
   examples: string;
-  /** Overland (travel, camp and rest): hours between checks. */
-  everyHours: number;
+  /** Hours between checks while on the move, stationary, or resting. */
+  travelHours: number;
+  campHours: number;
+  restHours: number;
+  shelteredRestHours: number;
   /** Dungeon or ruin: 10-minute exploration turns between checks. */
   everyTurns: number;
   /** An encounter happens on a d20 total of this or higher. */
@@ -35,11 +38,11 @@ export interface DangerInfo {
  * of the place.
  */
 export const DANGER: Record<Danger, DangerInfo> = {
-  safe: { label: 'Safe', examples: 'patrolled roads, farmland, inside town walls', everyHours: 12, everyTurns: 6, on: 20, builtFor: 'low', peaceful: 0.6 },
-  low: { label: 'Low', examples: 'borderlands, quiet forests, well-travelled trade routes', everyHours: 8, everyTurns: 6, on: 19, builtFor: 'low', peaceful: 0.4 },
-  moderate: { label: 'Moderate', examples: 'untamed wilderness, abandoned ruins, the Underdark’s edges', everyHours: 4, everyTurns: 3, on: 18, builtFor: 'moderate', peaceful: 0.25 },
-  high: { label: 'High', examples: 'monster hunting grounds, war zones, deep caverns', everyHours: 2, everyTurns: 2, on: 18, builtFor: 'high', peaceful: 0.12 },
-  deadly: { label: 'Deadly', examples: 'a dragon’s domain, a demon-haunted waste, an infested dungeon', everyHours: 1, everyTurns: 1, on: 18, builtFor: 'beyond', peaceful: 0.05 },
+  safe: { label: 'Safe', examples: 'patrolled roads, farmland, inside town walls', travelHours: 12, campHours: 12, restHours: 12, shelteredRestHours: 12, everyTurns: 6, on: 20, builtFor: 'low', peaceful: 0.6 },
+  low: { label: 'Low', examples: 'borderlands, quiet forests, well-travelled trade routes', travelHours: 8, campHours: 4, restHours: 4, shelteredRestHours: 8, everyTurns: 4, on: 19, builtFor: 'low', peaceful: 0.4 },
+  moderate: { label: 'Moderate', examples: 'untamed wilderness, abandoned ruins, the Underdark’s edges', travelHours: 4, campHours: 2.5, restHours: 2, shelteredRestHours: 4, everyTurns: 3, on: 18, builtFor: 'moderate', peaceful: 0.25 },
+  high: { label: 'High', examples: 'monster hunting grounds, war zones, deep caverns', travelHours: 3, campHours: 2, restHours: 2, shelteredRestHours: 4, everyTurns: 2, on: 16, builtFor: 'high', peaceful: 0.12 },
+  deadly: { label: 'Deadly', examples: 'a dragon’s domain, a demon-haunted waste, an infested dungeon', travelHours: 2, campHours: 1, restHours: 1, shelteredRestHours: 2, everyTurns: 1, on: 15, builtFor: 'beyond', peaceful: 0.05 },
 };
 
 /** Lowest natural d20 that finds an encounter with this modifier. A natural 20 always does. */
@@ -51,7 +54,7 @@ export function checkChance(on: number, mod: number): number {
 }
 
 /** Expected encounters per 24 hours (overland) at a danger level and modifier. */
-export const encountersPerDay = (d: Danger, mod = 0): number => (24 / DANGER[d].everyHours) * checkChance(DANGER[d].on, mod);
+export const encountersPerDay = (d: Danger, mod = 0): number => (24 / DANGER[d].travelHours) * checkChance(DANGER[d].on, mod);
 
 export interface CheckConditions {
   activity: 'travel' | 'camp' | 'rest' | 'explore';
@@ -67,6 +70,43 @@ export interface CheckConditions {
   underground: boolean;
   /** Pack animals, wagons or more than 6 travellers. */
   bigGroup: boolean;
+  stuck?: boolean;
+  vulnerable?: boolean;
+}
+
+/** Exploration uses its own turn counter. Camp and rest use the same elapsed-time counter as travel. */
+export function encounterIntervalMinutes(danger: Danger, c: Pick<CheckConditions, 'activity' | 'sheltered' | 'stuck'>): number {
+  const d = DANGER[danger];
+  if (c.activity === 'explore') return d.everyTurns * 10;
+  if (c.activity === 'travel') return d.travelHours * 60;
+  if (c.stuck) return d.restHours * 60;
+  if (c.activity === 'rest') return (c.sheltered ? d.shelteredRestHours : d.restHours) * 60;
+  return (c.sheltered ? d.travelHours : d.campHours) * 60;
+}
+
+export function nextEncounterMinutes(interval: number, banked: number): number {
+  return Math.max(1, interval - banked);
+}
+
+/** Risk with the selected table and conditions held constant for the stated duration. */
+export function encounterRisk(table: EncounterTable, conditions: CheckConditions, minutes: number, banked: number) {
+  const interval = encounterIntervalMinutes(table.danger, conditions);
+  const first = conditions.activity === 'explore'
+    ? Math.max(10, interval - banked)
+    : nextEncounterMinutes(interval, banked);
+  const checks = minutes < first ? 0 : 1 + Math.floor((minutes - first) / interval);
+  const mod = checkModifiers(conditions).reduce((sum, m) => sum + m.value, 0);
+  const check = checkChance(DANGER[table.danger].on, mod);
+  let creatureShare = 0;
+  let hostileShare = 0;
+  for (const row of table.rows) {
+    if (row.kind !== 'creature' || !row.creature || !row.count) continue;
+    const share = (row.to - row.from + 1) / 100;
+    creatureShare += share;
+    hostileShare += share * attitudeThresholds(row.creature.align).hostileUpTo / 20;
+  }
+  const atLeastOne = (p: number) => 1 - (1 - p) ** checks;
+  return { checks, encounter: atLeastOne(check), creature: atLeastOne(check * creatureShare), hostile: atLeastOne(check * hostileShare) };
 }
 
 export interface CheckMod {
@@ -78,13 +118,18 @@ export interface CheckMod {
 /** Table rule: conditions that make an encounter more (+) or less (−) likely on the d20 check. */
 export function checkModifiers(c: CheckConditions): CheckMod[] {
   const out: CheckMod[] = [];
+  if (c.underground && (c.activity === 'camp' || c.activity === 'rest') && !c.sheltered) {
+    out.push({ label: 'Exposed underground', value: 1, why: 'creatures can reach an open camp at any hour' });
+  }
   if (c.night && !c.underground) out.push({ label: 'Night', value: 1, why: 'predators and worse hunt after dark' });
-  if (c.lightAtNight && (c.night || c.underground) && c.activity !== 'travel') out.push({ label: 'Light in the dark', value: 1, why: 'a fire or lantern can be seen from far off' });
+  if (c.lightAtNight && (c.night || c.underground) && c.activity !== 'travel' && !c.sheltered) out.push({ label: 'Light in the dark', value: 1, why: 'a fire or lantern can be seen from far off' });
   if (c.activity === 'travel' && c.pace === 'fast') out.push({ label: 'Fast pace', value: 1, why: 'a hurrying party is noisy and careless' });
   if (c.activity === 'travel' && c.pace === 'slow') out.push({ label: 'Slow pace', value: -1, why: 'moving carefully, the party can travel stealthily' });
   if (c.activity === 'travel' && c.goodRoad) out.push({ label: 'Good road', value: -1, why: 'roads are patrolled and cleared' });
   if (c.foulWeather && !c.underground) out.push({ label: 'Foul weather', value: -1, why: 'most creatures shelter from storms' });
   if (c.sheltered && c.activity !== 'travel') out.push({ label: 'Sheltered camp', value: -1, why: 'walls or rock hide the camp' });
+  if (c.stuck && c.activity !== 'travel') out.push({ label: 'Stuck in place', value: 2, why: 'creatures have more time to find and approach the stranded party' });
+  if (c.vulnerable) out.push({ label: 'Downed companion', value: 1, why: 'a vulnerable member makes the party easier to approach' });
   if (c.bigGroup) out.push({ label: 'Large group', value: 1, why: 'wagons, animals or a crowd are hard to hide' });
   return out;
 }
@@ -524,10 +569,15 @@ export function plural(name: string): string {
 
 export type Attitude = 'Hostile' | 'Indifferent' | 'Friendly';
 
+function attitudeThresholds(align: EncounterCreature['align']) {
+  const [hostileUpTo, friendlyFrom] = align === 'E' ? [15, 21] : align === 'G' ? [3, 13] : align === 'U' ? [10, 20] : [7, 18];
+  return { hostileUpTo, friendlyFrom };
+}
+
 /** Table rule: starting attitude from alignment, rolled on a d20 so even evil creatures can parley. */
 export function rollAttitude(c: EncounterCreature, rng: Rng): { roll: number; attitude: Attitude } {
   const r = die(20, rng);
-  const [hostileUpTo, friendlyFrom] = c.align === 'E' ? [15, 21] : c.align === 'G' ? [3, 13] : c.align === 'U' ? [10, 20] : [7, 18];
+  const { hostileUpTo, friendlyFrom } = attitudeThresholds(c.align);
   return { roll: r, attitude: r <= hostileUpTo ? 'Hostile' : r >= friendlyFrom ? 'Friendly' : 'Indifferent' };
 }
 

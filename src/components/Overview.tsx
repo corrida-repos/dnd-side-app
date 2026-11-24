@@ -865,7 +865,7 @@ function PlaceCard() {
       </div>
       <p className="small muted">
         {TERRAIN[s.place.terrain].label}: fastest pace {maxPaceFor(s.place.terrain, s.place.goodRoad)}, foraging DC {TERRAIN[s.place.terrain].forageDC}, navigation DC {TERRAIN[s.place.terrain].navigationDC}, search DC{' '}
-        {TERRAIN[s.place.terrain].searchDC}, encounters at {TERRAIN[s.place.terrain].encounterDistance}. {DANGER[s.place.danger].label} danger: random encounter check every {DANGER[s.place.danger].everyHours} h on {DANGER[s.place.danger].on}+ (see the Encounters tab).
+        {TERRAIN[s.place.terrain].searchDC}, encounters at {TERRAIN[s.place.terrain].encounterDistance}. {DANGER[s.place.danger].label} danger: random encounter check every {DANGER[s.place.danger].travelHours} h while travelling. See the Encounters tab for current odds.
       </p>
       <MapLine />
       <div className="form-row">

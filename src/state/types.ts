@@ -567,6 +567,8 @@ export interface Madness {
 }
 
 export interface Place {
+  /** The party is stranded while stopped here, for random encounter checks. */
+  encounterStuck?: boolean;
   name: string;
   climate: ClimateId;
   altitudeFt: number;
