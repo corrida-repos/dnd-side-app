@@ -546,6 +546,19 @@ The campaign's long game: characters rise in socioeconomic power by one of three
 
 ---
 
+## Phase 12: Eberron campaign edition 📋
+
+Offer an Eberron edition for new campaigns that uses the same app and rules engine. Save the setting with the campaign and default the edition to the Calendar of Galifar and Khorvaire. The campaign's region, settlement or district, and travel mode should inform every generator. Start with Sharn, the Brelish countryside, and the Mournland to cover city districts, overland travel, and a supernatural wilderness.
+
+- **Random encounters:** Weight encounters by region, terrain, danger, time of day, and mode of travel. A Sharn street or skycoach ride can produce Watch patrols, couriers, or local faction trouble. A lightning rail journey can produce passenger or cargo complications. The Mournland can produce living spells, magical anomalies, and salvagers. Include social encounters, hazards, and discoveries alongside combat. [Sharn](https://5e.tools/book.html#erlw,8) · [Khorvaire gazetteer](https://5e.tools/book.html#erlw,5) · [Eberron bestiary](https://5e.tools/book.html#erlw,13)
+- **Settlements:** Give named places profiles for their districts, authorities, services, and local factions. Generate unnamed settlements from the surrounding nation's culture and trade. Sharn wards should have different services and authorities from a rural Brelish village. Place lightning rail stations on served routes and airship berths at suitable ports. Use the generated buildings to determine which services the party can actually buy. [Khorvaire gazetteer](https://5e.tools/book.html#erlw,5) · [Sharn neighborhoods](https://5e.tools/book.html#efa,4)
+- **NPCs:** Generate names, occupations, backgrounds, languages, affiliations, and motivations from the same locality as the settlement or encounter. Use local traditions for surnames, and generate Dragonmarked House ties or marks where appropriate. Derive a Watch officer, house courier, or Morgrave researcher from the role and location, with room for NPCs to depart from local norms. Save generated residents and contacts so they recur on later visits. [Khorvaire gazetteer](https://5e.tools/book.html#erlw,5) · [Dragonmarked houses](https://5e.tools/book.html#efa,5) · [Morgrave expeditions](https://5e.tools/book.html#efa,6)
+- **Connect the generators:** An encounter can introduce a local NPC or point to a nearby settlement service. Settlements, encounters, and NPCs should agree on which factions and transport services operate in the area. Reuse the existing faction and Renown systems for Dragonmarked House favors. Connect the edition to the mobile Bastion and elemental-airship work in the rules audit. [Mobile Bastions](https://5e.tools/book.html#efa,3) · [Elemental airships](https://5e.tools/book.html#efa,7)
+
+Use *Eberron: Forge of the Artificer* for revised mechanics and *Eberron: Rising from the Last War* for geography, cultural context, and legacy material available through 5etools. Verify the first release by generating a Sharn ward, a Brelish village, and a Mournland journey from the same campaign, then reloading and revisiting a settlement to confirm its residents persist. Add more Khorvaire regions once those workflows work together.
+
+---
+
 ## 5etools rules audit
 
 This review compares the revised core books and their supplements against the app at `8622f19`. It covers rules for travel, time, survival, equipment, downtime, factions, and Bastions, including features that exist in the app but only cover part of a published rule. The book links open the 5etools chapters used for the comparison. The audit records implementation gaps.
