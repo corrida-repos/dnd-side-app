@@ -292,9 +292,9 @@ function OfficeSection({ c }: { c: Character }) {
       )}
       <div className="btn-row">
         <Select
-          label="Set office (DM)"
+          label="Award or set office (DM)"
           value={String(o.rank)}
-          onChange={(v) => dispatch((st, cx) => E.setOffice(st, cx, c.id, Number(v)))}
+          onChange={(v) => dispatch((st, cx) => (Number(v) ? E.awardOffice(st, cx, c.id, Number(v), '') : E.setOffice(st, cx, c.id, 0)))}
           options={OFFICES.slice(0, TOP_RANK + 1).map((x) => ({ value: String(x.rank), label: x.rank ? x.title[o.path] : 'Leave the hierarchy' }))}
         />
       </div>

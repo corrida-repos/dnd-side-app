@@ -1,4 +1,4 @@
-import type { TameTarget, ActiveEffect, Activity, CharacterSpell, InventoryItem, LogEntry, Ritual, Stash, Bastion, Business, Character, FacilityWork, Obstacle, Rival, Debt, Mark, Faction, ExhaustionCause, Facility, JourneyStage, MagicItem, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
+import type { LadderPos, TameTarget, ActiveEffect, Activity, CharacterSpell, InventoryItem, LogEntry, Ritual, Stash, Bastion, Business, Character, FacilityWork, Obstacle, Rival, Debt, Mark, Faction, ExhaustionCause, Facility, JourneyStage, MagicItem, Pace, PendingSave, Project, SaveKind, State, Tone } from './types';
 import { BASIC_BUILD, BASTION_TURN_DAYS, defaultSize, ENLARGE, rollBastionEvent, SIZE_LABEL, SPECIAL_FACILITIES, type FacilitySize } from '../rules/bastion';
 import { d20, die, combineModes, rollDice, rollExpr, signed, type Rng, type RollMode } from '../rules/dice';
 import { dateFromIndex, formatClock, formatDate, formatDuration, lightAt, sunriseMinutes } from '../rules/calendar';
@@ -79,6 +79,7 @@ import { newCharacter, uid } from './defaults';
 import { sense, type SenseKey } from '../rules/senses';
 import * as Piety from '../rules/piety';
 import * as Priest from '../rules/priesthood';
+import * as Ladder from '../rules/ladders';
 import { buildTable, checkModifiers, DANGER, DIFFICULTY_LABEL, firstSign, rollOnTable, SRD_POOL, BOOK_POOL, type CheckConditions, type Danger, type EncounterCreature, type EncounterTable, type Party } from '../rules/encounters';
 import type { TerrainType } from '../rules/terrain';
 import { FESTERING_MEDICINE_DC, INJURIES, INJURY_MEDICINE_SUCCESSES, INJURY_REST_DAYS, INJURY_SPELLS, healsInjury, injuryFor, type InjuryKind } from '../rules/injuries';
@@ -603,6 +604,7 @@ function endOfDay(s: State, ctx: Ctx): void {
   festeringWounds(s);
   notorietyDaily(s, ctx);
   pietyDaily(s);
+  laddersDaily(s);
   contactsDaily(s);
   groomTheMounts(s);
   checkRituals(s);
@@ -4162,13 +4164,14 @@ export const settleBusiness = act((d, ctx, businessId: string) => {
   if (!b || b.daysWorked < 1 || b.building) return;
   const owner = charById(d, b.ownerId);
   const days = Math.min(BUSINESS_MAX_DAYS, b.daysWorked);
-  const r = rollBusiness(ctx.rng, days, b.gpPerDay, b.debts + (b.sabotaged ? 1 : 0));
+  const guild = owner ? guildBusinessBonus(d, owner) : null;
+  const r = rollBusiness(ctx.rng, days, b.gpPerDay, b.debts + (b.sabotaged ? 1 : 0), guild?.bonus ?? 0);
   if (b.sabotaged) {
     log(d, `${b.name} suffers from a rival's sabotage: −10 on this roll.`, 'warn');
     b.sabotaged = false;
   }
   const penalty = b.debts ? ` − ${b.debts * BUSINESS_DEBT_PENALTY} for unpaid debts` : '';
-  log(d, `${b.name}: d100 ${r.roll} + ${days} days + ${BUSINESS_TABLE_BONUS} (a well-run business, table rule)${penalty} = ${r.total}. ${r.text}.`, r.payGp > 0 ? 'warn' : r.profitGp > 0 ? 'good' : 'info');
+  log(d, `${b.name}: d100 ${r.roll} + ${days} days + ${BUSINESS_TABLE_BONUS} (a well-run business, table rule)${guild ? ` + ${guild.bonus} (${guild.title}, the guild behind them)` : ''}${penalty} = ${r.total}. ${r.text}.`, r.payGp > 0 ? 'warn' : r.profitGp > 0 ? 'good' : 'info');
   b.lastResult = `${r.text} (${r.total})`;
   b.daysWorked = 0;
   if (r.payGp > 0) {
@@ -9120,3 +9123,263 @@ function officeMonth(s: State, c: Character): void {
   setOfficeMut(s, c, Math.max(1, lower), o.path);
   log(s, `After ${Priest.STRIKES_TO_DEMOTE} months of neglected duties, the faith of ${dv.deity} takes ${c.name}'s office: ${title} no more, now ${Priest.officeTitle(Math.max(1, lower), o.path)} (table rule).`, 'bad');
 }
+
+// ---------------------------------------------------------------- paths to power: court and guild (table rule)
+
+export const ladderPos = (c: Character, ladder: Ladder.LadderId): LadderPos | undefined => (c.ladders ?? []).find((p) => p.ladder === ladder);
+const ladderFaction = (s: State, p: LadderPos): Faction | undefined => s.factions.find((f) => f.id === p.factionId);
+const posTitle = (p: LadderPos, rank = p.rank): string => Ladder.rungTitle(p.ladder, rank, p.civic);
+
+/** Guild masters' businesses do better: the bonus to Running a Business rolls (table rule). */
+function guildBusinessBonus(s: State, c: Character): { bonus: number; title: string } | null {
+  const p = ladderPos(c, 'guild');
+  const bonus = s.settings.pathsToPower && p ? Ladder.LADDERS.guild.rungs[p.rank].businessBonus ?? 0 : 0;
+  return bonus && p ? { bonus, title: posTitle(p) } : null;
+}
+
+/** The highest rank a character holds on any ladder, the priesthood included, and the social tier it gives. */
+export function socialRank(c: Character): { rank: number; tier: (typeof Ladder.SOCIAL_TIER)[number]; from: string } {
+  const opts: { rank: number; from: string }[] = [{ rank: 0, from: '' }];
+  for (const p of c.ladders ?? []) opts.push({ rank: p.rank, from: posTitle(p) });
+  if (c.devotion?.office && c.devotion.piety >= 0) opts.push({ rank: c.devotion.office.rank, from: Priest.officeTitle(c.devotion.office.rank, c.devotion.office.path) });
+  const best = opts.reduce((a, b) => (b.rank > a.rank ? b : a));
+  return { rank: best.rank, tier: Ladder.socialTier(best.rank), from: best.from };
+}
+
+export function ladderStanding(s: State, c: Character, ladder: Ladder.LadderId): Ladder.LadderStanding {
+  const p = ladderPos(c, ladder);
+  return {
+    renown: p ? ladderFaction(s, p)?.renown ?? 0 : 0,
+    level: c.level,
+    daysInRank: p ? s.dayIndex - p.sinceDay : 0,
+    hasTool: p?.trade ? proficientWith(c, p.trade) : null,
+    businesses: s.businesses.filter((b) => b.ownerId === c.id && !b.building).length,
+    wealth: c.gp,
+  };
+}
+
+/** Why the next rank can't be petitioned for now (empty: it can). Award-only ranks always say so. */
+export function ladderBlocked(s: State, c: Character, ladder: Ladder.LadderId): string[] {
+  const p = ladderPos(c, ladder);
+  if (!p) return ['Not yet on this ladder.'];
+  const next = Ladder.LADDERS[ladder].rungs[p.rank + 1];
+  if (!next) return ['There is no higher rank.'];
+  const miss = Ladder.ladderMissing(ladder, p.rank + 1, ladderStanding(s, c, ladder));
+  if (next.way === 'award') miss.push(`${posTitle(p, next.rank)} is only ever granted: the DM awards it`);
+  if (p.nextPetitionDay != null && p.nextPetitionDay > s.dayIndex) miss.push(`a new petition in ${p.nextPetitionDay - s.dayIndex} day(s)`);
+  return miss;
+}
+
+/** Suggested petition bonus: Persuasion or History at court; the trade's tool (or Persuasion for elections) in the guild. */
+export function ladderBonus(c: Character, ladder: Ladder.LadderId): number {
+  const pb = proficiencyBonus(c.level);
+  const mod = (k: 'int' | 'cha' | 'dex' | 'wis') => {
+    const sc = abilityScore(c, k);
+    return sc == null ? 0 : abilityMod(sc);
+  };
+  const has = (sk: string) => (c.skillProfs ?? []).some((x) => x.toLowerCase() === sk);
+  const persuasion = mod('cha') + (has('persuasion') ? pb : 0);
+  if (ladder === 'court') return Math.max(persuasion, mod('int') + (has('history') ? pb : 0));
+  const p = ladderPos(c, 'guild');
+  if (p && p.rank >= 3) return persuasion;
+  const tool = p?.trade && proficientWith(c, p.trade) ? pb : 0;
+  return Math.max(mod('int'), mod('dex'), mod('wis')) + tool;
+}
+
+/**
+ * Puts a character on a rank. At court one title (a Mark of Prestige) grows with the rank: granted at Knight, raised
+ * in place to Lord and Duke, lowered on a fall, and taken back below Knight. Each rank's lands come with it.
+ */
+function setRungMut(s: State, c: Character, p: LadderPos, rank: number, disgrace = false): void {
+  const from = p.rank;
+  Object.assign(p, { rank, sinceDay: s.dayIndex, lastCheckDay: s.dayIndex, dutyDays: 0, strikes: 0, nextPetitionDay: undefined });
+  if (p.ladder !== 'court' || rank === from) return;
+  const f = ladderFaction(s, p);
+  const rungs = Ladder.LADDERS.court.rungs;
+  // Lands of ranks no longer held go back.
+  for (const l of (p.lands ?? []).filter((x) => x.rank > rank)) {
+    const m = markById(s, l.id);
+    if (m) takeBack(s, m, `no longer ${rungs[l.rank].title}`, 'bad', disgrace);
+  }
+  p.lands = (p.lands ?? []).filter((x) => x.rank <= rank);
+  const title = p.titleId ? markById(s, p.titleId) : undefined;
+  const r = rungs[rank];
+  if (!r.titleRank) {
+    if (title) takeBack(s, title, `no longer a ${rungs[3].title.toLowerCase()}`, 'bad', disgrace);
+    p.titleId = undefined;
+    return;
+  }
+  const name = `${r.title} (${f?.name ?? 'the court'})`;
+  if (title && !title.revoked) {
+    title.rank = r.titleRank;
+    title.name = name;
+    if (rank > from) title.trust = TRUST_MAX;
+    log(s, `${c.name}'s title is ${rank > from ? 'raised' : 'lowered'} to ${name}.${TITLE_RANK[r.titleRank].lifestyle ? ` People now expect them to live ${LIFESTYLE_LABEL[TITLE_RANK[r.titleRank].lifestyle!]} or better.` : ''}`, rank > from ? 'good' : 'bad');
+  } else {
+    const m: Mark = { id: uid(), kind: 'title', name, holderIds: [c.id], grantor: f?.name ?? '', grantedDay: s.dayIndex, trust: TRUST_MAX, notes: '', rank: r.titleRank, ...(f ? { factionId: f.id } : {}) };
+    s.marks.push(m);
+    p.titleId = m.id;
+    const life = TITLE_RANK[r.titleRank].lifestyle;
+    log(s, `${c.name} kneels and rises as ${name}${f ? ` by ${f.name}` : ''}.${life ? ` People now expect them to live ${LIFESTYLE_LABEL[life]} or better.` : ''}`, 'good');
+  }
+  if (rank < from || !p.titleId) return;
+  // Each rank climbed brings its own lands, tied to the title.
+  for (let k = from + 1; k <= rank; k++) {
+    const land = rungs[k].land;
+    if (!land || p.lands!.some((x) => x.rank === k)) continue;
+    const m: Mark = { id: uid(), kind: 'land', name: `Lands of the ${rungs[k].title.toLowerCase()} ${c.name}`, holderIds: [c.id], grantor: f?.name ?? '', grantedDay: s.dayIndex, trust: TRUST_MAX, notes: '', land, trouble: null, titleId: p.titleId, ...(f ? { factionId: f.id } : {}) };
+    s.marks.push(m);
+    p.lands!.push({ rank: k, id: m.id });
+    log(s, `With the rank of ${rungs[k].title} come lands: ${LAND[land].label.toLowerCase()}.`, 'good');
+  }
+}
+
+/** Tracks a court (a ruler) or a guild as a faction for a ladder, reusing one of the same name. */
+export const trackInstitution = act((d, _ctx, name: string) => {
+  rulerFaction(d, name);
+});
+
+/** Joins a ladder: presented at court, or indentured to a guild master. Joining makes them a member (renown at least 1). */
+export const joinLadder = act((d, _ctx, charId: string, ladder: Ladder.LadderId, factionId: string, trade?: string) => {
+  const c = charById(d, charId);
+  const f = d.factions.find((x) => x.id === factionId);
+  if (!c || !f || ladderPos(c, ladder)) return;
+  (c.ladders ??= []).push({ ladder, factionId, rank: 1, sinceDay: d.dayIndex, dutyDays: 0, lastCheckDay: d.dayIndex, strikes: 0, trade: trade?.trim() || undefined });
+  if (f.renown < 1) {
+    log(d, `Renown with ${f.name} rises ${f.renown} → 1: ${c.name} is now a member.`, 'good');
+    f.renown = 1;
+  }
+  const r = Ladder.LADDERS[ladder].rungs[1];
+  log(d, ladder === 'court' ? `${c.name} is presented at ${f.name} as a ${r.title.toLowerCase()} (table rule). ${r.does}` : `${c.name} is indentured as an apprentice of ${f.name}${trade ? ` (${trade})` : ''} (table rule). ${r.does}`, 'good');
+});
+
+/** Petitions for the next rank: a check against its DC (Advantage when renown already meets the rank above). */
+export const petitionLadder = act((d, ctx, charId: string, ladder: Ladder.LadderId, bonus: number) => {
+  const c = charById(d, charId);
+  const p = c && ladderPos(c, ladder);
+  if (!c || !p || ladderBlocked(d, c, ladder).length) return;
+  const next = Ladder.LADDERS[ladder].rungs[p.rank + 1];
+  const f = ladderFaction(d, p);
+  const adv = Ladder.ladderAdvantage(ladder, p.rank + 1, f?.renown ?? 0);
+  const roll = d20(adv ? 'advantage' : 'normal', ctx.rng);
+  const total = roll.value + bonus;
+  const line = `${roll.rolls.join(' / ')}${adv ? ' with Advantage (renown)' : ''} ${signed(bonus)} = ${total} vs DC ${next.dc}`;
+  const title = posTitle(p, next.rank);
+  if (total >= next.dc) {
+    setRungMut(d, c, p, next.rank);
+    log(d, `${c.name} rises to ${title} of ${f?.name ?? LADDERS_INST(ladder)} (${line}; table rule). ${next.does}`, 'good');
+    return;
+  }
+  p.nextPetitionDay = d.dayIndex + Ladder.LADDER_PETITION_WAIT_DAYS;
+  log(d, `${f?.name ?? 'The institution'} is not yet ready to make ${c.name} ${title} (${line}). They may ask again in ${Ladder.LADDER_PETITION_WAIT_DAYS} days.`, 'warn');
+});
+
+const LADDERS_INST = (ladder: Ladder.LadderId) => Ladder.LADDERS[ladder].institution;
+
+/** Awards a rank directly (a battlefield knighthood, an honorary mastership, a vacant seat): no requirements, no check. */
+export const awardLadder = act((d, _ctx, charId: string, ladder: Ladder.LadderId, rank: number, why: string) => {
+  const c = charById(d, charId);
+  const p = c && ladderPos(c, ladder);
+  if (!c || !p) return;
+  const r = Math.max(1, Math.min(Ladder.TOP, Math.round(rank)));
+  if (r === p.rank) return;
+  const up = r > p.rank;
+  setRungMut(d, c, p, r);
+  const f = ladderFaction(d, p);
+  const rung = Ladder.LADDERS[ladder].rungs[r];
+  log(d, up ? `${f?.name ?? 'The powers that be'} award${f ? 's' : ''} ${c.name} the rank of ${posTitle(p)}${why.trim() ? `: ${why.trim()}` : ''} (table rule). ${rung.does}` : `${c.name} is reduced to ${posTitle(p)}${why.trim() ? `: ${why.trim()}` : ''}.`, up ? 'good' : 'bad');
+});
+
+/** Leaves a ladder (court titles from it are given up). */
+export const leaveLadder = act((d, _ctx, charId: string, ladder: Ladder.LadderId) => {
+  const c = charById(d, charId);
+  const p = c && ladderPos(c, ladder);
+  if (!c || !p) return;
+  setRungMut(d, c, p, 0);
+  c.ladders = (c.ladders ?? []).filter((x) => x !== p);
+  log(d, `${c.name} leaves ${ladderFaction(d, p)?.name ?? LADDERS_INST(ladder)}.`);
+});
+
+/** Guild: switches between the guild's own offices and the town council (ranks 4 and 5). */
+export const setCivic = act((d, _ctx, charId: string, civic: boolean) => {
+  const p = charById(d, charId) && ladderPos(charById(d, charId)!, 'guild');
+  if (p) p.civic = civic;
+});
+
+/** Days of duty (court attendance, guild business, council sittings) as downtime; they also count as time among the members. */
+export const ladderDuty = act((d, ctx, charId: string, ladder: Ladder.LadderId, days: number) => {
+  const c0 = charById(d, charId);
+  if (!c0 || !ladderPos(c0, ladder)) return;
+  const n = Math.max(1, Math.round(days));
+  for (let i = 0; i < n; i++) {
+    const p = ladderPos(charById(d, charId)!, ladder);
+    if (p) p.dutyDays += 1;
+    Object.assign(d, downtimeDay(d, ctx, []));
+  }
+  const c = charById(d, charId)!;
+  const p = ladderPos(c, ladder);
+  if (!p) return;
+  const f = ladderFaction(d, p);
+  log(d, `${c.name} spends ${n} day${n > 1 ? 's' : ''} on duties as ${posTitle(p)}: ${p.dutyDays}/${Ladder.LADDERS[ladder].rungs[p.rank].dutyDays} this month.`);
+  if (f && f.renown >= 1) {
+    f.involvementDays = (f.involvementDays ?? 0) + n;
+    while (f.involvementDays >= involvementDaysNeeded(f)) {
+      f.involvementDays -= involvementDaysNeeded(f);
+      gainRenown(d, f, 1, `${c.name}'s days of service`);
+    }
+  }
+});
+
+/** Monthly duties, and a court rank lost when its title is taken back (trust gone). */
+function laddersDaily(s: State): void {
+  if (!s.settings.pathsToPower) return;
+  const today = s.dayIndex + 1;
+  for (const c of s.characters) {
+    if (!alive(c)) continue;
+    for (const p of c.ladders ?? []) {
+      const title = p.titleId ? markById(s, p.titleId) : undefined;
+      if (title?.revoked) {
+        const was = posTitle(p);
+        p.titleId = undefined;
+        for (const l of p.lands ?? []) {
+          const m = markById(s, l.id);
+          if (m) takeBack(s, m, 'the title is gone', 'bad');
+        }
+        p.lands = [];
+        Object.assign(p, { rank: 2, sinceDay: today, dutyDays: 0, lastCheckDay: today, strikes: 0 });
+        log(s, `Stripped of the title, ${c.name} is ${was} no more: only an ${posTitle(p)} at court now (table rule).`, 'bad');
+        continue;
+      }
+      if (today - p.lastCheckDay < Ladder.LADDER_MONTH) continue;
+      p.lastCheckDay = today;
+      const need = Ladder.LADDERS[p.ladder].rungs[p.rank].dutyDays;
+      const served = p.dutyDays;
+      p.dutyDays = 0;
+      if (!need || served >= need) {
+        p.strikes = 0;
+        continue;
+      }
+      p.strikes += 1;
+      const f = ladderFaction(s, p);
+      if (p.strikes < Ladder.LADDER_STRIKES) {
+        log(s, `${c.name} gave ${served} of ${need} days to duties as ${posTitle(p)} this month, and ${f?.name ?? 'their peers'} noticed (${p.strikes}/${Ladder.LADDER_STRIKES}; table rule).`, 'warn');
+        continue;
+      }
+      const was = posTitle(p);
+      setRungMut(s, c, p, Math.max(1, p.rank - 1), true);
+      p.lastCheckDay = today;
+      log(s, `After ${Ladder.LADDER_STRIKES} months of neglected duties, ${c.name} is ${was} no more: now ${posTitle(p)} (table rule).`, 'bad');
+    }
+  }
+}
+
+/** The DM awards an office in the faith directly (a vacancy, an omen, a reward), with no petition or requirements. */
+export const awardOffice = act((d, _ctx, charId: string, rank: number, why: string) => {
+  const c = charById(d, charId);
+  const dv = c?.devotion;
+  if (!c || !dv) return;
+  const r = Math.max(1, Math.min(Priest.TOP_RANK, Math.round(rank)));
+  const path = dv.office?.path ?? (c.className === 'Paladin' ? 'order' : 'clergy');
+  setOfficeMut(d, c, r, path);
+  log(d, `The faith of ${dv.deity} names ${c.name} ${Priest.officeTitle(r, path)}${why.trim() ? `: ${why.trim()}` : ''} (table rule). ${Priest.OFFICES[r].does}`, 'good');
+});

@@ -512,37 +512,34 @@ Builds on the rolled-up town (Phase 9): its buildings and the people who run the
 
 ---
 
-## Phase 11: Paths to power 🔜
+## Phase 11: Paths to power ✅
 
-The campaign's long game: characters rise in socioeconomic power by one of three paths, or several at once. **Noble** (court favor, titles and land), **clerical** (the god's favor and the faith's hierarchy) and **bourgeois** (guild, trade and civic office). All three ladders use the same shape, so a duke, a high priest and a lord mayor sit at comparable heights:
+The campaign's long game: characters rise in socioeconomic power by one of three paths, or several at once. **Noble** (court favor, titles and land), **clerical** (the god's favor and the faith's hierarchy) and **bourgeois** (guild, trade and civic office). All three ladders share one shape (table rules), so a Knight, a Senior priest and a Master stand level, as do a Duke, the Head of the faith and a Lord mayor:
 
-- **Five ranks** on the DMG renown steps (1 / 3 / 10 / 25 / 50) and the level steps (1 / 3 / 5 / 11 / 17).
-- **Requirements** for each rank: renown with the path's institution (the court, the faith, the guild), one measure of the path's own power, character level, and time served in the rank below.
-- **A petition** with a check to rise. The top seat is filled only by vacancy, election or a sign, and the DM decides.
-- **Monthly duties** that pay (stipend, rents or profits) and cost the rank when neglected; disgrace suspends the rank.
-- **Lifestyle expected** of each rank: living below it costs face.
+- **Five ranks** on the DMG renown steps (1 / 3 / 10 / 25 / 50) and level steps (1 / 3 / 5 / 11 / 17), plus time in the rank below and the path's own measure (piety; land and titles; the trade's tool, businesses and wealth).
+- **How a rank is reached:** joined (rank 1), petitioned for with a check (Advantage when renown or piety already meets the rank above; a failure waits 30 days), or awarded only (Lord, Duke, Head of the faith, Guildmaster or Lord mayor). The DM can award any rank directly, requirements or not: a battlefield knighthood, an honorary mastership, a seat by acclaim.
+- **Monthly duties** (downtime at court, in the guild or council, in the temple) keep the rank; three months missed in a row cost a step. Disgrace suspends or strips it.
+- **Social standing** from the highest rank on any ladder: Commoner, Notable, Gentry, Magnate, Grandee.
 
 ### Clerical ✅
 - ✅ **Piety, gifts and faith renown:** see Life beyond the adventure.
-- ✅ **Priesthood and holy orders:** Acolyte to Head of the faith, or Squire to Grand master.
+- ✅ **Priesthood and holy orders:** Acolyte → Priest → Senior priest → High priest → Head of the faith (or Squire → Knight → Knight-captain → Marshal → Grand master), with stipends sized to the PHB lifestyles.
 
-### Noble 📋
-Builds on Marks of Prestige (titles, land, fortifications and the grantor's trust).
-- 📋 **Court favor:** the ruler's court as a faction; renown from service, gifts, feasts held and marriages arranged.
-- 📋 **The ladder:** Courtier → Knight → Lord or Baron → Count → Duke. Measure: land and fortifications held. Petition: Charisma (Persuasion) or Intelligence (History). Each rank grants the matching title as a Mark of Prestige, often with land.
-- 📋 **Duties:** attendance at court, levies of soldiers or coin in war, hosting the ruler; neglect costs trust.
+### Noble ✅
+- ✅ **The ladder:** Courtier → Esquire → Knight → Lord → Duke, at the ruler's court tracked as a faction. Petition: Charisma (Persuasion) or Intelligence (History).
+- ✅ **Titles and land:** from Knight, one title (a Mark of Prestige, with its expected lifestyle and the grantor's trust) is raised or lowered in place with the rank; Knight brings a knight's fee of farmland, Lord and Duke a village each. A title taken back drops them to Esquire, and a lost rank takes its lands.
 - 📋 **Patronage and alliances:** marriage and fosterage between houses, sponsors who speed a petition, rivals at court.
+- 📋 **War duties:** levies of soldiers or coin when the ruler calls.
 
-### Bourgeois 📋
-Builds on businesses, construction, guild dues and settlements.
-- 📋 **Guild ranks:** Apprentice → Journeyman → Master → Guild warden → Guildmaster. Measure: property and profit (businesses owned, net worth). Master needs a masterpiece (a crafted item of set value) and a workshop. Petition: an artisan's tool check or Charisma (Persuasion). Guild dues become rank dues.
-- 📋 **Perks:** guild prices on materials, trade licences, access to the guild's credit and warehouses.
-- 📋 **Civic office:** councillor, alderman, lord mayor: elected in the settlement, with civic duties and a say over taxes and the watch.
-- 📋 **Money buys standing:** letters of nobility bought at a price, endowing a temple, lending to the crown (debts the crown owes the character).
+### Bourgeois ✅
+- ✅ **The ladder:** Apprentice → Journeyman → Master → Guild warden → Guildmaster, or Alderman → Lord mayor on the civic branch. Journeyman and Master need the guild's tool (Master is a judged masterpiece and a business of their own); Warden or Alderman is an election (two businesses, 5,000 GP); Guildmaster or Lord mayor is filled when the seat falls vacant (25,000 GP).
+- ✅ **The guild behind them:** masters add +5, wardens +10 and guildmasters +15 to Running a Business rolls, so standing steadies a merchant's risky income.
+- 📋 **Perks:** guild prices on materials, trade licences, the guild's credit and warehouses.
+- 📋 **Money buys standing:** letters of nobility bought at a price, endowing a temple, lending to the crown.
 
-### Across the paths 📋
-- 📋 **Standing card:** each character's rank on every ladder, what the next step needs, monthly income and duties at a glance.
-- 📋 **Social tier:** one label from the highest rank held (commoner, notable, gentry, magnate, grandee), used by NPC attitudes, lifestyle expectations and Influence checks.
+### Across the paths
+- ✅ **Paths to power card** (World tab): each character's social standing, rank on every ladder, duties, next step and what it needs.
+- 📋 **Social standing in play:** NPC attitudes, lifestyle expectations and Influence checks that follow the social tier.
 
 ---
 

@@ -434,6 +434,28 @@ export interface Character {
   earnedGp?: number;
   /** Standing with their god (table rule, piety switch). */
   devotion?: Devotion | null;
+  /** Rank on the noble and bourgeois ladders (table rule, pathsToPower switch). */
+  ladders?: LadderPos[];
+}
+
+/** A character's place on the noble (court) or bourgeois (guild) ladder (table rule). */
+export interface LadderPos {
+  ladder: 'court' | 'guild';
+  /** The court or guild, as a tracked faction. */
+  factionId: string;
+  rank: number;
+  sinceDay: number;
+  dutyDays: number;
+  lastCheckDay: number;
+  strikes: number;
+  nextPetitionDay?: number;
+  /** Guild: the trade's tool, e.g. "Smith's Tools". */
+  trade?: string;
+  /** Guild: on the civic branch (alderman, lord mayor) rather than the guild's own offices. */
+  civic?: boolean;
+  /** Court: the title (a Mark of Prestige) that grows with each rank, and lands granted with each rank. */
+  titleId?: string;
+  lands?: { rank: number; id: string }[];
 }
 
 /** A character's standing with the god they serve (table rule). */
@@ -1047,6 +1069,8 @@ export interface Settings {
   newsTravels: boolean;
   /** Table rule: piety measures a character's standing with their god, with ranks, boons and estrangement. */
   piety: boolean;
+  /** Table rule: noble and bourgeois ladders (court and guild ranks) with petitions, awards, duties and social standing. */
+  pathsToPower: boolean;
 }
 
 /** A wild creature someone is trying to tame or train (table rule). */

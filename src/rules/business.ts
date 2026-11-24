@@ -100,10 +100,10 @@ export const BUSINESS_TABLE_BONUS = 20;
 /** Table rule: profits scale with the stretch, ×1 for up to 10 days, ×2 up to 20, ×3 up to 30 (the 2014 table pays the same for 1 day or 30). */
 export const profitScale = (days: number): number => Math.max(1, Math.ceil(days / 10));
 
-export function rollBusiness(rng: Rng, days: number, gpPerDay: number, debts: number): BusinessResult {
+export function rollBusiness(rng: Rng, days: number, gpPerDay: number, debts: number, extra = 0): BusinessResult {
   const d = Math.min(BUSINESS_MAX_DAYS, Math.max(0, days));
   const roll = rollDice(1, 100, rng);
-  const total = roll + d + BUSINESS_TABLE_BONUS - BUSINESS_DEBT_PENALTY * debts;
+  const total = roll + d + BUSINESS_TABLE_BONUS + extra - BUSINESS_DEBT_PENALTY * debts;
   const x = profitScale(d);
   const scaled = (r: BusinessResult): BusinessResult => (r.profitGp && x > 1 ? { ...r, profitGp: r.profitGp * x, text: `${r.text}, ×${x} for ${d} days` } : r);
   const upkeep = gpPerDay * d;
