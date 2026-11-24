@@ -417,6 +417,7 @@ Always on, not a switch: realistic work earns realistic rewards.
 - ✅ **Keeping in touch** (table rule): a visit or letter warms a contact's bond by one step, once every 30 days.
 - ✅ **Recuperating** (table rule on top of the DC 15 save): success also lifts 1 Exhaustion level and eases Stress by 2.
 - ✅ **Laborers** (table rule): before each Long Rest at a wild camp, each hired laborer gathers 1d6 + 2 hours of firewood and digs a sheltered fire pit.
+- ✅ **Hirelings who pull their weight** (table rules): a porter carries a 150 lb load of their own on the Storage tab (left where they're let go); a scribe copies Books from the party's paper and ink without taking the party's time; an interpreter reads foreign texts with no check; a teamster tends the mounts like a groom; sailors give +2 each (up to +10) to hold a ship through a storm and halve a long voyage's hull wear.
 - ✅ **Cooking** (table rule): any hot meal gives 8 hours of Advantage on saves against extreme cold and cold nights. A tasty meal also gives Advantage on forced-march saves, Stress −2 and Temporary HP equal to the cook's Proficiency Bonus. A feast (natural 20 or beating the DC by 5) gives Temporary HP equal to the cook's level plus Wisdom modifier, Stress −3 and Fear −1. Smoking meat over the fire (4 hours, Survival or Cook's Utensils DC 10) turns every 3 lb from the stores into a day of Rations that keep and sell for 5 SP (half on a failure, up to 30 lb a batch).
 
 ## Phase 9: Random tables from the 2024 DMG 📋

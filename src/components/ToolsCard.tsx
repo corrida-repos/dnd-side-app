@@ -121,6 +121,11 @@ export function ToolsCard() {
           <button className="small" onClick={() => dispatch((st, cx) => E.copyBook(st, cx, c.id, bookName))}>
             Fair copy of a Book ({BOOK_PAGES} sheets, {Math.round((BOOK_PAGES * 10) / 60)} h)
           </button>
+          {s.hirelings.some((h) => h.active && h.role === 'scribe' && !(h.busyUntil && h.busyUntil > E.absNow(s))) && (
+            <button className="small" onClick={() => dispatch((st, cx) => E.copyBook(st, cx, c.id, bookName, true))}>
+              Have the scribe copy it (no time for the party)
+            </button>
+          )}
           <span className="small muted">Table rule: worth {fmtGp(BOOK_GP)}, sold at full price as the copyist&apos;s own work.</span>
         </div>
       )}

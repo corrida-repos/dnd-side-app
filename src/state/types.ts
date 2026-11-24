@@ -165,6 +165,8 @@ export interface Stash {
   /** Hull wear from storms and long voyages (table rule), and whether the vessel is damaged (half speed). */
   hullWear?: number;
   hullDamaged?: boolean;
+  /** Table rule: the load a hired porter carries for the party. */
+  porterId?: string;
 }
 
 export interface Resource {

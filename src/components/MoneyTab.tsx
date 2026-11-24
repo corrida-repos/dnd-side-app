@@ -268,9 +268,8 @@ function HirelingsCard() {
       </p>
       <button
         onClick={() => {
-          edit(
-            (d) =>
-              void d.hirelings.push({
+          edit((d) => {
+            d.hirelings.push({
                 id: uid(),
                 name: name.trim() || info.label,
                 role,
@@ -280,8 +279,9 @@ function HirelingsCard() {
                 wageGp: role === 'messenger' ? 0 : info.skilled ? HIRELING_WAGE.skilled : HIRELING_WAGE.untrained,
                 payer,
                 active: true,
-              }),
-          );
+              });
+            E.syncPorters(d);
+          });
           setName('');
         }}
       >

@@ -268,3 +268,11 @@ export const RECUPERATE_EXHAUSTION = 1;
 export const RECUPERATE_STRESS = 2;
 /** Each laborer at a wild camp gathers this much firewood (hours of fuel) before the Long Rest, and digs the fire pit. */
 export const LABORER_FUEL_DICE = '1d6+2';
+
+// ---------------------------------------------------------------- hirelings at work
+
+/** A porter carries this much for the party, as their own load on the Storage tab. */
+export const PORTER_LB = 150;
+/** Each sailor aboard adds this to the helm's check against a storm, up to SAILOR_MAX. */
+export const SAILOR_BONUS = 2;
+export const SAILOR_MAX = 10;

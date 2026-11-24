@@ -35,7 +35,7 @@ import { FEED_LB_PER_DAY, MOUNT_CAPACITY, carryingCapacity, COINS_PER_LB, estima
 import { bigEnoughToRide, canBeSidekick, canTame, currentDC, dayOutcome, missedDays, NO_AIDS, resultGain, sessionAttitude, sessionResult, tameCheck, tameDC, TRUST_PER_DAY_MAX, TAME_MAX_FAILS, TAME_RETRY_MINUTES, TAME_SESSION_MINUTES, trainingNeeded, TRAINING_LABEL, trustCue, trustNeeded, type TameAids, type TamerFacts, type TameTraining } from '../rules/taming';
 import { BUTCHER_DC, BUTCHER_MINUTES, isEdible, MEAT_LB, STRANGE_TYPES, yieldsHide, type Creature } from '../rules/hunting';
 import { CURE_DC, CURE_LB_PER_RATION, CURE_MAX_LB, CURE_MINUTES, curedRations, FEAST_FEAR_RELIEF, FEAST_STRESS_RELIEF, feastTempHp, HEARTY_SAVES, isFeast, MEAL_BUFF_MINUTES, MEAL_STRESS_RELIEF, tastyTempHp, WARM_SAVES } from '../rules/cooking';
-import { CATCH_UP_WARMS_EVERY_DAYS, LABORER_FUEL_DICE, RECUPERATE_EXHAUSTION, RECUPERATE_STRESS, BOOK_GP, BOOK_PAGES, COPY_MAP_DC, COPY_MAP_MINUTES, PERFORM_MINUTES, performTake, RESEARCH_IDENTIFY_AT, RESEARCH_LEAD_AT, ROUTE_MAP_GP, AMMO_SEARCH_DC, ammoRecovered, CAROUSING_STRESS_PER_WEEK, DIG_FIND_ON, FINE_FUR, FINE_FUR_ODDS, FORECAST_MARGIN, forageBonusDice, HIDE_GP, isExceptional, KEPT_GEAR_MINUTES, KEPT_GEAR_NOTE, poisonYield, REINFORCE_MARGIN, rollFind, SERVICE_FEAR_PER_WEEK, SERVICE_STRESS_PER_WEEK, SMALL_PELT, trophyFor, WATCH_CATCH_DC, WATCH_CATCH_DICE, type Chore } from '../rules/chorePayoffs';
+import { PORTER_LB, SAILOR_BONUS, SAILOR_MAX, CATCH_UP_WARMS_EVERY_DAYS, LABORER_FUEL_DICE, RECUPERATE_EXHAUSTION, RECUPERATE_STRESS, BOOK_GP, BOOK_PAGES, COPY_MAP_DC, COPY_MAP_MINUTES, PERFORM_MINUTES, performTake, RESEARCH_IDENTIFY_AT, RESEARCH_LEAD_AT, ROUTE_MAP_GP, AMMO_SEARCH_DC, ammoRecovered, CAROUSING_STRESS_PER_WEEK, DIG_FIND_ON, FINE_FUR, FINE_FUR_ODDS, FORECAST_MARGIN, forageBonusDice, HIDE_GP, isExceptional, KEPT_GEAR_MINUTES, KEPT_GEAR_NOTE, poisonYield, REINFORCE_MARGIN, rollFind, SERVICE_FEAR_PER_WEEK, SERVICE_STRESS_PER_WEEK, SMALL_PELT, trophyFor, WATCH_CATCH_DC, WATCH_CATCH_DICE, type Chore } from '../rules/chorePayoffs';
 import { addCoins, COIN_GP, coinCount, coinsFor, emptyPurse, exchange, fmtPurse, purseValue, spend, type Denom, type Purse } from '../rules/coins';
 import { detectContainer } from '../rules/containers';
 import { FIRE_DAMAGE, RAT_BITE_DAMAGE, RELAXATION_NEEDS, SHAKEDOWN_DAMAGE, SHAKEDOWN_GP, SHAKEDOWN_RIVAL_ODDS, SHUNNED_AFTER_DAYS, SPOILED_FOOD_DC, TAINTED_POTION_ODDS, WATCH_FINE, WATCH_JAIL_DAYS, WEEKLY_ODDS, WRETCHED_STRESS, isLowLife } from '../rules/lowLife';
@@ -908,7 +908,22 @@ function expireConditions(s: State): void {
 }
 
 /** Moves the clock forward, firing the hourly and end-of-day checks along the way. */
+/**
+ * Table rule: each active porter carries a load of their own (a stash with the party on the Storage tab). A porter
+ * who is let go leaves their load behind where they were dismissed, still the party's.
+ */
+export function syncPorters(s: State): void {
+  for (const h of s.hirelings) {
+    if (h.role !== 'porter') continue;
+    const st = s.stashes.find((x) => x.porterId === h.id);
+    if (h.active && !st) s.stashes.push({ id: uid(), name: `${h.name}'s load (porter)`, kind: 'stash', location: 'With the party', capacityLb: PORTER_LB, items: [], purse: emptyPurse(), notes: `Carried by ${h.name}, a hired porter (table rule: up to ${PORTER_LB} lb).`, porterId: h.id });
+    else if (h.active && st && st.location !== 'With the party') st.location = 'With the party';
+    else if (!h.active && st && st.location === 'With the party') st.location = s.place.name || 'Where the porter was let go';
+  }
+}
+
 export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activity, opts: { exploring?: boolean } = {}): void {
+  syncPorters(s);
   let remaining = Math.max(0, Math.round(minutes));
   if (remaining > 0 && s.settings.deathSavesResolve) resolveDying(s, ctx);
   while (remaining > 0) {
@@ -1512,9 +1527,11 @@ function sail(d: State, ctx: Ctx, v: Stash, o: TravelOpts): number {
   if (d.settings.stormsAtSea && d.weather.wind === 'strong' && d.weather.precip === 'heavy' && !/airship/i.test(v.name)) {
     const helm = activeNavigator(d, d.travel.navigatorId);
     const r = d20('normal', ctx.rng);
-    const total = r.value + (helm ? helm.survival - 2 * helm.exhaustion : 0);
+    // Table rule: a trained crew helps hold her: +2 for each hired sailor, up to +10.
+    const crew = Math.min(SAILOR_MAX, SAILOR_BONUS * d.hirelings.filter((h) => h.active && h.role === 'sailor').length);
+    const total = r.value + (helm ? helm.survival - 2 * helm.exhaustion : 0) + crew;
     if (total >= STORM_AT_SEA_DC) {
-      log(d, `A storm lashes the ${v.name}. ${helm?.name ?? 'The crew'} keeps her on course: Wisdom (Survival) ${total} against DC ${STORM_AT_SEA_DC}.`, 'good');
+      log(d, `A storm lashes the ${v.name}. ${helm?.name ?? 'The crew'} keeps her on course: Wisdom (Survival) ${total} against DC ${STORM_AT_SEA_DC}${crew ? ` (+${crew} from the hired sailors)` : ''}.`, 'good');
     } else {
       miles = Math.round(miles * 5) / 10;
       log(d, `A storm lashes the ${v.name} and drives her off course: Wisdom (Survival) ${total} against DC ${STORM_AT_SEA_DC}. Only half the distance counts (table rule).`, 'warn');
@@ -6059,6 +6076,11 @@ export const setDamaged = act((d, _ctx, ownerId: string, itemId: string, damaged
 export const decipherText = act((d, ctx, charId: string, bonus: number, language: string, gist: string) => {
   const c = charById(d, charId);
   if (!c) return;
+  const interp = d.hirelings.find((h) => h.active && h.role === 'interpreter');
+  if (interp) {
+    advanceMut(d, ctx, DECIPHER_MINUTES, 'camp');
+    return void log(d, `${interp.name}, the party's interpreter, reads the text in ${language.trim() || 'the unknown language'} aloud and properly${gist.trim() ? `: ${gist.trim()}` : ''}. No guesswork needed.`, 'good');
+  }
   if (!d.settings.improvised) return void log(d, `Nobody can make sense of the ${language || 'unknown'} text without knowing the language (improvised attempts are off).`, 'warn');
   advanceMut(d, ctx, DECIPHER_MINUTES, 'camp');
   const mod = bonus - 2 * c.exhaustion;
@@ -6315,7 +6337,8 @@ export const torchbearerLights = act((d, _ctx, hirelingId: string) => {
 
 /** A groom feeds and waters every mount at the end of the day. */
 function groomTheMounts(s: State): void {
-  const groom = s.hirelings.find((h) => h.active && h.role === 'groom');
+  // A teamster handles draft animals and tends them like a groom (table rule).
+  const groom = s.hirelings.find((h) => h.active && h.role === 'groom') ?? s.hirelings.find((h) => h.active && h.role === 'teamster');
   if (!groom) return;
   const tended: string[] = [];
   for (const m of s.characters.filter((c) => c.kind === 'mount' && alive(c))) {
@@ -6664,7 +6687,7 @@ export const soundSignal = act((d, _ctx, charId: string, kind: 'whistle' | 'bell
  */
 export const writePages = act((d, ctx, charId: string, pages: number, what: string) => writePagesMut(d, ctx, charId, pages, what));
 
-function writePagesMut(d: State, ctx: Ctx, charId: string, pages: number, what: string): void {
+function writePagesMut(d: State, ctx: Ctx, charId: string, pages: number, what: string, takesTime = true): void {
   const c = charById(d, charId);
   const n = Math.max(1, Math.round(pages));
   if (!c) return;
@@ -6679,7 +6702,7 @@ function writePagesMut(d: State, ctx: Ctx, charId: string, pages: number, what: 
     const missing = [have < n && 'paper', !ink && 'ink', !pen && 'a pen'].filter(Boolean).join(', ');
     return void log(d, `With no ${missing}, ${c.name} scratches a short note${what.trim() ? ` (${what.trim()})` : ''} in charcoal on bark: a few lines, about ${CHARCOAL_WORDS} words at most, that rain will smudge (table rule).`);
   }
-  advanceMut(d, ctx, n * 10, 'camp');
+  if (takesTime) advanceMut(d, ctx, n * 10, 'camp');
   const me = charById(d, charId)!;
   let left = n;
   for (const it of me.inventory.filter((i) => PAPER.test(i.name.trim()) && i.qty > 0)) {
@@ -6754,16 +6777,21 @@ export const copyMap = act((d, ctx, charId: string, mapItemId: string, bonus: nu
 });
 
 /** Table rule: a fair copy of a Book someone carries: 50 sheets of Paper or Parchment and 50 pages of Ink. The copy is worth a Book's price and sells as the copyist's own work. */
-export const copyBook = act((d, ctx, charId: string, bookName: string) => {
+export const copyBook = act((d, ctx, charId: string, bookName: string, byScribe: boolean = false) => {
   const c = charById(d, charId);
   if (!c) return;
+  // A hired scribe does the copying from the party's paper and ink while the party gets on with other things.
+  const now = absNow(d);
+  const scribe = byScribe ? d.hirelings.find((h) => h.active && h.role === 'scribe' && !(h.busyUntil && h.busyUntil > now)) : undefined;
+  if (byScribe && !scribe) return void log(d, 'No hired scribe is free to copy a Book right now.', 'warn');
   const sheets = c.inventory.filter((i) => PAPER.test(i.name.trim()) && i.qty > 0).reduce((a, i) => a + i.qty, 0);
   if (sheets < BOOK_PAGES) return void log(d, `A fair copy of a Book takes ${BOOK_PAGES} sheets of Paper or Parchment; ${c.name} has ${sheets}.`, 'warn');
   if (!c.inventory.some((i) => INK.test(i.name.trim()) && i.qty > 0) || !c.inventory.some((i) => /ink pen|quill/i.test(i.name))) return void log(d, `${c.name} needs Ink and an Ink Pen to copy a Book.`, 'warn');
-  writePagesMut(d, ctx, charId, BOOK_PAGES, `a fair copy of ${bookName || 'a Book'}`);
+  writePagesMut(d, ctx, charId, BOOK_PAGES, `a fair copy of ${bookName || 'a Book'}${scribe ? `, set down by ${scribe.name}` : ''}`, !scribe);
   const me = charById(d, charId)!;
   addLine(d, me, `Book (copy of ${bookName.trim() || 'a Book'})`, 1, { valueGp: BOOK_GP, crafted: true, weight: 5 }, null, false);
-  log(d, `${me.name} binds the pages into a Book, worth ${fmtGp(BOOK_GP)} and sold as their own work (table rule).`, 'good');
+  if (scribe) scribe.busyUntil = now + BOOK_PAGES * 10;
+  log(d, scribe ? `${scribe.name} copies and binds the Book over the next ${formatDuration(BOOK_PAGES * 10)} while the party is free: worth ${fmtGp(BOOK_GP)}, sold as the party's own work (table rule).` : `${me.name} binds the pages into a Book, worth ${fmtGp(BOOK_GP)} and sold as their own work (table rule).`, 'good');
 });
 
 // ---------------------------------------------------------------- learning what magic items do
@@ -8374,7 +8402,9 @@ export const repairItem = act((d, ctx, ownerId: string, itemId: string, method: 
 function hullWear(s: State, v: Stash, hours: number, storm: boolean): void {
   if (!s.settings.gearWear || /airship/i.test(v.name)) return;
   const before = Math.floor(v.hullWear ?? 0);
-  v.hullWear = Math.round(((v.hullWear ?? 0) + hours / 72 + (storm ? 1 : 0)) * 100) / 100;
+  // Table rule: hired sailors keep up the ship underway, halving the slow wear of a long voyage.
+  const tended = s.hirelings.some((h) => h.active && h.role === 'sailor') ? 0.5 : 1;
+  v.hullWear = Math.round(((v.hullWear ?? 0) + (hours / 72) * tended + (storm ? 1 : 0)) * 100) / 100;
   if (!v.hullDamaged && v.hullWear >= HULL_LIMIT) {
     v.hullDamaged = true;
     log(s, `The ${v.name} is taking water and her rigging is frayed: she makes half speed until repaired at a dock (table rule).`, 'bad');
