@@ -1,7 +1,8 @@
-import type { EncounterSurprise, HandoffParticipant } from '../rules/encounterHandoff';
+import { tacticalFromHandoff, type EncounterHandoff, type EncounterSurprise, type HandoffParticipant } from '../rules/encounterHandoff';
 import { BRELAND, BRELAND_ROUTES, nextDeparture, type BrelishLocality } from '../rules/eberron';
 import { audibleDistance, LOCK_DC, LOCK_MINUTES, monsterBehavior, NOISE, UNDERWATER_DISTANCE, type LockDetails, type Noise } from '../rules/exploration';
 import { rollBastionTreasure, rollTreasure, type TreasureItem, type TreasureRequest } from '../rules/treasure';
+import type { Disposition, TacticalCondition, TacticalResult, TacticalVitals } from '../rules/butler';
 import type { LadderPos, TameTarget, ActiveEffect, Activity, CharacterSpell, InventoryItem, LogEntry, Ritual, Stash, VehicleDetails, Bastion, Business, Character, FacilityWork, Obstacle, Rival, Debt, Mark, Faction, ExhaustionCause, Facility, JourneyStage, MagicItem, Pace, PendingSave, Project, Recruit, SaveKind, Size, State, Tone } from './types';
 import { BASIC_BUILD, BASTION_TURN_DAYS, defaultSize, ENLARGE, rollBastionEvent, SIZE_LABEL, SPECIAL_FACILITIES, type FacilitySize } from '../rules/bastion';
 import { d20, die, combineModes, rollDice, rollExpr, signed, type Rng, type RollMode } from '../rules/dice';
@@ -1212,11 +1213,12 @@ export function syncPorters(s: State): void {
   }
 }
 
-export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activity, opts: { exploring?: boolean } = {}): void {
+export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activity, opts: { exploring?: boolean; tactical?: boolean; combat?: boolean; travelHour?: boolean } = {}): void {
+  if (opts.tactical && s.pauseForButler && s.tacticalEncounter) return;
   syncPorters(s);
   levelSidekicks(s, ctx);
   let remaining = Math.max(0, Math.round(minutes));
-  if (remaining > 0 && s.settings.deathSavesResolve) resolveDying(s, ctx);
+  if (remaining > 0 && s.settings.deathSavesResolve && !opts.combat) resolveDying(s, ctx);
   while (remaining > 0) {
     const toNextHour = 60 - (s.minutes % 60);
     const step = Math.min(remaining, toNextHour);
@@ -1240,7 +1242,13 @@ export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activi
     tickPoisons(s, ctx);
     if (s.minutes % 60 === 0) tickHour(s, ctx, activity);
     if (s.minutes >= MIN_PER_DAY) endOfDay(s, ctx);
-    if (s.settings.encounters && activity !== 'work' && !opts.exploring) overlandEncounterClock(s, ctx, step, activity);
+    if (s.settings.encounters && activity !== 'work' && !opts.exploring && !opts.combat) {
+      if (!opts.travelHour) overlandEncounterClock(s, ctx, step, activity, opts.tactical && s.pauseForButler);
+      if (opts.tactical && s.pauseForButler && s.tacticalEncounter) {
+        s.tacticalRemainingMinutes = remaining;
+        break;
+      }
+    }
   }
 }
 
@@ -1250,13 +1258,13 @@ export const setDetailTier = act((d, _ctx, tier: TierId) => {
   log(d, `Level of detail set to ${tierName(tier)}: ${TIERS.find((t) => t.id === tier)!.tagline}`);
 });
 
-export const advance = act((d, ctx, minutes: number, activity: Activity = 'camp') => advanceMut(d, ctx, minutes, activity));
+export const advance = act((d, ctx, minutes: number, activity: Activity = 'camp') => advanceMut(d, ctx, minutes, activity, { tactical: true }));
 
 /** Advances to the next time the clock reads hh:mm. */
 export const advanceTo = act((d, ctx, targetMinutes: number, activity: Activity = 'camp') => {
   let delta = (targetMinutes - d.minutes + MIN_PER_DAY) % MIN_PER_DAY;
   if (delta === 0) delta = MIN_PER_DAY;
-  advanceMut(d, ctx, delta, activity);
+  advanceMut(d, ctx, delta, activity, { tactical: true });
 });
 
 // ---------------------------------------------------------------- rests
@@ -1302,8 +1310,10 @@ export function canLongRest(s: State): { ok: boolean; reason?: string } {
 }
 
 export const shortRest = act((d, ctx) => {
+  if (d.pauseForButler && d.tacticalEncounter) return;
   log(d, 'The party takes a Short Rest (1 hour). Everyone can spend Hit Point Dice.', 'info');
-  advanceMut(d, ctx, 60, 'rest');
+  advanceMut(d, ctx, 60, 'rest', { tactical: true });
+  if (d.pauseForButler && d.tacticalEncounter) return;
   finishShortRest(d, ctx);
   for (const c of d.characters) {
     if (c.chef && alive(c)) {
@@ -1314,6 +1324,7 @@ export const shortRest = act((d, ctx) => {
 });
 
 export const longRest = act((d, ctx, force = false) => {
+  if (d.pauseForButler && d.tacticalEncounter) return;
   if (regionForbidsRest(d)) return void log(d, 'The region won’t allow rest right now (Infested: a swarming migration).', 'warn');
   const check = canLongRest(d);
   if (!check.ok && !force) {
@@ -1327,8 +1338,9 @@ export const longRest = act((d, ctx, force = false) => {
   laborersMakeCamp(d, ctx);
   const watched = standWatches(d, ctx);
   d.restStart = absNow(d);
-  advanceMut(d, ctx, 8 * 60, 'rest');
+  advanceMut(d, ctx, 8 * 60, 'rest', { tactical: true });
   d.restStart = null;
+  if (d.pauseForButler && d.tacticalEncounter) return;
   completeLongRest(d, ctx, watched);
 });
 
@@ -1698,6 +1710,7 @@ function navigate(s: State, ctx: Ctx, nav: Character, pace: Pace): boolean | nul
 export const travel = act((d, ctx, o: TravelOpts) => travelMut(d, ctx, o));
 
 function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
+  if (d.pauseForButler && d.tacticalEncounter) return 0;
   const vessel = o.vesselId ? d.stashes.find((x) => x.id === o.vesselId && canTravelAboard(x)) : undefined;
   if (o.vesselId && !vessel) {
     log(d, 'The selected transport is unavailable for travel.', 'warn');
@@ -1758,13 +1771,15 @@ function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
     gallop = false;
   }
   let darkWarned = false;
+  let traveledHours = 0;
   for (let i = 0; i < o.hours; i++) {
     const blind = o.pace !== 'slow' && travelsBlind(d);
     if (blind && !darkWarned) {
       darkWarned = true;
       log(d, 'Darkness falls and not everyone can see in it. With no lit Torch, Lantern or light spell (light one on the Effects & Ailments tab), the party picks its way forward at a Slow pace (table rule).', 'warn');
     }
-    advanceMut(d, ctx, 60, 'travel');
+    advanceMut(d, ctx, 60, 'travel', { travelHour: !!d.pauseForButler });
+    traveledHours++;
     d.travel.hoursToday += altitude ? 2 : 1;
     const burst = gallop && i === 0 ? 2 : 1;
     if (burst === 2) {
@@ -1791,17 +1806,24 @@ function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
         if (alive(c) && mountWithParty(c)) requestSave(d, ctx, c, 'march', dc, 'normal', `a forced march (hour ${d.travel.hoursToday})`);
       }
     }
+    if (d.pauseForButler && d.settings.encounters) {
+      overlandEncounterClock(d, ctx, 60, 'travel', true);
+      if (d.tacticalEncounter) {
+        d.tacticalRemainingMinutes = (o.hours - traveledHours) * 60;
+        break;
+      }
+    }
   }
   d.travel.milesToday += miles;
   if (d.travel.lost) d.travel.milesOffCourse += offCourse;
   if (offCourse > 0 && d.travel.lost) log(d, `${+offCourse.toFixed(1)} of those miles went the wrong way. The party is still lost.`, 'warn');
-  wearFromTravel(d, o.hours, false);
+  wearFromTravel(d, traveledHours, false);
   log(d, `Covered ${+miles.toFixed(1)} miles. That makes ${+d.travel.milesToday.toFixed(1)} miles and ${d.travel.hoursToday} travel hour(s) since the last Long Rest.`);
-  workOnTheMarch(d, ctx, o.hours, d.travel.navigatorId, o.foragerIds, o.pace);
+  workOnTheMarch(d, ctx, traveledHours, d.travel.navigatorId, o.foragerIds, o.pace);
   // One foraging roll per 8 hours on the road, with a shorter leg finding a share of a day's food.
   for (const id of o.foragerIds) {
     const c = charById(d, id);
-    if (c) for (let h = o.hours; h > 0; h -= 8) doForage(d, ctx, c, o.pace, Math.min(8, h) / 8);
+    if (c) for (let h = traveledHours; h > 0; h -= 8) doForage(d, ctx, c, o.pace, Math.min(8, h) / 8);
   }
   return d.travel.lost ? 0 : miles;
 }
@@ -1817,8 +1839,10 @@ function sail(d: State, ctx: Ctx, v: Stash, o: TravelOpts): number {
     return 0;
   }
   log(d, `Aboard the ${v.name}, the party travels for ${o.hours} hour(s) at ${mph} mph${note ? ` (${note})` : ''}.`);
-  advanceMut(d, ctx, o.hours * 60, 'camp');
-  let miles = Math.round(mph * o.hours * 10) / 10;
+  const start = absNow(d);
+  advanceMut(d, ctx, o.hours * 60, d.pauseForButler ? 'travel' : 'camp', { tactical: true });
+  const hours = (absNow(d) - start) / 60;
+  let miles = Math.round(mph * hours * 10) / 10;
   const mode = transportMode(v);
   if (mode === 'sea' && d.settings.stormsAtSea && d.weather.wind === 'strong' && d.weather.precip === 'heavy') {
     const helm = activeNavigator(d, d.travel.navigatorId);
@@ -1835,8 +1859,8 @@ function sail(d: State, ctx: Ctx, v: Stash, o: TravelOpts): number {
   }
   d.travel.milesToday += miles;
   log(d, `The ${v.name} covers ${miles} miles.`);
-  wearFromTravel(d, o.hours, mode !== 'land');
-  if (mode !== 'land') hullWear(d, v, o.hours, d.weather.wind === 'strong' && d.weather.precip === 'heavy');
+  wearFromTravel(d, hours, mode !== 'land');
+  if (mode !== 'land') hullWear(d, v, hours, d.weather.wind === 'strong' && d.weather.precip === 'heavy');
   return miles;
 }
 
@@ -1867,6 +1891,7 @@ export const searchCheck = act((d, ctx, charId: string, what: 'search' | 'track'
 
 /** Runs a planned journey stage day by day: travel up to 8 hours, then (optionally) eat, drink and Long Rest overnight. */
 export const runStage = act((d, ctx, stageId: string, o: Omit<TravelOpts, 'hours' | 'difficult'>, camp: boolean) => {
+  if (d.pauseForButler && d.tacticalEncounter) return;
   // Look the stage up afresh each day: resting swaps in a new copy of the state.
   const stage = () => d.journey.find((x) => x.id === stageId);
   const first = stage();
@@ -1903,7 +1928,7 @@ export const runStage = act((d, ctx, stageId: string, o: Omit<TravelOpts, 'hours
       st.overdueNoted = true;
       log(d, OVERDUE_NOTE, 'warn');
     }
-    if (st.milesDone >= target(st) || !camp) break;
+    if (st.milesDone >= target(st) || !camp || (d.pauseForButler && d.tacticalEncounter)) break;
     const eaten = partyEat(d, ctx, 'topup');
     Object.assign(d, partyDrink(eaten, ctx, 'topup'));
     if (d.minutes % MIN_PER_DAY < 22 * 60) advanceMut(d, ctx, 22 * 60 - (d.minutes % MIN_PER_DAY), 'camp');
@@ -5996,6 +6021,7 @@ export const extendEffect = act((d, _ctx, effectId: string, minutes: number) => 
 
 /** A 10-minute exploration turn: searching, checking for traps, listening at doors. */
 export const explorationTurn = act((d, ctx, what: string) => {
+  if (d.pauseForButler && d.tacticalEncounter) return;
   log(d, `Exploration turn (${EXPLORATION_TURN_MINUTES} min)${what ? `: ${what}` : ''}.`);
   advanceMut(d, ctx, EXPLORATION_TURN_MINUTES, 'camp', { exploring: true });
   if (d.settings.encounters) {
@@ -6003,7 +6029,7 @@ export const explorationTurn = act((d, ctx, what: string) => {
     const every = DANGER[d.place.danger].everyTurns;
     if (d.exploreTurns >= every) {
       d.exploreTurns = 0;
-      encounterCheck(d, ctx, 'explore', false);
+      encounterCheck(d, ctx, 'explore', false, !!d.pauseForButler);
     }
   } else if (d.settings.exploreEncounterOn > 0) {
     const r = die(20, ctx.rng);
@@ -7909,12 +7935,13 @@ export function encounterConditions(s: State, activity: CheckConditions['activit
 }
 
 /** Accumulates overland time and rolls a check each time the danger level's interval passes. */
-function overlandEncounterClock(s: State, ctx: Ctx, step: number, activity: Activity): void {
+function overlandEncounterClock(s: State, ctx: Ctx, step: number, activity: Activity, tactical = false): void {
   const every = DANGER[s.place.danger].everyHours * 60;
   s.encounterClock = Math.min(s.encounterClock, every) + step;
   while (s.encounterClock >= every) {
     s.encounterClock -= every;
-    encounterCheck(s, ctx, activity === 'rest' ? 'rest' : activity === 'travel' ? 'travel' : 'camp', false);
+    encounterCheck(s, ctx, activity === 'rest' ? 'rest' : activity === 'travel' ? 'travel' : 'camp', false, tactical);
+    if (tactical && s.tacticalEncounter) break;
   }
 }
 
@@ -7927,7 +7954,7 @@ function onWatchNow(s: State): Character[] {
 }
 
 /** One random encounter check: d20 plus the conditions, against the danger level's number. Returns true on an encounter. */
-export function encounterCheck(s: State, ctx: Ctx, activity: CheckConditions['activity'], announce: boolean): boolean {
+export function encounterCheck(s: State, ctx: Ctx, activity: CheckConditions['activity'], announce: boolean, tactical = false): boolean {
   const info = DANGER[s.place.danger];
   const mods = checkModifiers(encounterConditions(s, activity));
   const mod = mods.reduce((a, m) => a + m.value, 0);
@@ -7938,7 +7965,7 @@ export function encounterCheck(s: State, ctx: Ctx, activity: CheckConditions['ac
     if (announce) log(s, `Random encounter check: ${detail}. Nothing comes.`);
     return false;
   }
-  resolveEncounter(s, ctx, activity, detail);
+  resolveEncounter(s, ctx, activity, detail, tactical);
   return true;
 }
 
@@ -7985,15 +8012,15 @@ function surpriseCheck(s: State, ctx: Ctx, cr: string, hostile: boolean, activit
   };
 }
 
-function captureEncounter(s: State, result: EncounterResult, creature: EncounterCreature, activity: CheckConditions['activity'], watchers: Character[], surprise: EncounterSurprise, checkDetail?: string): void {
+function captureEncounter(s: State, result: EncounterResult, creature: EncounterCreature, activity: CheckConditions['activity'], watchers: Character[], surprise: EncounterSurprise, checkDetail?: string): EncounterHandoff {
   const encounterId = uid();
   const campaignId = s.campaignId ??= uid();
   const watchIds = new Set(watchers.map((w) => w.id));
   const party: HandoffParticipant[] = s.characters.filter((c) => alive(c) && mountWithParty(c)).map((c) => ({
     id: c.id, side: 'party', kind: c.sidekick ? 'sidekick' : c.kind === 'mount' ? 'mount' : 'character',
     name: c.name, ddbId: c.ddbId, hp: c.hp, maxHp: c.maxHp, tempHp: c.tempHp, exhaustion: c.exhaustion,
-    dying: c.dying, stable: c.stable, surprised: surprise.partySurprised,
-    watching: watchIds.has(c.id), resting: activity === 'rest' && !watchIds.has(c.id) && !surprise.alarm,
+    dying: c.dying, stable: c.stable, surprised: surprise.partySurprised, vitals: tacticalVitals(s, c),
+    watching: watchIds.has(c.id), resting: activity === 'rest' && s.restStart != null && !c.trance && !watchIds.has(c.id) && !surprise.alarm,
   }));
   for (const h of s.hirelings) {
     if (!h.active || (h.busyUntil ?? 0) > absNow(s)) continue;
@@ -8017,7 +8044,7 @@ function captureEncounter(s: State, result: EncounterResult, creature: Encounter
     remainingMinutes: effect.pausedLeft ?? (effect.endsAt == null ? null : effect.endsAt - minute),
     paused: effect.pausedLeft != null,
   }));
-  (s.encounterHandoffs ??= []).unshift({
+  const snapshot: EncounterHandoff = {
     format: 'life-manager.encounter', version: 1, campaignId, encounterId, revision: 1, rulesEdition: '2024',
     minute, summary: result.summary, encounterRoll: result.roll, attitude: result.attitude, checkDetail, surprise,
     environment: {
@@ -8027,11 +8054,155 @@ function captureEncounter(s: State, result: EncounterResult, creature: Encounter
       distanceFt: result.distanceFt, distanceExpression: result.distanceExpr,
     },
     participants: [...party, ...opponents], effects,
-  });
+  };
+  (s.encounterHandoffs ??= []).unshift(snapshot);
   s.encounterHandoffs.length = Math.min(s.encounterHandoffs.length, 12);
+  return snapshot;
 }
 
-export function resolveEncounter(s: State, ctx: Ctx, activity: CheckConditions['activity'], checkDetail?: string): void {
+const TACTICAL_EFFECT_PREFIX = 'Encounter Butler: ';
+const TACTICAL_CONDITIONS = new Set([
+  'blinded', 'charmed', 'deafened', 'frightened', 'grappled', 'incapacitated', 'invisible',
+  'paralyzed', 'petrified', 'poisoned', 'prone', 'restrained', 'stunned', 'unconscious',
+]);
+
+function tacticalVitals(s: State, c: Character): TacticalVitals {
+  const conditions: TacticalCondition[] = [];
+  if (c.exhaustion > 0) conditions.push({ id: 'exhaustion', key: 'exhaustion', level: c.exhaustion });
+  if (c.sick || c.poisonedUntil != null) {
+    conditions.push({ id: 'survival-poison', key: 'poisoned',
+      remainingSeconds: c.sick ? undefined : Math.max(0, Math.round((c.poisonedUntil! - absNow(s)) * 60)) });
+  }
+  for (const effect of s.effects) {
+    if (effect.pausedLeft != null || (effect.endsAt != null && effect.endsAt <= absNow(s))) continue;
+    const remainingSeconds = effect.endsAt == null ? undefined : Math.round((effect.endsAt - absNow(s)) * 60);
+    if (effect.concentration && concentrators(effect).includes(c.id)) {
+      conditions.push({ id: effect.id, key: 'concentration', label: effect.name, remainingSeconds });
+    } else if (effect.targetIds.length === 1 && effect.targetIds[0] === c.id) {
+      const key = effect.name.toLowerCase();
+      if (TACTICAL_CONDITIONS.has(key) || effect.notes.startsWith(TACTICAL_EFFECT_PREFIX)) {
+        conditions.push({ id: effect.id, key: TACTICAL_CONDITIONS.has(key) ? key : 'custom', label: effect.name, remainingSeconds });
+      }
+    }
+  }
+  return {
+    hp: c.hp, maxHp: c.maxHp, tempHp: c.tempHp,
+    status: c.diedAt != null ? 'dead' : c.hp > 0 ? 'alive' : c.stable ? 'stable' : 'dying',
+    successes: Math.min(2, c.deathSuccesses), failures: Math.min(2, c.deathFailures), conditions,
+  };
+}
+
+export const selectTacticalEncounter = act((d, _ctx, id: string) => {
+  const snapshot = d.encounterHandoffs?.find((entry) => entry.encounterId === id);
+  if (!d.tacticalEncounter && snapshot && !d.resolvedTacticalEncounters?.includes(id)) d.tacticalEncounter = tacticalFromHandoff(snapshot);
+});
+
+export const dismissTacticalEncounter = act((d, _ctx, disposition?: Disposition) => {
+  if (d.tacticalEncounter && disposition) {
+    recordTacticalResolution(d, d.tacticalEncounter.id);
+    log(d, `${d.tacticalEncounter.title}: ${disposition}.`, 'info');
+  }
+  delete d.tacticalEncounter;
+  delete d.tacticalRemainingMinutes;
+});
+
+function recordTacticalResolution(s: State, encounterId: string): void {
+  s.resolvedTacticalEncounters = [...(s.resolvedTacticalEncounters ?? []), encounterId].slice(-100);
+}
+
+export function tacticalResultProblem(s: State, result: TacticalResult): string | undefined {
+  if (s.appliedTacticalResults?.includes(result.id)) return 'This result was already applied.';
+  const encounter = s.tacticalEncounter;
+  if (!encounter || result.encounterId !== encounter.id || (result.campaignId && result.campaignId !== encounter.campaignId)) return 'This result belongs to a different encounter.';
+  if (s.resolvedTacticalEncounters?.includes(result.encounterId)) return 'This encounter was already resolved.';
+  if (encounter.at !== absNow(s)) return 'The campaign clock has moved since this encounter. Record the outcome manually.';
+  for (const change of result.participants) {
+    const before = encounter.participants.find((p) => p.id === change.id && p.side === 'party');
+    if (!before) return 'The result includes a participant outside the campaign party.';
+    if (!before.vitals) continue;
+    const character = charById(s, change.id);
+    if (!character || JSON.stringify(tacticalVitals(s, character)) !== JSON.stringify(before.vitals)) {
+      return `${before.name} changed after the handoff. Record the outcome manually to preserve those edits.`;
+    }
+  }
+}
+
+export const applyTacticalResult = act((d, ctx, result: TacticalResult) => {
+  if (tacticalResultProblem(d, result)) return;
+  const encounter = d.tacticalEncounter!;
+  const seconds = (d.tacticalSeconds ?? 0) + result.elapsedSeconds;
+  const beforeTime = absNow(d) + (d.tacticalSeconds ?? 0) / 60;
+  d.tacticalSeconds = seconds % 60;
+  advanceMut(d, ctx, Math.floor(seconds / 60), 'camp', { combat: true });
+  const end = beforeTime + result.elapsedSeconds / 60;
+  for (const { id, vitals } of result.participants) {
+    const c = charById(d, id);
+    const before = encounter.participants.find((p) => p.id === id)?.vitals;
+    if (!c || !before) continue;
+    const currentById = new Set(vitals.conditions.map((condition) => condition.id));
+    const previousById = new Set(before.conditions.map((condition) => condition.id));
+    if (vitals.hp !== before.hp || vitals.status !== before.status) c.hp = vitals.hp;
+    if (vitals.maxHp !== before.maxHp) c.maxHp = vitals.maxHp;
+    if (vitals.tempHp !== before.tempHp) c.tempHp = vitals.tempHp;
+    if (vitals.status !== before.status) {
+      switch (vitals.status) {
+        case 'dead':
+          killOutright(d, c, 'the encounter');
+          c.diedAt = end;
+          break;
+        case 'stable':
+          makeStable(d, ctx, c, 'treated during the encounter');
+          if (c.wakesAt != null) c.wakesAt += end - absNow(d);
+          break;
+        case 'alive':
+          wakeUp(d, c, 'healing during the encounter');
+          c.diedAt = null;
+          c.reposeMinutes = 0;
+          break;
+        case 'dying':
+          Object.assign(c, { dying: true, stable: false, wakesAt: null, diedAt: null, reposeMinutes: 0 });
+          break;
+      }
+    }
+    if (vitals.status === 'dying') {
+      c.deathSuccesses = vitals.successes;
+      c.deathFailures = vitals.failures;
+    }
+    const exhaustion = vitals.conditions.find((condition) => condition.key === 'exhaustion')?.level ?? 0;
+    const beforeExhaustion = before.conditions.find((condition) => condition.key === 'exhaustion')?.level ?? 0;
+    if (exhaustion > beforeExhaustion) gainExhaustion(d, c, exhaustion - beforeExhaustion, 'the encounter');
+    for (let i = exhaustion; i < beforeExhaustion; i++) recoverExhaustion(c);
+    for (const condition of before.conditions) {
+      if (currentById.has(condition.id)) continue;
+      if (condition.key === 'concentration') dropConcentration(d, c, ' during the encounter');
+      else if (condition.id === 'survival-poison') {
+        c.sick = false;
+        c.sickFrom = undefined;
+        c.poisonedUntil = null;
+      } else d.effects = d.effects.filter((effect) => effect.id !== condition.id);
+    }
+    for (const condition of vitals.conditions) {
+      if (previousById.has(condition.id) || condition.key === 'exhaustion' || condition.remainingSeconds === 0) continue;
+      const concentration = condition.key === 'concentration';
+      if (concentration) dropConcentration(d, c, ' during the encounter');
+      d.effects.push({
+        id: uid(), name: condition.label || condition.key, kind: 'other',
+        casterId: concentration ? id : null, targetIds: concentration ? [] : [id],
+        concentration, shelter: false, startedAt: end,
+        endsAt: condition.remainingSeconds == null ? null : end + condition.remainingSeconds / 60,
+        notes: TACTICAL_EFFECT_PREFIX + (condition.turnBased ? 'Review turn-based expiry.' : 'Carried over from combat.'),
+      });
+    }
+  }
+  recordTacticalResolution(d, encounter.id);
+  d.appliedTacticalResults = [...(d.appliedTacticalResults ?? []), result.id].slice(-100);
+  log(d, `Encounter concluded after ${result.elapsedSeconds} seconds: ${encounter.title}${result.disposition ? ` (${result.disposition})` : ''}.`, 'info');
+  if (encounter.activity === 'rest') log(d, 'The rest was interrupted. Review when the party can rest again.', 'warn');
+  delete d.tacticalEncounter;
+  delete d.tacticalRemainingMinutes;
+});
+
+export function resolveEncounter(s: State, ctx: Ctx, activity: CheckConditions['activity'], checkDetail?: string, tactical = false): void {
   const table = encounterTable(s);
   const underwater = s.place.underwaterVisibility;
   const res = rollOnTable(table, ctx.rng, underwater ? UNDERWATER_DISTANCE[underwater]?.feet : undefined);
@@ -8058,10 +8229,13 @@ export function resolveEncounter(s: State, ctx: Ctx, activity: CheckConditions['
   const c = res.row.creature;
   const party = table.party;
   const surprise = surpriseCheck(s, ctx, c.cr, res.attitude?.attitude === 'Hostile', activity, watchers);
-  captureEncounter(s, res, c, activity, watchers, surprise, checkDetail);
+  const snapshot = captureEncounter(s, res, c, activity, watchers, surprise, checkDetail);
   const dm = `${head} ${res.summary} (CR ${c.cr}${res.row.followers ? ` and ${res.row.followers.creature.cr}` : ''}, rolled ${res.row.count}${res.row.followers ? ` and ${res.row.followers.count}` : ''}; ${res.xp} XP total, ${DIFFICULTY_LABEL[res.difficulty ?? 'low']} for ${party.size} level-${party.level} characters). Starting attitude: ${res.attitude?.attitude} (d20 ${res.attitude?.roll}). They are ${res.distanceFt} feet away (${res.distanceExpr}).${watchNote}${surprise.narrative}${res.attitude?.attitude !== 'Hostile' ? ' They can be parleyed with: an Influence check (DC 15 or the creature’s Intelligence score, whichever is higher) can shift an Indifferent creature.' : ''}`;
   const behavior = monsterBehavior((res.count ?? 1) + (res.followerCount ?? 0), ctx.rng);
   const portrayal = ` Personality: ${behavior.personality}.${behavior.relationship ? ` ${behavior.relationship}` : ''}`;
+  if (tactical && !s.tacticalEncounter) {
+    s.tacticalEncounter = tacticalFromHandoff(snapshot, dm + portrayal);
+  }
   const predicate = firstSign(c.type, night);
   log(s, dm + portrayal, res.attitude?.attitude === 'Hostile' ? 'bad' : 'warn', { charIds: watchers.map((w) => w.id), status: false, sense: predicate });
   for (const w of watchers) s.statusLog.unshift({ id: uid(), stamp: stamp(s), at: absNow(s), charId: w.id, kind: 'encounter', text: `On watch, ${w.name} spots ${res.summary}.`, sense: predicate, tone: 'warn' });
@@ -8073,12 +8247,12 @@ export const rollAudibleDistance = act((d, ctx, noise: Noise) => {
 
 /** Roll a random encounter check by hand, using what the party is doing now. */
 export const checkForEncounter = act((d, ctx, activity: CheckConditions['activity'] = 'camp') => {
-  encounterCheck(d, ctx, activity, true);
+  if (!d.tacticalEncounter) encounterCheck(d, ctx, activity, true, true);
 });
 
 /** Skip the check: something turns up. Roll on the table. */
 export const rollRandomEncounter = act((d, ctx, activity: CheckConditions['activity'] = 'camp') => {
-  resolveEncounter(d, ctx, activity);
+  if (!d.tacticalEncounter) resolveEncounter(d, ctx, activity, undefined, true);
 });
 
 // ---------------------------------------------------------------- marks of prestige (2024 DMG)

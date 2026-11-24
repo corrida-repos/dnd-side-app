@@ -1,3 +1,4 @@
+import type { TacticalEncounter, TacticalVitals } from './butler';
 import type { ActiveEffect, Shelter } from '../state/types';
 import type { CheckConditions, EncounterResult } from './encounters';
 import type { TerrainType } from './terrain';
@@ -17,6 +18,7 @@ export interface HandoffParticipant {
   exhaustion?: number;
   dying?: boolean;
   stable?: boolean;
+  vitals?: TacticalVitals;
   surprised: boolean;
   watching?: boolean;
   resting?: boolean;
@@ -71,4 +73,25 @@ export function encounterHandoffJson(handoff: EncounterHandoff, selected: Readon
     return [{ ...effect, targetIds, casterId, concentrationIds }];
   });
   return JSON.stringify({ ...handoff, participants: handoff.participants.filter((p) => selected.has(p.id)), effects }, null, 2);
+}
+
+
+/** Convert a saved roll to the Butler interchange format without rerolling any encounter detail. */
+export function tacticalFromHandoff(handoff: EncounterHandoff, context?: string): TacticalEncounter {
+  const e = handoff.environment;
+  const summary = `Lighting: ${e.light}. Terrain: ${e.terrain}. Shelter: ${e.shelter}. Weather: ${e.weather.precip} precipitation, ${e.weather.wind} wind.`;
+  const effects = handoff.effects.length
+    ? ` Active effects to review: ${handoff.effects.map((effect) => effect.name).join(', ')}.` : '';
+  return {
+    schema: 'life-manager/encounter@1', rules: handoff.rulesEdition, campaignId: handoff.campaignId,
+    id: handoff.encounterId, at: handoff.minute, title: handoff.summary,
+    activity: e.activity, place: e.place || e.terrain, distanceFt: e.distanceFt,
+    attitude: handoff.attitude?.attitude,
+    context: `${context ?? handoff.surprise.narrative.trim()} ${summary}${effects}`.slice(0, 4000),
+    participants: handoff.participants.map((p) => ({
+      id: p.id, name: p.name, side: p.side, ddbId: p.ddbId,
+      source: p.creature?.source, creatureName: p.creature?.name,
+      surprised: p.surprised, asleep: p.resting, vitals: p.vitals,
+    })),
+  };
 }

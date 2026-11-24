@@ -195,3 +195,34 @@ it('does not create a tactical export for a peaceful discovery', () => {
   });
   expect(E.rollRandomEncounter(s, HIGH, 'travel').encounterHandoffs).toBeUndefined();
 });
+
+describe('Encounter Butler handoff', () => {
+  it('pauses a long rest, applies the matching result, and rejects a second application', async () => {
+    const { parseTacticalEncounter, parseTacticalResult } = await import('../rules/butler');
+    const s = fresh((d) => {
+      d.pauseForButler = true;
+      d.place.danger = 'deadly';
+    });
+    let rolls = 0;
+    const paused = E.longRest(s, { rng: () => rolls++ % 2 === 0 ? 0.999 : 0.1 }, true);
+    const encounter = parseTacticalEncounter(JSON.stringify(paused.tacticalEncounter));
+    expect(encounter.activity).toBe('rest');
+    expect(encounter.at).toBe(E.absNow(paused));
+    expect(paused.tacticalRemainingMinutes).toBe(480 - (E.absNow(paused) - E.absNow(s)));
+    expect(paused.tacticalRemainingMinutes).toBeGreaterThan(0);
+    expect(paused.lastLongRestEnd).toBe(s.lastLongRestEnd);
+    const member = encounter.participants.find((p) => p.side === 'party')!;
+    const result = parseTacticalResult(JSON.stringify({
+      schema: 'life-manager/result@1', id: 'test-result', encounterId: encounter.id, elapsedSeconds: 66, disposition: 'Creatures fled',
+      participants: [{ id: member.id, vitals: { ...member.vitals, hp: 0, status: 'stable', conditions: [] } }],
+    }));
+    const after = E.applyTacticalResult(paused, HIGH, result);
+    expect(after.tacticalEncounter).toBeUndefined();
+    expect(E.absNow(after)).toBe(encounter.at + 1);
+    expect(after.tacticalSeconds).toBe(6);
+    expect(after.log.some((entry) => entry.text.includes('Creatures fled'))).toBe(true);
+    expect(after.characters.find((c) => c.id === member.id)).toMatchObject({ hp: 0, stable: true });
+    expect(E.tacticalResultProblem(after, result)).toMatch(/already applied/);
+    expect(E.applyTacticalResult(after, HIGH, result)).toEqual(after);
+  });
+});

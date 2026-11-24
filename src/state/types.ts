@@ -2,6 +2,7 @@ import type { EncounterHandoff } from '../rules/encounterHandoff';
 import type { NpcProfile } from '../rules/npcs';
 import type { UnderwaterVisibility } from '../rules/exploration';
 import type { TreasureItem, TreasureRoll } from '../rules/treasure';
+import type { TacticalEncounter } from '../rules/butler';
 import type { Danger } from '../rules/encounters';
 import type { ArmsKind } from '../rules/armsTraining';
 import type { ClimateId, Weather } from '../rules/weather';
@@ -1348,6 +1349,13 @@ export interface State {
   encounterHandoffs?: EncounterHandoff[];
   passage?: { routeId: string; departure: number; passengerIds: string[] };
   treasurePreview?: TreasureRoll & { id: string };
+  pauseForButler?: boolean;
+  tacticalEncounter?: TacticalEncounter;
+  tacticalSeconds?: number;
+  tacticalRemainingMinutes?: number;
+  appliedTacticalResults?: string[];
+  resolvedTacticalEncounters?: string[];
+
   version: number;
   calendar: Calendar;
   startYear: number;

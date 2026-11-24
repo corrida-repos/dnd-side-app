@@ -276,6 +276,9 @@ export function App() {
       </nav>
       {tab !== 'ways' && <JumpBar root={mainRef} tab={tab} />}
       <main ref={mainRef}>
+        {s.tacticalEncounter && tab !== 'encounters' && <div className="btn-row">
+          <button onClick={() => setTab('encounters')}>Review encounter · {s.tacticalEncounter.title}</button>
+        </div>}
         <Active />
       </main>
       <footer className="foot muted small">

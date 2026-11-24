@@ -606,7 +606,13 @@ Settings can start a new campaign in Sharn or Wroat on an editable Galifar date.
 
 When play moves to six-second rounds, let the GM send the encounter from D&D Life Manager to [Encounter Butler](https://github.com/corrida-repos/owlbear-rodeo-butler) in Owlbear Rodeo. This applies to every campaign setting and detail tier. Start with random creature encounters and a **Run in Butler** action for a GM-selected scene. Reuse the same handoff for a chase, ship encounter, or timed hazard once Butler can run that encounter type. A distant sighting, an uneventful roll, or a peaceful discovery can stay on the campaign clock.
 
-Life Manager now records and exports versioned JSON snapshots for rolled creature encounters. The GM can review the roster and copy or download it from the Encounters tab. The capture preserves the original rolls, working alarm ruling, watch, scene conditions and tracked party state. Pausing the campaign clock, reviewing custom scenes, a shared fixture and live import in Butler, and the return path remain planned.
+### File and clipboard handoff
+
+The first release supports random creature encounters in 2024-rules rooms. In **Encounters → Encounter Butler**, roll and export an encounter or enable pausing during ordinary travel, rests and time skips. In Butler, open **Add Creatures → D&D Life Manager**, preview the file or pasted JSON, and match the party to existing tokens. Butler creates hidden tokens for published creatures using 5etools. A GM can map a custom creature to an existing Butler token.
+
+Starting attitude and surprise come from Life Manager. Hostile creatures may ambush, and Indifferent or Friendly creatures can remain a conversation. The GM can record a local result without rolling initiative. If a creature is unsure whether to fight, use Butler's **DM Tools → Fight or flight** before combat. Once rounds begin, Butler's existing morale prompts still apply. The GM chooses whether a creature flees, surrenders, or parleys and records the outcome when capturing the result.
+
+Capture the result before resetting combat. Life Manager previews elapsed seconds, vitals, and transferred conditions, then applies the confirmed result once. The GM decides how to resume an interrupted activity. Direct transfer, automatic resource and inventory changes, and additional encounter types remain follow-up work.
 
 ### Capture the moment play changes scale
 
