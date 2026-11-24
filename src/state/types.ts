@@ -1108,6 +1108,8 @@ export interface Recruit {
   passivePerception: number;
   darkvision: number;
   speaks: boolean;
+  /** Creature type from the stat block, when known. */
+  type?: string;
   attitude: import('../rules/recruiting').RecruitAttitude;
   trust: number;
   needed: number;

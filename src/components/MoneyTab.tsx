@@ -20,7 +20,7 @@ import { valueUnknown, inStock, priceOf, RENOWN_DISCOUNT, saleRate, STOCK_LIMIT 
 import { COMMON_SPELL_REQUESTS, PASSAGE, SPELL_SERVICES, spellServiceAvailable, type Settlement } from '../rules/services';
 import { WaysAround } from './WaysAround';
 import { TownCard } from './TownCard';
-import { HIT_DIE_BY_SIZE, ROLE_LABEL, SIDEKICK_CLASS_LABEL, SIDEKICK_FEATURES, SIDEKICK_ROLES, SIDEKICK_WAGE_GP, sidekickLevelFor, type SidekickClass, type SidekickRole } from '../rules/sidekicks';
+import { ANIMAL_NOTE, isAnimal, HIT_DIE_BY_SIZE, ROLE_LABEL, SIDEKICK_CLASS_LABEL, SIDEKICK_FEATURES, SIDEKICK_ROLES, SIDEKICK_WAGE_GP, sidekickLevelFor, type SidekickClass, type SidekickRole } from '../rules/sidekicks';
 import { SRD_POOL } from '../rules/encounters';
 import type { Size } from '../state/types';
 import { SETTLEMENT_SIZE, townSells, townSpecials } from '../rules/settlements';
@@ -215,9 +215,9 @@ function SidekickCard() {
   const s = useGame();
   const pcs = s.characters.filter((c) => c.kind === 'pc' && !c.sidekick);
   const sidekicks = s.characters.filter((c) => c.sidekick);
-  const pool = SRD_POOL.filter((c) => crNum(c.cr) <= 0.5);
+  const pool = SRD_POOL.filter((c) => crNum(c.cr) <= 0.5 && !isAnimal(c.type));
   const [creature, setCreature] = useState('Guard');
-  const picked = pool.find((c) => c.name.toLowerCase() === creature.trim().toLowerCase());
+  const picked = pool.find((c) => c.name.toLowerCase() === creature.trim().toLowerCase()) ?? SRD_POOL.find((c) => c.name.toLowerCase() === creature.trim().toLowerCase());
   const [name, setName] = useState('');
   const [cr, setCr] = useState('1/8');
   const [size, setSize] = useState<Size>('Medium');
@@ -235,7 +235,7 @@ function SidekickCard() {
   const roles = SIDEKICK_ROLES[cls];
   const theCr = picked?.cr ?? cr;
   const theSize = picked?.size ?? size;
-  const why = E.sidekickBlocked(theCr, cls, speaks);
+  const why = isAnimal(picked?.type) || !speaks ? ANIMAL_NOTE : E.sidekickBlocked(theCr, cls, speaks);
   return (
     <Card title="Sidekicks (Tasha's)">
       {sidekicks.length > 0 && (
@@ -253,7 +253,7 @@ function SidekickCard() {
         </ul>
       )}
       <div className="form-row">
-        <Text label="Creature (CR 1/2 or lower)" value={creature} onChange={setCreature} placeholder="e.g. Guard, Acolyte, Mastiff" />
+        <Text label="Who (a person, CR 1/2 or lower)" value={creature} onChange={setCreature} placeholder="e.g. Guard, Acolyte, Scout" />
         <Text label="Name" value={name} onChange={setName} placeholder={creature || 'Name'} />
         {!picked && <Text label="CR" value={cr} onChange={setCr} />}
         {!picked && <Select label="Size" value={size} onChange={setSize} options={(['Tiny', 'Small', 'Medium', 'Large'] as Size[]).map((x) => ({ value: x, label: x }))} />}
@@ -281,14 +281,14 @@ function SidekickCard() {
         disabled={!!why || !creature.trim()}
         onClick={() =>
           dispatch((st, cx) =>
-            E.hireSidekick(st, cx, { name, creature: picked?.name ?? creature.trim(), cr: theCr, size: theSize, baseHp, conScore, passivePerception: pp, darkvision: dv, speaks, cls, role: roles.length ? ((role || roles[0]) as SidekickRole) : null, wageGp: wage, payerId: payer }),
+            E.hireSidekick(st, cx, { name, creature: picked?.name ?? creature.trim(), cr: theCr, size: theSize, type: picked?.type, baseHp, conScore, passivePerception: pp, darkvision: dv, speaks, cls, role: roles.length ? ((role || roles[0]) as SidekickRole) : null, wageGp: wage, payerId: payer }),
           )
         }
       >
         {wage > 0 ? `Hire ${name.trim() || creature || 'them'} (${fmtGp(wage)} a day)` : `Welcome ${name.trim() || creature || 'them'} as a friend`}
       </button>
       <Rule>
-        Optional rule (Tasha&apos;s Cauldron): a creature of CR 1/2 or lower who is a friend of an adventurer joins with the Expert, Spellcaster or Warrior class (Expert and Spellcaster need a creature that speaks a language). It starts at the party&apos;s average level and gains a level whenever that average rises, rolling its Hit Die plus Constitution modifier (at least 1) for HP; its proficiency bonus, features, Second Wind, Indomitable and spell slots follow its class table. Count it as a character for encounter difficulty. Table rule: a hired co-adventurer is paid daily into their own purse (2 GP, a skilled hireling&apos;s rate, by default) and pays their own way; a friend joins for nothing.
+        Hiring is for people who speak a language; an animal is tamed on the Camp tab and made a sidekick there. Optional rule (Tasha&apos;s Cauldron): a creature of CR 1/2 or lower who is a friend of an adventurer joins with the Expert, Spellcaster or Warrior class (Expert and Spellcaster need a creature that speaks a language). It starts at the party&apos;s average level and gains a level whenever that average rises, rolling its Hit Die plus Constitution modifier (at least 1) for HP; its proficiency bonus, features, Second Wind, Indomitable and spell slots follow its class table. Count it as a character for encounter difficulty. Table rule: a hired co-adventurer is paid daily into their own purse (2 GP, a skilled hireling&apos;s rate, by default) and pays their own way; a friend joins for nothing.
       </Rule>
     </Card>
   );

@@ -59,6 +59,16 @@ describe('sidekicks (Tasha’s)', () => {
     expect(s.characters.some((c) => c.sidekick)).toBe(false);
   });
 
+  it('an animal can’t be hired or talked round, only tamed', () => {
+    let s = party([2]);
+    s = E.hireSidekick(s, ctx(), { ...guard, name: 'Rex', creature: 'Mastiff', type: 'beast', cls: 'warrior', role: 'attacker' });
+    expect(s.characters.some((c) => c.sidekick)).toBe(false);
+    s = E.hireSidekick(s, ctx(), { ...guard, speaks: false });
+    expect(s.characters.some((c) => c.sidekick)).toBe(false);
+    s = E.startRecruit(s, ctx(), { name: 'Rex', creature: 'Mastiff', cr: '1/8', size: 'Medium', type: 'beast', int: 3, baseHp: 5, conScore: 12, passivePerception: 13, darkvision: 0, speaks: false, attitude: 'indifferent', recruiterId: s.characters[0].id });
+    expect(s.recruits ?? []).toHaveLength(0);
+  });
+
   it('a tamed companion can become a sidekick', () => {
     let s = party([4]);
     s.characters.push(newCharacter({ kind: 'mount', name: 'Fang', species: 'Wolf', size: 'Medium', conScore: 12, hp: 11, maxHp: 11 }));

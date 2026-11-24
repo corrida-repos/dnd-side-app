@@ -23,6 +23,11 @@ export const ROLE_LABEL: Record<SidekickRole, string> = {
 /** The Expert and Spellcaster classes need a creature that speaks at least one language. */
 export const NEEDS_LANGUAGE: Record<SidekickClass, boolean> = { expert: true, spellcaster: true, warrior: false };
 
+/** Creature types that are animals, not people: they can't be hired or talked round, only tamed (Camp tab) and then made sidekicks. */
+export const ANIMAL_TYPES = ['beast', 'monstrosity'];
+export const isAnimal = (type: string | undefined): boolean => !!type && ANIMAL_TYPES.includes(type.toLowerCase());
+export const ANIMAL_NOTE = 'an animal isn’t hired or talked round: tame it on the Camp tab, then make it a sidekick there';
+
 /** Tasha's: the stat block's challenge rating must be 1/2 or lower. */
 export const SIDEKICK_MAX_CR = 0.5;
 

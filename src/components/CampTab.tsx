@@ -18,7 +18,7 @@ import { ALCHEMIST, ALCHEMIST_FIRE_DC, IMPROVISED_COOK_DC, IMPROVISED_HARVEST_DC
 import { WaysAround } from './WaysAround';
 import { useGate } from './gate';
 import { ATTITUDE_LABEL, GIFT_MIN_GP, HELPED_TRUST, RECRUIT_MAX_FAILS, recruitCue, recruitDC, TRUST_NEEDED, type RecruitAttitude } from '../rules/recruiting';
-import { HIT_DIE_BY_SIZE, ROLE_LABEL, SIDEKICK_CLASS_LABEL, SIDEKICK_ROLES, type SidekickClass, type SidekickRole } from '../rules/sidekicks';
+import { ANIMAL_NOTE, isAnimal, HIT_DIE_BY_SIZE, ROLE_LABEL, SIDEKICK_CLASS_LABEL, SIDEKICK_ROLES, type SidekickClass, type SidekickRole } from '../rules/sidekicks';
 import type { Recruit, Size } from '../state/types';
 import { SRD_POOL } from '../rules/encounters';
 import { AID_LABEL, bigEnoughToRide, canBeSidekick, canTame, charmSpellsFor, currentDC, NO_AIDS, TAME_MIN_DC, TRUST_PER_DAY_MAX, sessionAttitude, STABLE_DAYS, TAMED_RULES, tameCheck, tameDC, TAME_MAX_FAILS, TAME_MAX_INT, TAMEABLE_TYPES, TRAINING_LABEL, trainingNeeded, trustCue, trustNeeded, type Attitude, type TameAids, type TameTraining } from '../rules/taming';
@@ -751,6 +751,7 @@ function RecruitCard() {
   const contact = contacts.find((k) => k.id === contactId);
   const theCr = picked?.cr ?? cr;
   const tooStrong = !(crOf(theCr) <= 0.5);
+  const animal = isAnimal(picked?.type) || !speaks;
   return (
     <Card title="Winning someone over">
       {recruits.map((r) => (
@@ -782,13 +783,14 @@ function RecruitCard() {
           ? `${contact.name} already knows the party: they start ${contact.bond >= 1 ? 'Friendly' : 'Indifferent'} with ${Math.max(0, contact.bond)} trust.`
           : `${ATTITUDE_LABEL[attitude]}: DC ${recruitDC(attitude, int)} a day, ${TRUST_NEEDED[attitude]} trust to win over${attitude === 'hostile' ? ', after first calming them' : ''}.`}
       </p>
+      {animal && <p className="small warn-text">Can&apos;t be talked round: {ANIMAL_NOTE}.</p>}
       {tooStrong && <p className="small warn-text">CR {theCr} is too formidable: a sidekick&apos;s stat block must be CR 1/2 or lower (Tasha&apos;s).</p>}
       <button
         className="primary"
-        disabled={tooStrong || !recruiterId || !(name.trim() || creature.trim())}
+        disabled={tooStrong || animal || !recruiterId || !(name.trim() || creature.trim())}
         onClick={() =>
           dispatch((st, cx) =>
-            E.startRecruit(st, cx, { name: name.trim() || creature.trim(), creature: picked?.name ?? creature.trim(), cr: theCr, size: picked?.size ?? size, int, baseHp, conScore: con, passivePerception: pp, darkvision: dv, speaks, attitude, recruiterId, ...(contact ? { contactId: contact.id } : {}) }),
+            E.startRecruit(st, cx, { name: name.trim() || creature.trim(), creature: picked?.name ?? creature.trim(), cr: theCr, size: picked?.size ?? size, type: picked?.type, int, baseHp, conScore: con, passivePerception: pp, darkvision: dv, speaks, attitude, recruiterId, ...(contact ? { contactId: contact.id } : {}) }),
           )
         }
       >

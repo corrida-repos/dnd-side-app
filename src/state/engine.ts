@@ -36,7 +36,7 @@ import { bigEnoughToRide, canBeSidekick, canTame, currentDC, dayOutcome, missedD
 import { BUTCHER_DC, BUTCHER_MINUTES, isEdible, MEAT_LB, STRANGE_TYPES, yieldsHide, type Creature } from '../rules/hunting';
 import { CURE_DC, CURE_LB_PER_RATION, CURE_MAX_LB, CURE_MINUTES, curedRations, FEAST_FEAR_RELIEF, FEAST_STRESS_RELIEF, feastTempHp, HEARTY_SAVES, isFeast, MEAL_BUFF_MINUTES, MEAL_STRESS_RELIEF, tastyTempHp, WARM_SAVES } from '../rules/cooking';
 import { ATTITUDE_LABEL, HELPED_TRUST, hasAdvantage, RECRUIT_MAX_FAILS, RECRUIT_SESSION_MINUTES, recruitCue, recruitDC, sessionTrust, TRUST_NEEDED, type RecruitAids, type RecruitAttitude } from '../rules/recruiting';
-import { featuresAt, hpForLevel, HIT_DIE_BY_SIZE, NEEDS_LANGUAGE, SIDEKICK_CLASS_LABEL, SIDEKICK_MAX_CR, sidekickLevelFor, sidekickResources, type SidekickClass, type SidekickRole } from '../rules/sidekicks';
+import { ANIMAL_NOTE, isAnimal, featuresAt, hpForLevel, HIT_DIE_BY_SIZE, NEEDS_LANGUAGE, SIDEKICK_CLASS_LABEL, SIDEKICK_MAX_CR, sidekickLevelFor, sidekickResources, type SidekickClass, type SidekickRole } from '../rules/sidekicks';
 import { PORTER_LB, SAILOR_BONUS, SAILOR_MAX, CATCH_UP_WARMS_EVERY_DAYS, LABORER_FUEL_DICE, RECUPERATE_EXHAUSTION, RECUPERATE_STRESS, BOOK_GP, BOOK_PAGES, COPY_MAP_DC, COPY_MAP_MINUTES, PERFORM_MINUTES, performTake, RESEARCH_IDENTIFY_AT, RESEARCH_LEAD_AT, ROUTE_MAP_GP, AMMO_SEARCH_DC, ammoRecovered, CAROUSING_STRESS_PER_WEEK, DIG_FIND_ON, FINE_FUR, FINE_FUR_ODDS, FORECAST_MARGIN, forageBonusDice, HIDE_GP, isExceptional, KEPT_GEAR_MINUTES, KEPT_GEAR_NOTE, poisonYield, REINFORCE_MARGIN, rollFind, SERVICE_FEAR_PER_WEEK, SERVICE_STRESS_PER_WEEK, SMALL_PELT, trophyFor, WATCH_CATCH_DC, WATCH_CATCH_DICE, type Chore } from '../rules/chorePayoffs';
 import { addCoins, COIN_GP, coinCount, coinsFor, emptyPurse, exchange, fmtPurse, purseValue, spend, type Denom, type Purse } from '../rules/coins';
 import { detectContainer } from '../rules/containers';
@@ -969,6 +969,8 @@ export interface SidekickOpts {
   passivePerception: number;
   darkvision: number;
   speaks: boolean;
+  /** Creature type from the stat block, when known: animals can't be hired. */
+  type?: string;
   cls: SidekickClass;
   role: SidekickRole | null;
   /** Table rule: daily pay (0 for a friend who joins for nothing) and who pays it. */
@@ -993,8 +995,9 @@ export const hireSidekick = act((d, ctx, o: SidekickOpts) => void hireSidekickMu
 
 function hireSidekickMut(d: State, ctx: Ctx, o: SidekickOpts): Character | null {
   if (!d.settings.sidekicks) return (log(d, 'Sidekicks are switched off in Settings.', 'warn'), null);
-  const why = sidekickBlocked(o.cr, o.cls, o.speaks);
-  if (why) return (log(d, `${o.name || o.creature} can't join as a sidekick: ${why}.`, 'warn'), null);
+  // Hiring and talking someone round is for people; animals are tamed (makeSidekick).
+  const why = isAnimal(o.type) || !o.speaks ? ANIMAL_NOTE : sidekickBlocked(o.cr, o.cls, o.speaks);
+  if (why) return (log(d, `${o.name || o.creature} can't join that way: ${why}.`, 'warn'), null);
   const c = newCharacter({
     name: o.name.trim() || o.creature,
     className: 'Other',
@@ -1031,6 +1034,7 @@ export type RecruitOpts = Omit<Recruit, 'id' | 'trust' | 'needed' | 'fails' | 'l
 export const startRecruit = act((d, _ctx, o: RecruitOpts) => {
   if (!d.settings.sidekicks) return void log(d, 'Sidekicks are switched off in Settings.', 'warn');
   if (!(crNum(o.cr) <= SIDEKICK_MAX_CR)) return void log(d, `${o.name || o.creature} is too formidable to become a sidekick (CR ${o.cr}; Tasha's needs CR 1/2 or lower).`, 'warn');
+  if (isAnimal(o.type) || !o.speaks) return void log(d, `${o.name || o.creature} can't be talked round: ${ANIMAL_NOTE}.`, 'warn');
   const k = o.contactId ? (d.contacts ?? []).find((x) => x.id === o.contactId) : undefined;
   const attitude: RecruitAttitude = k ? (k.bond >= 1 ? 'friendly' : k.bond <= -1 ? 'hostile' : 'indifferent') : o.attitude;
   const needed = TRUST_NEEDED[attitude];
@@ -1103,7 +1107,7 @@ export const recruitHelped = act((d, _ctx, id: string, what: string) => {
 export const recruitJoin = act((d, ctx, id: string, cls: SidekickClass, role: SidekickRole | null, wageGp: number, payerId: string) => {
   const r = (d.recruits ?? []).find((x) => x.id === id);
   if (!r?.willing) return;
-  const c = hireSidekickMut(d, ctx, { name: r.name, creature: r.creature, cr: r.cr, size: r.size, baseHp: r.baseHp, conScore: r.conScore, passivePerception: r.passivePerception, darkvision: r.darkvision, speaks: r.speaks, cls, role, wageGp, payerId });
+  const c = hireSidekickMut(d, ctx, { name: r.name, creature: r.creature, cr: r.cr, size: r.size, baseHp: r.baseHp, conScore: r.conScore, passivePerception: r.passivePerception, darkvision: r.darkvision, speaks: r.speaks, type: r.type, cls, role, wageGp, payerId });
   if (!c) return;
   d.recruits = (d.recruits ?? []).filter((x) => x.id !== id);
   const k = r.contactId ? (d.contacts ?? []).find((x) => x.id === r.contactId) : undefined;
