@@ -78,6 +78,7 @@ import { isCaster, PREP_RULE, preparedCount, preparedLimit } from '../rules/spel
 import { newCharacter, uid } from './defaults';
 import { sense, type SenseKey } from '../rules/senses';
 import * as Piety from '../rules/piety';
+import * as Priest from '../rules/priesthood';
 import { buildTable, checkModifiers, DANGER, DIFFICULTY_LABEL, firstSign, rollOnTable, SRD_POOL, BOOK_POOL, type CheckConditions, type Danger, type EncounterCreature, type EncounterTable, type Party } from '../rules/encounters';
 import type { TerrainType } from '../rules/terrain';
 import { FESTERING_MEDICINE_DC, INJURIES, INJURY_MEDICINE_SUCCESSES, INJURY_REST_DAYS, INJURY_SPELLS, healsInjury, injuryFor, type InjuryKind } from '../rules/injuries';
@@ -8817,7 +8818,7 @@ function pietyChange(s: State, c: Character, delta: number, why: string): void {
   const score = `piety ${signed(delta)}, now ${dv.piety}, ${after.label}; table rule`;
   if (after.id === 'estranged' && before.id !== 'estranged') {
     const gifts = s.effects.filter((e) => (dv.giftIds ?? []).includes(e.id)).map((e) => e.name);
-    status(s, c, 'estranged', `${dv.deity} turns away from ${c.name}: ${why} (${score}). ${after.boon}${gifts.length ? ` The DM may withdraw the god’s gifts until they atone: ${gifts.join(', ')}.` : ''}`, 'bad');
+    status(s, c, 'estranged', `${dv.deity} turns away from ${c.name}: ${why} (${score}). ${after.boon}${gifts.length ? ` The DM may withdraw the god’s gifts until they atone: ${gifts.join(', ')}.` : ''}${dv.office ? ` ${c.name}'s office as ${Priest.officeTitle(dv.office.rank, dv.office.path)} is suspended: no stipend and no say until they atone.` : ''}`, 'bad');
   } else if (after.min > before.min && after.id !== 'faithful') {
     status(s, c, 'pietyRankUp', `${c.name} is now ${after.label} in the eyes of ${dv.deity}: ${why} (${score}). ${after.boon}`, 'good');
   } else if (after.min !== before.min) {
@@ -8955,12 +8956,18 @@ function templeServicePiety(s: State, c: Character, weeks: number): void {
   const gain = Piety.cappedGain(dv.piety, Piety.SERVICE_PIETY_PER_WEEK * weeks, Piety.SERVICE_PIETY_CAP);
   if (gain) pietyChange(s, c, gain, `${weeks} week${weeks > 1 ? 's' : ''} of service in the temple`);
   // DMG group involvement: with renown 1+, days among the faith's members count toward the next point.
+  if (dv.office) dv.office.dutyDays += Piety.SERVICE_INVOLVEMENT_DAYS_PER_WEEK * weeks;
+  faithInvolvement(s, c, Piety.SERVICE_INVOLVEMENT_DAYS_PER_WEEK * weeks, `${c.name}'s weeks of service in the temple`);
+}
+
+/** DMG group involvement with the faith's faction: with renown 1+, days among its members count toward the next point. */
+function faithInvolvement(s: State, c: Character, days: number, why: string): void {
   const f = faithOf(s, c);
   if (!f || f.renown < 1) return;
-  f.involvementDays = (f.involvementDays ?? 0) + Piety.SERVICE_INVOLVEMENT_DAYS_PER_WEEK * weeks;
+  f.involvementDays = (f.involvementDays ?? 0) + days;
   while (f.involvementDays >= involvementDaysNeeded(f)) {
     f.involvementDays -= involvementDaysNeeded(f);
-    gainRenown(s, f, 1, `${c.name}'s weeks of service in the temple`);
+    gainRenown(s, f, 1, why);
   }
 }
 
@@ -8977,8 +8984,139 @@ function pietyDaily(s: State): void {
   const today = s.dayIndex + 1;
   for (const c of s.characters) {
     const dv = c.devotion;
+    if (dv?.office && alive(c) && today - dv.office.lastCheckDay >= Priest.OFFICE_MONTH) officeMonth(s, c);
     if (!dv || !alive(c) || today - dv.lastDevotionDay < Piety.NEGLECT_DAYS) continue;
     dv.lastDevotionDay = today;
     if (dv.piety > 0) pietyChange(s, c, -1, `${Piety.NEGLECT_DAYS} days with nothing done for the god`);
   }
+}
+
+// ---------------------------------------------------------------- rising in the priesthood (table rule)
+
+/** What a character brings to a petition for the next rank. */
+export function officeStanding(s: State, c: Character): Priest.Standing {
+  const dv = c.devotion;
+  return { renown: faithOf(s, c)?.renown ?? 0, piety: dv?.piety ?? 0, level: c.level, daysInRank: dv?.office ? s.dayIndex - dv.office.sinceDay : 0 };
+}
+
+/** Why the next rank can't be petitioned for now, or an empty list if it can. */
+export function petitionBlocked(s: State, c: Character): string[] {
+  const dv = c.devotion;
+  if (!dv) return ['No god chosen.'];
+  if (!faithOf(s, c)) return ['The faith must be tracked as a faction (for renown).'];
+  if (dv.piety < 0) return ['Estranged: the hierarchy won’t hear them until they atone.'];
+  const next = (dv.office?.rank ?? 0) + 1;
+  if (next > Priest.TOP_RANK) return ['There is no higher office.'];
+  const miss = Priest.missingFor(next, officeStanding(s, c));
+  if (next === 1) return miss;
+  if (Priest.OFFICES[next].dc === 0) return [...miss, 'This seat is filled only when it falls vacant: the DM decides.'];
+  if (dv.office?.nextPetitionDay != null && dv.office.nextPetitionDay > s.dayIndex) miss.push(`the hierarchy will hear them again in ${dv.office.nextPetitionDay - s.dayIndex} day(s)`);
+  return miss;
+}
+
+/** Suggested petition bonus: the better of Intelligence (Religion) and Charisma (Persuasion), when the sheet says. */
+export function petitionBonus(c: Character): number {
+  const pb = proficiencyBonus(c.level);
+  const mod = (k: 'int' | 'cha') => {
+    const sc = abilityScore(c, k);
+    return sc == null ? 0 : abilityMod(sc);
+  };
+  const has = (sk: string) => (c.skillProfs ?? []).some((x) => x.toLowerCase() === sk);
+  return Math.max(mod('int') + (has('religion') ? pb : 0), mod('cha') + (has('persuasion') ? pb : 0));
+}
+
+function setOfficeMut(s: State, c: Character, rank: number, path: Priest.OfficePath): void {
+  const dv = c.devotion!;
+  const today = s.dayIndex;
+  dv.office = rank <= 0 ? null : { rank, path, sinceDay: today, dutyDays: 0, lastCheckDay: today, strikes: 0 };
+  dv.history = [`${stamp(s)}: ${rank <= 0 ? 'left the hierarchy' : Priest.officeTitle(rank, path)}`, ...dv.history].slice(0, 30);
+}
+
+/** Joins the faith's hierarchy as an acolyte (or a squire of a holy order): renown 1 with the faith is enough. */
+export const joinPriesthood = act((d, _ctx, charId: string, path: Priest.OfficePath) => {
+  const c = charById(d, charId);
+  const dv = c?.devotion;
+  if (!c || !dv || dv.office || petitionBlocked(d, c).length) return;
+  setOfficeMut(d, c, 1, path);
+  log(d, `${c.name} takes vows as ${Priest.officeTitle(1, path)} of ${dv.deity} (table rule). ${Priest.OFFICES[1].does}`, 'good');
+});
+
+/** Petitions the hierarchy for the next rank: Intelligence (Religion) or Charisma (Persuasion) against the rank's DC. */
+export const petitionOffice = act((d, ctx, charId: string, bonus: number) => {
+  const c = charById(d, charId);
+  const dv = c?.devotion;
+  const o = dv?.office;
+  if (!c || !dv || !o || petitionBlocked(d, c).length) return;
+  const next = Priest.OFFICES[o.rank + 1];
+  const adv = Priest.petitionAdvantage(o.rank + 1, dv.piety);
+  const r = d20(adv ? 'advantage' : 'normal', ctx.rng);
+  const total = r.value + bonus;
+  const roll = `${r.rolls.join(' / ')}${adv ? ' with Advantage (piety)' : ''} ${signed(bonus)} = ${total} vs DC ${next.dc}`;
+  if (total >= next.dc) {
+    setOfficeMut(d, c, next.rank, o.path);
+    status(d, c, 'pietyRankUp', `${c.name} is raised to ${next.title[o.path]} of ${dv.deity} (${roll}; table rule). ${next.does}`, 'good');
+    return;
+  }
+  o.nextPetitionDay = d.dayIndex + Priest.PETITION_WAIT_DAYS;
+  log(d, `The elders of ${dv.deity}'s faith are not yet persuaded that ${c.name} is ready to be ${next.title[o.path]} (${roll}). They will hear the petition again in ${Priest.PETITION_WAIT_DAYS} days.`, 'warn');
+});
+
+/** The DM places a character in an office directly (a vacancy filled, an omen, a demotion). 0 leaves the hierarchy. */
+export const setOffice = act((d, _ctx, charId: string, rank: number, path?: Priest.OfficePath) => {
+  const c = charById(d, charId);
+  const dv = c?.devotion;
+  if (!c || !dv) return;
+  const r = Math.max(0, Math.min(Priest.TOP_RANK, Math.round(rank)));
+  const p = path ?? dv.office?.path ?? 'clergy';
+  setOfficeMut(d, c, r, p);
+  log(d, r ? `${c.name} is now ${Priest.officeTitle(r, p)} of ${dv.deity}. ${Priest.OFFICES[r].does}` : `${c.name} leaves the hierarchy of ${dv.deity}'s faith.`, r ? 'good' : 'info');
+});
+
+/** Days of temple duty (or service to the order) as downtime: they count toward the month's duties and the faith's renown. */
+export const templeDuty = act((d, ctx, charId: string, days: number) => {
+  const c0 = charById(d, charId);
+  if (!c0?.devotion?.office) return;
+  const n = Math.max(1, Math.round(days));
+  for (let i = 0; i < n; i++) {
+    const o = charById(d, charId)?.devotion?.office;
+    if (o) o.dutyDays += 1;
+    Object.assign(d, downtimeDay(d, ctx, []));
+  }
+  const c = charById(d, charId)!;
+  const dv = c.devotion!;
+  if (!dv.office) return;
+  dv.lastDevotionDay = d.dayIndex;
+  log(d, `${c.name} spends ${n} day${n > 1 ? 's' : ''} at temple duties as ${Priest.officeTitle(dv.office!.rank, dv.office!.path)}: ${dv.office!.dutyDays}/${Priest.OFFICES[dv.office!.rank].dutyDays} this month.`);
+  faithInvolvement(d, c, n, `${c.name}'s days of temple duty`);
+});
+
+/** The monthly reckoning: duties kept pay the stipend; three months missed in a row cost a step. */
+function officeMonth(s: State, c: Character): void {
+  const dv = c.devotion!;
+  const o = dv.office!;
+  const office = Priest.OFFICES[o.rank];
+  const title = office.title[o.path];
+  o.lastCheckDay = s.dayIndex + 1;
+  const served = o.dutyDays;
+  o.dutyDays = 0;
+  if (dv.piety < 0) {
+    log(s, `${c.name}'s office as ${title} stays suspended while ${dv.deity} is turned away: no stipend this month.`, 'warn');
+    return;
+  }
+  if (served >= office.dutyDays) {
+    o.strikes = 0;
+    if (office.stipendGp > 0) {
+      gainWealth(c, office.stipendGp);
+      log(s, `${c.name} receives a ${title.toLowerCase()}'s stipend from the faith of ${dv.deity}: ${fmtGp(office.stipendGp)} (table rule).`, 'good');
+    }
+    return;
+  }
+  o.strikes += 1;
+  if (o.strikes < Priest.STRIKES_TO_DEMOTE) {
+    log(s, `${c.name} kept ${served} of ${office.dutyDays} days of duty as ${title} this month: no stipend, and the elders notice (${o.strikes}/${Priest.STRIKES_TO_DEMOTE}; table rule).`, 'warn');
+    return;
+  }
+  const lower = o.rank - 1;
+  setOfficeMut(s, c, Math.max(1, lower), o.path);
+  log(s, `After ${Priest.STRIKES_TO_DEMOTE} months of neglected duties, the faith of ${dv.deity} takes ${c.name}'s office: ${title} no more, now ${Priest.officeTitle(Math.max(1, lower), o.path)} (table rule).`, 'bad');
 }

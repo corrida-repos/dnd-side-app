@@ -459,6 +459,24 @@ export interface Devotion {
   giftsDue?: ('favored' | 'exalted' | 'chosen')[];
   /** Gifts this god granted (effect ids), so estrangement can name them. */
   giftIds?: string[];
+  /** Place in the faith's hierarchy (table rule). */
+  office?: HolyOffice | null;
+}
+
+/** A character's office in the priesthood or a holy order (table rule). */
+export interface HolyOffice {
+  /** 1 Acolyte … 5 Head of the faith (see rules/priesthood). */
+  rank: number;
+  path: 'clergy' | 'order';
+  /** Day they took the present rank. */
+  sinceDay: number;
+  /** Days of duty served since the last monthly reckoning. */
+  dutyDays: number;
+  lastCheckDay: number;
+  /** Months in a row with duties missed. */
+  strikes: number;
+  /** A failed petition: no new one before this day. */
+  nextPetitionDay?: number;
 }
 
 export interface Injury {

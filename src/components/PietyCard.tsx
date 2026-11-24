@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
-import { Card, Pill, Select, Text, Rule } from './common';
+import { Card, Num, Pill, Select, Text, Rule } from './common';
+import { OFFICES, PETITION_WAIT_DAYS, STRIKES_TO_DEMOTE, TOP_RANK, officeTitle, petitionAdvantage, type OfficePath } from '../rules/priesthood';
 import { fmtGp } from '../rules/money';
 import {
   ATONED_PIETY,
@@ -76,7 +77,7 @@ export function PietyCard() {
         </div>
       )}
       <Rule>
-        Table rule ({s.settings.piety ? 'on' : 'off'}, Settings). The 2024 books leave faith to roleplay; this measures a character&apos;s standing with their god the way the DMG measures renown. Ranks: {PIETY_RANKS.slice(1).map((r) => `${r.label} ${r.min}+`).join(', ')}; below 0, Estranged. Deeds (the DM&apos;s call): {Object.values(DEEDS).map((x) => `${x.label.toLowerCase()} ${x.delta > 0 ? '+' : ''}${x.delta}`).join(', ')}. Religious Service downtime adds +{SERVICE_PIETY_PER_WEEK} a week, up to {SERVICE_PIETY_CAP}. A costly offering ({OFFERING_GP_PER_LEVEL} GP per level, once each {OFFERING_EVERY_DAYS} days) adds +1, up to {OFFERING_PIETY_CAP}. Beyond those, only deeds raise it. A missed tithe costs {MISSED_TITHE_PIETY}, and {NEGLECT_DAYS} days with nothing done for the god costs 1 (never below 0); paying a tithe, an offering, temple service or any deed counts. An Estranged character who atones (a penance or quest the DM sets) returns to {ATONED_PIETY}. Clerics, Paladins and acolytes start at 3, everyone else at 0. Gifts: the first time a character becomes Favored the god grants a Charm with one use, Exalted a Blessing, and Chosen a second Blessing or one guaranteed Divine Intervention; they appear under Supernatural gifts, and an Estranged character may lose them until they atone. Faith renown: tie the devotion to a faction for the god&apos;s church, and good deeds earn the same renown with it (the deed scale is the DMG&apos;s renown awards), sins and grave sins are serious offenses that cost as much renown, lapses cost none, and each week of Religious Service counts as {SERVICE_INVOLVEMENT_DAYS_PER_WEEK} days among its members (DMG group involvement, renown 1+). Boons are guidance for the DM: class features work as the PHB says whatever the score.
+        Table rule ({s.settings.piety ? 'on' : 'off'}, Settings). The 2024 books leave faith to roleplay; this measures a character&apos;s standing with their god the way the DMG measures renown. Ranks: {PIETY_RANKS.slice(1).map((r) => `${r.label} ${r.min}+`).join(', ')}; below 0, Estranged. Deeds (the DM&apos;s call): {Object.values(DEEDS).map((x) => `${x.label.toLowerCase()} ${x.delta > 0 ? '+' : ''}${x.delta}`).join(', ')}. Religious Service downtime adds +{SERVICE_PIETY_PER_WEEK} a week, up to {SERVICE_PIETY_CAP}. A costly offering ({OFFERING_GP_PER_LEVEL} GP per level, once each {OFFERING_EVERY_DAYS} days) adds +1, up to {OFFERING_PIETY_CAP}. Beyond those, only deeds raise it. A missed tithe costs {MISSED_TITHE_PIETY}, and {NEGLECT_DAYS} days with nothing done for the god costs 1 (never below 0); paying a tithe, an offering, temple service or any deed counts. An Estranged character who atones (a penance or quest the DM sets) returns to {ATONED_PIETY}. Clerics, Paladins and acolytes start at 3, everyone else at 0. Gifts: the first time a character becomes Favored the god grants a Charm with one use, Exalted a Blessing, and Chosen a second Blessing or one guaranteed Divine Intervention; they appear under Supernatural gifts, and an Estranged character may lose them until they atone. Faith renown: tie the devotion to a faction for the god&apos;s church, and good deeds earn the same renown with it (the deed scale is the DMG&apos;s renown awards), sins and grave sins are serious offenses that cost as much renown, lapses cost none, and each week of Religious Service counts as {SERVICE_INVOLVEMENT_DAYS_PER_WEEK} days among its members (DMG group involvement, renown 1+). Rising in the priesthood or a holy order: each rank needs renown with the faith, piety and level on the renown steps, plus time in the rank below ({OFFICES.slice(2).map((x) => `${x.title.clergy} ${x.renown}/${x.piety}/level ${x.level}/${x.daysInRank} days`).join('; ')}), then a petition: Intelligence (Religion) or Charisma (Persuasion) at DC {OFFICES.slice(2, TOP_RANK).map((x) => x.dc).join(', ')}, with Advantage when piety already meets the rank above; a failure waits {PETITION_WAIT_DAYS} days. The head of the faith is chosen only when the seat falls vacant. Each month, duties kept ({OFFICES.slice(2).map((x) => x.dutyDays).join(', ')} days; Religious Service weeks count) pay a stipend sized to the PHB lifestyles ({OFFICES.slice(2).map((x) => fmtGp(x.stipendGp)).join(', ')}); {STRIKES_TO_DEMOTE} months missed in a row cost a rank, and an Estranged character's office is suspended. Boons are guidance for the DM: class features work as the PHB says whatever the score.
       </Rule>
     </Card>
   );
@@ -148,6 +149,7 @@ function DevotionRow({ c }: { c: Character }) {
           </button>
         )}
       </div>
+      <OfficeSection c={c} />
       <div className="btn-row">
         <Select label="Deed" value={kind} onChange={setKind} options={(Object.keys(DEEDS) as DeedKind[]).map((k) => ({ value: k, label: `${DEEDS[k].label} (${DEEDS[k].delta > 0 ? '+' : ''}${DEEDS[k].delta})` }))} />
         <Text label="What happened" value={why} onChange={setWhy} placeholder={DEEDS[kind].examples} wide />
@@ -216,6 +218,85 @@ function GiftOffer({ c, rank }: { c: Character; rank: GiftRank }) {
         {rank === 'chosen' && (
           <button onClick={() => dispatch((st, cx) => E.settlePietyGift(st, cx, c.id, rank, ''))}>A guaranteed Divine Intervention instead</button>
         )}
+      </div>
+    </div>
+  );
+}
+
+/** The character's place in the faith's hierarchy, and the way up (table rule). */
+function OfficeSection({ c }: { c: Character }) {
+  const s = useGame();
+  const dv = c.devotion!;
+  const o = dv.office;
+  const [path, setPath] = useState<OfficePath>(c.className === 'Paladin' ? 'order' : 'clergy');
+  const [bonus, setBonus] = useState(E.petitionBonus(c));
+  const [days, setDays] = useState(2);
+  const blocked = E.petitionBlocked(s, c);
+  if (!o) {
+    return (
+      <div className="btn-row">
+        <Select label="Path" value={path} onChange={setPath} options={[{ value: 'clergy', label: 'Priesthood' }, { value: 'order', label: 'Holy order (knights)' }]} />
+        <button className="small" disabled={blocked.length > 0} title={blocked.join('; ')} onClick={() => dispatch((st, cx) => E.joinPriesthood(st, cx, c.id, path))}>
+          Take vows as {officeTitle(1, path)}
+        </button>
+        {blocked.length > 0 && <span className="muted small">Needs {blocked.join('; ')}</span>}
+      </div>
+    );
+  }
+  const here = OFFICES[o.rank];
+  const next = OFFICES[o.rank + 1];
+  const suspended = dv.piety < 0;
+  return (
+    <div className="facility small">
+      <p>
+        <Pill tone={suspended ? 'bad' : 'good'}>{here.title[o.path]}</Pill> {suspended && <b className="bad-text">Suspended until atonement. </b>}
+        {here.does}
+      </p>
+      {here.dutyDays > 0 && (
+        <p className={o.strikes ? 'warn-text' : 'muted'}>
+          Duties this month: {o.dutyDays}/{here.dutyDays} days, next reckoning in {Math.max(0, o.lastCheckDay + 30 - s.dayIndex)} day(s). Stipend {fmtGp(here.stipendGp)} a month.
+          {o.strikes > 0 && ` Months missed in a row: ${o.strikes}/${STRIKES_TO_DEMOTE}.`}
+        </p>
+      )}
+      {here.dutyDays > 0 && (
+        <div className="btn-row">
+          <Num label="Days" value={days} onChange={(v) => setDays(Math.max(1, Math.round(v)))} min={1} width={2} />
+          <button className="small" onClick={() => dispatch((st, cx) => E.templeDuty(st, cx, c.id, days))}>
+            Temple duties (downtime)
+          </button>
+        </div>
+      )}
+      {next && (
+        <div className="btn-row">
+          <span>
+            Next: <b>{next.title[o.path]}</b>{' '}
+            <span className="muted">
+              (renown {next.renown}, piety {next.piety}, level {next.level}, {next.daysInRank} days as {here.title[o.path]}
+              {next.dc ? `, DC ${next.dc} Religion or Persuasion` : ', and a vacancy'})
+            </span>
+          </span>
+          {next.dc > 0 ? (
+            <>
+              <Num label="Bonus" value={bonus} onChange={(v) => setBonus(Math.round(v))} width={2} />
+              <button className="small primary" disabled={blocked.length > 0} title={blocked.join('; ')} onClick={() => dispatch((st, cx) => E.petitionOffice(st, cx, c.id, bonus))}>
+                Petition{petitionAdvantage(o.rank + 1, dv.piety) ? ' (Advantage)' : ''}
+              </button>
+            </>
+          ) : (
+            <button className="small" onClick={() => dispatch((st, cx) => E.setOffice(st, cx, c.id, next.rank))}>
+              The seat falls to {c.name}
+            </button>
+          )}
+          {blocked.length > 0 && <span className="muted">Still needs {blocked.join('; ')}.</span>}
+        </div>
+      )}
+      <div className="btn-row">
+        <Select
+          label="Set office (DM)"
+          value={String(o.rank)}
+          onChange={(v) => dispatch((st, cx) => E.setOffice(st, cx, c.id, Number(v)))}
+          options={OFFICES.slice(0, TOP_RANK + 1).map((x) => ({ value: String(x.rank), label: x.rank ? x.title[o.path] : 'Leave the hierarchy' }))}
+        />
       </div>
     </div>
   );

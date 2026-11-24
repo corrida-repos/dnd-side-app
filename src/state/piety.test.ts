@@ -198,3 +198,72 @@ describe('renown with the faith', () => {
     expect(s.factions[0]).toMatchObject({ renown: 2, involvementDays: 4 });
   });
 });
+
+describe('rising in the priesthood', () => {
+  const priestly = (patch: (s: State) => void = () => {}): State => {
+    let s = devoted(patch);
+    s = E.trackFaith(s, ctx(), s.characters[0].id, 'Church of the Morninglord');
+    return s;
+  };
+
+  it('needs the faith tracked, then renown 1 to take vows', () => {
+    let s = devoted();
+    const id = s.characters[0].id;
+    expect(E.petitionBlocked(s, s.characters[0])[0]).toMatch(/faction/);
+    s = E.trackFaith(s, ctx(), id, '');
+    s = E.joinPriesthood(s, ctx(), id, 'clergy');
+    expect(s.characters[0].devotion?.office).toMatchObject({ rank: 1, path: 'clergy' });
+  });
+
+  it('a petition needs renown, piety, level and time served, then a check', () => {
+    let s = priestly((d) => (d.characters[0].level = 3));
+    const id = s.characters[0].id;
+    s = E.joinPriesthood(s, ctx(), id, 'clergy');
+    expect(E.petitionBlocked(s, s.characters[0]).join(' ')).toMatch(/renown 3.*30 more day/);
+    s.factions[0].renown = 3;
+    s = days(s, 30);
+    expect(E.petitionBlocked(s, s.characters[0])).toEqual([]);
+    s = E.petitionOffice(s, ctx(0), id, 2); // a 1: fails
+    expect(s.characters[0].devotion?.office?.rank).toBe(1);
+    expect(E.petitionBlocked(s, s.characters[0]).join(' ')).toMatch(/again in 30/);
+    s = days(s, 30);
+    expect(E.petitionBlocked(s, s.characters[0]).join(' ')).toMatch(/piety 3 \(has 2\)/); // 60 idle days of neglect
+    s = E.pietyDeed(s, ctx(), id, 1, 'kept the dawn vigil');
+    s = E.petitionOffice(s, ctx(0.5), id, 2); // 11 + 2 vs DC 10
+    expect(s.characters[0].devotion?.office?.rank).toBe(2);
+    expect(s.log[0].text).toMatch(/raised to Priest/);
+  });
+
+  it('duties kept pay the stipend; three months missed cost a rank', () => {
+    let s = priestly();
+    const id = s.characters[0].id;
+    s = E.setOffice(s, ctx(), id, 3);
+    const gp = s.characters[0].gp;
+    s = E.templeDuty(s, ctx(), id, 4);
+    s = days(s, 26);
+    expect(s.characters[0].gp).toBe(gp + 60);
+    s = days(s, 90);
+    expect(s.characters[0].devotion?.office?.rank).toBe(2);
+    expect(s.log.some((l) => /takes Ada's office/.test(l.text))).toBe(true);
+  });
+
+  it('Religious Service weeks count as duty, and estrangement suspends the stipend', () => {
+    let s = priestly();
+    const id = s.characters[0].id;
+    s = E.setOffice(s, ctx(), id, 2);
+    s.projects = [project({ name: 'Religious service', charIds: [id], done: true, awaitingOutcome: true })];
+    s = E.resolveActivityProject(s, ctx(0.99), 'p', { bonuses: [5], weeks: 1 });
+    expect(s.characters[0].devotion?.office?.dutyDays).toBe(7);
+    s = E.pietyDeed(s, ctx(), id, -20, 'betrayal');
+    const gp = s.characters[0].gp;
+    s = days(s, 30);
+    expect(s.characters[0].gp).toBe(gp);
+    expect(s.characters[0].devotion?.office?.strikes).toBe(0);
+  });
+
+  it('a Paladin climbs a holy order instead', () => {
+    let s = priestly();
+    s = E.setOffice(s, ctx(), s.characters[0].id, 4, 'order');
+    expect(s.log[0].text).toMatch(/Marshal of the order/);
+  });
+});
