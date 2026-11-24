@@ -31,7 +31,7 @@ export interface RoleInfo {
 export const HIRELING_ROLES: Record<HirelingRole, RoleInfo> = {
   torchbearer: { label: 'Torchbearer', skilled: false, does: 'Carries a light so the adventurers keep their hands free.', hook: 'Light a torch from their row; it shows on the Effects & Lights tab.' },
   porter: { label: 'Porter', skilled: false, does: 'Carries gear, supplies and treasure (a typical porter carries about 150 lb).' },
-  laborer: { label: 'Laborer', skilled: false, does: 'Digs, hauls, clears rubble, sets up camp and gathers firewood.' },
+  laborer: { label: 'Laborer', skilled: false, does: 'Digs, hauls, clears rubble, sets up camp and gathers firewood.', hook: 'Table rule: before each Long Rest at a wild camp, gathers 1d6 + 2 hours of firewood and digs a sheltered fire pit.' },
   guard: { label: 'Guard or mercenary', skilled: true, does: 'Keeps watch at night and protects the camp, the mounts and the gear.', skill: 'Perception', hook: 'Can stand watches in the Night watch planner.' },
   guide: { label: 'Guide', skilled: true, does: 'Knows the land and keeps the party on course.', skill: 'Survival', hook: 'Can be picked as the navigator on the Travel card.' },
   cook: { label: 'Cook', skilled: true, does: 'Turns rations and game into hot meals.', skill: "Cook's Utensils", hook: 'Can make the check when cooking a hot meal.' },

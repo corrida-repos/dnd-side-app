@@ -35,7 +35,7 @@ import { FEED_LB_PER_DAY, MOUNT_CAPACITY, carryingCapacity, COINS_PER_LB, estima
 import { bigEnoughToRide, canBeSidekick, canTame, currentDC, dayOutcome, missedDays, NO_AIDS, resultGain, sessionAttitude, sessionResult, tameCheck, tameDC, TRUST_PER_DAY_MAX, TAME_MAX_FAILS, TAME_RETRY_MINUTES, TAME_SESSION_MINUTES, trainingNeeded, TRAINING_LABEL, trustCue, trustNeeded, type TameAids, type TamerFacts, type TameTraining } from '../rules/taming';
 import { BUTCHER_DC, BUTCHER_MINUTES, isEdible, MEAT_LB, STRANGE_TYPES, yieldsHide, type Creature } from '../rules/hunting';
 import { CURE_DC, CURE_LB_PER_RATION, CURE_MAX_LB, CURE_MINUTES, curedRations, FEAST_FEAR_RELIEF, FEAST_STRESS_RELIEF, feastTempHp, HEARTY_SAVES, isFeast, MEAL_BUFF_MINUTES, MEAL_STRESS_RELIEF, tastyTempHp, WARM_SAVES } from '../rules/cooking';
-import { BOOK_GP, BOOK_PAGES, COPY_MAP_DC, COPY_MAP_MINUTES, PERFORM_MINUTES, performTake, RESEARCH_IDENTIFY_AT, RESEARCH_LEAD_AT, ROUTE_MAP_GP, AMMO_SEARCH_DC, ammoRecovered, CAROUSING_STRESS_PER_WEEK, DIG_FIND_ON, FINE_FUR, FINE_FUR_ODDS, FORECAST_MARGIN, forageBonusDice, HIDE_GP, isExceptional, KEPT_GEAR_MINUTES, KEPT_GEAR_NOTE, poisonYield, REINFORCE_MARGIN, rollFind, SERVICE_FEAR_PER_WEEK, SERVICE_STRESS_PER_WEEK, SMALL_PELT, trophyFor, WATCH_CATCH_DC, WATCH_CATCH_DICE, type Chore } from '../rules/chorePayoffs';
+import { CATCH_UP_WARMS_EVERY_DAYS, LABORER_FUEL_DICE, RECUPERATE_EXHAUSTION, RECUPERATE_STRESS, BOOK_GP, BOOK_PAGES, COPY_MAP_DC, COPY_MAP_MINUTES, PERFORM_MINUTES, performTake, RESEARCH_IDENTIFY_AT, RESEARCH_LEAD_AT, ROUTE_MAP_GP, AMMO_SEARCH_DC, ammoRecovered, CAROUSING_STRESS_PER_WEEK, DIG_FIND_ON, FINE_FUR, FINE_FUR_ODDS, FORECAST_MARGIN, forageBonusDice, HIDE_GP, isExceptional, KEPT_GEAR_MINUTES, KEPT_GEAR_NOTE, poisonYield, REINFORCE_MARGIN, rollFind, SERVICE_FEAR_PER_WEEK, SERVICE_STRESS_PER_WEEK, SMALL_PELT, trophyFor, WATCH_CATCH_DC, WATCH_CATCH_DICE, type Chore } from '../rules/chorePayoffs';
 import { addCoins, COIN_GP, coinCount, coinsFor, emptyPurse, exchange, fmtPurse, purseValue, spend, type Denom, type Purse } from '../rules/coins';
 import { detectContainer } from '../rules/containers';
 import { FIRE_DAMAGE, RAT_BITE_DAMAGE, RELAXATION_NEEDS, SHAKEDOWN_DAMAGE, SHAKEDOWN_GP, SHAKEDOWN_RIVAL_ODDS, SHUNNED_AFTER_DAYS, SPOILED_FOOD_DC, TAINTED_POTION_ODDS, WATCH_FINE, WATCH_JAIL_DAYS, WEEKLY_ODDS, WRETCHED_STRESS, isLowLife } from '../rules/lowLife';
@@ -84,7 +84,7 @@ import { MAGIC_AGING, SLOW_AGING_FACTOR, STAGE_LABEL, STAGE_SENSE, ageStage, bod
 import { HULL_LIMIT, DAMAGED_HULL_SPEED, MAINTAIN_MINUTES, REPAIR_DC, REPAIR_MINUTES, REPAIR_TOOL, WEAR_HOURS, WEAR_LIMIT, hullRepair, materialOf, repairCost, wearCauses } from '../rules/wear';
 import { DUE_PRESETS, GUILD_EXPULSION, PERIOD_DAYS, dueAmount, type DueKind, type DuePeriod } from '../rules/dues';
 import { BRIBE_GP_PER_HEAT, CRIMES, HEAT_DECAY_PER_WEEK, RECOGNISE_ON, heatLevel, jailDaysFor, samePlace, type CrimeSeverity } from '../rules/notoriety';
-import { FAVOR_COOLDOWN_DAYS, NEGLECT_DAYS, attitudeOf, clampBond, favorDC } from '../rules/contacts';
+import { BOND_MAX, FAVOR_COOLDOWN_DAYS, NEGLECT_DAYS, attitudeOf, clampBond, favorDC } from '../rules/contacts';
 import { REPLY_DIE, newsDelay, type NewsRoute } from '../rules/letters';
 import { arrivalLine, buildingType, generateTown, newBuilding, rollCalamity, rollFame, rollKeeper, rollLeader, rollRuler, rollTrait, sortBuildings, type Town } from '../rules/settlements';
 import { npcLine, rollNpc, type Npc } from '../rules/npcs';
@@ -1014,12 +1014,30 @@ export const longRest = act((d, ctx, force = false) => {
   const outside = tentShortfall(d);
   if (outside.length) noticed(d, 'coldNight', outside, `Not enough tent space (a Tent sleeps two): ${outside.map((c) => c.name).join(', ')} sleep${outside.length > 1 ? '' : 's'} in the open tonight.`, 'warn');
   clearAppraiseTries(d);
+  laborersMakeCamp(d, ctx);
   const watched = standWatches(d, ctx);
   d.restStart = absNow(d);
   advanceMut(d, ctx, 8 * 60, 'rest');
   d.restStart = null;
   completeLongRest(d, ctx, watched);
 });
+
+/** Table rule: hired laborers at a wild camp gather firewood and dig a sheltered fire pit before the party beds down. */
+function laborersMakeCamp(d: State, ctx: Ctx): void {
+  if (d.place.settlement || d.place.shelter === 'building') return;
+  const now = absNow(d);
+  const crew = d.hirelings.filter((h) => h.active && h.role === 'laborer' && !(h.busyUntil && h.busyUntil > now));
+  if (!crew.length) return;
+  let fuel = 0;
+  for (let i = 0; i < crew.length; i++) fuel += rollExpr(LABORER_FUEL_DICE, ctx.rng) ?? 5;
+  d.fire.fuelHours += fuel;
+  const pit = !d.fire.sheltered && !CLIMATES[d.weather.climate].noWeather;
+  if (pit) {
+    d.fire.sheltered = true;
+    d.place.dug = [...(d.place.dug ?? []).filter((x) => x !== DIG_LABEL.firePit.label), DIG_LABEL.firePit.label];
+  }
+  log(d, `${crew.map((h) => h.name).join(', ')} make${crew.length > 1 ? '' : 's'} camp: ${fuel} hours of firewood stacked${pit ? ' and a sheltered fire pit dug' : ''} (table rule: laborers' work).`, 'good');
+}
 
 /** Everything that happens when a Long Rest finishes. */
 function completeLongRest(d: State, ctx: Ctx, watched: Record<string, number>): void {
@@ -1520,6 +1538,14 @@ export const searchCheck = act((d, ctx, charId: string, what: 'search' | 'track'
   const total = r.value + bonus - 2 * c.exhaustion;
   const hindered = mode === 'disadvantage' ? `, Disadvantage: ${sight.note}` : '';
   log(d, `${c.name} ${doing}: ${what === 'track' ? 'Wisdom (Survival)' : 'Wisdom (Perception)'} ${r.rolls.join('/')} ${signed(bonus - 2 * c.exhaustion)} = ${total} against DC ${dc} (${TERRAIN[d.place.terrain].label}${hindered}). ${total >= dc ? 'Found!' : 'Nothing.'}`, total >= dc ? 'good' : 'warn');
+  if (total < dc) return;
+  // Table rules: a fresh trail leads to game, and a sharp-eyed search turns up something nobody hid on purpose.
+  if (what === 'track') {
+    d.travel.reconAdvantage = true;
+    log(d, `${c.name} reads the trail: where the animals water, feed and bed down. Advantage on the next foraging check (table rule).`, 'good');
+  }
+  const me = charById(d, charId);
+  if (what === 'search' && me && isExceptional(r.value, total, dc)) grantFind(d, ctx, me, 'search');
 });
 
 /** Runs a planned journey stage day by day: travel up to 8 hours, then (optionally) eat, drink and Long Rest overnight. */
@@ -3922,7 +3948,13 @@ export const recuperate = act((d, ctx, charId: string) => {
   if (!c || !alive(c)) return;
   const r = rollSave(c, RECUPERATE_DC, 'normal', ctx.rng);
   log(d, `${c.name} spends ${RECUPERATE_DAYS} days recuperating, then makes a DC ${RECUPERATE_DC} Con save. ${r.detail}${r.passed ? 'Advantage on saves against contagions for the next 24 hours.' : 'No benefit this time.'}`, r.passed ? 'good' : 'warn');
-  if (r.passed) c.recuperatedUntil = absNow(d) + 24 * 60;
+  if (!r.passed) return;
+  c.recuperatedUntil = absNow(d) + 24 * 60;
+  // Table rule: three days of real rest also lift a level of Exhaustion and ease the mind.
+  let lifted = 0;
+  for (let i = 0; i < RECUPERATE_EXHAUSTION; i++) if (recoverExhaustion(c)) lifted++;
+  if (lifted) status(d, c, 'exhaustionEases', `${c.name} gets up from three days of rest stronger: ${lifted} Exhaustion level${lifted > 1 ? 's' : ''} lifted, now ${c.exhaustion} (table rule).`, 'good');
+  easeMind(d, c, RECUPERATE_STRESS, 0, 'feels the days of rest settle the nerves');
 });
 
 // ---------------------------------------------------------------- businesses
@@ -8485,7 +8517,13 @@ export const keepInTouch = act((d, _ctx, id: string) => {
   const k = (d.contacts ?? []).find((x) => x.id === id);
   if (!k) return;
   k.lastHeardDay = d.dayIndex;
-  log(d, `The party catches up with ${k.name}.`);
+  // Table rule: time spent together warms the bond, once a month.
+  const warm = k.bond < BOND_MAX && (k.lastWarmedDay == null || d.dayIndex - k.lastWarmedDay >= CATCH_UP_WARMS_EVERY_DAYS);
+  if (warm) {
+    k.bond = clampBond(k.bond + 1);
+    k.lastWarmedDay = d.dayIndex;
+  }
+  log(d, `The party catches up with ${k.name}${warm ? `, and the time together counts: now ${attitudeOf(k.bond)} (bond ${signed(k.bond)}; table rule)` : ''}.`, warm ? 'good' : 'info');
 });
 
 /** Doing something for a contact: the bond grows and they owe the party a favor. */
