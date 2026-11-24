@@ -592,6 +592,28 @@ Use 5etools for rules and structured content. Draw revised character options, ho
 
 ---
 
+## Phase 13: Tactical handoff to Encounter Butler 📋
+
+When play moves to six-second rounds, let the GM send the encounter from D&D Life Manager to [Encounter Butler](https://github.com/corrida-repos/owlbear-rodeo-butler) in Owlbear Rodeo. This applies to every campaign setting and detail tier. Start with random creature encounters and a **Run in Butler** action for a GM-selected scene. Reuse the same handoff for a chase, ship encounter, or timed hazard once Butler can run that encounter type. A distant sighting, an uneventful roll, or a peaceful discovery can stay on the campaign clock.
+
+### Capture the moment play changes scale
+
+- Keep a structured encounter record at the resolution point. The current random encounter roll already knows the creature counts, attitude, distance, activity, and watch. Surprise is calculated there and then written into the log. Return that result as data before formatting it for the Chronicle, so export preserves the original rolls, the bell or pot alarm ruling, and who noticed whom.
+- Pause an advance or journey at the first encounter chosen for tactical play, with the remaining travel or rest time recorded. Save the pending encounter with the campaign so it survives a reload. Allow the GM to run it in Butler or resolve it in Life Manager, review participants and visibility, and decide whether a neutral or friendly contact actually needs rounds.
+- Export each participant separately with a stable ID, side, name, and available identity links such as a D&D Beyond character ID or a 5etools creature name and source. Include the rolled number of creatures and followers, and show which PCs, sidekicks, hirelings, mounts, or vehicles are present so the GM can confirm who enters play. Include HP and temporary HP, relevant conditions and their remaining duration, Exhaustion, concentration, and sleep or watch state where tracked. Preserve unknown values for review.
+- Carry the rules edition, surprise per participant, any initiative already rolled, and the starting distance, light, weather, terrain, shelter, and encounter context. In the revised rules, Butler applies surprise to the first initiative roll and retains any result supplied by Life Manager. Map durations only when their timing is defined, and show the GM any modifier or effect that needs a manual ruling. Keep hidden units and GM notes out of player-facing previews.
+
+### Import into the scene already open
+
+1. **File or clipboard first.** Define a versioned JSON contract with one fixture checked by both repos. Life Manager provides **Download encounter** and **Copy encounter**. Butler accepts the file or pasted JSON and previews the exact set of changes. The existing [prepared encounter workflow](https://github.com/corrida-repos/owlbear-rodeo-butler/blob/main/docs/DEVELOPMENT.md#new-encounter-workflow) imports a map, grid, and positioned creatures. The live handoff opens against the GM's current scene and uses its map and grid.
+2. **Reuse Butler's combat tools.** Match existing party tokens by stable identity, let the GM resolve ambiguous matches, and look up creatures by source and name. Use Butler's existing roster and tracker to create missing participants and apply HP, conditions, and initiative. Suggest placement from the recorded separation and let the GM position hidden or unmatched units. Preview conflicts with existing token state or combat, validate before writing, and make reimport of the same encounter safe against duplicate tokens. Unsupported versions or bad input leave the scene intact.
+3. **Add a direct transfer after the import works.** Prototype a GM-initiated transfer between the open Life Manager and Butler tabs, with origin and destination checks and explicit confirmation of the target scene. Verify it in a real Owlbear room because the extension runs inside Owlbear. Keep file and clipboard available when browser constraints prevent the direct transfer.
+4. **Resume the campaign with the outcome.** In the first release, let the GM record elapsed rounds and post-encounter changes manually. Track elapsed time at six seconds per completed round when reconciling timers. A later result import can carry HP, conditions, spent resources, deaths, and elapsed rounds. Preview those changes and apply them once before resuming travel or rest according to the actual interruption.
+
+Verify the first release with a hostile night encounter during a Long Rest. Advance to the encounter, export it, and use the current Owlbear scene with party tokens already present. Confirm the correct creatures and followers appear exactly once, the surprise result and existing conditions survive, only missing initiative is rolled, and hidden information remains GM-only. Then run the same flow with an encounter in a different campaign setting, and confirm a peaceful sighting can pass without a tactical handoff.
+
+---
+
 ## 5etools rules audit
 
 This review compares the revised core books and their supplements against the app at `8622f19`. It covers rules for travel, time, survival, equipment, downtime, factions, and Bastions, including features that exist in the app but only cover part of a published rule. The book links open the 5etools chapters used for the comparison. The audit records implementation gaps.
