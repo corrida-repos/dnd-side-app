@@ -24,7 +24,7 @@ import {
 import { Card, Meter, Num, Select, Text, Toggle, Rule } from './common';
 import { MAGIC_ITEM_VALUE, fmtGp } from '../rules/money';
 import { SPELLBOOK_COPY, ACTIVITY_PRESETS } from '../rules/longterm';
-import { AWAY_PROGRESS, BUILDING_PRESETS, BUSINESS_DEBT_PENALTY, BUSINESS_MAX_DAYS, BUSINESS_PRESETS } from '../rules/business';
+import { AWAY_PROGRESS, BUILDING_PRESETS, BUSINESS_DEBT_PENALTY, BUSINESS_MAX_DAYS, BUSINESS_PRESETS, businessValue } from '../rules/business';
 import { WaysAround } from './WaysAround';
 import { BOOK, SKILLS, TOOLS, abilityScore, carriesTool, hasSkill, proficientWith, type AbilityKey } from '../rules/gear';
 import { isLowLife } from '../rules/lowLife';
@@ -629,6 +629,9 @@ function BusinessCard() {
                 {b.debts > 0 && <> − {b.debts * BUSINESS_DEBT_PENALTY} for {b.debts} unpaid debt(s) ({fmtGp(b.unpaidGp)})</>}.
                 {b.lastResult && <span className="muted"> Last: {b.lastResult}.</span>}
               </p>
+              <div className="btn-row tight">
+                <Num label="Worth (for standing)" value={businessValue(b)} onChange={(v) => edit((d) => void (d.businesses.find((x) => x.id === b.id)!.valueGp = Math.max(0, Math.round(v))))} min={0} suffix="GP" width={6} />
+              </div>
               <div className="btn-row tight">
                 <Num value={days} onChange={(v) => setDays(Math.max(1, Math.round(v)))} min={1} suffix="days" width={3} />
                 <button className="small" onClick={() => dispatch((st, cx) => E.runBusiness(st, cx, b.id, days))}>

@@ -28,7 +28,7 @@ import { componentFor, REVIVAL_LIMIT, TARGET_SPELLS, type CostlyComponent } from
 import { POISONS, poisonByName, poisonItemName, type PoisonInfo } from '../rules/poisons';
 import { POISON_HARVEST_DC, POTION_MISCIBILITY } from '../rules/potions';
 import { ALCHEMIST, ALCHEMIST_FIRE_DC, IMPROVISED_DC, IMPROVISED_COOK_DC, IMPROVISED_HARVEST_DC, IMPROVISED_OINTMENT_DC, IMPROVISED_TESTS, IMPROVISED_TIME, TEST_KIND_LABEL, TOOL_TESTS, type TestKind, NAVIGATOR, STARGAZE_DC, IMPROVISED_STARGAZE_DC, STARGAZE_MINUTES, CARTOGRAPHER, MAP_DC, IMPROVISED_MAP_DC, MAP_MINUTES, mapName, isMapOf, MAP_BONUS, WEAVER, CLOTH, MEND_DC, IMPROVISED_MEND_DC, MEND_MINUTES, DECIPHER_DC, DECIPHER_MINUTES } from '../rules/tools';
-import { AWAY_PROGRESS, BUILD_SPELLS, BUSINESS_DEBT_PENALTY, BUSINESS_MAX_DAYS, BUSINESS_TABLE_BONUS, CREW_COST_SHARE, MAX_EXTRA_CREWS, buildPace, rollBusiness } from '../rules/business';
+import { businessValue, AWAY_PROGRESS, BUILD_SPELLS, BUSINESS_DEBT_PENALTY, BUSINESS_MAX_DAYS, BUSINESS_TABLE_BONUS, CREW_COST_SHARE, MAX_EXTRA_CREWS, buildPace, rollBusiness } from '../rules/business';
 import { HAZARDS, type GiftType, type HazardId } from '../rules/hazards';
 import { ARCANA_DC, STUDY_MINUTES, type StudyMethod } from '../rules/identify';
 import { FEED_LB_PER_DAY, MOUNT_CAPACITY, carryingCapacity, COINS_PER_LB, estimateWeight, loadLevel, parseInventory, RATION_WEIGHT, type LoadLevel } from '../rules/encumbrance';
@@ -3990,6 +3990,7 @@ export const addBusiness = act((d, _ctx, name: string, ownerId: string, gpPerDay
     b.building = { what: build.what, costGp: build.costGp, totalDays: Math.max(1, Math.round(build.days)), daysDone: 0 };
     b.overseeing = true;
     const total = build.costGp + build.landGp;
+    b.valueGp = build.landGp;
     if (build.landGp > 0) log(d, `${b.name}: land bought for ${fmtGp(build.landGp)}.`);
     payGold(d, [ownerId], total, `building ${b.name} (${build.what})`);
     b.netGp -= total;
@@ -4052,6 +4053,7 @@ export function buildJob(s: State, ref: BuildRef): BuildJob | null {
       setHelpers: (h) => void (b.helpers = h),
       finish: () => {
         log(s, `${b.name} is built and open for business (${w.what}).`, 'good');
+        b.valueGp = (b.valueGp ?? 0) + w.costGp;
         b.building = undefined;
         b.extraCrews = 0;
         b.helpers = [];
@@ -9017,7 +9019,8 @@ function pietyDaily(s: State): void {
   const today = s.dayIndex + 1;
   for (const c of s.characters) {
     const dv = c.devotion;
-    if (dv?.office && alive(c) && today - dv.office.lastCheckDay >= Priest.OFFICE_MONTH) officeMonth(s, c);
+    if (dv?.office && !s.place.settlement) dv.office.lastCheckDay += 1; // duties pause away from settlements (table rule)
+    else if (dv?.office && alive(c) && today - dv.office.lastCheckDay >= Priest.OFFICE_MONTH) officeMonth(s, c);
     if (!dv || !alive(c) || today - dv.lastDevotionDay < Piety.NEGLECT_DAYS) continue;
     dv.lastDevotionDay = today;
     if (dv.piety > 0) pietyChange(s, c, -1, `${Piety.NEGLECT_DAYS} days with nothing done for the god`);
@@ -9176,6 +9179,11 @@ export function socialRank(c: Character): { rank: number; tier: (typeof Ladder.S
   return { rank: best.rank, tier: Ladder.socialTier(best.rank), from: best.from };
 }
 
+/** Wealth for standing: gold on hand plus what the character's finished businesses are worth (table rule). */
+export function ladderWealth(s: State, c: Character): number {
+  return Math.round(c.gp + s.businesses.filter((b) => b.ownerId === c.id && !b.building).reduce((a, b) => a + businessValue(b), 0));
+}
+
 export function ladderStanding(s: State, c: Character, ladder: Ladder.LadderId): Ladder.LadderStanding {
   const p = ladderPos(c, ladder);
   return {
@@ -9184,7 +9192,7 @@ export function ladderStanding(s: State, c: Character, ladder: Ladder.LadderId):
     daysInRank: p ? s.dayIndex - p.sinceDay : 0,
     hasTool: p?.trade ? proficientWith(c, p.trade) : null,
     businesses: s.businesses.filter((b) => b.ownerId === c.id && !b.building).length,
-    wealth: c.gp,
+    wealth: ladderWealth(s, c),
   };
 }
 
@@ -9380,13 +9388,23 @@ function laddersDaily(s: State): void {
         log(s, `Stripped of the title, ${c.name} is ${was} no more: only an ${posTitle(p)} at court now (table rule).`, 'bad');
         continue;
       }
+      // Table rule: days away from any settlement (on the road, in the wilds, below ground) don't count toward the month.
+      if (!s.place.settlement) {
+        p.lastCheckDay += 1;
+        continue;
+      }
       if (today - p.lastCheckDay < Ladder.LADDER_MONTH) continue;
       p.lastCheckDay = today;
-      const need = Ladder.LADDERS[p.ladder].rungs[p.rank].dutyDays;
+      const rung = Ladder.LADDERS[p.ladder].rungs[p.rank];
+      const need = rung.dutyDays;
       const served = p.dutyDays;
       p.dutyDays = 0;
       if (!need || served >= need) {
         p.strikes = 0;
+        if (rung.incomeGp) {
+          gainWealth(c, rung.incomeGp);
+          log(s, `${c.name} collects the fees and tolls of a ${posTitle(p).toLowerCase()}: ${fmtGp(rung.incomeGp)} (table rule).`, 'good');
+        }
         continue;
       }
       p.strikes += 1;

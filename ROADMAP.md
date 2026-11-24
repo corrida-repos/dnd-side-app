@@ -518,8 +518,8 @@ Builds on the rolled-up town (Phase 9): its buildings and the people who run the
 The campaign's long game: characters rise in socioeconomic power by one of three paths, or several at once. **Noble** (court favor, titles and land), **clerical** (the god's favor and the faith's hierarchy) and **bourgeois** (guild, trade and civic office). All three ladders share one shape (table rules), so a Knight, a Senior priest and a Master stand level, as do a Duke, the Head of the faith and a Lord mayor:
 
 - **Five ranks** on the DMG renown steps (1 / 3 / 10 / 25 / 50) and level steps (1 / 3 / 5 / 11 / 17), plus time in the rank below and the path's own measure (piety; land and titles; the trade's tool, businesses and wealth).
-- **How a rank is reached:** joined (rank 1), petitioned for with a check (Advantage when renown or piety already meets the rank above; a failure waits 30 days), or awarded only (Lord, Duke, Head of the faith, Guildmaster or Lord mayor). The DM can award any rank directly, requirements or not: a battlefield knighthood, an honorary mastership, a seat by acclaim.
-- **Monthly duties** (downtime at court, in the guild or council, in the temple) keep the rank; three months missed in a row cost a step. Disgrace suspends or strips it.
+- **How a rank is reached:** joined (rank 1), petitioned for with a check (Advantage when renown or piety already meets the rank above; a failure waits 30 days), or awarded only (the top seat on every path: Duke, Head of the faith, Guildmaster or Lord mayor). Every rank 4 is a DC 20 petition. The DM can award any rank directly, requirements or not: a battlefield knighthood, an honorary mastership, a seat by acclaim.
+- **Monthly duties** (downtime at court, in the guild or council, in the temple) keep the rank; three months missed in a row cost a step, and days away from any settlement pause the month, so adventuring never costs a rank. Disgrace suspends or strips it.
 - **Social standing** from the highest rank on any ladder: Commoner, Notable, Gentry, Magnate, Grandee.
 
 ### Clerical ✅
@@ -528,12 +528,12 @@ The campaign's long game: characters rise in socioeconomic power by one of three
 
 ### Noble ✅
 - ✅ **The ladder:** Courtier → Esquire → Knight → Lord → Duke, at the ruler's court tracked as a faction. Petition: Charisma (Persuasion) or Intelligence (History).
-- ✅ **Titles and land:** from Knight, one title (a Mark of Prestige, with its expected lifestyle and the grantor's trust) is raised or lowered in place with the rank; Knight brings a knight's fee of farmland, Lord and Duke a village each. A title taken back drops them to Esquire, and a lost rank takes its lands.
+- ✅ **Titles and land:** from Knight, one title (a Mark of Prestige, with its expected lifestyle and the grantor's trust) is raised or lowered in place with the rank; Knight brings a knight's fee of farmland, Lord and Duke a village each. Titles pay fees and tolls (Knight 30, Lord 30, Duke 90 GP a month) so that, with average rents, a noble's income meets the title's expected lifestyle. Lord is pressed as a claim to a vacant fief (DC 20) or granted; Duke is granted only. A title taken back drops them to Esquire, and a lost rank takes its lands.
 - 📋 **Patronage and alliances:** marriage and fosterage between houses, sponsors who speed a petition, rivals at court.
 - 📋 **War duties:** levies of soldiers or coin when the ruler calls.
 
 ### Bourgeois ✅
-- ✅ **The ladder:** Apprentice → Journeyman → Master → Guild warden → Guildmaster, or Alderman → Lord mayor on the civic branch. Journeyman and Master need the guild's tool (Master is a judged masterpiece and a business of their own); Warden or Alderman is an election (two businesses, 5,000 GP); Guildmaster or Lord mayor is filled when the seat falls vacant (25,000 GP).
+- ✅ **The ladder:** Apprentice → Journeyman → Master → Guild warden → Guildmaster, or Alderman → Lord mayor on the civic branch. Journeyman and Master need the guild's tool (Master is a judged masterpiece and a business of their own); Warden or Alderman is an election (two businesses, 5,000 GP of wealth); Guildmaster or Lord mayor is filled when the seat falls vacant (25,000 GP). Wealth counts gold on hand plus what the character's businesses are worth (construction cost when built in the app, an estimate otherwise, editable).
 - ✅ **The guild behind them:** masters add +5, wardens +10 and guildmasters +15 to Running a Business rolls, so standing steadies a merchant's risky income.
 - 📋 **Perks:** guild prices on materials, trade licences, the guild's credit and warehouses.
 - 📋 **Money buys standing:** letters of nobility bought at a price, endowing a temple, lending to the crown.

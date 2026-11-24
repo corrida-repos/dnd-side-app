@@ -14,7 +14,9 @@ import type { LandKind, TitleRank } from './prestige';
  * Any rank can be awarded directly by the DM, requirements or not: a knighthood on the battlefield, a guild's
  * honorary mastership, a mayor chosen by acclaim.
  *
- * Monthly duties keep a rank; three months missed in a row cost a step.
+ * Monthly duties keep a rank; three months missed in a row cost a step. Days away from any settlement pause the month.
+ * Titles pay fees and tolls on top of their lands' rents, so on average a noble's income meets the lifestyle the title
+ * expects (Knight 35 + 30 vs 60, Lord 140 + 30 vs 120, Duke 245 + 90 vs 300 GP a month).
  */
 
 export type LadderId = 'court' | 'guild';
@@ -43,6 +45,8 @@ export interface Rung {
   tool?: boolean;
   businesses?: number;
   wealth?: number;
+  /** Noble: fees, tolls and perquisites of the title each month the duties are kept (table rule). */
+  incomeGp?: number;
   /** Bourgeois: bonus to Running a Business rolls for businesses the character owns (table rule). */
   businessBonus?: number;
   lifestyle?: Lifestyle;
@@ -83,6 +87,7 @@ export const LADDERS: Record<LadderId, { label: string; institution: string; run
         dutyDays: 2,
         titleRank: 'knight',
         land: 'farmland',
+        incomeGp: 30,
         lifestyle: 'comfortable',
         does: 'The accolade, often given on the field for valor. A knight’s fee of farmland pays rents; the ruler may call them to service.',
       },
@@ -92,14 +97,15 @@ export const LADDERS: Record<LadderId, { label: string; institution: string; run
         renown: 25,
         level: 11,
         daysInRank: 180,
-        way: 'award',
-        dc: 0,
-        check: '',
+        way: 'petition',
+        dc: 20,
+        check: `${PERSUADE_HISTORY}: pressing a claim to a vacant fief`,
         dutyDays: 4,
         titleRank: 'lord',
         land: 'village',
+        incomeGp: 30,
         lifestyle: 'wealthy',
-        does: 'A baron, lord or count, granted by the ruler when a fief falls vacant or for great service: a village and its people to protect, and a seat in the ruler’s council.',
+        does: 'A baron, lord or count: a claim pressed at court when a fief falls vacant, or a grant for great service. A village and its people to protect, and a seat in the ruler’s council.',
       },
       {
         rank: 5,
@@ -113,6 +119,7 @@ export const LADDERS: Record<LadderId, { label: string; institution: string; run
         dutyDays: 7,
         titleRank: 'duke',
         land: 'village',
+        incomeGp: 90,
         lifestyle: 'aristocratic',
         does: 'A peer of the realm, granted only by the ruler: a duchy’s seat, its levies and the ear of the throne.',
       },

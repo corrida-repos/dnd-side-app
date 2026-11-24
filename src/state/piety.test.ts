@@ -10,8 +10,8 @@ const project = (p: Partial<Project>): Project => ({ id: 'p', name: 'Job', kind:
 function fresh(patch: (s: State) => void = () => {}): State {
   const s = createDefaultState(() => 0);
   Object.assign(s.settings, { encounters: false, foodAndWater: false, extremeWeather: false, sleepDeprivation: false, lifestyleRisks: false, coldNights: false });
-  s.characters = [newCharacter({ name: 'Ada', className: 'Cleric', level: 4, gp: 1000, tasks: [] }), newCharacter({ name: 'Bo', className: 'Rogue', gp: 1000, tasks: [] })];
-  s.place = { ...s.place, settlement: false, name: 'The road' };
+  s.characters = [newCharacter({ name: 'Ada', className: 'Cleric', level: 4, gp: 1000, tasks: [], lifestyle: 'wretched' }), newCharacter({ name: 'Bo', className: 'Rogue', gp: 1000, tasks: [], lifestyle: 'wretched' })];
+  s.place = { ...s.place, settlement: true, name: 'Greyhawk' };
   s.log = [];
   patch(s);
   return s;

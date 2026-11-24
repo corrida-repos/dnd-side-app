@@ -736,6 +736,8 @@ export interface Business {
   unpaidGp: number;
   /** Lifetime profit minus what the owner paid in. */
   netGp: number;
+  /** What the property is worth (building and land), for wealth-based standing; estimated when not set. */
+  valueGp?: number;
   lastResult: string;
   notes: string;
   /** Still being built: it can't be run until finished. */
