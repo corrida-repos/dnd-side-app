@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as E from './engine';
 import { createDefaultState, newCharacter } from './defaults';
 import type { State } from './types';
-import { sidekickLevelFor, sidekickResources } from '../rules/sidekicks';
+import { SIDEKICK_KIND_IDS, SIDEKICK_KINDS, sidekickLevelFor, sidekickResources } from '../rules/sidekicks';
 
 const ctx = (v = 0.5): E.Ctx => ({ rng: () => v });
 function party(levels: number[]): State {
@@ -65,8 +65,17 @@ describe('sidekicks (Tasha’s)', () => {
     expect(s.characters.some((c) => c.sidekick)).toBe(false);
     s = E.hireSidekick(s, ctx(), { ...guard, speaks: false });
     expect(s.characters.some((c) => c.sidekick)).toBe(false);
-    s = E.startRecruit(s, ctx(), { name: 'Rex', creature: 'Mastiff', cr: '1/8', size: 'Medium', type: 'beast', int: 3, baseHp: 5, conScore: 12, passivePerception: 13, darkvision: 0, speaks: false, attitude: 'indifferent', recruiterId: s.characters[0].id });
+    s = E.startRecruit(s, ctx(), { name: 'Rex', creature: 'Mastiff', cr: '1/8', size: 'Medium', type: 'beast', int: 3, baseHp: 5, conScore: 12, passivePerception: 13, darkvision: 0, speaks: false, attitude: 'indifferent', cls: 'warrior', role: 'attacker', recruiterId: s.characters[0].id });
     expect(s.recruits ?? []).toHaveLength(0);
+  });
+
+  it('every kind of hire comes with its class on a stat block of CR 1/2 or lower', () => {
+    for (const id of SIDEKICK_KIND_IDS) {
+      const k = SIDEKICK_KINDS[id];
+      let s = party([3]);
+      s = E.hireSidekick(s, ctx(), { name: k.label, creature: k.creature, cr: k.cr, size: 'Medium', type: 'humanoid', baseHp: k.hp, conScore: k.con, passivePerception: k.passivePerception, darkvision: 0, speaks: true, cls: k.cls, role: k.role, wageGp: 2, payerId: 'party' });
+      expect(s.characters.find((c) => c.sidekick)?.sidekick).toMatchObject({ cls: k.cls, role: k.role });
+    }
   });
 
   it('a tamed companion can become a sidekick', () => {

@@ -18,8 +18,8 @@ import { ALCHEMIST, ALCHEMIST_FIRE_DC, IMPROVISED_COOK_DC, IMPROVISED_HARVEST_DC
 import { WaysAround } from './WaysAround';
 import { useGate } from './gate';
 import { ATTITUDE_LABEL, GIFT_MIN_GP, HELPED_TRUST, RECRUIT_MAX_FAILS, recruitCue, recruitDC, TRUST_NEEDED, type RecruitAttitude } from '../rules/recruiting';
-import { ANIMAL_NOTE, isAnimal, HIT_DIE_BY_SIZE, ROLE_LABEL, SIDEKICK_CLASS_LABEL, SIDEKICK_ROLES, type SidekickClass, type SidekickRole } from '../rules/sidekicks';
-import type { Recruit, Size } from '../state/types';
+import { ROLE_LABEL, SIDEKICK_CLASS_LABEL, SIDEKICK_KIND_IDS, SIDEKICK_KINDS, type SidekickKind } from '../rules/sidekicks';
+import type { Recruit } from '../state/types';
 import { SRD_POOL } from '../rules/encounters';
 import { AID_LABEL, bigEnoughToRide, canBeSidekick, canTame, charmSpellsFor, currentDC, NO_AIDS, TAME_MIN_DC, TRUST_PER_DAY_MAX, sessionAttitude, STABLE_DAYS, TAMED_RULES, tameCheck, tameDC, TAME_MAX_FAILS, TAME_MAX_INT, TAMEABLE_TYPES, TRAINING_LABEL, trainingNeeded, trustCue, trustNeeded, type Attitude, type TameAids, type TameTraining } from '../rules/taming';
 
@@ -721,37 +721,20 @@ function HuntCard() {
 }
 
 /** Taming a wild Beast or Monstrosity of low Intelligence (table rule built on the 2024 Influence action). */
-const crOf = (cr: string): number => {
-  const [a, b] = cr.split('/').map(Number);
-  return b ? a / b : a;
-};
-
 /** Talking someone met along the way into joining as a sidekick (table rule on the 2024 Influence action and Tasha's). */
 function RecruitCard() {
   const s = useGame();
   const pcs = s.characters.filter((c) => c.kind === 'pc' && !c.sidekick && E.alive(c));
   const recruits = s.recruits ?? [];
-  const pool = SRD_POOL.filter((c) => crOf(c.cr) <= 0.5 && ['humanoid', 'fey', 'celestial', 'fiend', 'giant', 'dragon'].includes(c.type.toLowerCase()));
+  const [kind, setKind] = useState<SidekickKind>('scout');
   const [name, setName] = useState('');
-  const [creature, setCreature] = useState('Scout');
-  const [cr, setCr] = useState('1/2');
-  const [size, setSize] = useState<Size>('Medium');
-  const [int, setInt] = useState(10);
-  const [baseHp, setBaseHp] = useState(16);
-  const [con, setCon] = useState(12);
-  const [pp, setPp] = useState(12);
-  const [dv, setDv] = useState(0);
-  const [speaks, setSpeaks] = useState(true);
   const [attitude, setAttitude] = useState<RecruitAttitude>('indifferent');
   const [contactId, setContactId] = useState('');
   const [who, setWho] = useState('');
   const recruiterId = pcs.find((c) => c.id === who)?.id ?? pcs[0]?.id ?? '';
-  const picked = pool.find((c) => c.name.toLowerCase() === creature.trim().toLowerCase()) ?? SRD_POOL.find((c) => c.name.toLowerCase() === creature.trim().toLowerCase());
   const contacts = (s.contacts ?? []).filter((k) => k.bond >= 0);
   const contact = contacts.find((k) => k.id === contactId);
-  const theCr = picked?.cr ?? cr;
-  const tooStrong = !(crOf(theCr) <= 0.5);
-  const animal = isAnimal(picked?.type) || !speaks;
+  const k = SIDEKICK_KINDS[kind];
   return (
     <Card title="Winning someone over">
       {recruits.map((r) => (
@@ -759,45 +742,33 @@ function RecruitCard() {
       ))}
       <h3>Someone met along the way</h3>
       <div className="form-row">
-        <Select label="From a contact" value={contactId} onChange={(v) => (setContactId(v), setName(contacts.find((k) => k.id === v)?.name ?? name))} options={[{ value: '', label: 'No: someone new' }, ...contacts.map((k) => ({ value: k.id, label: `${k.name} (bond ${k.bond >= 0 ? '+' : ''}${k.bond})` }))]} />
+        <Select label="From a contact" value={contactId} onChange={(v) => (setContactId(v), setName(contacts.find((x) => x.id === v)?.name ?? name))} options={[{ value: '', label: 'No: someone new' }, ...contacts.map((x) => ({ value: x.id, label: `${x.name} (bond ${x.bond >= 0 ? '+' : ''}${x.bond})` }))]} />
         <Text label="Name" value={name} onChange={setName} placeholder="What they're called" />
-        <Text label="Stat block (CR 1/2 or lower)" value={creature} onChange={setCreature} placeholder="e.g. Scout, Acolyte, Bandit" />
-        {!picked && <Text label="CR" value={cr} onChange={setCr} />}
-        {!picked && <Select label="Size" value={size} onChange={setSize} options={(['Tiny', 'Small', 'Medium', 'Large'] as Size[]).map((x) => ({ value: x, label: x }))} />}
-      </div>
-      <div className="form-row">
-        <Num label="Int score" value={int} onChange={(v) => setInt(Math.round(v))} width={2} />
-        <Num label="Stat block HP" value={baseHp} onChange={(v) => setBaseHp(Math.max(1, Math.round(v)))} min={1} width={3} />
-        <Num label="Con score" value={con} onChange={(v) => setCon(Math.round(v))} width={2} />
-        <Num label="Passive Perception" value={pp} onChange={(v) => setPp(Math.round(v))} width={2} />
-        <Num label="Darkvision" value={dv} onChange={(v) => setDv(Math.max(0, Math.round(v)))} suffix="ft" width={3} />
-        <Toggle checked={speaks} onChange={setSpeaks} label="Speaks a language" />
+        <Select label="What are they?" value={kind} onChange={setKind} options={SIDEKICK_KIND_IDS.map((id) => ({ value: id, label: `${SIDEKICK_KINDS[id].label}: ${SIDEKICK_KINDS[id].blurb}` }))} />
       </div>
       <div className="form-row">
         {!contact && <Select label="Their attitude" value={attitude} onChange={setAttitude} options={(Object.keys(ATTITUDE_LABEL) as RecruitAttitude[]).map((a) => ({ value: a, label: ATTITUDE_LABEL[a] }))} />}
         <Select label="Doing the talking" value={recruiterId} onChange={setWho} options={pcs.map((c) => ({ value: c.id, label: c.name }))} />
       </div>
       <p className="small">
-        {picked ? `${picked.name}: CR ${picked.cr}, ${picked.size} ${picked.type}. ` : ''}
+        A {k.label.toLowerCase()} would join as a <b>{SIDEKICK_CLASS_LABEL[k.cls]}</b> sidekick{k.role ? ` (${ROLE_LABEL[k.role]})` : ''} ({k.creature} stat block, CR {k.cr}).{' '}
         {contact
           ? `${contact.name} already knows the party: they start ${contact.bond >= 1 ? 'Friendly' : 'Indifferent'} with ${Math.max(0, contact.bond)} trust.`
-          : `${ATTITUDE_LABEL[attitude]}: DC ${recruitDC(attitude, int)} a day, ${TRUST_NEEDED[attitude]} trust to win over${attitude === 'hostile' ? ', after first calming them' : ''}.`}
+          : `${ATTITUDE_LABEL[attitude]}: DC ${recruitDC(attitude, k.int)} a day, ${TRUST_NEEDED[attitude]} trust to win over${attitude === 'hostile' ? ', after first calming them' : ''}.`}
       </p>
-      {animal && <p className="small warn-text">Can&apos;t be talked round: {ANIMAL_NOTE}.</p>}
-      {tooStrong && <p className="small warn-text">CR {theCr} is too formidable: a sidekick&apos;s stat block must be CR 1/2 or lower (Tasha&apos;s).</p>}
       <button
         className="primary"
-        disabled={tooStrong || animal || !recruiterId || !(name.trim() || creature.trim())}
+        disabled={!recruiterId || !(name.trim() || contact)}
         onClick={() =>
           dispatch((st, cx) =>
-            E.startRecruit(st, cx, { name: name.trim() || creature.trim(), creature: picked?.name ?? creature.trim(), cr: theCr, size: picked?.size ?? size, type: picked?.type, int, baseHp, conScore: con, passivePerception: pp, darkvision: dv, speaks, attitude, recruiterId, ...(contact ? { contactId: contact.id } : {}) }),
+            E.startRecruit(st, cx, { name: name.trim() || contact?.name || k.label, creature: k.creature, cr: k.cr, size: 'Medium', type: 'humanoid', int: k.int, baseHp: k.hp, conScore: k.con, passivePerception: k.passivePerception, darkvision: 0, speaks: true, cls: k.cls, role: k.role, attitude, recruiterId, ...(contact ? { contactId: contact.id } : {}) }),
           )
         }
       >
         Try to win them over
       </button>
       <Rule>
-        Table rule, built on the 2024 DMG Influence action and Tasha&apos;s rule that a sidekick must be a friend: spend an hour a day in their company and make an Influence check (Persuasion, Performance or Deception, whichever fits) against DC 15 or their Intelligence, whichever is higher (10 once Friendly; a Hostile one must first be calmed at DC 20). A success adds 1 trust, beating the DC by 5 adds 2; a gift of {GIFT_MIN_GP} GP or more, or danger faced together, gives Advantage. Doing something real for them is worth {HELPED_TRUST} trust once. Failing by 5 or more is a bad day; {RECRUIT_MAX_FAILS} in a row and they send the party away. Once won over they join as a Tasha&apos;s sidekick at the party&apos;s average level, for a share of the road or for pay.
+        Table rule, built on the 2024 DMG Influence action and Tasha&apos;s rule that a sidekick must be a friend: spend an hour a day in their company and make an Influence check (Persuasion, Performance or Deception, whichever fits) against DC 15 or their Intelligence, whichever is higher (10 once Friendly; a Hostile one must first be calmed at DC 20). A success adds 1 trust, beating the DC by 5 adds 2; a gift of {GIFT_MIN_GP} GP or more, or danger faced together, gives Advantage. Doing something real for them is worth {HELPED_TRUST} trust once. Failing by 5 or more is a bad day; {RECRUIT_MAX_FAILS} in a row and they send the party away. Once won over they join as what they are, a Tasha&apos;s sidekick at the party&apos;s average level, for a share of the road or for pay. Animals are tamed, not talked round.
       </Rule>
     </Card>
   );
@@ -811,16 +782,13 @@ function RecruitRow({ r }: { r: Recruit }) {
   const [gift, setGift] = useState(0);
   const [danger, setDanger] = useState(false);
   const [helped, setHelped] = useState('');
-  const [cls, setCls] = useState<SidekickClass>('warrior');
-  const [role, setRole] = useState<SidekickRole | ''>('attacker');
   const [wage, setWage] = useState(0);
-  const roles = SIDEKICK_ROLES[cls];
   const today = r.lastSessionDay === s.dayIndex;
   const whoId = pcs.find((c) => c.id === who)?.id ?? pcs[0]?.id ?? '';
   return (
     <div className="decision">
       <p>
-        <b>{r.name}</b> <span className="small muted">({r.creature}, CR {r.cr}, d{HIT_DIE_BY_SIZE[r.size]} Hit Die)</span> <Pill tone={r.attitude === 'friendly' ? 'good' : r.attitude === 'hostile' ? 'bad' : 'muted'}>{ATTITUDE_LABEL[r.attitude]}</Pill>{' '}
+        <b>{r.name}</b> <span className="small muted">({SIDEKICK_CLASS_LABEL[r.cls]}{r.role ? `, ${r.role}` : ''}; {r.creature}, CR {r.cr})</span> <Pill tone={r.attitude === 'friendly' ? 'good' : r.attitude === 'hostile' ? 'bad' : 'muted'}>{ATTITUDE_LABEL[r.attitude]}</Pill>{' '}
         <Pill tone="info">
           trust {r.trust}/{r.needed}
         </Pill>{' '}
@@ -829,10 +797,8 @@ function RecruitRow({ r }: { r: Recruit }) {
       <p className="small">{recruitCue(r.name, r.trust, r.needed, r.attitude)}</p>
       {r.willing ? (
         <div className="btn-row tight">
-          <Select label="Class" value={cls} onChange={(v) => (setCls(v), setRole(SIDEKICK_ROLES[v][0] ?? ''))} options={(Object.keys(SIDEKICK_CLASS_LABEL) as SidekickClass[]).map((k) => ({ value: k, label: SIDEKICK_CLASS_LABEL[k] }))} />
-          {roles.length > 0 && <Select label="Role" value={role || roles[0]} onChange={(v) => setRole(v)} options={roles.map((x) => ({ value: x, label: ROLE_LABEL[x] }))} />}
           <Num label="Asks for pay a day" value={wage} onChange={(v) => setWage(Math.max(0, v))} min={0} suffix="GP" width={3} />
-          <button className="primary" onClick={() => dispatch((st, cx) => E.recruitJoin(st, cx, r.id, cls, roles.length ? ((role || roles[0]) as SidekickRole) : null, wage, 'party'))}>
+          <button className="primary" onClick={() => dispatch((st, cx) => E.recruitJoin(st, cx, r.id, wage, 'party'))}>
             Welcome {r.name} to the party
           </button>
         </div>

@@ -136,3 +136,38 @@ export const hpForLevel = (roll: number, conMod: number): number => Math.max(1, 
 export const SIDEKICK_WAGE_GP = 2;
 
 export const sidekickProficiency = (level: number): number => proficiencyBonus(level);
+
+// ---------------------------------------------------------------- the kinds of people who can be hired or won over
+
+export type SidekickKind = 'sellsword' | 'bodyguard' | 'scout' | 'mage' | 'healer' | 'minstrel';
+
+export interface SidekickKindInfo {
+  label: string;
+  /** Who they are, in a few words. */
+  blurb: string;
+  cls: SidekickClass;
+  role: SidekickRole | null;
+  /** The 2024 Monster Manual stat block they're built on (CR 1/2 or lower). */
+  creature: string;
+  cr: string;
+  hp: number;
+  con: number;
+  int: number;
+  passivePerception: number;
+}
+
+/**
+ * A sidekick comes with their class: hire (or win over) a warrior, an expert or a spellcaster, built on a fitting
+ * 2024 Monster Manual stat block of CR 1/2 or lower. The Mage uses the Noble (Int 12, three languages), since the
+ * Mage Apprentice is CR 2; the Spellcaster class replaces any spellcasting the stat block has (Tasha's).
+ */
+export const SIDEKICK_KINDS: Record<SidekickKind, SidekickKindInfo> = {
+  sellsword: { label: 'Sellsword', blurb: 'a hard-bitten fighter who hits first', cls: 'warrior', role: 'attacker', creature: 'Tough', cr: '1/2', hp: 32, con: 14, int: 10, passivePerception: 10 },
+  bodyguard: { label: 'Bodyguard', blurb: 'a trained guard who keeps others safe', cls: 'warrior', role: 'defender', creature: 'Guard', cr: '1/8', hp: 11, con: 12, int: 10, passivePerception: 12 },
+  scout: { label: 'Scout', blurb: 'a skilled guide, tracker and lookout', cls: 'expert', role: null, creature: 'Scout', cr: '1/2', hp: 16, con: 12, int: 11, passivePerception: 15 },
+  mage: { label: 'Mage', blurb: 'a learned spellcaster with a wizard’s spells', cls: 'spellcaster', role: 'mage', creature: 'Noble', cr: '1/8', hp: 9, con: 11, int: 12, passivePerception: 12 },
+  healer: { label: 'Healer', blurb: 'a priest or druid who mends wounds', cls: 'spellcaster', role: 'healer', creature: 'Priest Acolyte', cr: '1/4', hp: 11, con: 12, int: 10, passivePerception: 12 },
+  minstrel: { label: 'Minstrel', blurb: 'a performer with a bard’s magic', cls: 'spellcaster', role: 'prodigy', creature: 'Performer', cr: '1/2', hp: 27, con: 12, int: 13, passivePerception: 12 },
+};
+
+export const SIDEKICK_KIND_IDS = Object.keys(SIDEKICK_KINDS) as SidekickKind[];

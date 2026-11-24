@@ -13,7 +13,7 @@ function party(): State {
   s.log = [];
   return s;
 }
-const scout = (s: State, extra = {}) => ({ name: 'Wren', creature: 'Scout', cr: '1/2', size: 'Medium' as const, int: 11, baseHp: 16, conScore: 12, passivePerception: 15, darkvision: 0, speaks: true, attitude: 'indifferent' as const, recruiterId: s.characters[0].id, ...extra });
+const scout = (s: State, extra = {}) => ({ name: 'Wren', creature: 'Scout', cr: '1/2', size: 'Medium' as const, int: 11, baseHp: 16, conScore: 12, passivePerception: 15, darkvision: 0, speaks: true, attitude: 'indifferent' as const, cls: 'expert' as const, role: null, recruiterId: s.characters[0].id, ...extra });
 const noAid = { giftGp: 0, sharedDanger: false };
 
 describe('winning someone over', () => {
@@ -36,7 +36,7 @@ describe('winning someone over', () => {
     s = E.advance(s, ctx(), 24 * 60);
     s = E.recruitSession(s, ctx(0.99), id, s.characters[0].id, 5, noAid);
     expect(s.recruits![0]).toMatchObject({ willing: true, attitude: 'friendly' });
-    s = E.recruitJoin(s, ctx(0.5), id, 'expert', null, 0, 'party');
+    s = E.recruitJoin(s, ctx(0.5), id, 0, 'party');
     expect(s.recruits).toHaveLength(0);
     const k = s.characters.find((c) => c.sidekick)!;
     expect(k).toMatchObject({ name: 'Wren', level: 3 });

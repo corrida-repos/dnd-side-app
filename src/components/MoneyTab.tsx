@@ -20,9 +20,7 @@ import { valueUnknown, inStock, priceOf, RENOWN_DISCOUNT, saleRate, STOCK_LIMIT 
 import { COMMON_SPELL_REQUESTS, PASSAGE, SPELL_SERVICES, spellServiceAvailable, type Settlement } from '../rules/services';
 import { WaysAround } from './WaysAround';
 import { TownCard } from './TownCard';
-import { ANIMAL_NOTE, isAnimal, HIT_DIE_BY_SIZE, ROLE_LABEL, SIDEKICK_CLASS_LABEL, SIDEKICK_FEATURES, SIDEKICK_ROLES, SIDEKICK_WAGE_GP, sidekickLevelFor, type SidekickClass, type SidekickRole } from '../rules/sidekicks';
-import { SRD_POOL } from '../rules/encounters';
-import type { Size } from '../state/types';
+import { ROLE_LABEL, SIDEKICK_CLASS_LABEL, SIDEKICK_FEATURES, SIDEKICK_KIND_IDS, SIDEKICK_KINDS, SIDEKICK_WAGE_GP, sidekickLevelFor, type SidekickKind } from '../rules/sidekicks';
 import { SETTLEMENT_SIZE, townSells, townSpecials } from '../rules/settlements';
 import { SADDLE_LABEL, STABLING_GP_PER_DAY, needsExoticSaddle, type Saddle } from '../rules/gear';
 
@@ -205,37 +203,20 @@ function ExchangeRow() {
   );
 }
 
-const crNum = (cr: string): number => {
-  const [a, b] = cr.split('/').map(Number);
-  return b ? a / b : a;
-};
-
-/** Optional rule (Tasha's): hire or welcome a co-adventurer with a sidekick class that levels with the party. */
+/** Optional rule (Tasha's): hire a co-adventurer who comes with their sidekick class and levels with the party. */
 function SidekickCard() {
   const s = useGame();
   const pcs = s.characters.filter((c) => c.kind === 'pc' && !c.sidekick);
   const sidekicks = s.characters.filter((c) => c.sidekick);
-  const pool = SRD_POOL.filter((c) => crNum(c.cr) <= 0.5 && !isAnimal(c.type));
-  const [creature, setCreature] = useState('Guard');
-  const picked = pool.find((c) => c.name.toLowerCase() === creature.trim().toLowerCase()) ?? SRD_POOL.find((c) => c.name.toLowerCase() === creature.trim().toLowerCase());
+  const [kind, setKind] = useState<SidekickKind>('sellsword');
   const [name, setName] = useState('');
-  const [cr, setCr] = useState('1/8');
-  const [size, setSize] = useState<Size>('Medium');
-  const [baseHp, setBaseHp] = useState(11);
-  const [conScore, setCon] = useState(12);
-  const [pp, setPp] = useState(12);
-  const [dv, setDv] = useState(0);
-  const [speaks, setSpeaks] = useState(true);
-  const [cls, setCls] = useState<SidekickClass>('warrior');
-  const [role, setRole] = useState<SidekickRole | ''>('attacker');
   const [wage, setWage] = useState(SIDEKICK_WAGE_GP);
   const [payer, setPayer] = useState('party');
   if (!s.settings.sidekicks) return null;
+  const k = SIDEKICK_KINDS[kind];
   const level = sidekickLevelFor(pcs.map((c) => c.level));
-  const roles = SIDEKICK_ROLES[cls];
-  const theCr = picked?.cr ?? cr;
-  const theSize = picked?.size ?? size;
-  const why = isAnimal(picked?.type) || !speaks ? ANIMAL_NOTE : E.sidekickBlocked(theCr, cls, speaks);
+  const firsts = SIDEKICK_FEATURES[k.cls].filter((f) => f.level <= level && f.name !== 'Ability Score Improvement').map((f) => f.name);
+  const who = name.trim() || `the ${k.label.toLowerCase()}`;
   return (
     <Card title="Sidekicks (Tasha's)">
       {sidekicks.length > 0 && (
@@ -243,7 +224,7 @@ function SidekickCard() {
           {sidekicks.map((c) => (
             <li key={c.id} className="armor-row">
               <span>
-                <b>{c.name}</b> <span className="small muted">{c.sidekick!.creature}, {SIDEKICK_CLASS_LABEL[c.sidekick!.cls]} level {c.level}, {c.hp}/{c.maxHp} HP{c.sidekick!.wageGp ? `, ${fmtGp(c.sidekick!.wageGp)} a day` : ', a friend'} · purse {fmtGp(c.gp)}</span>
+                <b>{c.name}</b> <span className="small muted">{c.subclass || SIDEKICK_CLASS_LABEL[c.sidekick!.cls]}, level {c.level}, {c.hp}/{c.maxHp} HP{c.sidekick!.wageGp ? `, ${fmtGp(c.sidekick!.wageGp)} a day` : ', a friend'} · purse {fmtGp(c.gp)}</span>
               </span>
               <button className="small ghost" onClick={() => dispatch((st, cx) => E.dismissSidekick(st, cx, c.id))}>
                 Part ways
@@ -253,42 +234,26 @@ function SidekickCard() {
         </ul>
       )}
       <div className="form-row">
-        <Text label="Who (a person, CR 1/2 or lower)" value={creature} onChange={setCreature} placeholder="e.g. Guard, Acolyte, Scout" />
-        <Text label="Name" value={name} onChange={setName} placeholder={creature || 'Name'} />
-        {!picked && <Text label="CR" value={cr} onChange={setCr} />}
-        {!picked && <Select label="Size" value={size} onChange={setSize} options={(['Tiny', 'Small', 'Medium', 'Large'] as Size[]).map((x) => ({ value: x, label: x }))} />}
-      </div>
-      <div className="form-row">
-        <Num label="Stat block HP" value={baseHp} onChange={(v) => setBaseHp(Math.max(1, Math.round(v)))} min={1} width={3} />
-        <Num label="Con score" value={conScore} onChange={(v) => setCon(Math.round(v))} width={2} />
-        <Num label="Passive Perception" value={pp} onChange={(v) => setPp(Math.round(v))} width={2} />
-        <Num label="Darkvision" value={dv} onChange={(v) => setDv(Math.max(0, Math.round(v)))} suffix="ft" width={3} />
-        <Toggle checked={speaks} onChange={setSpeaks} label="Speaks a language" />
-      </div>
-      <div className="form-row">
-        <Select label="Class" value={cls} onChange={(v) => (setCls(v), setRole(SIDEKICK_ROLES[v][0] ?? ''))} options={(Object.keys(SIDEKICK_CLASS_LABEL) as SidekickClass[]).map((k) => ({ value: k, label: SIDEKICK_CLASS_LABEL[k] }))} />
-        {roles.length > 0 && <Select label="Role" value={role || roles[0]} onChange={(v) => setRole(v)} options={roles.map((r) => ({ value: r, label: ROLE_LABEL[r] }))} />}
-        <Num label="Pay a day (0 = a friend)" value={wage} onChange={(v) => setWage(Math.max(0, v))} min={0} suffix="GP" width={3} />
+        <Select label="Hire a" value={kind} onChange={setKind} options={SIDEKICK_KIND_IDS.map((id) => ({ value: id, label: `${SIDEKICK_KINDS[id].label}: ${SIDEKICK_KINDS[id].blurb}` }))} />
+        <Text label="Name" value={name} onChange={setName} placeholder={k.label} />
+        <Num label="Pay a day" value={wage} onChange={(v) => setWage(Math.max(0, v))} min={0} suffix="GP" width={3} />
         <Select label="Paid by" value={payer} onChange={setPayer} options={[{ value: 'party', label: 'Party (split)' }, ...pcs.map((c) => ({ value: c.id, label: c.name }))]} />
       </div>
       <p className="small">
-        {picked ? `${picked.name}: CR ${picked.cr}, ${picked.size} ${picked.type} (SRD 5.2). ` : ''}Joins at level <b>{level}</b>, the party&apos;s average, with a d{HIT_DIE_BY_SIZE[theSize]} Hit Die per level. Level 1 brings{' '}
-        {SIDEKICK_FEATURES[cls].filter((f) => f.level === 1).map((f) => f.name).join(' and ')}.
+        A {k.label.toLowerCase()} is a <b>{SIDEKICK_CLASS_LABEL[k.cls]}</b> sidekick{k.role ? ` (${ROLE_LABEL[k.role]})` : ''}, built on the {k.creature} stat block (CR {k.cr}, {k.hp} HP). They join at level <b>{level}</b>, the party&apos;s average{firsts.length ? `, with ${firsts.join(', ')}` : ''}.
       </p>
-      {why && <p className="small warn-text">Can&apos;t join: {why}.</p>}
       <button
         className="primary"
-        disabled={!!why || !creature.trim()}
         onClick={() =>
           dispatch((st, cx) =>
-            E.hireSidekick(st, cx, { name, creature: picked?.name ?? creature.trim(), cr: theCr, size: theSize, type: picked?.type, baseHp, conScore, passivePerception: pp, darkvision: dv, speaks, cls, role: roles.length ? ((role || roles[0]) as SidekickRole) : null, wageGp: wage, payerId: payer }),
+            E.hireSidekick(st, cx, { name: name.trim() || k.label, creature: k.creature, cr: k.cr, size: 'Medium', type: 'humanoid', baseHp: k.hp, conScore: k.con, passivePerception: k.passivePerception, darkvision: 0, speaks: true, cls: k.cls, role: k.role, wageGp: wage, payerId: payer }),
           )
         }
       >
-        {wage > 0 ? `Hire ${name.trim() || creature || 'them'} (${fmtGp(wage)} a day)` : `Welcome ${name.trim() || creature || 'them'} as a friend`}
+        Hire {who} ({fmtGp(wage)} a day)
       </button>
       <Rule>
-        Hiring is for people who speak a language; an animal is tamed on the Camp tab and made a sidekick there. Optional rule (Tasha&apos;s Cauldron): a creature of CR 1/2 or lower who is a friend of an adventurer joins with the Expert, Spellcaster or Warrior class (Expert and Spellcaster need a creature that speaks a language). It starts at the party&apos;s average level and gains a level whenever that average rises, rolling its Hit Die plus Constitution modifier (at least 1) for HP; its proficiency bonus, features, Second Wind, Indomitable and spell slots follow its class table. Count it as a character for encounter difficulty. Table rule: a hired co-adventurer is paid daily into their own purse (2 GP, a skilled hireling&apos;s rate, by default) and pays their own way; a friend joins for nothing.
+        Optional rule (Tasha&apos;s Cauldron): a sidekick comes with their class. Warriors, Experts and Spellcasters start at the party&apos;s average level and gain a level whenever that average rises, rolling their Hit Die plus Constitution modifier (at least 1) for HP; their proficiency bonus, features, Second Wind, Indomitable and spell slots follow the class table. Count them as a character for encounter difficulty. Table rule: a hired co-adventurer is paid daily into their own purse (2 GP, a skilled hireling&apos;s rate, by default) and pays their own way. Animals aren&apos;t hired: tame one on the Camp tab and make it a sidekick there; someone met along the way can be won over there too.
       </Rule>
     </Card>
   );

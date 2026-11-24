@@ -1041,7 +1041,7 @@ export const startRecruit = act((d, _ctx, o: RecruitOpts) => {
   const trust = k ? Math.max(0, k.bond) : 0;
   const r: Recruit = { ...o, id: uid(), attitude, trust, needed, fails: 0, lastSessionDay: null, willing: attitude === 'friendly' && trust >= needed };
   (d.recruits ??= []).push(r);
-  log(d, r.willing ? `${r.name} doesn't need persuading: they've been waiting to be asked. Choose how they'll fight beside the party.` : `The party sets out to win ${r.name} over (${ATTITUDE_LABEL[attitude]}; trust ${trust}/${needed}, table rule). ${recruitCue(r.name, trust, needed, attitude)}`, 'good');
+  log(d, r.willing ? `${r.name} doesn't need persuading: they've been waiting to be asked.` : `The party sets out to win ${r.name} over (${ATTITUDE_LABEL[attitude]}; trust ${trust}/${needed}, table rule). ${recruitCue(r.name, trust, needed, attitude)}`, 'good');
 });
 
 /**
@@ -1086,7 +1086,7 @@ export const recruitSession = act((d, ctx, id: string, charId: string, bonus: nu
   if (rec.trust >= rec.needed) {
     rec.attitude = 'friendly';
     rec.willing = true;
-    return void log(d, `${me.name} and ${rec.name} talk late into the evening (${rollTxt}). ${recruitCue(rec.name, rec.trust, rec.needed, rec.attitude)} ${rec.name} is willing to join the party: choose their sidekick class (table rule).`, 'good');
+    return void log(d, `${me.name} and ${rec.name} talk late into the evening (${rollTxt}). ${recruitCue(rec.name, rec.trust, rec.needed, rec.attitude)} ${rec.name} is willing to join the party (table rule).`, 'good');
   }
   log(d, `${me.name} spends an hour with ${rec.name} (${rollTxt}): ${res.gain ? `trust +${res.gain}, now ${rec.trust}/${rec.needed}` : res.bad ? `a bad day (${rec.fails} in a row)` : 'no closer today'}. ${recruitCue(rec.name, rec.trust, rec.needed, rec.attitude)}`, res.gain ? 'good' : res.bad ? 'warn' : 'info');
 });
@@ -1103,11 +1103,11 @@ export const recruitHelped = act((d, _ctx, id: string, what: string) => {
   log(d, `${r.name} won't forget ${what.trim() || 'what the party did for them'}: trust +${HELPED_TRUST}, now ${r.trust}/${r.needed}${r.willing ? `. ${r.name} is willing to join the party` : ''} (table rule).`, 'good');
 });
 
-/** A willing recruit joins as a sidekick (Tasha's), for a share of the road or for pay. */
-export const recruitJoin = act((d, ctx, id: string, cls: SidekickClass, role: SidekickRole | null, wageGp: number, payerId: string) => {
+/** A willing recruit joins as a sidekick (Tasha's) with the class they already have, for a share of the road or for pay. */
+export const recruitJoin = act((d, ctx, id: string, wageGp: number, payerId: string) => {
   const r = (d.recruits ?? []).find((x) => x.id === id);
   if (!r?.willing) return;
-  const c = hireSidekickMut(d, ctx, { name: r.name, creature: r.creature, cr: r.cr, size: r.size, baseHp: r.baseHp, conScore: r.conScore, passivePerception: r.passivePerception, darkvision: r.darkvision, speaks: r.speaks, type: r.type, cls, role, wageGp, payerId });
+  const c = hireSidekickMut(d, ctx, { name: r.name, creature: r.creature, cr: r.cr, size: r.size, baseHp: r.baseHp, conScore: r.conScore, passivePerception: r.passivePerception, darkvision: r.darkvision, speaks: r.speaks, type: r.type, cls: r.cls, role: r.role, wageGp, payerId });
   if (!c) return;
   d.recruits = (d.recruits ?? []).filter((x) => x.id !== id);
   const k = r.contactId ? (d.contacts ?? []).find((x) => x.id === r.contactId) : undefined;

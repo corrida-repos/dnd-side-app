@@ -1124,6 +1124,9 @@ export interface Recruit {
   helped?: boolean;
   /** Willing to join: pick their sidekick class. */
   willing: boolean;
+  /** What they are, which sets their sidekick class when they join: a warrior, an expert or a spellcaster. */
+  cls: import('../rules/sidekicks').SidekickClass;
+  role: import('../rules/sidekicks').SidekickRole | null;
 }
 
 /** A wild creature someone is trying to tame or train (table rule). */
