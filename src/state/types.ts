@@ -1094,6 +1094,36 @@ export interface Settings {
   pathsToPower: boolean;
 }
 
+/** Someone met along the way whom the party is trying to win over as a sidekick (table rule on the 2024 Influence action). */
+export interface Recruit {
+  id: string;
+  name: string;
+  /** The stat block they're built on (CR 1/2 or lower), and its numbers for when they join. */
+  creature: string;
+  cr: string;
+  size: Size;
+  int: number;
+  baseHp: number;
+  conScore: number;
+  passivePerception: number;
+  darkvision: number;
+  speaks: boolean;
+  attitude: import('../rules/recruiting').RecruitAttitude;
+  trust: number;
+  needed: number;
+  /** Bad days in a row. */
+  fails: number;
+  lastSessionDay: number | null;
+  /** Who is doing most of the talking. */
+  recruiterId: string;
+  /** The contact they came from, if any. */
+  contactId?: string;
+  /** The party has done something real for them already (worth trust once). */
+  helped?: boolean;
+  /** Willing to join: pick their sidekick class. */
+  willing: boolean;
+}
+
 /** A wild creature someone is trying to tame or train (table rule). */
 export interface TameTarget {
   id: string;
@@ -1322,6 +1352,8 @@ export interface State {
   bestiary: Creature[];
   /** Wild creatures being tamed or trained (table rule). */
   taming?: TameTarget[];
+  /** People the party is trying to win over as sidekicks (table rule). */
+  recruits?: Recruit[];
   /** Every status change in the game, per character (kept much longer than the Chronicle). */
   statusLog: StatusEntry[];
   /** Stashes, bank vaults and vehicles holding the party's things. */

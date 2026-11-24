@@ -1,4 +1,4 @@
-import type { LadderPos, TameTarget, ActiveEffect, Activity, CharacterSpell, InventoryItem, LogEntry, Ritual, Stash, Bastion, Business, Character, FacilityWork, Obstacle, Rival, Debt, Mark, Faction, ExhaustionCause, Facility, JourneyStage, MagicItem, Pace, PendingSave, Project, SaveKind, Size, State, Tone } from './types';
+import type { LadderPos, TameTarget, ActiveEffect, Activity, CharacterSpell, InventoryItem, LogEntry, Ritual, Stash, Bastion, Business, Character, FacilityWork, Obstacle, Rival, Debt, Mark, Faction, ExhaustionCause, Facility, JourneyStage, MagicItem, Pace, PendingSave, Project, Recruit, SaveKind, Size, State, Tone } from './types';
 import { BASIC_BUILD, BASTION_TURN_DAYS, defaultSize, ENLARGE, rollBastionEvent, SIZE_LABEL, SPECIAL_FACILITIES, type FacilitySize } from '../rules/bastion';
 import { d20, die, combineModes, rollDice, rollExpr, signed, type Rng, type RollMode } from '../rules/dice';
 import { dateFromIndex, formatClock, formatDate, formatDuration, lightAt, sunriseMinutes } from '../rules/calendar';
@@ -35,6 +35,7 @@ import { FEED_LB_PER_DAY, MOUNT_CAPACITY, carryingCapacity, COINS_PER_LB, estima
 import { bigEnoughToRide, canBeSidekick, canTame, currentDC, dayOutcome, missedDays, NO_AIDS, resultGain, sessionAttitude, sessionResult, tameCheck, tameDC, TRUST_PER_DAY_MAX, TAME_MAX_FAILS, TAME_RETRY_MINUTES, TAME_SESSION_MINUTES, trainingNeeded, TRAINING_LABEL, trustCue, trustNeeded, type TameAids, type TamerFacts, type TameTraining } from '../rules/taming';
 import { BUTCHER_DC, BUTCHER_MINUTES, isEdible, MEAT_LB, STRANGE_TYPES, yieldsHide, type Creature } from '../rules/hunting';
 import { CURE_DC, CURE_LB_PER_RATION, CURE_MAX_LB, CURE_MINUTES, curedRations, FEAST_FEAR_RELIEF, FEAST_STRESS_RELIEF, feastTempHp, HEARTY_SAVES, isFeast, MEAL_BUFF_MINUTES, MEAL_STRESS_RELIEF, tastyTempHp, WARM_SAVES } from '../rules/cooking';
+import { ATTITUDE_LABEL, HELPED_TRUST, hasAdvantage, RECRUIT_MAX_FAILS, RECRUIT_SESSION_MINUTES, recruitCue, recruitDC, sessionTrust, TRUST_NEEDED, type RecruitAids, type RecruitAttitude } from '../rules/recruiting';
 import { featuresAt, hpForLevel, HIT_DIE_BY_SIZE, NEEDS_LANGUAGE, SIDEKICK_CLASS_LABEL, SIDEKICK_MAX_CR, sidekickLevelFor, sidekickResources, type SidekickClass, type SidekickRole } from '../rules/sidekicks';
 import { PORTER_LB, SAILOR_BONUS, SAILOR_MAX, CATCH_UP_WARMS_EVERY_DAYS, LABORER_FUEL_DICE, RECUPERATE_EXHAUSTION, RECUPERATE_STRESS, BOOK_GP, BOOK_PAGES, COPY_MAP_DC, COPY_MAP_MINUTES, PERFORM_MINUTES, performTake, RESEARCH_IDENTIFY_AT, RESEARCH_LEAD_AT, ROUTE_MAP_GP, AMMO_SEARCH_DC, ammoRecovered, CAROUSING_STRESS_PER_WEEK, DIG_FIND_ON, FINE_FUR, FINE_FUR_ODDS, FORECAST_MARGIN, forageBonusDice, HIDE_GP, isExceptional, KEPT_GEAR_MINUTES, KEPT_GEAR_NOTE, poisonYield, REINFORCE_MARGIN, rollFind, SERVICE_FEAR_PER_WEEK, SERVICE_STRESS_PER_WEEK, SMALL_PELT, trophyFor, WATCH_CATCH_DC, WATCH_CATCH_DICE, type Chore } from '../rules/chorePayoffs';
 import { addCoins, COIN_GP, coinCount, coinsFor, emptyPurse, exchange, fmtPurse, purseValue, spend, type Denom, type Purse } from '../rules/coins';
@@ -988,10 +989,12 @@ export function sidekickBlocked(cr: string, cls: SidekickClass, speaks: boolean)
 }
 
 /** Brings a creature into the party as a sidekick at the party's average level (Tasha's), hired for pay or as a friend. */
-export const hireSidekick = act((d, ctx, o: SidekickOpts) => {
-  if (!d.settings.sidekicks) return void log(d, 'Sidekicks are switched off in Settings.', 'warn');
+export const hireSidekick = act((d, ctx, o: SidekickOpts) => void hireSidekickMut(d, ctx, o));
+
+function hireSidekickMut(d: State, ctx: Ctx, o: SidekickOpts): Character | null {
+  if (!d.settings.sidekicks) return (log(d, 'Sidekicks are switched off in Settings.', 'warn'), null);
   const why = sidekickBlocked(o.cr, o.cls, o.speaks);
-  if (why) return void log(d, `${o.name || o.creature} can't join as a sidekick: ${why}.`, 'warn');
+  if (why) return (log(d, `${o.name || o.creature} can't join as a sidekick: ${why}.`, 'warn'), null);
   const c = newCharacter({
     name: o.name.trim() || o.creature,
     className: 'Other',
@@ -1017,6 +1020,102 @@ export const hireSidekick = act((d, ctx, o: SidekickOpts) => {
   d.characters.push(c);
   const pay = c.sidekick.wageGp > 0 ? ` They're paid ${fmtGp(c.sidekick.wageGp)} a day into their own purse (table rule), and pay their own way from it.` : ' They join as a friend, for a share of the road rather than pay.';
   log(d, `${c.name} (${o.creature}, CR ${o.cr}) joins the party as a ${SIDEKICK_CLASS_LABEL[o.cls]} sidekick at level ${c.level}, the party's average (Tasha's): ${c.maxHp} HP. ${lines.length ? `Levels: ${lines.join('; ')}.` : ''}${pay}`, 'good');
+  return c;
+}
+
+// ---------------------------------------------------------------- winning someone over (table rule)
+
+export type RecruitOpts = Omit<Recruit, 'id' | 'trust' | 'needed' | 'fails' | 'lastSessionDay' | 'willing' | 'helped'>;
+
+/** Starts winning over someone met along the way (CR 1/2 or lower). A contact who already likes the party starts Friendly with trust equal to their bond. */
+export const startRecruit = act((d, _ctx, o: RecruitOpts) => {
+  if (!d.settings.sidekicks) return void log(d, 'Sidekicks are switched off in Settings.', 'warn');
+  if (!(crNum(o.cr) <= SIDEKICK_MAX_CR)) return void log(d, `${o.name || o.creature} is too formidable to become a sidekick (CR ${o.cr}; Tasha's needs CR 1/2 or lower).`, 'warn');
+  const k = o.contactId ? (d.contacts ?? []).find((x) => x.id === o.contactId) : undefined;
+  const attitude: RecruitAttitude = k ? (k.bond >= 1 ? 'friendly' : k.bond <= -1 ? 'hostile' : 'indifferent') : o.attitude;
+  const needed = TRUST_NEEDED[attitude];
+  const trust = k ? Math.max(0, k.bond) : 0;
+  const r: Recruit = { ...o, id: uid(), attitude, trust, needed, fails: 0, lastSessionDay: null, willing: attitude === 'friendly' && trust >= needed };
+  (d.recruits ??= []).push(r);
+  log(d, r.willing ? `${r.name} doesn't need persuading: they've been waiting to be asked. Choose how they'll fight beside the party.` : `The party sets out to win ${r.name} over (${ATTITUDE_LABEL[attitude]}; trust ${trust}/${needed}, table rule). ${recruitCue(r.name, trust, needed, attitude)}`, 'good');
+});
+
+/**
+ * One day's session with a recruit: an hour of company and an Influence check (2024 DMG DCs) with Advantage for a
+ * gift or danger faced together. Once a day.
+ */
+export const recruitSession = act((d, ctx, id: string, charId: string, bonus: number, aids: RecruitAids) => {
+  const r = (d.recruits ?? []).find((x) => x.id === id);
+  const c = charById(d, charId);
+  if (!r || !c || r.willing) return;
+  if (r.lastSessionDay === d.dayIndex) return void log(d, `${c.name} has already spent time with ${r.name} today. Try again tomorrow.`, 'warn');
+  advanceMut(d, ctx, RECRUIT_SESSION_MINUTES, 'camp');
+  const rec = (d.recruits ?? []).find((x) => x.id === id)!;
+  rec.lastSessionDay = d.dayIndex;
+  const me = charById(d, charId)!;
+  if (aids.giftGp > 0) payGold(d, [me.id], aids.giftGp, `a gift for ${rec.name}`);
+  const dc = recruitDC(rec.attitude, rec.int);
+  const mode: RollMode = hasAdvantage(aids) ? 'advantage' : 'normal';
+  const roll = d20(mode, ctx.rng);
+  const total = roll.value + bonus - 2 * me.exhaustion;
+  const res = sessionTrust(total, dc);
+  const why = [aids.giftGp >= 5 && `a gift (${fmtGp(aids.giftGp)})`, aids.sharedDanger && 'danger faced together'].filter(Boolean).join(' and ');
+  const rollTxt = `Influence ${roll.rolls.join('/')} ${signed(bonus - 2 * me.exhaustion)} = ${total} against DC ${dc}${why ? `, Advantage from ${why}` : ''}`;
+  if (rec.attitude === 'hostile') {
+    if (res.gain) {
+      rec.attitude = 'indifferent';
+      rec.fails = 0;
+      return void log(d, `${me.name} talks ${rec.name} down (${rollTxt}): the hostility eases to wary indifference. Now the real work starts (table rule).`, 'good');
+    }
+  } else if (res.gain) {
+    rec.trust += res.gain;
+    rec.fails = 0;
+  }
+  if (res.bad) rec.fails += 1;
+  else if (!res.gain) rec.fails = 0;
+  if (rec.fails >= RECRUIT_MAX_FAILS) {
+    d.recruits = (d.recruits ?? []).filter((x) => x.id !== id);
+    const k = rec.contactId ? (d.contacts ?? []).find((x) => x.id === rec.contactId) : undefined;
+    if (k) k.bond = clampBond(k.bond - 1);
+    return void log(d, `${me.name} pushes too hard (${rollTxt}). After three bad days in a row, ${rec.name} tells the party plainly to leave them be${k ? `, and cools toward them (now ${attitudeOf(k.bond)})` : ''} (table rule).`, 'bad');
+  }
+  if (rec.trust >= rec.needed) {
+    rec.attitude = 'friendly';
+    rec.willing = true;
+    return void log(d, `${me.name} and ${rec.name} talk late into the evening (${rollTxt}). ${recruitCue(rec.name, rec.trust, rec.needed, rec.attitude)} ${rec.name} is willing to join the party: choose their sidekick class (table rule).`, 'good');
+  }
+  log(d, `${me.name} spends an hour with ${rec.name} (${rollTxt}): ${res.gain ? `trust +${res.gain}, now ${rec.trust}/${rec.needed}` : res.bad ? `a bad day (${rec.fails} in a row)` : 'no closer today'}. ${recruitCue(rec.name, rec.trust, rec.needed, rec.attitude)}`, res.gain ? 'good' : res.bad ? 'warn' : 'info');
+});
+
+/** The party did something real for them: saved a life, paid a debt, righted a wrong. Worth trust once (table rule). */
+export const recruitHelped = act((d, _ctx, id: string, what: string) => {
+  const r = (d.recruits ?? []).find((x) => x.id === id);
+  if (!r || r.helped || r.willing) return;
+  r.helped = true;
+  if (r.attitude === 'hostile') r.attitude = 'indifferent';
+  r.trust += HELPED_TRUST;
+  r.fails = 0;
+  if (r.trust >= r.needed) ((r.attitude = 'friendly'), (r.willing = true));
+  log(d, `${r.name} won't forget ${what.trim() || 'what the party did for them'}: trust +${HELPED_TRUST}, now ${r.trust}/${r.needed}${r.willing ? `. ${r.name} is willing to join the party` : ''} (table rule).`, 'good');
+});
+
+/** A willing recruit joins as a sidekick (Tasha's), for a share of the road or for pay. */
+export const recruitJoin = act((d, ctx, id: string, cls: SidekickClass, role: SidekickRole | null, wageGp: number, payerId: string) => {
+  const r = (d.recruits ?? []).find((x) => x.id === id);
+  if (!r?.willing) return;
+  const c = hireSidekickMut(d, ctx, { name: r.name, creature: r.creature, cr: r.cr, size: r.size, baseHp: r.baseHp, conScore: r.conScore, passivePerception: r.passivePerception, darkvision: r.darkvision, speaks: r.speaks, cls, role, wageGp, payerId });
+  if (!c) return;
+  d.recruits = (d.recruits ?? []).filter((x) => x.id !== id);
+  const k = r.contactId ? (d.contacts ?? []).find((x) => x.id === r.contactId) : undefined;
+  if (k) k.notes = [k.notes, `Joined the party as a sidekick (${stamp(d)}).`].filter(Boolean).join(' ');
+});
+
+/** Gives up on a recruit. */
+export const dropRecruit = act((d, _ctx, id: string) => {
+  const r = (d.recruits ?? []).find((x) => x.id === id);
+  if (!r) return;
+  d.recruits = (d.recruits ?? []).filter((x) => x.id !== id);
+  log(d, `The party stops trying to win ${r.name} over.`);
 });
 
 /** Gives an existing companion, such as a tamed creature, a sidekick class (Tasha's), at the party's average level. */
