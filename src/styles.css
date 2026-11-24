@@ -1330,3 +1330,55 @@ button.link:hover:not(:disabled) {
 .nowrap {
   white-space: nowrap;
 }
+
+/* the Characters tab: one group of cards per character */
+.section-bar button {
+  border-radius: 8px;
+}
+.char-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.group-title {
+  font-size: 1.05rem;
+  margin: 6px 0 0;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* "More time" under the DM bar */
+button.dm-more-btn {
+  white-space: nowrap;
+}
+button.dm-more-btn.open {
+  border-color: var(--accent);
+}
+.dm-more-panel {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  width: max-content;
+  max-width: calc(100vw - 32px);
+}
+
+/* on phones the jump bar is one scrolling line, so it never pushes the tab's content down */
+@media (max-width: 600px) {
+  .jump-bar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .jump-bar button,
+  .jump-bar span {
+    flex: none;
+  }
+}

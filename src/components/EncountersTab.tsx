@@ -49,7 +49,7 @@ function DangerCard() {
           Next overland check in <strong>{formatDuration(nextIn)}</strong> of travel, camp or rest. In a dungeon, next check after <strong>{turnsLeft}</strong> more exploration turn{turnsLeft === 1 ? '' : 's'}.
         </p>
       ) : (
-        <p className="small warn-text">Automatic checks are off. Roll by hand below, or use the per-watch and per-turn numbers on the Camp and Effects tabs.</p>
+        <p className="small warn-text">Automatic checks are off. Roll by hand below, or use the per-watch and per-turn numbers on the Camp and Effects & Ailments tabs.</p>
       )}
       <div className="form-row">
         <Toggle checked={s.settings.encounters} onChange={(v) => edit((d) => void (d.settings.encounters = v))} label="Roll checks automatically as time passes" />
@@ -149,7 +149,7 @@ function WhenCard() {
       </div>
       <Rule>
         Table rule. The 2024 DMG says to roll on a random encounter table but leaves how often to you; this uses the classic d20 check and scales it with danger. Overland checks run during travel, waiting in camp
-        and Long Rests (each one names who is on watch), but not during downtime work. In a dungeon, use exploration turns on the Effects tab. Group sizes follow the 2024 DMG XP budget for the chosen difficulty;
+        and Long Rests (each one names who is on watch), but not during downtime work. In a dungeon, use exploration turns on the Effects & Ailments tab. Group sizes follow the 2024 DMG XP budget for the chosen difficulty;
         a Deadly area goes past High.
       </Rule>
     </Card>

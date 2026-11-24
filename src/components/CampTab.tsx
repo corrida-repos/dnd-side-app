@@ -314,7 +314,7 @@ function PurifyCard() {
           ]}
         />
       </div>
-      {!check.ok && <p className="small bad-text">{check.reason} Add it to their spells on the Morning tab.</p>}
+      {!check.ok && <p className="small bad-text">{check.reason} Add it to their spells on the Characters tab (Spells & tasks).</p>}
       <button className="primary" disabled={!dirty || !check.ok} onClick={() => dispatch((st, c) => E.purifySpell(st, c, caster || null, mode))}>
         Cast {PURIFY_SPELL}
       </button>
@@ -342,7 +342,7 @@ function ArmorCard() {
   const anyOff = armored.some((c) => c.armorKind !== 'none' && !c.armorWorn);
   return (
     <Card title="Armor">
-      {armored.length === 0 && <p className="muted small">Nobody has armor set up. Add it on the Party tab.</p>}
+      {armored.length === 0 && <p className="muted small">Nobody has armor set up. Add it on the Characters tab.</p>}
       <ul className="plain">
         {armored.map((c) => (
           <li key={c.id} className="armor-row">
@@ -1065,7 +1065,7 @@ function CampGearCard() {
           ? outside.length
             ? <span className="warn-text">Not enough room: {outside.map((c) => c.name).join(', ')} sleep{outside.length > 1 ? '' : 's'} in the open.</span>
             : <span className="good-text">Everyone has a place.</span>
-          : <span className="muted">Set the shelter to Tents (Overview) to camp in them.</span>}
+          : <span className="muted">Set the shelter to Tents (Travel tab, Place card) to camp in them.</span>}
       </p>
       <h3>Digging</h3>
       <div className="form-row">

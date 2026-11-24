@@ -8,36 +8,9 @@ import { armorTime, ARMOR_LABEL } from '../rules/survival';
 import { spellInfo, RITUAL_EXTRA_MINUTES } from '../rules/rituals';
 import { formatDuration } from '../rules/calendar';
 import type { Character, CharacterSpell } from '../state/types';
-import { WaysAround } from './WaysAround';
-import { FocusBar, useFocused } from './focus';
-
-const notMount = (c: Character) => c.kind !== 'mount';
 import { componentFor, TARGET_SPELLS } from '../rules/components';
 import { fmtGp } from '../rules/money';
 import { circleEligible, circleOption, CIRCLE_OPTIONS, CIRCLE_RANGE_FT, helperProblem, optionProblem, slotNeedText, slotsLeft, spellCircle, type CircleOptionId } from '../rules/circle';
-
-export function MorningTab() {
-  const s = useGame();
-  const done = s.characters.reduce((a, c) => a + c.tasks.filter((t) => t.done).length, 0);
-  const total = s.characters.reduce((a, c) => a + c.tasks.length, 0);
-  const shown = useFocused(notMount);
-  return (
-    <div className="stack">
-      <FocusBar filter={notMount} />
-      <p className="muted">
-        Daily tasks reset after every Long Rest. {done}/{total} done.
-      </p>
-      <Card>
-        <WaysAround topic={['rituals', 'concentration']} />
-      </Card>
-      <div className="grid wide">
-        {shown.map((c) => (
-          <MorningCard key={c.id} c={c} />
-        ))}
-      </div>
-    </div>
-  );
-}
 
 const setChar = (id: string, fn: (c: Character) => void) =>
   edit((d) => {
@@ -45,10 +18,10 @@ const setChar = (id: string, fn: (c: Character) => void) =>
     if (c) fn(c);
   });
 
-function MorningCard({ c }: { c: Character }) {
+export function MorningCard({ c }: { c: Character }) {
   const [newTask, setNewTask] = useState('');
   return (
-    <Card title={`${c.name} · ${c.className} ${c.level}`}>
+    <Card title={`${c.name} · spells & tasks`}>
       {c.armorKind !== 'none' && (
         <div className="armor-row">
           <span>
@@ -149,7 +122,7 @@ function CastPanel({ c }: { c: Character }) {
       )}
       <p className="small muted">
         {info.ritual ? (ritualCheck.ok ? 'Ritual: casting time + 10 minutes, and no spell slot.' : ritualCheck.reason) : 'Not a ritual.'}{' '}
-        {info.durationMinutes ? `Lasts ${formatDuration(info.durationMinutes)}${info.concentration ? ' (Concentration)' : ''}, and a timer starts on the Effects & Lights tab.` : info.permanent ? 'Lasts until dispelled.' : info.durationMinutes === null ? 'Instantaneous.' : ''}
+        {info.durationMinutes ? `Lasts ${formatDuration(info.durationMinutes)}${info.concentration ? ' (Concentration)' : ''}, and a timer starts on the Effects & Ailments tab.` : info.permanent ? 'Lasts until dispelled.' : info.durationMinutes === null ? 'Instantaneous.' : ''}
         {info.castMinutes === undefined && ' Casting time unknown: import a 5etools spell file for exact times.'}
       </p>
     </div>

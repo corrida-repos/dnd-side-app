@@ -10,15 +10,15 @@ import type { Settlement } from '../rules/services';
 const SIZES = (Object.keys(SETTLEMENT_SIZE) as Settlement[]).map((k) => ({ value: k, label: `${SETTLEMENT_SIZE[k].label} (${SETTLEMENT_SIZE[k].population})` }));
 
 const TAB_LABEL: Record<string, string> = {
-  money: 'Money',
+  money: 'Town & Money',
   downtime: 'Downtime',
   camp: 'Camp',
-  effects: 'Effects',
-  gear: 'Gear',
+  effects: 'Effects & Ailments',
+  gear: 'Characters',
   world: 'World',
   storage: 'Storage',
   bastions: 'Bastions',
-  morning: 'Spells',
+  morning: 'Characters',
   travel: 'Travel',
 };
 

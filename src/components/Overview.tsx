@@ -87,48 +87,32 @@ function AttentionCard() {
   );
 }
 
+/**
+ * Rests and the time of day. The clock itself and the time and rest buttons live in the bar at the top of every page;
+ * this card holds what they don't: the Long Rest countdown, interrupted rests, and reading the sky.
+ */
 function ClockCard() {
   const s = useGame();
-  const [custom, setCustom] = useState(30);
-  const lr = E.canLongRest(s);
-  const adv = (m: number) => dispatch((st, c) => E.advance(st, c, m, 'camp'));
   const [peek, setPeek] = useState(false);
-  const sky = readSky(s.minutes % 1440, E.seasonOf(s), s.weather, !!CLIMATES[s.weather.climate].noWeather);
-  const hidden = s.settings.noTimepiece && !peek;
   return (
-    <Card title="Time" className="span-2">
-      <div className="clock">
-        <div className="clock-time">{hidden ? sky.phase : formatClock(s.minutes)}</div>
-        <div className="clock-date">{formatDate(s.calendar, s.startYear, s.dayIndex)}</div>
-        {s.settings.noTimepiece && (
+    <Card title="Rest and the sky">
+      {s.settings.noTimepiece && (
+        <p className="small">
+          {peek ? (
+            <>
+              Exact time: <b>{formatClock(s.minutes)}</b>, {formatDate(s.calendar, s.startYear, s.dayIndex)}.{' '}
+            </>
+          ) : null}
           <button className="ghost small" onClick={() => setPeek(!peek)} title="For the DM: show or hide the exact clock">
             {peek ? 'Hide exact time' : 'DM: show exact time'}
           </button>
-        )}
-      </div>
-      <SkyLine />
-      <div className="btn-row">
-        <span className="inline-group">
-          <Num value={custom} onChange={setCustom} min={1} max={10080} suffix="min" width={4} />
-          <button onClick={() => adv(custom)}>Advance</button>
-        </span>
-      </div>
-      <div className="btn-row">
-        <button onClick={() => dispatch((st, c) => E.advanceTo(st, c, 6 * 60, 'camp'))}>Skip to 06:00</button>
-        <button onClick={() => dispatch((st, c) => E.advanceTo(st, c, 12 * 60, 'camp'))}>Skip to noon</button>
-        <button onClick={() => dispatch((st, c) => E.advanceTo(st, c, 18 * 60, 'camp'))}>Skip to 18:00</button>
-      </div>
-      <div className="btn-row">
-        <button className="primary" onClick={() => dispatch(E.shortRest)}>
-          Short Rest (1 h)
-        </button>
-        <button className="primary" disabled={!lr.ok} title={lr.reason} onClick={() => dispatch((st, c) => E.longRest(st, c, false))}>
-          Long Rest (8 h)
-        </button>
-      </div>
+        </p>
+      )}
       <LongRestTracker />
-      <InterruptPanel />
       <RestPlans />
+      <InterruptPanel />
+      <SkyLine />
+      <p className="small muted">Short and Long Rests, time steps and More time are in the bar at the top of every page.</p>
       <WaysAround topic={s.settings.noTimepiece ? ['timekeeping', 'shortRest', 'longRest'] : ['shortRest', 'longRest', 'timekeeping']} />
     </Card>
   );

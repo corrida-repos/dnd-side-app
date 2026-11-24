@@ -92,7 +92,7 @@ export function playerItems(s: State, c: Character): PlayerItem[] {
   if (isCaster(c.className)) {
     const lim = preparedLimit(c);
     const n = preparedCount(c);
-    if (lim != null && n < lim) upkeep('warn', `Prepare spells: ${n}/${lim} prepared`, c.prepOpen ? 'Any prepared spell can be changed now, after the Long Rest.' : 'Prepare them on the Spells & Morning tab.', 'morning', 'unprep');
+    if (lim != null && n < lim) upkeep('warn', `Prepare spells: ${n}/${lim} prepared`, c.prepOpen ? 'Any prepared spell can be changed now, after the Long Rest.' : 'Prepare them on the Characters tab (Spells & tasks).', 'morning', 'unprep');
   }
   for (const it of c.items) {
     if (it.attuned && it.awaySince != null) upkeep('bad', `Attuned ${it.name} is out of reach`, `Attunement ends in ${formatDuration(Math.max(0, ATTUNE_AWAY_MINUTES - (now - it.awaySince)))} unless it’s within 100 ft.`, 'gear', `away-${it.id}`);
@@ -100,7 +100,7 @@ export function playerItems(s: State, c: Character): PlayerItem[] {
   const ammo = c.inventory.filter((i) => (i.ammo?.spent ?? 0) > 0);
   if (ammo.length) upkeep('info', `Ammunition to recover: ${ammo.map((i) => `${i.ammo!.spent} ${i.name}`).join(', ')}`, 'Half can be found with a minute’s search after the fight.', 'gear', 'ammo');
   for (const e of s.effects.filter((x) => x.targetIds.includes(c.id) && x.kind === 'gift' && x.endsAt != null && x.endsAt - now < 24 * 60 && x.endsAt > now)) upkeep('info', `${e.name} fades in ${formatDuration(e.endsAt! - now)}`, 'Use it or lose it.', 'effects', `gift-${e.id}`);
-  for (const d of s.debts.filter((x) => x.debtorId === c.id)) upkeep(d.dueDay < s.dayIndex ? 'bad' : 'warn', `Owes ${d.creditor} ${fmtGp(d.owed)}${d.dueDay < s.dayIndex ? ' (overdue)' : `, due in ${d.dueDay - s.dayIndex} day(s)`}`, 'Pay on the Money & Shop tab.', 'money', `debt-${d.id}`);
+  for (const d of s.debts.filter((x) => x.debtorId === c.id)) upkeep(d.dueDay < s.dayIndex ? 'bad' : 'warn', `Owes ${d.creditor} ${fmtGp(d.owed)}${d.dueDay < s.dayIndex ? ' (overdue)' : `, due in ${d.dueDay - s.dayIndex} day(s)`}`, 'Pay on the Town & Money tab.', 'money', `debt-${d.id}`);
   if (s.settings.duesAndTaxes) {
     for (const d of (s.dues ?? []).filter((x) => x.active && (x.payerId === c.id || x.payerId === 'party') && x.nextDay - s.dayIndex <= 3)) upkeep('info', `${d.label} due in ${Math.max(0, d.nextDay - s.dayIndex)} day(s)`, `Paid to ${d.collector} at midnight; whatever can’t be covered becomes a debt.`, 'money', `due-${d.id}`);
   }
@@ -134,7 +134,7 @@ export function playerItems(s: State, c: Character): PlayerItem[] {
       if (!comp || E.componentKnownValue(c, comp) >= comp.gp || c.inventory.some((i) => /^reliquary talisman$/i.test(i.name) && comp.gp <= 1000)) continue;
       const unsure = E.componentUnknown(c, comp);
       if (unsure.length) upkeep('info', `Not sure the ${unsure[0].name} is enough for ${sp.name}`, `Its value isn’t known and ${sp.name} needs ${comp.what}. Appraise it: Jeweler’s Tools (Intelligence, DC 15) or a merchant.`, 'gear', `comp-${sp.name}`);
-      else upkeep('warn', `Can’t cast ${sp.name}: needs ${comp.what}`, `Carrying ${fmtGp(E.componentKnownValue(c, comp))} worth. Buy it (Money & Shop) and add it with its value.`, 'money', `comp-${sp.name}`);
+      else upkeep('warn', `Can’t cast ${sp.name}: needs ${comp.what}`, `Carrying ${fmtGp(E.componentKnownValue(c, comp))} worth. Buy it (Town & Money) and add it with its value.`, 'money', `comp-${sp.name}`);
     }
   }
   for (const it of c.items.filter((i) => i.attuned && (i.clues ?? []).some((k) => k.kind === 'curse' && !k.known))) add({ kind: 'status', tone: 'warn', text: `Attuned to a cursed ${it.name}`, fix: 'The curse isn’t known yet; attunement can’t be ended until Remove Curse.', tab: 'gear', dmOnly: true, id: `curse-${it.id}` });

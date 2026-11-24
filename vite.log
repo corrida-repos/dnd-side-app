@@ -1,0 +1,9 @@
+
+  VITE v5.4.21  ready in 158 ms
+
+  ➜  Local:   http://localhost:5199/
+  ➜  Network: use --host to expose
+12:27:18 AM [vite] hmr update /src/components/Overview.tsx
+12:27:18 AM [vite] hmr update /src/styles.css
+12:27:54 AM [vite] hmr update /src/App.tsx
+12:27:54 AM [vite] hmr update /src/styles.css

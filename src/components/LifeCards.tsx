@@ -233,7 +233,7 @@ export function AgeCard() {
   );
 }
 
-// ---------------------------------------------------------------- wear (Gear tab) and hulls (Storage tab)
+// ---------------------------------------------------------------- wear (Characters tab) and hulls (Storage tab)
 
 export function MaintainGear({ c }: { c: Character }) {
   const s = useGame();

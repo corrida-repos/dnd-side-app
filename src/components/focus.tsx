@@ -4,8 +4,8 @@ import type { Character } from '../state/types';
 import { goTo } from './nav';
 
 /**
- * Which character the Party tabs are looking at. One choice shared by Checklists, Characters, Gear and Spells,
- * so a DM can follow one person from tab to tab instead of scrolling past everyone else each time.
+ * Which character the Party tabs are looking at. One choice shared by the Checklists and Characters tabs,
+ * so a DM can follow one person instead of scrolling past everyone else.
  */
 const KEY = 'wayfarers-ledger:focus';
 let focus = 'all';
@@ -26,7 +26,7 @@ export function setFocus(id: string): void {
   subs.forEach((f) => f());
 }
 
-/** Look at one character on a Party tab: e.g. from a name on the Dashboard. */
+/** Look at one character: e.g. from a name on the Dashboard. 'gear' and 'morning' open that section of the Characters tab. */
 export function focusOn(id: string, tab = 'party'): void {
   setFocus(id);
   goTo(tab);
@@ -66,7 +66,48 @@ export function FocusBar({ filter = () => true }: { filter?: (c: Character) => b
           {c.kind === 'mount' && <small> (mount)</small>}
         </button>
       ))}
-      <span className="muted small">Stays picked across Checklists, Characters, Gear and Spells.</span>
+      <span className="muted small">Stays picked across Checklists and Characters.</span>
     </div>
   );
 }
+
+/** Which part of the character sheet the Characters tab shows. */
+export type SheetSection = 'all' | 'gear' | 'sheet' | 'spells';
+export const SHEET_SECTIONS: { id: SheetSection; label: string }[] = [
+  { id: 'all', label: 'Everything' },
+  { id: 'gear', label: 'HP & gear' },
+  { id: 'sheet', label: 'Status & sheet' },
+  { id: 'spells', label: 'Spells & tasks' },
+];
+const SECTION_KEY = 'wayfarers-ledger:sheet-section';
+let section: SheetSection = 'all';
+try {
+  const v = localStorage.getItem(SECTION_KEY);
+  if (SHEET_SECTIONS.some((x) => x.id === v)) section = v as SheetSection;
+} catch {
+  /* ignore */
+}
+const sectionSubs = new Set<() => void>();
+
+export function setSection(id: SheetSection): void {
+  section = id;
+  try {
+    localStorage.setItem(SECTION_KEY, id);
+  } catch {
+    /* ignore */
+  }
+  sectionSubs.forEach((f) => f());
+}
+
+export function useSection(): SheetSection {
+  return useSyncExternalStore(
+    (f) => (sectionSubs.add(f), () => void sectionSubs.delete(f)),
+    () => section,
+  );
+}
+
+/**
+ * Old tab names that now live on the Characters tab, and the section each one opens.
+ * Links across the app (attention items, checklists, Ways Around) still say 'gear' or 'morning'.
+ */
+export const SHEET_ALIASES: Record<string, SheetSection> = { party: 'all', gear: 'gear', morning: 'spells' };

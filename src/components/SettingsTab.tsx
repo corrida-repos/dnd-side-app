@@ -1,6 +1,5 @@
 import { useRef, useState } from 'react';
 import { useGame, edit, getState, importState, resetState } from '../state/store';
-import { CALENDARS, dateFromIndex, indexFromDate, formatClock } from '../rules/calendar';
 import { parse5eToolsSpells } from '../rules/spells';
 import { countReprinted, parse5eToolsBestiary, type Creature } from '../rules/hunting';
 import { RECOMMENDED_BESTIARIES } from '../rules/encounters';
@@ -13,57 +12,12 @@ export function SettingsTab() {
   return (
     <div className="grid">
       <DetailCard />
-      <DateCard />
       <RulesCard />
       <SpellLibraryCard />
       <BestiaryCard />
       <LibrariesCard />
       <SaveCard />
     </div>
-  );
-}
-
-function DateCard() {
-  const s = useGame();
-  const d = dateFromIndex(s.calendar, s.startYear, s.dayIndex);
-  const setDate = (year: number, month: number, day: number) =>
-    edit((st) => {
-      st.dayIndex = Math.max(0, indexFromDate(st.calendar, st.startYear, year, month, day));
-    });
-  return (
-    <Card title="Calendar and clock">
-      <Select
-        label="Calendar"
-        value={s.calendar.id}
-        onChange={(id) =>
-          edit((st) => {
-            const keep = dateFromIndex(st.calendar, st.startYear, st.dayIndex);
-            st.calendar = structuredClone(CALENDARS[id]);
-            st.dayIndex = Math.max(0, indexFromDate(st.calendar, st.startYear, keep.year, Math.min(keep.monthIndex, st.calendar.months.length - 1), keep.day));
-          })
-        }
-        options={Object.values(CALENDARS).map((c) => ({ value: c.id, label: c.name }))}
-      />
-      <div className="form-row">
-        <Num label="Year" value={d.year} onChange={(v) => edit((st) => void (st.startYear = Math.round(v) - Math.floor(st.dayIndex / st.calendar.months.reduce((a, m) => a + m.days, 0))))} width={5} />
-        <Select label="Month" value={String(d.monthIndex)} onChange={(v) => setDate(d.year, Number(v), d.day)} options={s.calendar.months.map((m, i) => ({ value: String(i), label: m.name }))} />
-        <Num label="Day" value={d.day} onChange={(v) => setDate(d.year, d.monthIndex, Math.round(v))} min={1} max={d.month.days} width={3} />
-      </div>
-      <div className="form-row">
-        <label className="field">
-          <span className="field-label">Time</span>
-          <input
-            type="time"
-            value={formatClock(s.minutes)}
-            onChange={(e) => {
-              const [h, m] = e.target.value.split(':').map(Number);
-              if (!Number.isNaN(h) && !Number.isNaN(m)) edit((st) => void (st.minutes = h * 60 + m));
-            }}
-          />
-        </label>
-      </div>
-      <Rule>Setting the date or time directly skips the hourly and end-of-day checks. To have them run, use the time buttons.</Rule>
-    </Card>
   );
 }
 
@@ -74,9 +28,9 @@ function RulesCard() {
     <Card title="Rules options">
       <div className="stack tight">
         <Toggle checked={s.settings.autoRollSaves} onChange={(v) => set('autoRollSaves', v)} label="Roll saving throws for me" />
-        <Rule>When this is off, saves wait on the Overview so players can roll their own dice.</Rule>
+        <Rule>When this is off, saves wait on the Dashboard so players can roll their own dice.</Rule>
         <Toggle checked={s.settings.noTimepiece} onChange={(v) => set('noTimepiece', v)} label="Nobody has a timepiece: show the time as nature's cues" />
-        <Rule>The header and the Time card show the part of the day (Dawn, Mid-morning, Dusk and so on) instead of the exact clock. The DM can peek at the exact time on the Time card.</Rule>
+        <Rule>The header and the time bar show the part of the day (Dawn, Mid-morning, Dusk and so on) instead of the exact clock. The DM can peek at the exact time on the Dashboard&apos;s Rest and the sky card. The calendar, date and time are set on the World tab.</Rule>
         <Toggle checked={(s.settings.facilityBooks ?? []).includes('FRHoF')} onChange={(v) => edit((d) => void (d.settings.facilityBooks = [...(d.settings.facilityBooks ?? []).filter((x) => x !== 'FRHoF'), ...(v ? (['FRHoF'] as const) : [])]))} label="Bastion facilities from Forgotten Realms: Heroes of Faerûn" />
         <Toggle checked={s.settings.circleMagic} onChange={(v) => set('circleMagic', v)} label="Circle Magic from Forgotten Realms: Heroes of Faerûn: secondary casters can join spells that take 1 minute or longer to cast (optional rule)" />
         <Toggle checked={(s.settings.facilityBooks ?? []).includes('EFA')} onChange={(v) => edit((d) => void (d.settings.facilityBooks = [...(d.settings.facilityBooks ?? []).filter((x) => x !== 'EFA'), ...(v ? (['EFA'] as const) : [])]))} label="Bastion facilities from Eberron: Forge of the Artificer" />

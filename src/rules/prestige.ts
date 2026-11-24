@@ -96,7 +96,7 @@ export const RIGHTS: Record<RightKind, { label: string; effect: string }> = {
   },
   soldiers: {
     label: 'Sworn service of local soldiers',
-    effect: 'The soldiers join as guards on the Party tab and draw no wages from the party. They leave when the right ends.',
+    effect: 'The soldiers join as guards on the Characters tab and draw no wages from the party. They leave when the right ends.',
   },
   marque: {
     label: 'Right to attack pirates or enemies of the crown',

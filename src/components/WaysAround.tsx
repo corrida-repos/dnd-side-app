@@ -43,53 +43,53 @@ export const TOPIC_PLACES: Record<TopicId, { tab: string; tabLabel: string; card
   taming: { tab: 'camp', tabLabel: 'Camp & Survival', card: 'Taming a wild creature' },
   tainted: { tab: 'camp', tabLabel: 'Camp & Survival', card: 'Raw food and dirty water' },
   poisonHarvest: { tab: 'camp', tabLabel: 'Camp & Survival', card: 'Harvesting poison' },
-  disease: { tab: 'effects', tabLabel: 'Effects & Lights', card: 'Diseases' },
-  poison: { tab: 'effects', tabLabel: 'Effects & Lights', card: 'Poisons' },
-  shopping: { tab: 'money', tabLabel: 'Money & Mounts', card: 'Shop and loot' },
-  cold: { tab: 'overview', tabLabel: 'Overview', card: 'Conditions right now' },
-  heat: { tab: 'overview', tabLabel: 'Overview', card: 'Conditions right now' },
-  weather: { tab: 'overview', tabLabel: 'Overview', card: 'Conditions right now' },
-  altitude: { tab: 'overview', tabLabel: 'Overview', card: 'Conditions right now' },
-  breath: { tab: 'effects', tabLabel: 'Effects & Lights', card: 'Holding breath and frigid water' },
-  hazards: { tab: 'effects', tabLabel: 'Effects & Lights', card: 'Hazards' },
-  shortRest: { tab: 'overview', tabLabel: 'Overview', card: 'Time' },
-  longRest: { tab: 'overview', tabLabel: 'Overview', card: 'Time' },
-  timekeeping: { tab: 'overview', tabLabel: 'Overview', card: 'Time' },
+  disease: { tab: 'effects', tabLabel: 'Effects & Ailments', card: 'Diseases' },
+  poison: { tab: 'effects', tabLabel: 'Effects & Ailments', card: 'Poisons' },
+  shopping: { tab: 'money', tabLabel: 'Town & Money', card: 'Shop and loot' },
+  cold: { tab: 'overview', tabLabel: 'Dashboard', card: 'Conditions right now' },
+  heat: { tab: 'overview', tabLabel: 'Dashboard', card: 'Conditions right now' },
+  weather: { tab: 'overview', tabLabel: 'Dashboard', card: 'Conditions right now' },
+  altitude: { tab: 'overview', tabLabel: 'Dashboard', card: 'Conditions right now' },
+  breath: { tab: 'effects', tabLabel: 'Effects & Ailments', card: 'Holding breath and frigid water' },
+  hazards: { tab: 'effects', tabLabel: 'Effects & Ailments', card: 'Hazards' },
+  shortRest: { tab: 'overview', tabLabel: 'Dashboard', card: 'Rest and the sky' },
+  longRest: { tab: 'overview', tabLabel: 'Dashboard', card: 'Rest and the sky' },
+  timekeeping: { tab: 'overview', tabLabel: 'Dashboard', card: 'Rest and the sky' },
   watch: { tab: 'camp', tabLabel: 'Camp & Survival', card: 'Night watch' },
-  exhaustion: { tab: 'overview', tabLabel: 'Overview', card: 'Party status' },
-  saves: { tab: 'overview', tabLabel: 'Overview', card: 'Party status' },
-  dying: { tab: 'overview', tabLabel: 'Overview', card: 'Party status' },
-  fear: { tab: 'overview', tabLabel: 'Overview', card: 'Party status' },
+  exhaustion: { tab: 'overview', tabLabel: 'Dashboard', card: 'Party status' },
+  saves: { tab: 'overview', tabLabel: 'Dashboard', card: 'Party status' },
+  dying: { tab: 'overview', tabLabel: 'Dashboard', card: 'Party status' },
+  fear: { tab: 'overview', tabLabel: 'Dashboard', card: 'Party status' },
   death: { tab: 'world', tabLabel: 'World', card: 'Death and resurrection' },
-  march: { tab: 'overview', tabLabel: 'Overview', card: 'Travel' },
-  lost: { tab: 'overview', tabLabel: 'Overview', card: 'Travel' },
-  tracking: { tab: 'overview', tabLabel: 'Overview', card: 'Journey' },
+  march: { tab: 'travel', tabLabel: 'Travel', card: 'Travel' },
+  lost: { tab: 'travel', tabLabel: 'Travel', card: 'Travel' },
+  tracking: { tab: 'travel', tabLabel: 'Travel', card: 'Journey' },
   encounters: { tab: 'encounters', tabLabel: 'Encounters', card: 'Location danger' },
-  exploration: { tab: 'effects', tabLabel: 'Effects & Lights', card: 'Exploration turns' },
-  mounts: { tab: 'money', tabLabel: 'Money & Mounts', card: 'Mounts and animals' },
+  exploration: { tab: 'effects', tabLabel: 'Effects & Ailments', card: 'Exploration turns' },
+  mounts: { tab: 'money', tabLabel: 'Town & Money', card: 'Mounts and animals' },
   fire: { tab: 'camp', tabLabel: 'Camp & Survival', card: 'Campfire' },
-  light: { tab: 'effects', tabLabel: 'Effects & Lights', card: 'Active effects and lights' },
-  concentration: { tab: 'effects', tabLabel: 'Effects & Lights', card: 'Active effects and lights' },
+  light: { tab: 'effects', tabLabel: 'Effects & Ailments', card: 'Active effects and lights' },
+  concentration: { tab: 'effects', tabLabel: 'Effects & Ailments', card: 'Active effects and lights' },
   armor: { tab: 'camp', tabLabel: 'Camp & Survival', card: 'Armor' },
   carrying: { tab: 'storage', tabLabel: 'Storage', card: 'Stashes, vaults and vehicles' },
-  ammo: { tab: 'gear', tabLabel: 'Gear & Resources', card: 'top of the tab' },
-  identify: { tab: 'gear', tabLabel: 'Gear & Resources', card: 'top of the tab' },
-  attunement: { tab: 'gear', tabLabel: 'Gear & Resources', card: 'top of the tab' },
-  rituals: { tab: 'morning', tabLabel: 'Morning & Spells', card: 'top of the tab' },
+  ammo: { tab: 'gear', tabLabel: 'Characters', card: 'HP & gear' },
+  identify: { tab: 'gear', tabLabel: 'Characters', card: 'HP & gear' },
+  attunement: { tab: 'gear', tabLabel: 'Characters', card: 'HP & gear' },
+  rituals: { tab: 'morning', tabLabel: 'Characters', card: 'Spells & tasks' },
   divination: { tab: 'world', tabLabel: 'World', card: 'Divination limits' },
   dailyCasting: { tab: 'world', tabLabel: 'World', card: 'Spells cast every day' },
-  lifestyle: { tab: 'money', tabLabel: 'Money & Mounts', card: 'Gold and lifestyle' },
-  hirelings: { tab: 'money', tabLabel: 'Money & Mounts', card: 'Hirelings' },
-  services: { tab: 'money', tabLabel: 'Money & Mounts', card: 'Services' },
+  lifestyle: { tab: 'money', tabLabel: 'Town & Money', card: 'Gold and lifestyle' },
+  hirelings: { tab: 'money', tabLabel: 'Town & Money', card: 'Hirelings' },
+  services: { tab: 'money', tabLabel: 'Town & Money', card: 'Services' },
   crafting: { tab: 'downtime', tabLabel: 'Downtime', card: 'New downtime project' },
   spellbook: { tab: 'downtime', tabLabel: 'Downtime', card: 'New downtime project' },
   downtime: { tab: 'downtime', tabLabel: 'Downtime', card: 'New downtime project' },
   building: { tab: 'downtime', tabLabel: 'Downtime', card: 'Running a business' },
   messages: { tab: 'bastions', tabLabel: 'Bastions', card: 'Running a Bastion from afar' },
-  injuries: { tab: 'effects', tabLabel: 'Effects & Lights', card: 'Lingering injuries' },
-  madness: { tab: 'effects', tabLabel: 'Effects & Lights', card: 'Madness' },
+  injuries: { tab: 'effects', tabLabel: 'Effects & Ailments', card: 'Lingering injuries' },
+  madness: { tab: 'effects', tabLabel: 'Effects & Ailments', card: 'Madness' },
   wanted: { tab: 'world', tabLabel: 'World', card: 'Wanted by the law' },
-  wear: { tab: 'gear', tabLabel: 'Gear & Resources', card: 'Damaged gear' },
+  wear: { tab: 'gear', tabLabel: 'Characters', card: 'HP & gear (Damaged gear)' },
   bastionEvents: { tab: 'bastions', tabLabel: 'Bastions', card: 'Bastion rules at a glance' },
 };
 
@@ -246,7 +246,7 @@ export function WaysTab() {
           ruling.
         </p>
         <p className="small muted">
-          Party matches use each character&apos;s spells, class, level, species, subclass, feats and invocations (set them on the Party tab or import from D&amp;D Beyond), plus the items they carry.
+          Party matches use each character&apos;s spells, class, level, species, subclass, feats and invocations (set them on the Characters tab or import from D&amp;D Beyond), plus the items they carry.
           {pcs.some((c) => !c.species && !c.subclass && !c.feats.length) && ' Some characters have no species, subclass or feats filled in yet, so those options show as “might have it”.'}
         </p>
         <div className="btn-row">
@@ -269,7 +269,7 @@ export function WaysTab() {
               ))}
             </select>
           </label>
-          <Toggle checked={partyOnly} onChange={setPartyOnly} label="Only what the party can use now" title={pcs.length ? undefined : 'Add characters on the Party tab first'} />
+          <Toggle checked={partyOnly} onChange={setPartyOnly} label="Only what the party can use now" title={pcs.length ? undefined : 'Add characters on the Characters tab first'} />
         </div>
         {!searching && topic === 'all' && (
           <nav className="ways-index small" aria-label="Jump to a mechanic">

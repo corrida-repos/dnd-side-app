@@ -6,10 +6,8 @@ import { CLASSES, isCaster } from '../rules/spells';
 import { SIZES, exhaustionSummary, foodNeedLb, WATER_GAL_PER_DAY, proficiencyBonus, ARMOR_TIMES, ARMOR_LABEL, causesOf, EXHAUSTION_CAUSE_LABEL } from '../rules/survival';
 import { Card, Num, Select, Text, Toggle, Rule } from './common';
 import { Debuffs } from './Debuffs';
-import { DdbImportCard } from './DdbImport';
-import { AgeCard } from './LifeCards';
 import { senseText } from './senseView';
-import { FocusBar, useFocused } from './focus';
+import { setFocus } from './focus';
 import type { ArmorKind, Character, ClassName, ExhaustionCause, Resist, Size } from '../state/types';
 import * as E2 from '../state/engine';
 import { absNow, log, type Track } from '../state/engine';
@@ -20,25 +18,22 @@ const RESIST = [
   { value: 'immunity', label: 'Immunity' },
 ] as const;
 
-export function PartyTab() {
-  const shown = useFocused();
+/** Add a character: the species list the sheet's Species box suggests from, and the button. */
+export function AddCharacter() {
   return (
-    <div className="stack">
-      <FocusBar />
+    <div className="btn-row">
       <SpeciesList />
-      <div className="btn-row">
-        <button className="primary" onClick={() => edit((d) => void d.characters.push(newCharacter()))}>
-          + Add character
-        </button>
-        <span className="muted small">Enter save bonuses as they appear on the sheet. The tracker takes off Exhaustion penalties for you.</span>
-      </div>
-      <div className="grid">
-        {shown.map((c) => (
-          <CharacterCard key={c.id} c={c} />
-        ))}
-        <AgeCard />
-        <DdbImportCard />
-      </div>
+      <button
+        className="primary"
+        onClick={() => {
+          const n = newCharacter();
+          edit((d) => void d.characters.push(n));
+          setFocus(n.id);
+        }}
+      >
+        + Add character
+      </button>
+      <span className="muted small">Enter save bonuses as they appear on the sheet. The tracker takes off Exhaustion penalties for you.</span>
     </div>
   );
 }
@@ -141,7 +136,7 @@ function ExhaustionEditor({ c, set }: { c: Character; set: (patch: Partial<Chara
 
 const sign = (n: number) => (n >= 0 ? `+${n}` : `${n}`);
 
-function CharacterCard({ c }: { c: Character }) {
+export function CharacterCard({ c }: { c: Character }) {
   // A new character opens on the sheet to fill in; after that, the sheet stays folded behind the trackers used in play.
   const [sheetOpen, setSheetOpen] = useState(() => c.name === 'New adventurer' || c.name.trim() === '');
   const set = (patch: Partial<Character>) =>
@@ -157,7 +152,7 @@ function CharacterCard({ c }: { c: Character }) {
   };
   return (
     <Card
-      title={<span>{c.name}</span>}
+      title={<span>{c.name} · status &amp; sheet</span>}
       actions={
         <button
           className="ghost bad"

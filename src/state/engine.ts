@@ -1295,7 +1295,7 @@ function activeNavigator(s: State, navId: string | null | undefined): Character 
 /**
  * Table rule: someone in the party can't see where they're going: Darkness (night without a full moon, or underground),
  * no lit Torch, Lamp, Lantern or light spell (a Candle is too small), and no Darkvision or Devil's Sight.
- * Carrying an unlit torch doesn't count: light one on the Effects tab, and it burns down as you go.
+ * Carrying an unlit torch doesn't count: light one on the Effects & Ailments tab, and it burns down as you go.
  */
 function travelsBlind(s: State): boolean {
   if (!s.settings.nightTravelSlow) return false;
@@ -1430,7 +1430,7 @@ function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
     const blind = o.pace !== 'slow' && travelsBlind(d);
     if (blind && !darkWarned) {
       darkWarned = true;
-      log(d, 'Darkness falls and not everyone can see in it. With no lit Torch, Lantern or light spell (light one on the Effects tab), the party picks its way forward at a Slow pace (table rule).', 'warn');
+      log(d, 'Darkness falls and not everyone can see in it. With no lit Torch, Lantern or light spell (light one on the Effects & Ailments tab), the party picks its way forward at a Slow pace (table rule).', 'warn');
     }
     advanceMut(d, ctx, 60, 'travel');
     d.travel.hoursToday += altitude ? 2 : 1;
@@ -2673,7 +2673,7 @@ function vermin(s: State, ctx: Ctx, c: Character): void {
     it.qty -= 1;
     c.inventory.push({ ...it, id: uid(), qty: 1, damaged: true });
   } else it.damaged = true;
-  status(s, c, 'robbed', `Damp and gnawing teeth have got at ${c.name}'s ${it.name}: it's damaged (table rule; mend it on the Gear tab).`, 'warn');
+  status(s, c, 'robbed', `Damp and gnawing teeth have got at ${c.name}'s ${it.name}: it's damaged (table rule; mend it on the Characters tab (HP & gear)).`, 'warn');
 }
 
 /** Cackle Fever from a crowded flophouse or a cheap tainted elixir (table rule; the 2024 DMG names both). Gnomes are immune. */
@@ -3406,7 +3406,7 @@ export const buyItem = act((d, _ctx: Ctx, charId: string, name: string, qty: num
   const notes = tainted ? [] : stowItem(d, c, name, qty, packNamed(name) ? {} : { valueGp: unitGp }, true);
   if (tainted) {
     c.inventory.push({ id: uid(), name, qty, weight: estimateWeight(name).weight, source: 'book', valueGp: unitGp, container: null, ammo: null, tainted: true });
-    log(d, `DM only: the ${name} ${c.name} bought from a backstreet hawker is tainted. Whoever drinks it makes a DC 10 Con save against Cackle Fever (Effects tab, Expose).`, 'warn');
+    log(d, `DM only: the ${name} ${c.name} bought from a backstreet hawker is tainted. Whoever drinks it makes a DC 10 Con save against Cackle Fever (Effects & Ailments tab, Expose).`, 'warn');
   }
   log(d, `${c.name} buys ${qty} × ${name} for ${fmtGp(cost)}${discount ? ` (${Math.round(discount * 100)}% off)` : ''}.${notes.length ? ` ${notes.join(' ')}` : ''}`, 'good');
 });
@@ -4582,7 +4582,7 @@ function finishWork(s: State, ctx: Ctx, b: Bastion, f: Facility, w: FacilityWork
     }
     case 'Stable/buy':
       stashAdd(s, b, `Mounts bought (${p.text || `${p.gp ?? 0} GP worth`})`, 1, p.gp);
-      return done(`the animals are bought and stabled. Add them on the Money & Mounts tab when they join the party.`);
+      return done(`the animals are bought and stabled. Add them on the Town & Money tab when they join the party.`);
     case 'Stable/sell': {
       const gp = Math.round((p.gp ?? 0) * (1 + stableMarkup(lvl)));
       receiveGold(s, [b.ownerId], gp, `animals sold by ${b.name}'s Stable`);
@@ -6237,7 +6237,7 @@ export const castSpell = act((d, ctx, charId: string, spellName: string, mode: '
       endsAt: minutesLong == null ? null : now + minutesLong,
       notes: helpers.length ? `Circle spell (${opt!.label}) with ${helpers.map((h) => h.name).join(', ')}.${extra ? ` Prolonged by ${formatDuration(extra)}.` : ''}${shared ? ' Any of the casters can hold its Concentration.' : ''}` : '',
     });
-    log(d, `${sp.name} lasts ${minutesLong == null ? 'until dispelled' : formatDuration(minutesLong)}${extra ? ` (${formatDuration(extra)} longer with Prolong)` : ''}${concentration ? (shared ? ` (Concentration, held by ${names.join(', ')})` : ' (Concentration)') : ''}. Its timer is on the Effects & Lights tab.`);
+    log(d, `${sp.name} lasts ${minutesLong == null ? 'until dispelled' : formatDuration(minutesLong)}${extra ? ` (${formatDuration(extra)} longer with Prolong)` : ''}${concentration ? (shared ? ` (Concentration, held by ${names.join(', ')})` : ' (Concentration)') : ''}. Its timer is on the Effects & Ailments tab.`);
   }
 });
 
@@ -8234,7 +8234,7 @@ function wearFromTravel(s: State, hours: number, atSea: boolean): void {
         if (addWear(s, c, it)) broke.push(it.name);
         else if ((it.wear ?? 0) >= WEAR_LIMIT - 1) worn.push(it.name);
       }
-      if (broke.length) status(s, c, 'gearWorn', `${causes.map((k) => k.label).join(' and ')} take their toll on ${c.name}'s gear: ${broke.join(', ')} ${broke.length > 1 ? 'are' : 'is'} now damaged (table rule; repair on the Gear tab).`, 'warn');
+      if (broke.length) status(s, c, 'gearWorn', `${causes.map((k) => k.label).join(' and ')} take their toll on ${c.name}'s gear: ${broke.join(', ')} ${broke.length > 1 ? 'are' : 'is'} now damaged (table rule; repair on the Characters tab (HP & gear)).`, 'warn');
       else if (worn.length) status(s, c, 'gearWorn', `${c.name}'s ${worn.join(', ')} ${worn.length > 1 ? 'are' : 'is'} badly worn from ${causes.map((k) => k.label).join(' and ')}: an hour of upkeep would save ${worn.length > 1 ? 'them' : 'it'}.`, 'info');
     }
   }

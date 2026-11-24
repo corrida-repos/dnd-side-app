@@ -3,7 +3,7 @@ import { ContactsCard, LettersCard, NotorietyCard } from './LifeCards';
 import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
 import { uid } from '../state/defaults';
-import { dateFromIndex, formatDuration } from '../rules/calendar';
+import { CALENDARS, dateFromIndex, formatClock, formatDate, formatDuration, indexFromDate } from '../rules/calendar';
 import { GIFT_TYPES, type GiftType } from '../rules/hazards';
 import { DIVINATION_SPELLS, divinationFailChance, moonPhase, RESURRECTION_SPELLS, RITUAL_PRESETS } from '../rules/longterm';
 import { Card, Meter, Num, Pill, Select, Text, Toggle, Rule } from './common';
@@ -40,6 +40,54 @@ export function WorldTab() {
   );
 }
 
+/** Pick the calendar and set the date and time by hand (moved here from Settings so the calendar lives in one place). */
+function CalendarSetup() {
+  const s = useGame();
+  const d = dateFromIndex(s.calendar, s.startYear, s.dayIndex);
+  const setDate = (year: number, month: number, day: number) =>
+    edit((st) => {
+      st.dayIndex = Math.max(0, indexFromDate(st.calendar, st.startYear, year, month, day));
+    });
+  return (
+    <details className="calendar-setup">
+      <summary>
+        Change the calendar, date or time <span className="muted small">{s.calendar.name}</span>
+      </summary>
+      <Select
+        label="Calendar"
+        value={s.calendar.id}
+        onChange={(id) =>
+          edit((st) => {
+            const keep = dateFromIndex(st.calendar, st.startYear, st.dayIndex);
+            st.calendar = structuredClone(CALENDARS[id]);
+            st.dayIndex = Math.max(0, indexFromDate(st.calendar, st.startYear, keep.year, Math.min(keep.monthIndex, st.calendar.months.length - 1), keep.day));
+          })
+        }
+        options={Object.values(CALENDARS).map((c) => ({ value: c.id, label: c.name }))}
+      />
+      <div className="form-row">
+        <Num label="Year" value={d.year} onChange={(v) => edit((st) => void (st.startYear = Math.round(v) - Math.floor(st.dayIndex / st.calendar.months.reduce((a, m) => a + m.days, 0))))} width={5} />
+        <Select label="Month" value={String(d.monthIndex)} onChange={(v) => setDate(d.year, Number(v), d.day)} options={s.calendar.months.map((m, i) => ({ value: String(i), label: m.name }))} />
+        <Num label="Day" value={d.day} onChange={(v) => setDate(d.year, d.monthIndex, Math.round(v))} min={1} max={d.month.days} width={3} />
+      </div>
+      <div className="form-row">
+        <label className="field">
+          <span className="field-label">Time</span>
+          <input
+            type="time"
+            value={formatClock(s.minutes)}
+            onChange={(e) => {
+              const [h, m] = e.target.value.split(':').map(Number);
+              if (!Number.isNaN(h) && !Number.isNaN(m)) edit((st) => void (st.minutes = h * 60 + m));
+            }}
+          />
+        </label>
+      </div>
+      <Rule>Setting the date or time directly skips the hourly and end-of-day checks. To have them run, use the time buttons in the bar at the top.</Rule>
+    </details>
+  );
+}
+
 function SkyCard() {
   const s = useGame();
   const today = dateFromIndex(s.calendar, s.startYear, s.dayIndex);
@@ -61,6 +109,11 @@ function SkyCard() {
   const todays = [...(today.month.festival ? [today.month.name] : []), ...upcoming.filter((h) => h.inDays === 0).map((h) => h.name)];
   return (
     <Card title="Calendar, moon and holidays">
+      <p>
+        <b>{formatDate(s.calendar, s.startYear, s.dayIndex)}</b>
+        {!s.settings.noTimepiece && <span className="muted small"> · {formatClock(s.minutes)}</span>}
+      </p>
+      <CalendarSetup />
       <p>
         <span className="moon" style={{ ['--lit' as string]: `${Math.round((1 - Math.abs(moon.fraction - 0.5) * 2) * 100)}%` }} aria-hidden /> <b>{moon.name}</b>
         <span className="muted small"> · {moon.daysToFull === 0 ? 'full tonight' : `full moon in ${moon.daysToFull} day(s)`}</span>
@@ -232,7 +285,7 @@ function RitualsCard() {
         <Select label="Caster" value={caster} onChange={setCaster} options={[{ value: '', label: 'Anyone' }, ...s.characters.filter((c) => c.kind !== 'mount').map((c) => ({ value: c.id, label: c.name }))]} />
       </div>
       <button onClick={() => (dispatch((st, cx) => E.addRitual(st, cx, preset.spell, preset.days, place.trim(), caster || null)), setPlace(''))}>Start daily casting</button>
-      <Rule>For long castings and slow magic, such as Clone growing for 120 days or a Geas lasting 30 days, use timers on the Effects & Lights tab.</Rule>
+      <Rule>For long castings and slow magic, such as Clone growing for 120 days or a Geas lasting 30 days, use timers on the Effects & Ailments tab.</Rule>
       <WaysAround topic={'dailyCasting'} />
     </Card>
   );
@@ -276,7 +329,7 @@ function DeathCard() {
           Mark as dead
         </button>
       </div>
-      <Rule>Put a Gentle Repose timer on the body (Effects & Lights tab) and the days it lasts won&apos;t count toward these limits.</Rule>
+      <Rule>Put a Gentle Repose timer on the body (Effects & Ailments tab) and the days it lasts won&apos;t count toward these limits.</Rule>
       <WaysAround topic={'death'} />
     </Card>
   );
@@ -348,7 +401,7 @@ function GiftsCard() {
       <button disabled={!name.trim()} onClick={() => (dispatch((st, cx) => E.grantGift(st, cx, who, type, name.trim(), uses, notes.trim())), setName(''), setNotes(''))}>
         {type === 'Curse' ? 'Curse them' : 'Grant'}
       </button>
-      <Rule>Blessings and Boons last until the DM ends them. A Charm&apos;s uses appear with the character&apos;s limited uses on the Gear tab. Curses last until lifted, for example by Remove Curse.</Rule>
+      <Rule>Blessings and Boons last until the DM ends them. A Charm&apos;s uses appear with the character&apos;s limited uses on the Characters tab (HP & gear). Curses last until lifted, for example by Remove Curse.</Rule>
     </Card>
   );
 }

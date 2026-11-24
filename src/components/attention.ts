@@ -13,7 +13,7 @@ export interface AttentionItem {
   text: string;
   /** Where to handle it. */
   tab: string;
-  /** The character it is about: opening it shows that character on the Party tabs. */
+  /** The character it is about: opening it shows that character on the Characters tabs. */
   charId?: string;
   /** Only the DM should know (hidden incubation, poisons waiting for midnight). */
   dmOnly?: boolean;

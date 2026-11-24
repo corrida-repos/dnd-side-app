@@ -12,14 +12,12 @@ import { fmtGp, magicItemValue } from '../rules/money';
 import { misjudged, valueSecret, valueUnknown } from '../rules/shop';
 import { APPRAISE_EYE_DC, APPRAISE_MINUTES, JEWELER_TOOLS, appraiseCheck } from '../rules/appraise';
 import { CLOTH, IMPROVISED_MEND_DC, MEND_DC, WEAVER } from '../rules/tools';
-import { PartyKnowledgeCard, PlayerItemView } from './ItemKnowledge';
+import { PlayerItemView } from './ItemKnowledge';
 import { ARCANA_DC, CLUE_KIND_LABEL, SCHOOLS_OF_MAGIC, STUDY_LABEL, STUDY_MINUTES, type ClueKind } from '../rules/identify';
 import { RARITY_LABEL, type Rarity } from '../rules/crafting';
 import { WaysAround } from './WaysAround';
 import { MaintainGear } from './LifeCards';
 import { REPAIR_DC, REPAIR_TOOL, materialOf, repairCost, wearLabel } from '../rules/wear';
-import { ToolsCard } from './ToolsCard';
-import { FocusBar, useFocused } from './focus';
 import { BOOK_BONUS, HEALERS_KIT, HEALERS_KIT_USES, RATIONS, SCATTERABLE, WATERSKIN } from '../rules/gear';
 
 const setChar = (id: string, fn: (c: Character) => void) =>
@@ -28,30 +26,16 @@ const setChar = (id: string, fn: (c: Character) => void) =>
     if (c) fn(c);
   });
 
-export function GearTab() {
-  const shown = useFocused();
+/** One character's Hit Points, limited uses, magic items, inventory and ammunition. */
+export function GearCard({ c }: { c: Character }) {
   return (
-    <div className="stack">
-      <FocusBar />
-      <Card>
-        <WaysAround topic={['attunement', 'identify', 'ammo', 'shortRest']} />
-      </Card>
-      <div className="grid wide">
-        <MysteryOverview />
-        <AfterTheFight />
-        <ToolsCard />
-        <PartyKnowledgeCard />
-        {shown.map((c) => (
-          <Card key={c.id} title={`${c.name} · ${c.className} ${c.level}`}>
-            <HpBlock c={c} />
-            {c.kind !== 'mount' && <ResourcesBlock c={c} />}
-            {c.kind !== 'mount' && <ItemsBlock c={c} />}
-            <InventoryBlock c={c} />
-            <AmmoBlock c={c} />
-          </Card>
-        ))}
-      </div>
-    </div>
+    <Card title={`${c.name} · HP & gear`}>
+      <HpBlock c={c} />
+      {c.kind !== 'mount' && <ResourcesBlock c={c} />}
+      {c.kind !== 'mount' && <ItemsBlock c={c} />}
+      <InventoryBlock c={c} />
+      <AmmoBlock c={c} />
+    </Card>
   );
 }
 
@@ -62,7 +46,7 @@ function knowledge(it: MagicItem): { known: number; total: number } {
   return { known: Math.min(known, total), total };
 }
 
-function MysteryOverview() {
+export function MysteryOverview() {
   const s = useGame();
   const items = s.characters.flatMap((c) => c.items.filter((it) => !it.identified || (it.clues ?? []).some((x) => !x.known)).map((it) => ({ c, it })));
   if (!items.length) return null;
@@ -182,7 +166,7 @@ function KnowledgePanel({ c, it }: { c: Character; it: MagicItem }) {
   );
 }
 
-function AfterTheFight() {
+export function AfterTheFight() {
   const s = useGame();
   const spent = s.characters.flatMap((c) => c.inventory.filter((i) => (i.ammo?.spent ?? 0) > 0).map((i) => ({ c, i })));
   if (!spent.length) return null;
@@ -277,7 +261,7 @@ function InventoryBlock({ c }: { c: Character }) {
                   {i.damaged && <Pill tone="bad" title="Torn, cracked or broken: see Damaged gear below">damaged</Pill>}{' '}
                   {!i.damaged && (i.wear ?? 0) > 0 && <Pill tone="warn" title="Wear from hard use (table rule): at 3 it is damaged. An hour of upkeep clears it.">{wearLabel(i.wear ?? 0)}</Pill>}{' '}
                   {HEALERS_KIT.test(i.name) && <Pill tone="info" title="A Healer's Kit has ten uses (2024 PHB)">{i.uses ?? HEALERS_KIT_USES}/{HEALERS_KIT_USES} uses</Pill>}{' '}
-                  {i.tainted && <Pill tone="muted" title="DM only: tainted (bought from a backstreet hawker). Whoever drinks it makes a DC 10 Con save against Cackle Fever: use Expose on the Effects tab.">cheap</Pill>}{' '}
+                  {i.tainted && <Pill tone="muted" title="DM only: tainted (bought from a backstreet hawker). Whoever drinks it makes a DC 10 Con save against Cackle Fever: use Expose on the Effects & Ailments tab.">cheap</Pill>}{' '}
                   {i.scattered && <Pill tone="warn" title="Spread on the ground: gather them up (10 minutes) before moving on, or they're left behind">on the ground</Pill>}{' '}
                   {valueUnknown(i) ? (
                     <Pill tone="warn" title={`Nobody in the party knows what ${i.qty > 1 ? 'these are' : 'it is'} worth yet.${i.valueGp != null ? ` DM: ${fmtGp(i.valueGp)} each.` : ' No value set.'}`}>

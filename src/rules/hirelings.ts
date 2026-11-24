@@ -29,7 +29,7 @@ export interface RoleInfo {
 }
 
 export const HIRELING_ROLES: Record<HirelingRole, RoleInfo> = {
-  torchbearer: { label: 'Torchbearer', skilled: false, does: 'Carries a light so the adventurers keep their hands free.', hook: 'Light a torch from their row; it shows on the Effects & Lights tab.' },
+  torchbearer: { label: 'Torchbearer', skilled: false, does: 'Carries a light so the adventurers keep their hands free.', hook: 'Light a torch from their row; it shows on the Effects & Ailments tab.' },
   porter: { label: 'Porter', skilled: false, does: 'Carries gear, supplies and treasure (a typical porter carries about 150 lb).' },
   laborer: { label: 'Laborer', skilled: false, does: 'Digs, hauls, clears rubble, sets up camp and gathers firewood.' },
   guard: { label: 'Guard or mercenary', skilled: true, does: 'Keeps watch at night and protects the camp, the mounts and the gear.', skill: 'Perception', hook: 'Can stand watches in the Night watch planner.' },
@@ -39,7 +39,7 @@ export const HIRELING_ROLES: Record<HirelingRole, RoleInfo> = {
   healer: { label: 'Healer', skilled: true, does: 'Binds wounds and stabilizes the dying.', skill: 'Medicine', hook: 'Can stabilize a dying character with their Medicine bonus.' },
   artisan: { label: 'Artisan', skilled: true, does: 'Helps with crafting (must have proficiency with the tool).', skill: 'a tool' },
   scribe: { label: 'Scribe', skilled: true, does: 'Copies documents and letters, and helps scribe scrolls.', skill: "Calligrapher's Supplies" },
-  appraiser: { label: 'Appraiser (table rule)', skilled: true, does: 'Judges what gems, jewelry and art are worth, with their own Jeweler’s Tools.', skill: "Jeweler's Tools", hook: 'Can appraise items of unknown value on the Gear & Resources tab.' },
+  appraiser: { label: 'Appraiser (table rule)', skilled: true, does: 'Judges what gems, jewelry and art are worth, with their own Jeweler’s Tools.', skill: "Jeweler's Tools", hook: 'Can appraise items of unknown value on the Characters tab (HP & gear).' },
   interpreter: { label: 'Interpreter', skilled: true, does: 'Translates languages the party doesn’t speak.' },
   teamster: { label: 'Teamster or driver', skilled: true, does: 'Drives wagons and carts and handles draft animals.', skill: 'Land Vehicles' },
   sailor: { label: 'Sailor', skilled: true, does: 'Crews a boat or ship (larger ships need a crew of skilled hirelings).', skill: 'Water Vehicles' },

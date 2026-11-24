@@ -356,7 +356,7 @@ function MountsCard() {
         {s.settings.stabling
           ? `In a settlement they're stabled and fed each day for ${fmtGp(STABLING_GP_PER_DAY + FEED_GP_PER_DAY)} each (2024 PHB: Stabling 5 SP, Feed 5 CP).`
           : "Town lifestyle doesn't cover them, so water them every day (for example with \"Top up today's water\")."}{' '}
-        Saddles (2024 PHB): a Military Saddle gives Advantage on checks to stay mounted; flying and swimming mounts need an Exotic Saddle. Table rule: riding bareback means Disadvantage on checks to stay mounted, and no galloping. Set how a mount moves on the Party tab.
+        Saddles (2024 PHB): a Military Saddle gives Advantage on checks to stay mounted; flying and swimming mounts need an Exotic Saddle. Table rule: riding bareback means Disadvantage on checks to stay mounted, and no galloping. Set how a mount moves on the Characters tab.
       </Rule>
       <WaysAround topic={'mounts'} />
     </Card>
