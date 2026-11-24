@@ -123,9 +123,11 @@ function FightOrFlightReview({ encounter, onResolve }: { encounter: TacticalEnco
   const opponents = encounter.participants.filter((p) => p.side === 'encounter');
   const [leaderId, setLeaderId] = useState(opponents[0]?.id ?? '');
   const [modifier, setModifier] = useState('');
+  const [dc, setDc] = useState(String(FIGHT_OR_FLIGHT_DC));
+  const validDc = Number.isInteger(Number(dc)) && Number(dc) >= 1 && Number(dc) <= 99;
   const valid = modifier.trim() !== '' && Number.isInteger(Number(modifier)) && Math.abs(Number(modifier)) <= 99;
   const decision = encounter.fightOrFlight;
-  const failed = decision?.kind === 'save' && decision.roll + decision.modifier < FIGHT_OR_FLIGHT_DC;
+  const failed = decision?.kind === 'save' && decision.roll + decision.modifier < (decision.dc ?? FIGHT_OR_FLIGHT_DC);
   if (!opponents.length) return null;
   return <fieldset>
     <legend>Fight or Flight</legend>
@@ -143,10 +145,12 @@ function FightOrFlightReview({ encounter, onResolve }: { encounter: TacticalEnco
           onChange={(id) => { setLeaderId(id); setModifier(''); }} />
         <label>Wisdom save modifier <input type="number" min={-99} max={99} step={1} value={modifier}
           onChange={(event) => setModifier(event.target.value)} /></label>
+        <label>DC <input type="number" min={1} max={99} step={1} value={dc}
+          onChange={(event) => setDc(event.target.value)} /></label>
       </div>
       <div className="btn-row">
-        <button disabled={!valid} onClick={() => dispatch((d, c) => decideFightOrFlight(d, c, encounter.id,
-          { kind: 'save', leaderId, modifier: Number(modifier) }))}>Roll DC {FIGHT_OR_FLIGHT_DC} Wisdom save</button>
+        <button disabled={!valid || !validDc} onClick={() => dispatch((d, c) => decideFightOrFlight(d, c, encounter.id,
+          { kind: 'save', leaderId, modifier: Number(modifier), dc: Number(dc) }))}>Roll Wisdom save</button>
         <button onClick={() => dispatch((d, c) => decideFightOrFlight(d, c, encounter.id, { kind: 'committed' }))}>
           They are committed to fighting
         </button>

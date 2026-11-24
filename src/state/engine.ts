@@ -8097,7 +8097,7 @@ export const selectTacticalEncounter = act((d, _ctx, id: string) => {
   if (!d.tacticalEncounter && snapshot && !d.resolvedTacticalEncounters?.includes(id)) d.tacticalEncounter = tacticalFromHandoff(snapshot);
 });
 
-type FightOrFlightChoice = { kind: 'committed' } | { kind: 'save'; leaderId: string; modifier: number };
+type FightOrFlightChoice = { kind: 'committed' } | { kind: 'save'; leaderId: string; modifier: number; dc?: number };
 
 export const decideFightOrFlight = act((d, ctx, encounterId: string, choice: FightOrFlightChoice) => {
   const encounter = d.tacticalEncounter;
@@ -8107,7 +8107,8 @@ export const decideFightOrFlight = act((d, ctx, encounterId: string, choice: Fig
   else {
     const leader = encounter.participants.find((p) => p.side === 'encounter' && p.id === choice.leaderId);
     if (!leader || !Number.isInteger(choice.modifier) || Math.abs(choice.modifier) > 99) return;
-    decision = { kind: 'save', leader: leader.name, roll: die(20, ctx.rng), modifier: choice.modifier };
+    if (choice.dc !== undefined && (!Number.isInteger(choice.dc) || choice.dc < 1 || choice.dc > 99)) return;
+    decision = { kind: 'save', leader: leader.name, roll: die(20, ctx.rng), modifier: choice.modifier, ...(choice.dc !== undefined ? { dc: choice.dc } : {}) };
   }
   encounter.fightOrFlight = decision;
   const snapshot = d.encounterHandoffs?.find((entry) => entry.encounterId === encounterId);

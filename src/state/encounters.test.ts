@@ -232,11 +232,11 @@ it('rolls opening Fight or Flight once and retains it when reopening the encount
   const pending = E.rollRandomEncounter(fresh(), LOW, 'camp');
   const encounter = pending.tacticalEncounter!;
   const leader = encounter.participants.find((p) => p.side === 'encounter')!;
-  const choice = { kind: 'save', leaderId: leader.id, modifier: 2 } as const;
+  const choice = { kind: 'save', leaderId: leader.id, modifier: 2, dc: 12 } as const;
   const decided = E.decideFightOrFlight(pending, LOW, encounter.id, choice);
-  const decision = { kind: 'save', leader: leader.name, roll: 1, modifier: 2 };
+  const decision = { kind: 'save', leader: leader.name, roll: 1, modifier: 2, dc: 12 };
   expect(decided.tacticalEncounter?.fightOrFlight).toEqual(decision);
-  expect(decided.log[0].text).toContain('They flee or try to parley.');
+  expect(decided.log[0].text).toContain('vs. DC 12. They flee or try to parley.');
   expect(E.decideFightOrFlight(decided, HIGH, encounter.id, choice)).toEqual(decided);
   const reopened = E.selectTacticalEncounter(E.dismissTacticalEncounter(decided, LOW), LOW, encounter.id);
   expect(reopened.tacticalEncounter?.fightOrFlight).toEqual(decision);
