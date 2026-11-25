@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { DISPOSITIONS, FIGHT_OR_FLIGHT_DC, fightOrFlightText, parseTacticalResult, type Disposition, type TacticalEncounter, type TacticalResult } from '../rules/butler';
+import { DISPOSITIONS, FIGHT_OR_FLIGHT_DC, fightOrFlightText, openingPositionText, parseTacticalResult, type Disposition, type TacticalEncounter, type TacticalResult } from '../rules/butler';
 import { dispatch, edit, useGame } from '../state/store';
 import { absNow, applyTacticalResult, decideFightOrFlight, dismissTacticalEncounter, selectTacticalEncounter, setInfluencedEncounterAlly, tacticalResultProblem } from '../state/engine';
 import { formatClock, formatDate } from '../rules/calendar';
@@ -58,6 +58,10 @@ export function ButlerHandoff() {
         }}>Review recorded encounter</button>
       </> : <p className="small muted">Roll a creature encounter here to prepare a handoff.</p>) : <>
         <p><strong>{encounter.title}</strong> near {encounter.place}, {encounter.distanceFt} ft away.</p>
+        <details>
+          <summary>Review encounter setup</summary>
+          <p className="small">{encounter.context}</p>
+        </details>
         {encounter.attitude && <p className="small">Starting attitude: {encounter.attitude}. Decide whether to approach, parley, withdraw, or take the encounter into rounds.</p>}
         <FightOrFlightReview key={encounter.id} encounter={encounter} onResolve={(outcome) => {
           dispatch((d, c) => dismissTacticalEncounter(d, c, outcome));
@@ -66,9 +70,10 @@ export function ButlerHandoff() {
         <details>
           <summary>Review participants</summary>
           {encounter.participants.map((p) => <div className="form-row" key={p.id}>
-            <Toggle checked={!excluded.includes(p.id)} label={p.name + (p.surprised ? ' (surprised)' : '')}
+            <Toggle checked={!excluded.includes(p.id)} label={p.name + (p.surprised ? ' (surprised)' : '') + (p.roadNetRestrained ? ' (restrained by net)' : '')}
               onChange={(included) => setSelection({ id: encounter.id, excluded: included
                 ? excluded.filter((id) => id !== p.id) : [...excluded, p.id] })} />
+            {p.openingPosition && <span className="small">{openingPositionText(p.openingPosition)}</span>}
             {p.side === 'encounter' && <Toggle checked={!!p.influencedAlly} label={`${p.name} agreed to fight alongside the party`}
               onChange={(allied) => dispatch((d, c) => setInfluencedEncounterAlly(d, c, encounter.id, p.id, allied))} />}
           </div>)}

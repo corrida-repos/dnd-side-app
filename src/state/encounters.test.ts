@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as E from './engine';
+import { rollOnTable } from '../rules/encounters';
 import { encounterHandoffJson } from '../rules/encounterHandoff';
 import { createDefaultState, newCharacter } from './defaults';
 import type { State } from './types';
@@ -287,4 +288,59 @@ it('carries an influenced NPC into the handoff without using them as the enemy l
   expect(reopened.tacticalEncounter?.participants.find((p) => p.id === npc.id)?.influencedAlly).toBe(true);
   expect(E.decideFightOrFlight(reopened, LOW, encounter.id, { kind: 'save', leaderId: npc.id, modifier: 0 })
     .tacticalEncounter?.fightOrFlight).toBeUndefined();
+});
+
+function roadsideParty() {
+  return fresh((s) => {
+    s.place.terrain = 'forest';
+    s.settings.srdEncounters = false;
+    s.settings.encounterBooks = [];
+    s.bestiary = [{ name: 'Bandit', size: 'Medium', type: 'humanoid', cr: '1/8', env: ['forest'], align: 'E' }];
+    s.characters.forEach((c) => { c.passivePerception = 2; });
+    s.travel.navigatorId = s.characters[1].id;
+  });
+}
+
+it('applies a missed roadside net only to the lead walker and exports their restraint separately from campaign vitals', () => {
+  const n = E.rollRandomEncounter(roadsideParty(), LOW, 'travel');
+  const handoff = n.encounterHandoffs![0];
+  expect(handoff.surprise).toMatchObject({ partySurprised: true, partyNoticed: false, trapTriggeredBy: n.characters[1].id });
+  const party = n.tacticalEncounter!.participants.filter((p) => p.side === 'party');
+  expect(party.map((p) => [p.surprised, !!p.roadNetRestrained])).toEqual([[true, false], [true, true]]);
+  expect(party[1].vitals?.conditions).not.toContainEqual(expect.objectContaining({ key: 'restrained' }));
+  expect(n.tacticalEncounter!.context).toContain('starts Restrained');
+  const attackers = n.tacticalEncounter!.participants.filter((p) => p.side === 'encounter');
+  expect(attackers.filter((p) => p.openingPosition)).toHaveLength(Math.ceil(attackers.length / 2));
+  expect(attackers[0].openingPosition).toMatchObject({ cover: 'half', elevationFt: 10 });
+});
+
+it('lets the party spot the net while the attackers remain hidden', () => {
+  const s = roadsideParty();
+  s.characters[0].passivePerception = 13;
+  let tableRolls = 0;
+  rollOnTable(E.encounterTable(s), () => { tableRolls++; return 0; });
+  const rolls = [...Array<number>(tableRolls + 1).fill(0), 0.999];
+  const n = E.rollRandomEncounter(s, { rng: () => rolls.shift() ?? 0 }, 'travel');
+  expect(n.encounterHandoffs?.[0].surprise).toMatchObject({
+    trapNoticedBy: s.characters[0].id, partyNoticed: false, partySurprised: false,
+  });
+  expect(n.tacticalEncounter?.context).toContain('attackers stay hidden');
+});
+
+it('leaves the net untriggered when the party notices the attackers first', () => {
+  const s = roadsideParty();
+  s.characters[0].passivePerception = 10;
+  const n = E.rollRandomEncounter(s, LOW, 'travel');
+  expect(n.encounterHandoffs?.[0].surprise).toMatchObject({ partyNoticed: true, partySurprised: false });
+  expect(n.tacticalEncounter?.context).toContain('halt short of an unseen net');
+});
+
+it('keeps roadside nets out of encounters at camp, in flight, and with ordinary beasts', () => {
+  const s = roadsideParty();
+  expect(E.rollRandomEncounter(s, LOW, 'camp').tacticalEncounter?.context).not.toMatch(/net/i);
+  E.resolveEncounter(s, LOW, 'travel', undefined, true, false);
+  expect(s.tacticalEncounter?.context).not.toMatch(/net/i);
+  const beasts = roadsideParty();
+  beasts.bestiary = [{ ...beasts.bestiary[0], name: 'Wolf', type: 'beast' }];
+  expect(E.rollRandomEncounter(beasts, LOW, 'travel').tacticalEncounter?.context).not.toMatch(/net/i);
 });

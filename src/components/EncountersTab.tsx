@@ -13,7 +13,7 @@ import { TreasureCard } from './TreasureCard';
 import { ButlerHandoff } from './ButlerHandoff';
 
 type Act = CheckConditions['activity'];
-const ACT_LABEL: Record<Act, string> = { travel: 'Travelling', camp: 'In camp', rest: 'Long Rest', explore: 'Exploring a dungeon' };
+const ACT_LABEL: Record<Act, string> = { travel: 'Travelling on foot', camp: 'In camp', rest: 'Long Rest', explore: 'Exploring a dungeon' };
 const DIFF_TONE: Record<Difficulty, 'muted' | 'good' | 'info' | 'warn' | 'bad'> = { trivial: 'muted', low: 'good', moderate: 'info', high: 'warn', beyond: 'bad' };
 const pct = (n: number) => `${Math.round(n * 100)}%`;
 

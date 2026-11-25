@@ -1,4 +1,4 @@
-import type { FightOrFlight, TacticalEncounter, TacticalVitals } from './butler';
+import type { FightOrFlight, OpeningPosition, TacticalEncounter, TacticalVitals } from './butler';
 import type { ActiveEffect, Shelter } from '../state/types';
 import type { CheckConditions, EncounterResult } from './encounters';
 import type { TerrainType } from './terrain';
@@ -21,6 +21,8 @@ export interface HandoffParticipant {
   stable?: boolean;
   vitals?: TacticalVitals;
   surprised: boolean;
+  roadNetRestrained?: boolean;
+  openingPosition?: OpeningPosition;
   watching?: boolean;
   resting?: boolean;
 }
@@ -32,6 +34,9 @@ export interface EncounterSurprise {
   noticedBy?: string;
   alarm?: 'bell' | 'pots';
   partyNoticed: boolean;
+  trapNoticedBy?: string;
+  trapTriggeredBy?: string;
+  roadNetRestrainedId?: string;
   narrative: string;
 }
 
@@ -93,7 +98,7 @@ export function tacticalFromHandoff(handoff: EncounterHandoff, context?: string)
     participants: handoff.participants.map((p) => ({
       id: p.id, name: p.name, side: p.side, ddbId: p.ddbId, influencedAlly: p.influencedAlly,
       source: p.creature?.source, creatureName: p.creature?.name,
-      surprised: p.surprised, asleep: p.resting, vitals: p.vitals,
+      surprised: p.surprised, asleep: p.resting, roadNetRestrained: p.roadNetRestrained, openingPosition: p.openingPosition, vitals: p.vitals,
     })),
   };
 }

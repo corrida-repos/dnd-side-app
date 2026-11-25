@@ -1,9 +1,10 @@
 import { BOOKKEEPING_TARGET_LIMIT } from '../rules/spellBookkeeping';
+import { roadNetChance, roadOpeningPosition, ROAD_NET_NOTICE_DC, ROAD_NET_SAVE_DC } from '../rules/roadAmbush';
 import { tacticalFromHandoff, type EncounterHandoff, type EncounterSurprise, type HandoffParticipant } from '../rules/encounterHandoff';
 import { BRELAND, BRELAND_ROUTES, nextDeparture, type BrelishLocality } from '../rules/eberron';
 import { audibleDistance, LOCK_DC, LOCK_MINUTES, monsterBehavior, NOISE, UNDERWATER_DISTANCE, type LockDetails, type Noise } from '../rules/exploration';
 import { rollBastionTreasure, rollTreasure, type TreasureItem, type TreasureRequest } from '../rules/treasure';
-import { fightOrFlightText, type Disposition, type FightOrFlight, type TacticalCondition, type TacticalResult, type TacticalVitals } from '../rules/butler';
+import { fightOrFlightText, type Disposition, type FightOrFlight, openingPositionText, type OpeningPosition, type TacticalCondition, type TacticalResult, type TacticalVitals } from '../rules/butler';
 import type { LadderPos, TameTarget, ActiveEffect, Activity, CharacterSpell, InventoryItem, LogEntry, NpcLoyalty, NpcWagePayment, Ritual, Stash, VehicleDetails, Bastion, Business, Character, FacilityWork, Obstacle, Rival, Debt, Mark, Faction, ExhaustionCause, Facility, JourneyStage, MagicItem, Pace, PendingSave, Project, Recruit, SaveKind, Size, State, Tone } from './types';
 import { BASIC_BUILD, BASTION_TURN_DAYS, defaultSize, ENLARGE, rollBastionEvent, SIZE_LABEL, SPECIAL_FACILITIES, type FacilitySize } from '../rules/bastion';
 import { d20, die, combineModes, rollDice, rollExpr, signed, type Rng, type RollMode } from '../rules/dice';
@@ -1305,7 +1306,7 @@ export function syncPorters(s: State): void {
   }
 }
 
-export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activity, opts: { exploring?: boolean; tactical?: boolean; combat?: boolean; travelHour?: boolean; encounterActivity?: 'travel' } = {}): void {
+export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activity, opts: { exploring?: boolean; tactical?: boolean; combat?: boolean; travelHour?: boolean; encounterActivity?: 'travel'; onFoot?: boolean } = {}): void {
   if (opts.tactical && s.pauseForButler && s.tacticalEncounter) return;
   syncPorters(s);
   levelSidekicks(s, ctx);
@@ -1340,7 +1341,7 @@ export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activi
     if (s.minutes % 60 === 0) tickHour(s, ctx, activity);
     if (s.minutes >= MIN_PER_DAY) endOfDay(s, ctx);
     if (checkOverland) {
-      overlandEncounterClock(s, ctx, step, encounterActivity, opts.tactical && s.pauseForButler);
+      overlandEncounterClock(s, ctx, step, encounterActivity, opts.tactical && s.pauseForButler, opts.onFoot);
       if (opts.tactical && s.pauseForButler && s.tacticalEncounter) {
         s.tacticalRemainingMinutes = remaining;
         break;
@@ -1884,7 +1885,8 @@ function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
       darkWarned = true;
       log(d, 'Darkness falls and not everyone can see in it. With no lit Torch, Lantern or light spell (light one on the Effects & Ailments tab), the party picks its way forward at a Slow pace (table rule).', 'warn');
     }
-    advanceMut(d, ctx, 60, 'travel', { travelHour: !!d.pauseForButler });
+    const onFoot = !o.flying && !(gallop && i === 0);
+    advanceMut(d, ctx, 60, 'travel', { travelHour: !!d.pauseForButler, onFoot });
     traveledHours++;
     clearEncounterCampConditions(d.place);
     d.travel.hoursToday += altitude ? 2 : 1;
@@ -1914,7 +1916,7 @@ function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
       }
     }
     if (d.pauseForButler && d.settings.encounters) {
-      overlandEncounterClock(d, ctx, 60, 'travel', true);
+      overlandEncounterClock(d, ctx, 60, 'travel', true, onFoot);
       if (d.tacticalEncounter) {
         d.tacticalRemainingMinutes = (o.hours - traveledHours) * 60;
         break;
@@ -8142,12 +8144,12 @@ export function encounterConditions(s: State, activity: CheckConditions['activit
 }
 
 /** Accumulates overland time and rolls a check each time the danger level's interval passes. */
-function overlandEncounterClock(s: State, ctx: Ctx, step: number, activity: 'travel' | 'rest' | 'camp', tactical = false): void {
+function overlandEncounterClock(s: State, ctx: Ctx, step: number, activity: 'travel' | 'rest' | 'camp', tactical = false, onFoot = false): void {
   const every = encounterIntervalMinutes(s.place.danger, encounterConditions(s, activity));
   s.encounterClock = Math.min(s.encounterClock, every) + step;
   while (s.encounterClock >= every) {
     s.encounterClock -= every;
-    encounterCheck(s, ctx, activity, false, tactical);
+    encounterCheck(s, ctx, activity, false, tactical, onFoot);
     if (tactical && s.tacticalEncounter) break;
   }
 }
@@ -8161,7 +8163,7 @@ function onWatchNow(s: State): Character[] {
 }
 
 /** One random encounter check: d20 plus the conditions, against the danger level's number. Returns true on an encounter. */
-export function encounterCheck(s: State, ctx: Ctx, activity: CheckConditions['activity'], announce: boolean, tactical = false): boolean {
+export function encounterCheck(s: State, ctx: Ctx, activity: CheckConditions['activity'], announce: boolean, tactical = false, onFoot = activity === 'travel'): boolean {
   const info = DANGER[s.place.danger];
   const mods = checkModifiers(encounterConditions(s, activity));
   const mod = mods.reduce((a, m) => a + m.value, 0);
@@ -8172,7 +8174,7 @@ export function encounterCheck(s: State, ctx: Ctx, activity: CheckConditions['ac
     if (announce) log(s, `Random encounter check: ${detail}. Nothing comes.`);
     return false;
   }
-  resolveEncounter(s, ctx, activity, detail, tactical);
+  resolveEncounter(s, ctx, activity, detail, tactical, onFoot);
   return true;
 }
 
@@ -8190,9 +8192,9 @@ export function estimatedStealth(cr: string): number {
  * Fast pace means Disadvantage on Perception (−5 passive), Slow means Advantage (+5). Asleep, nobody but the watch notices.
  * Only Hostile creatures try to ambush; a surprised party has Disadvantage on Initiative.
  */
-function surpriseCheck(s: State, ctx: Ctx, cr: string, hostile: boolean, activity: CheckConditions['activity'], watchers: Character[]): EncounterSurprise {
+function surpriseCheck(s: State, ctx: Ctx, cr: string, hostile: boolean, activity: CheckConditions['activity'], watchers: Character[], roadNet = false): EncounterSurprise {
   if (!hostile) return { partySurprised: false, partyNoticed: true, narrative: ' They aren’t hiding: both sides see each other at that distance.' };
-  const awake = activity === 'rest' ? watchers : s.characters.filter((c) => c.kind !== 'mount' && alive(c) && !c.dying && !c.stable);
+  const awake = activity === 'rest' ? watchers : s.characters.filter((c) => c.kind !== 'mount' && alive(c) && c.hp > 0 && !c.dying && !c.stable);
   const pace = activity === 'travel' ? s.travel.pace : null;
   const stealth = d20('normal', ctx.rng).value + estimatedStealth(cr);
   if (activity === 'rest' && s.place.alarm === true) return { partySurprised: false, partyNoticed: true, stealth, alarm: 'bell', narrative: ' As they creep closer, someone or something crosses the alarm line and the Bell jangles: the camp wakes, and nobody is surprised (table rule).' };
@@ -8210,23 +8212,52 @@ function surpriseCheck(s: State, ctx: Ctx, cr: string, hostile: boolean, activit
   const why = [top.sight.mode !== 'normal' ? top.sight.note : '', paceMode !== 'normal' ? `${pace} pace` : ''].filter(Boolean);
   const cancel = top.mode === 'normal' && why.length > 1 ? ': Advantage and Disadvantage cancel' : '';
   const best = `${top.c.name}'s passive Perception ${top.passive}${why.length ? ` (${why.join('; ')}${cancel})` : ''}`;
-  const surprised = stealth > top.passive;
-  return {
-    partySurprised: surprised, partyNoticed: !surprised, stealth, passivePerception: top.passive, noticedBy: surprised ? undefined : top.c.id,
-    narrative: surprised
+  const groupHidden = stealth > top.passive;
+  const surprise: EncounterSurprise = {
+    partySurprised: groupHidden, partyNoticed: !groupHidden, stealth, passivePerception: top.passive, noticedBy: groupHidden ? undefined : top.c.id,
+    narrative: groupHidden
       ? ` They try to ambush: Stealth ${stealth} beats ${best}. The party is surprised (Disadvantage on Initiative).`
       : ` They try to sneak up: Stealth ${stealth} against ${best}. The party spots them in time, no surprise.`,
   };
+  if (!roadNet) return surprise;
+
+  const spotter = seen.filter((observer) => !observer.sight.blind && observer.passive >= ROAD_NET_NOTICE_DC)
+    .sort((a, b) => b.passive - a.passive)[0];
+  if (spotter) {
+    const trap = `${spotter.c.name} spots the roadside net (passive Perception ${spotter.passive}, DC ${ROAD_NET_NOTICE_DC}) and warns the party. The net stays untriggered.`;
+    return {
+      ...surprise, partySurprised: false, trapNoticedBy: spotter.c.id,
+      narrative: groupHidden
+        ? ` ${trap} The attackers stay hidden (Stealth ${stealth} against ${best}), but the party is on alert.`
+        : `${surprise.narrative} ${trap}`,
+    };
+  }
+  if (!groupHidden) {
+    return { ...surprise, narrative: `${surprise.narrative} Spotting the attackers gives the party time to halt short of an unseen net (DC ${ROAD_NET_NOTICE_DC}).` };
+  }
+
+  const lead = awake.find((c) => c.id === s.travel.navigatorId) ?? awake[0];
+  if (lead.size === 'Huge' || lead.size === 'Gargantuan') {
+    return { ...surprise, trapTriggeredBy: lead.id, narrative: ` The roadside net falls on ${lead.name}, who is too large for it to restrain.${surprise.narrative}` };
+  }
+  const roll = d20('normal', ctx.rng).value;
+  const modifier = Math.floor(((lead.abilities?.dex ?? 10) - 10) / 2) - 2 * lead.exhaustion - (lead.revivalPenalty ?? 0);
+  const total = roll + modifier;
+  const restrained = total < ROAD_NET_SAVE_DC;
+  return {
+    ...surprise, trapTriggeredBy: lead.id, roadNetRestrainedId: restrained ? lead.id : undefined,
+    narrative: ` A roadside net goes unnoticed (DC ${ROAD_NET_NOTICE_DC}) and drops on ${lead.name}. Dexterity save ${roll} ${signed(modifier)} = ${total} against DC ${ROAD_NET_SAVE_DC}. ${restrained ? `${lead.name} starts Restrained. A creature can use an action to free itself or another creature within reach with a DC 10 Strength (Athletics) check.` : `${lead.name} dodges the net.`}${surprise.narrative}`,
+  };
 }
 
-function captureEncounter(s: State, result: EncounterResult, creature: EncounterCreature, activity: CheckConditions['activity'], watchers: Character[], surprise: EncounterSurprise, checkDetail?: string): EncounterHandoff {
+function captureEncounter(s: State, result: EncounterResult, creature: EncounterCreature, activity: CheckConditions['activity'], watchers: Character[], surprise: EncounterSurprise, checkDetail?: string, openingPosition?: OpeningPosition): EncounterHandoff {
   const encounterId = uid();
   const campaignId = s.campaignId ??= uid();
   const watchIds = new Set(watchers.map((w) => w.id));
   const party: HandoffParticipant[] = s.characters.filter((c) => alive(c) && mountWithParty(c)).map((c) => ({
     id: c.id, side: 'party', kind: c.sidekick ? 'sidekick' : c.kind === 'mount' ? 'mount' : 'character',
     name: c.name, ddbId: c.ddbId, hp: c.hp, maxHp: c.maxHp, tempHp: c.tempHp, exhaustion: c.exhaustion,
-    dying: c.dying, stable: c.stable, surprised: surprise.partySurprised, vitals: tacticalVitals(s, c),
+    dying: c.dying, stable: c.stable, surprised: surprise.partySurprised, roadNetRestrained: surprise.roadNetRestrainedId === c.id || undefined, vitals: tacticalVitals(s, c),
     watching: watchIds.has(c.id), resting: activity === 'rest' && s.restStart != null && !c.trance && !watchIds.has(c.id) && !surprise.alarm,
   }));
   for (const h of s.hirelings) {
@@ -8244,6 +8275,10 @@ function captureEncounter(s: State, result: EncounterResult, creature: Encounter
   }));
   const opponents = group(creature, result.count ?? 1, 'main');
   if (result.row.followers) opponents.push(...group(result.row.followers.creature, result.followerCount ?? 0, 'follower'));
+  if (openingPosition) {
+    // Some enemies can hold the terrain while the rest approach the party.
+    for (const opponent of opponents.slice(0, Math.ceil(opponents.length / 2))) opponent.openingPosition = openingPosition;
+  }
   const minute = absNow(s);
   const effects = s.effects.filter((effect) => effect.endsAt == null || effect.endsAt > minute).map((effect) => ({
     id: effect.id, name: effect.name, kind: effect.kind, targetIds: [...effect.targetIds], casterId: effect.casterId,
@@ -8443,7 +8478,7 @@ export const applyTacticalResult = act((d, ctx, result: TacticalResult) => {
   delete d.tacticalRemainingMinutes;
 });
 
-export function resolveEncounter(s: State, ctx: Ctx, activity: CheckConditions['activity'], checkDetail?: string, tactical = false): void {
+export function resolveEncounter(s: State, ctx: Ctx, activity: CheckConditions['activity'], checkDetail?: string, tactical = false, onFoot = activity === 'travel'): void {
   const table = encounterTable(s);
   const underwater = s.place.underwaterVisibility;
   const res = rollOnTable(table, ctx.rng, underwater ? UNDERWATER_DISTANCE[underwater]?.feet : undefined);
@@ -8469,16 +8504,26 @@ export function resolveEncounter(s: State, ctx: Ctx, activity: CheckConditions['
   encounterSerial += 1; // creatures, not just signs: enough to break off a long casting
   const c = res.row.creature;
   const party = table.party;
-  const surprise = surpriseCheck(s, ctx, c.cr, res.attitude?.attitude === 'Hostile', activity, watchers);
-  const snapshot = captureEncounter(s, res, c, activity, watchers, surprise, checkDetail);
+  const hostile = res.attitude?.attitude === 'Hostile';
+  const roadside = s.settings.roadAmbushes && hostile && activity === 'travel' && onFoot && !underwater && s.place.terrain !== 'waterborne';
+  const chance = roadside ? roadNetChance(c, res.count ?? 1, res.row.followers?.creature, res.followerCount ?? 0) : 0;
+  const net = chance > 0 && die(100, ctx.rng) <= chance;
+  const surprise = surpriseCheck(s, ctx, c.cr, hostile, activity, watchers, net);
+  const openingPosition = roadside ? roadOpeningPosition(s.place.terrain, net, ctx.rng) : undefined;
+  const snapshot = captureEncounter(s, res, c, activity, watchers, surprise, checkDetail, openingPosition);
   const dm = `${head} ${res.summary} (CR ${c.cr}${res.row.followers ? ` and ${res.row.followers.creature.cr}` : ''}, rolled ${res.row.count}${res.row.followers ? ` and ${res.row.followers.count}` : ''}; ${res.xp} XP total, ${DIFFICULTY_LABEL[res.difficulty ?? 'low']} for ${party.size} level-${party.level} characters). Starting attitude: ${res.attitude?.attitude} (d20 ${res.attitude?.roll}). They are ${res.distanceFt} feet away (${res.distanceExpr}).${watchNote}${surprise.narrative}${res.attitude?.attitude !== 'Hostile' ? ' They can be parleyed with: an Influence check (DC 15 or the creature’s Intelligence score, whichever is higher) can shift an Indifferent creature.' : ''}`;
+  const positioned = snapshot.participants.filter((p) => p.openingPosition);
+  const positions = openingPosition && positioned.length
+    ? ` Opening position for ${positioned.map((p) => p.name).join(', ')}. ${openingPositionText(openingPosition)}.` : '';
   const behavior = monsterBehavior((res.count ?? 1) + (res.followerCount ?? 0), ctx.rng);
   const portrayal = ` Personality: ${behavior.personality}.${behavior.relationship ? ` ${behavior.relationship}` : ''}`;
   if (tactical && !s.tacticalEncounter) {
     s.tacticalEncounter = tacticalFromHandoff(snapshot, dm + portrayal);
   }
-  const predicate = firstSign(c.type, night);
-  log(s, dm + portrayal, res.attitude?.attitude === 'Hostile' ? 'bad' : 'warn', { charIds: watchers.map((w) => w.id), status: false, sense: predicate });
+  const predicate = surprise.trapNoticedBy ? 'A companion spots a net in your path.'
+    : surprise.trapTriggeredBy ? 'A net drops across your path as the attackers spring their ambush.'
+      : firstSign(c.type, night);
+  log(s, dm + positions + portrayal, res.attitude?.attitude === 'Hostile' ? 'bad' : 'warn', { charIds: watchers.map((w) => w.id), status: false, sense: predicate });
   for (const w of watchers) s.statusLog.unshift({ id: uid(), stamp: stamp(s), at: absNow(s), charId: w.id, kind: 'encounter', text: `On watch, ${w.name} spots ${res.summary}.`, sense: predicate, tone: 'warn' });
 }
 
