@@ -119,6 +119,7 @@ export interface ItemFinding {
 }
 
 export interface InventoryItem {
+  goodberry?: { expiresAt: number };
   id: string;
   name: string;
   qty: number;
@@ -201,6 +202,7 @@ export interface RestFocus {
 }
 
 export interface ActiveEffect {
+  aidHp?: number;
   id: string;
   name: string;
   kind: EffectKind;
@@ -366,6 +368,7 @@ export interface Character {
   /** Minutes spent dead under Gentle Repose, which don't count toward resurrection limits. */
   reposeMinutes: number;
   /** Divination castings since the last Long Rest, by spell name. */
+  prayerOfHealingUsed?: boolean;
   divinationCasts: Record<string, number>;
   /** What the character focuses on during the next rest: attuning, identifying or ending attunement. */
   restFocus: RestFocus | null;

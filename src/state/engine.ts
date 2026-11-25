@@ -1,3 +1,4 @@
+import { BOOKKEEPING_TARGET_LIMIT } from '../rules/spellBookkeeping';
 import { tacticalFromHandoff, type EncounterHandoff, type EncounterSurprise, type HandoffParticipant } from '../rules/encounterHandoff';
 import { BRELAND, BRELAND_ROUTES, nextDeparture, type BrelishLocality } from '../rules/eberron';
 import { audibleDistance, LOCK_DC, LOCK_MINUTES, monsterBehavior, NOISE, UNDERWATER_DISTANCE, type LockDetails, type Noise } from '../rules/exploration';
@@ -1500,6 +1501,7 @@ function completeLongRest(d: State, ctx: Ctx, watched: Record<string, number>): 
     }
     for (const t of c.tasks) if (t.daily) t.done = false;
     c.divinationCasts = {};
+    c.prayerOfHealingUsed = false;
     if (d.settings.stressPerLongRest > 0 && c.stress > 0) {
       const before = c.stress;
       c.stress = Math.max(0, c.stress - d.settings.stressPerLongRest);
@@ -1662,10 +1664,12 @@ export const interruptedRest = act((d, ctx, o: InterruptOpts) => {
 });
 
 /** Short Rest benefits: resources, rest focus (attuning, identifying), Chef. Requires at least 1 HP. */
-function finishShortRest(d: State, ctx: Ctx): void {
-  d.travel.gallopUsed = false;
-  clearAppraiseTries(d);
-  for (const c of d.characters) {
+function finishShortRest(d: State, ctx: Ctx, recipients?: Character[]): void {
+  if (!recipients) {
+    d.travel.gallopUsed = false;
+    clearAppraiseTries(d);
+  }
+  for (const c of recipients ?? d.characters) {
     if (!alive(c) || !mountWithParty(c)) continue;
     if (c.hp <= 0) {
       log(d, `${c.name} is at 0 HP, so they get no Short Rest benefits.`, 'warn');
@@ -2395,6 +2399,19 @@ export const eat = act((d, ctx, charId: string, lb: number, source: 'rations' | 
     got.amount > 0 ? 'info' : 'warn',
   );
   riskTainted(d, ctx, c, got.unsafe, 'food');
+});
+
+export const eatGoodberry = act((d, ctx, holderId: string, itemId: string, recipientId: string) => {
+  const holder = charById(d, holderId);
+  const recipient = charById(d, recipientId);
+  const batch = holder?.inventory.find((i) => i.id === itemId);
+  if (!holder || !recipient || !alive(recipient) || !mountWithParty(recipient) || !mountWithParty(holder)
+    || !batch?.goodberry || batch.qty < 1 || batch.scattered || batch.goodberry.expiresAt <= absNow(d)) return;
+  batch.qty -= 1;
+  if (!batch.qty) holder.inventory = holder.inventory.filter((i) => i !== batch);
+  recipient.ateLbToday = Math.max(recipient.ateLbToday, foodNeedLb(recipient));
+  Object.assign(d, changeHp(d, ctx, recipient.id, 1));
+  log(d, `${recipient.name} eats a Goodberry and gets a full day's nourishment.`, 'good');
 });
 
 export const drink = act((d, ctx, charId: string, pints: number, source: 'personal' | 'stores') => {
@@ -5940,8 +5957,39 @@ const effectWho = (s: State, e: ActiveEffect): string => {
   return names.length ? ` (${names.join(', ')})` : '';
 };
 
+function aidBonus(effects: ActiveEffect[], id: string): number {
+  return Math.max(0, ...effects.filter((e) => e.targetIds.includes(id)).map((e) => e.aidHp ?? 0));
+}
+
+function updateAid(s: State, previous: ActiveEffect[], targetIds: string[]): void {
+  for (const id of new Set(targetIds)) {
+    const c = charById(s, id);
+    if (!c) continue;
+    const delta = aidBonus(s.effects, id) - aidBonus(previous, id);
+    if (!delta) continue;
+    c.maxHp = Math.max(1, c.maxHp + delta);
+    if (!alive(c)) continue;
+    const previousHp = c.hp;
+    c.hp = Math.min(c.maxHp, Math.max(0, c.hp + delta));
+    if (previousHp === 0 && c.hp > 0) wakeUp(s, c, 'Aid');
+    if (previousHp > 0 && c.hp === 0) {
+      Object.assign(c, { dying: true, stable: false, deathSuccesses: 0, deathFailures: 0, wakesAt: null });
+      status(s, c, 'dying', `${c.name} drops to 0 HP as Aid ends and is dying. Roll death saves.`, 'bad');
+    }
+  }
+}
+
 function tickEffects(s: State, before: number): void {
   const now = absNow(s);
+  for (const holder of [...s.characters.map((c) => ({ name: c.name, items: c.inventory })), ...s.stashes]) {
+    const items = holder.items;
+    for (let i = items.length - 1; i >= 0; i--) {
+      const batch = items[i];
+      if (!batch.goodberry || batch.goodberry.expiresAt > now) continue;
+      items.splice(i, 1);
+      if (batch.qty > 0) log(s, `${batch.qty} uneaten Goodberry berries disappear from ${holder.name}.`);
+    }
+  }
   for (const e of s.effects) {
     if (!/gentle repose/i.test(e.name)) continue;
     for (const id of e.targetIds) {
@@ -5959,7 +6007,9 @@ function tickEffects(s: State, before: number): void {
     if (now >= e.endsAt) ended.push(e);
   }
   if (!ended.length) return;
-  s.effects = s.effects.filter((e) => !ended.includes(e));
+  const previous = s.effects;
+  s.effects = previous.filter((e) => !ended.includes(e));
+  updateAid(s, previous, ended.flatMap((e) => e.aidHp ? e.targetIds : []));
   for (const e of ended) {
     noticed(s, e.kind === 'light' ? 'lightOut' : e.shelter ? 'shelterEnds' : 'effectEnds', effectChars(s, e), e.kind === 'light' ? `${e.name}${effectWho(s, e)} goes out.` : `${e.name}${effectWho(s, e)} ends.`, e.kind === 'light' || e.shelter ? 'warn' : 'info');
   }
@@ -6114,7 +6164,9 @@ export const setHood = act((d, _ctx, effectId: string, lowered: boolean) => {
 export const endEffect = act((d, _ctx, effectId: string) => {
   const e = d.effects.find((x) => x.id === effectId);
   if (!e) return;
-  d.effects = d.effects.filter((x) => x.id !== effectId);
+  const previous = d.effects;
+  d.effects = previous.filter((x) => x.id !== effectId);
+  if (e.aidHp) updateAid(d, previous, e.targetIds);
   log(d, `${e.name}${effectWho(d, e)} is ended early.`);
 });
 
@@ -6645,13 +6697,13 @@ export interface CircleCast {
 }
 
 /** Lowest tracked spell slot of at least this level with a use left; null if none; undefined if slots aren't tracked. */
-function findSlot(c: Character, level: number): Character['resources'][number] | null | undefined {
+function findSlot(c: Character, level: number, exactLevel?: number): Character['resources'][number] | null | undefined {
   if (!c.resources.some((r) => /(spell|pact) slots/i.test(r.name))) return undefined;
   return (
     c.resources
       .filter((r) => /(spell|pact) slots \(level (\d)\)/i.test(r.name))
       .map((r) => ({ r, lvl: Number(/level (\d)/i.exec(r.name)![1]) }))
-      .filter((x) => x.lvl >= level && x.r.current > 0)
+      .filter((x) => x.lvl >= level && (exactLevel == null || x.lvl === exactLevel) && x.r.current > 0)
       .sort((a, b) => a.lvl - b.lvl)[0]?.r ?? null
   );
 }
@@ -6698,11 +6750,20 @@ let encounterSerial = 0;
  * a creature encounter or a caster going down breaks it off: the spell fails, no slot is spent and no Material
  * component is consumed. With `circle` (Heroes of Faerûn Circle Magic, optional), secondary casters join in.
  */
-export const castSpell = act((d, ctx, charId: string, spellName: string, mode: 'ritual' | 'slot', targetId: string | null = null, circle: CircleCast | null = null) => {
+export const castSpell = act((d, ctx, charId: string, spellName: string, mode: 'ritual' | 'slot', targetId: string | null = null, circle: CircleCast | null = null, recipients: string[] = [], chosenSlotLevel?: number) => {
   const c = charById(d, charId);
   const own = c?.spells.find((x) => x.name === spellName);
   if (!c || !own || !alive(c)) return;
   let sp = { ...own, ...spellInfo(own, d.spellLibrary) } as CharacterSpell;
+  const spellKey = sp.name.toLowerCase();
+  const targetLimit = BOOKKEEPING_TARGET_LIMIT[spellKey];
+  const requestedTargets = [...new Set(recipients.length ? recipients : targetId ? [targetId] : [])];
+  const targets = requestedTargets.map((id) => charById(d, id))
+    .filter((target): target is Character => !!target && alive(target) && mountWithParty(target)
+      && (spellKey !== 'prayer of healing' || !target.prayerOfHealingUsed));
+  if (targetLimit && (targets.length < 1 || targets.length > targetLimit || targets.length !== requestedTargets.length)) {
+    return void log(d, `Choose 1–${targetLimit} eligible targets for ${sp.name}.`, 'warn');
+  }
   // Circle magic: check everything before anything is spent.
   const helpers: Character[] = [];
   let need: HelperSlot = { kind: 'none' };
@@ -6729,14 +6790,18 @@ export const castSpell = act((d, ctx, charId: string, spellName: string, mode: '
     }
     if (circle.option === 'supplant') discount = supplantDiscount(helpers.length);
   }
-  const base = sp.castMinutes ?? 0;
+  const base = sp.castMinutes ?? (spellKey === 'prayer of healing' ? 10 : 0);
   let slot: ReturnType<typeof findSlot>;
   if (mode === 'ritual') {
     const check = canCastAsRitual(c, sp);
     if (!check.ok) return void log(d, check.reason, 'warn');
   } else if (sp.level > 0) {
     if (!sp.prepared && !sp.alwaysPrepared) return void log(d, `${c.name} doesn't have ${sp.name} prepared.`, 'warn');
-    slot = findSlot(c, sp.level);
+    if (chosenSlotLevel != null && (!Number.isInteger(chosenSlotLevel) || chosenSlotLevel < sp.level || chosenSlotLevel > 9)) {
+      return void log(d, `Choose a spell slot of level ${sp.level} or higher for ${sp.name}.`, 'warn');
+    }
+    slot = findSlot(c, sp.level, chosenSlotLevel);
+    if (slot === null && chosenSlotLevel != null) return void log(d, `${c.name} has no level ${chosenSlotLevel} spell slot left for ${sp.name}.`, 'warn');
     if (slot === null) return void log(d, `${c.name} has no spell slots of level ${sp.level} or higher left for ${sp.name}.`, 'warn');
   }
   if (!useComponent(d, c, own.name, { discount, checkOnly: true })) return;
@@ -6787,7 +6852,37 @@ export const castSpell = act((d, ctx, charId: string, spellName: string, mode: '
     log(d, `${c.name} completes ${sp.name} as a Circle spell with ${optTxt.replace(/\.$/, '')}. ${helpers.map((h) => h.name).join(', ')} spend${helpers.length > 1 ? '' : 's'} ${slotNeedText(need)}${helpers.length > 1 && need.kind !== 'none' ? ' each' : ''}.`, 'good', { charIds: casters.map((x) => x.id), sense: circleEndsText(sp.name) });
   } else log(d, `${c.name} casts ${sp.name} ${timeTxt}.`, 'good');
   if (targetId && TARGET_SPELLS[sp.name]) applySpellTo(d, ctx, sp.name, targetId);
+  const slotLevel = Number(/level (\d)/i.exec(slot?.name ?? '')?.[1] ?? chosenSlotLevel ?? sp.level);
   const extra = circle?.option === 'prolong' ? prolongMinutes(helpers.length) : 0;
+  if (spellKey === 'goodberry') {
+    addLine(d, c, 'Goodberry', 10, { weight: 0, source: 'manual', goodberry: { expiresAt: absNow(d) + MIN_PER_DAY + extra } }, null, true);
+    log(d, `${c.name} gathers ten Goodberries. Use them from their inventory.`, 'good');
+    return;
+  }
+  if (spellKey === 'prayer of healing') {
+    const present = targets.map((target) => target.id).filter((id) => {
+      const target = charById(d, id);
+      return target && alive(target) && mountWithParty(target);
+    });
+    let healing = 0;
+    for (let i = 0; i < slotLevel; i++) healing += die(8, ctx.rng);
+    for (const id of present) {
+      const live = charById(d, id)!;
+      live.prayerOfHealingUsed = true;
+      Object.assign(d, changeHp(d, ctx, live.id, healing));
+    }
+    finishShortRest(d, ctx, present.map((id) => charById(d, id)!));
+    return;
+  }
+  if (spellKey === 'aid') {
+    const previous = d.effects;
+    const now = absNow(d);
+    const targetIds = targets.filter((target) => alive(target) && mountWithParty(target)).map((target) => target.id);
+    const aidHp = 5 * (slotLevel - 1);
+    d.effects = [...previous, { id: uid(), name: 'Aid', kind: 'spell', casterId: c.id, targetIds, aidHp, concentration: false, shelter: false, startedAt: now, endsAt: now + 480 + extra, notes: `+${aidHp} current and maximum HP.` }];
+    updateAid(d, previous, targetIds);
+    return;
+  }
   if (sp.durationMinutes || sp.permanent) {
     const minutesLong = sp.permanent ? null : (sp.durationMinutes ?? 0) + extra;
     const concentration = !!sp.concentration;
@@ -7455,7 +7550,7 @@ function stowItem(s: State, c: Character, name: string, qty: number, extra: Part
 }
 
 function addLine(_s: State, c: Character, name: string, qty: number, extra: Partial<InventoryItem>, inside: string | null, fresh: boolean): InventoryItem {
-  const same = !fresh && c.inventory.find((i) => sameStack(i, { name, valueGp: extra.valueGp }) && !!i.crafted === !!extra.crafted && (i.containerId ?? null) === inside && !i.scattered && !i.damaged);
+  const same = !fresh && c.inventory.find((i) => sameStack(i, { name, valueGp: extra.valueGp }) && i.goodberry?.expiresAt === extra.goodberry?.expiresAt && !!i.crafted === !!extra.crafted && (i.containerId ?? null) === inside && !i.scattered && !i.damaged);
   if (same) {
     same.qty += qty;
     return same;
@@ -7602,7 +7697,7 @@ export const moveItem = act((d, _ctx, from: Holder, to: Holder, itemId: string, 
     }
   } else {
     it.qty -= n;
-    const same = b.items.find((i) => sameStack(i, it) && !i.containerId);
+    const same = b.items.find((i) => sameStack(i, it) && i.goodberry?.expiresAt === it.goodberry?.expiresAt && !i.containerId);
     if (same) same.qty += n;
     else b.items.push({ ...it, id: uid(), qty: n, containerId: null, ammo: it.ammo ? { spent: 0 } : null });
   }
@@ -7854,6 +7949,7 @@ export const importDdb = act((d, _ctx, imp: DdbImport, parts: DdbParts) => {
   c.ddbSyncedAt = stamp(d);
   c.name = imp.name;
   if (parts.stats) {
+    const aid = aidBonus(d.effects, c.id);
     Object.assign(c, {
       className: imp.className,
       level: imp.level,
@@ -7867,8 +7963,8 @@ export const importDdb = act((d, _ctx, imp: DdbImport, parts: DdbParts) => {
       darkvision: imp.darkvision,
       coldResist: imp.coldResist,
       fireResist: imp.fireResist,
-      maxHp: imp.maxHp,
-      hp: imp.hp,
+      maxHp: imp.maxHp + aid,
+      hp: imp.hp > 0 ? imp.hp + aid : imp.hp,
       tempHp: imp.tempHp,
       hitDie: imp.hitDie,
       hitDiceSpent: imp.hitDiceSpent,

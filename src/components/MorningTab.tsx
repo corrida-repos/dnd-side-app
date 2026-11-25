@@ -1,3 +1,4 @@
+import { BOOKKEEPING_TARGET_LIMIT } from '../rules/spellBookkeeping';
 import { useMemo, useState } from 'react';
 import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
@@ -75,6 +76,8 @@ function CastPanel({ c }: { c: Character }) {
   const known = c.spells.map((sp) => ({ sp, info: { ...sp, ...spellInfo(sp, s.spellLibrary) } as CharacterSpell }));
   const [name, setName] = useState('');
   const [target, setTarget] = useState('');
+  const [targetIds, setTargetIds] = useState<string[]>([]);
+  const [slotLevel, setSlotLevel] = useState('');
   const [helperIds, setHelperIds] = useState<string[]>([]);
   const [option, setOption] = useState<CircleOptionId>('prolong');
   if (!known.length) return null;
@@ -84,29 +87,50 @@ function CastPanel({ c }: { c: Character }) {
   const base = info.castMinutes ?? 0;
   const slots = c.resources.filter((r) => /(spell|pact) slots \(level (\d)\)/i.test(r.name) && Number(/level (\d)/i.exec(r.name)![1]) >= info.level);
   const slotLeft = slots.reduce((a, r) => a + r.current, 0);
+  const key = info.name.toLowerCase();
+  const limit = BOOKKEEPING_TARGET_LIMIT[key];
+  const eligible = s.characters.filter((x) => x.diedAt == null && E.mountWithParty(x)
+    && (key !== 'prayer of healing' || !x.prayerOfHealingUsed));
+  const availableLevels = [...new Set(slots.filter((r) => r.current > 0).map((r) => /level (\d)/i.exec(r.name)![1]))].sort();
+  const chosenLevel = limit && availableLevels.includes(slotLevel) ? Number(slotLevel) : undefined;
+  const selected = targetIds.filter((id) => eligible.some((x) => x.id === id));
   return (
     <div className="cast-panel">
       <h3>Cast a spell</h3>
       <div className="btn-row tight">
         <Select
           value={pick.sp.name}
-          onChange={setName}
+          onChange={(value) => { setName(value); setTargetIds([]); setSlotLevel(''); }}
           options={known.map((k) => ({ value: k.sp.name, label: `${k.sp.name}${k.info.ritual ? ' (R)' : ''}${k.info.level ? ` · L${k.info.level}` : ' · cantrip'}` }))}
         />
         <button
           className="small"
-          disabled={info.level > 0 && !info.prepared && !info.alwaysPrepared}
+          disabled={(info.level > 0 && !info.prepared && !info.alwaysPrepared) || (!!limit && !selected.length)}
           title={info.level > 0 && !info.prepared && !info.alwaysPrepared ? 'Not prepared' : ''}
-          onClick={() => dispatch((st, cx) => E.castSpell(st, cx, c.id, pick.sp.name, 'slot', TARGET_SPELLS[pick.sp.name] ? target || null : null))}
+          onClick={() => dispatch((st, cx) => E.castSpell(st, cx, c.id, pick.sp.name, 'slot', TARGET_SPELLS[pick.sp.name] ? target || null : null, null, selected, chosenLevel))}
         >
-          Cast ({info.castTime ?? 'casting time'}
+          Cast ({info.castTime ?? (key === 'prayer of healing' ? '10 minutes' : 'casting time')}
           {info.level > 0 ? (slots.length ? `, slot: ${slotLeft} left` : ', uses a slot') : ''})
         </button>
         <button className="small primary" disabled={!ritualCheck.ok} title={ritualCheck.reason} onClick={() => dispatch((st, cx) => E.castSpell(st, cx, c.id, pick.sp.name, 'ritual'))}>
           As ritual ({formatDuration(Math.max(1, Math.round(base + RITUAL_EXTRA_MINUTES)))}, no slot)
         </button>
       </div>
-      {s.settings.circleMagic && circleEligible(info).ok && <CirclePanel c={c} info={info} helperIds={helperIds} setHelperIds={setHelperIds} option={option} setOption={setOption} target={TARGET_SPELLS[pick.sp.name] ? target || null : null} />}
+      {!!limit && availableLevels.length > 1 && (
+        <Select label="Spell slot" value={chosenLevel?.toString() ?? ''} onChange={setSlotLevel}
+          options={[{ value: '', label: 'Lowest available' }, ...availableLevels.map((value) => ({ value, label: `Level ${value}` }))]} />
+      )}
+      {s.settings.circleMagic && circleEligible(info).ok && <CirclePanel c={c} info={info} helperIds={helperIds} setHelperIds={setHelperIds} option={option} setOption={setOption} target={TARGET_SPELLS[pick.sp.name] ? target || null : null} recipients={selected} requiresRecipients={!!limit} chosenSlotLevel={chosenLevel} />}
+      {!!limit && (
+        <fieldset>
+          <legend>Choose up to {limit} recipients</legend>
+          {eligible.map((x) => (
+            <Toggle key={x.id} label={x.name} checked={selected.includes(x.id)}
+              onChange={(checked) => setTargetIds(checked ? [...selected, x.id].slice(0, limit) : selected.filter((id) => id !== x.id))} />
+          ))}
+          {!eligible.length && <p className="small muted">No eligible recipients.</p>}
+        </fieldset>
+      )}
       {TARGET_SPELLS[pick.sp.name] && (
         <div className="btn-row tight">
           <Select label="Target" value={target} onChange={setTarget} options={[{ value: '', label: 'Choose…' }, ...s.characters.map((x) => ({ value: x.id, label: `${x.name}${x.diedAt != null ? ' (dead)' : ''}` }))]} />
@@ -130,7 +154,7 @@ function CastPanel({ c }: { c: Character }) {
 }
 
 /** Circle Magic (Heroes of Faerûn): secondary casters join a spell that takes 1 minute or longer. */
-function CirclePanel({ c, info, helperIds, setHelperIds, option: picked, setOption, target }: { c: Character; info: CharacterSpell; helperIds: string[]; setHelperIds: (v: string[]) => void; option: CircleOptionId; setOption: (v: CircleOptionId) => void; target: string | null }) {
+function CirclePanel({ c, info, helperIds, setHelperIds, option: picked, setOption, target, recipients, requiresRecipients, chosenSlotLevel }: { c: Character; info: CharacterSpell; helperIds: string[]; setHelperIds: (v: string[]) => void; option: CircleOptionId; setOption: (v: CircleOptionId) => void; target: string | null; recipients: string[]; requiresRecipients: boolean; chosenSlotLevel?: number }) {
   const s = useGame();
   // Options this spell can use, as far as the app knows (range and area aren't stored, so those are left to the table).
   const usable = CIRCLE_OPTIONS.filter((o) => !optionProblem(info, o.id, 99));
@@ -163,7 +187,7 @@ function CirclePanel({ c, info, helperIds, setHelperIds, option: picked, setOpti
           );
         })}
       </div>
-      <button className="small primary" disabled={!!problem || !prepared} title={!prepared ? 'Not prepared' : problem} onClick={() => dispatch((st, cx) => E.castSpell(st, cx, c.id, info.name, 'slot', target, { helperIds: chosen, option }))}>
+      <button className="small primary" disabled={!!problem || !prepared || (requiresRecipients && !recipients.length)} title={!prepared ? 'Not prepared' : problem} onClick={() => dispatch((st, cx) => E.castSpell(st, cx, c.id, info.name, 'slot', target, { helperIds: chosen, option }, recipients, chosenSlotLevel))}>
         Cast as a Circle spell ({castTime}, {chosen.length + 1} caster{chosen.length ? 's' : ''})
       </button>
       {problem && chosen.length > 0 && <p className="small muted">{problem}</p>}

@@ -215,6 +215,7 @@ function AmmoBlock({ c }: { c: Character }) {
 function InventoryBlock({ c }: { c: Character }) {
   const s = useGame();
   const [text, setText] = useState('');
+  const [berryRecipient, setBerryRecipient] = useState(c.id);
   const load = E.carriedLoad(s, c);
   const set = (iid: string, fn: (i: InventoryItem) => void) => setChar(c.id, (x) => fn(x.inventory.find((i) => i.id === iid)!));
   const tone = load.level === 'light' ? 'good' : load.level === 'over' || load.level === 'heavy' ? 'bad' : 'warn';
@@ -252,6 +253,7 @@ function InventoryBlock({ c }: { c: Character }) {
                 <span>
                   {i.containerId && <span className="muted">↳ </span>}
                   {i.name} {i.qty > 1 && <span className="muted">×{i.qty}</span>}{' '}
+                  {i.goodberry && <Pill tone="info">Expires in {formatDuration(Math.max(0, i.goodberry.expiresAt - E.absNow(s)))}</Pill>}{' '}
                   {i.treasure?.rarity && <Pill tone="info">{RARITY_LABEL[i.treasure.rarity]}</Pill>}{' '}
                   {i.container && (
                     <Pill tone="info" title={i.container.note}>
@@ -278,6 +280,15 @@ function InventoryBlock({ c }: { c: Character }) {
                   </Pill>
                 </span>
                 <span className="btn-row tight">
+                  {i.goodberry && !i.scattered && i.qty > 0 && (
+                    <>
+                      <Select label="Give berry to" value={berryRecipient} onChange={setBerryRecipient}
+                        options={s.characters.filter((x) => x.diedAt == null && E.mountWithParty(x)).map((x) => ({ value: x.id, label: x.name }))} />
+                      <button className="ghost tiny" onClick={() => dispatch((st, cx) => E.eatGoodberry(st, cx, c.id, i.id, berryRecipient))}>
+                        Eat Goodberry
+                      </button>
+                    </>
+                  )}
                   {SCATTERABLE.test(i.name.trim()) && !i.scattered && (
                     <button className="ghost tiny" title="A Utilize action (2024 PHB). Gathering them up again takes 10 minutes." onClick={() => dispatch((st, cx) => E.scatterItem(st, cx, c.id, i.id))}>
                       Spread
