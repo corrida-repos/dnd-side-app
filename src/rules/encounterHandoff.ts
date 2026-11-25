@@ -8,6 +8,7 @@ import type { Weather } from './weather';
 export interface HandoffParticipant {
   id: string;
   side: 'party' | 'encounter';
+  influencedAlly?: boolean;
   kind: 'character' | 'sidekick' | 'mount' | 'hireling' | 'creature';
   name: string;
   ddbId?: number;
@@ -90,7 +91,7 @@ export function tacticalFromHandoff(handoff: EncounterHandoff, context?: string)
     attitude: handoff.attitude?.attitude, fightOrFlight: handoff.fightOrFlight,
     context: `${context ?? handoff.surprise.narrative.trim()} ${summary}${effects}`.slice(0, 4000),
     participants: handoff.participants.map((p) => ({
-      id: p.id, name: p.name, side: p.side, ddbId: p.ddbId,
+      id: p.id, name: p.name, side: p.side, ddbId: p.ddbId, influencedAlly: p.influencedAlly,
       source: p.creature?.source, creatureName: p.creature?.name,
       surprised: p.surprised, asleep: p.resting, vitals: p.vitals,
     })),

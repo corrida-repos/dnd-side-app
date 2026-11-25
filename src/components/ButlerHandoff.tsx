@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { DISPOSITIONS, FIGHT_OR_FLIGHT_DC, fightOrFlightText, parseTacticalResult, type Disposition, type TacticalEncounter, type TacticalResult } from '../rules/butler';
 import { dispatch, edit, useGame } from '../state/store';
-import { absNow, applyTacticalResult, decideFightOrFlight, dismissTacticalEncounter, selectTacticalEncounter, tacticalResultProblem } from '../state/engine';
+import { absNow, applyTacticalResult, decideFightOrFlight, dismissTacticalEncounter, selectTacticalEncounter, setInfluencedEncounterAlly, tacticalResultProblem } from '../state/engine';
 import { formatClock, formatDate } from '../rules/calendar';
 import { Card, Select, Toggle } from './common';
 
@@ -65,10 +65,14 @@ export function ButlerHandoff() {
         }} />
         <details>
           <summary>Review participants</summary>
-          {encounter.participants.map((p) => <Toggle key={p.id} checked={!excluded.includes(p.id)}
-            label={p.name + (p.surprised ? ' (surprised)' : '')}
-            onChange={(included) => setSelection({ id: encounter.id, excluded: included
-              ? excluded.filter((id) => id !== p.id) : [...excluded, p.id] })} />)}
+          {encounter.participants.map((p) => <div className="form-row" key={p.id}>
+            <Toggle checked={!excluded.includes(p.id)} label={p.name + (p.surprised ? ' (surprised)' : '')}
+              onChange={(included) => setSelection({ id: encounter.id, excluded: included
+                ? excluded.filter((id) => id !== p.id) : [...excluded, p.id] })} />
+            {p.side === 'encounter' && <Toggle checked={!!p.influencedAlly} label={`${p.name} agreed to fight alongside the party`}
+              onChange={(allied) => dispatch((d, c) => setInfluencedEncounterAlly(d, c, encounter.id, p.id, allied))} />}
+          </div>)}
+          <p className="small muted">Mark an NPC after resolving Influence. Butler tracks their morale during this fight.</p>
         </details>
         {!!s.tacticalRemainingMinutes && <p className="small">Paused with {s.tacticalRemainingMinutes} minutes left. Choose how to continue after the encounter.</p>}
         {encounter.at !== absNow(s) && <p className="small">The campaign clock has moved. Record this encounter’s outcome manually.</p>}
@@ -120,8 +124,9 @@ export function ButlerHandoff() {
 
 
 function FightOrFlightReview({ encounter, onResolve }: { encounter: TacticalEncounter; onResolve: (outcome: Disposition) => void }) {
-  const opponents = encounter.participants.filter((p) => p.side === 'encounter');
-  const [leaderId, setLeaderId] = useState(opponents[0]?.id ?? '');
+  const opponents = encounter.participants.filter((p) => p.side === 'encounter' && !p.influencedAlly);
+  const [chosenLeader, setLeaderId] = useState('');
+  const leaderId = opponents.find((p) => p.id === chosenLeader)?.id ?? opponents[0]?.id ?? '';
   const [modifier, setModifier] = useState('');
   const [dc, setDc] = useState(String(FIGHT_OR_FLIGHT_DC));
   const validDc = Number.isInteger(Number(dc)) && Number(dc) >= 1 && Number(dc) <= 99;

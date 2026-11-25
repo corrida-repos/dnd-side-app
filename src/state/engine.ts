@@ -8116,6 +8116,21 @@ export const selectTacticalEncounter = act((d, _ctx, id: string) => {
   if (!d.tacticalEncounter && snapshot && !d.resolvedTacticalEncounters?.includes(id)) d.tacticalEncounter = tacticalFromHandoff(snapshot);
 });
 
+/** Record the GM's adjudication of Influence for this encounter. */
+export const setInfluencedEncounterAlly = act((d, _ctx, encounterId: string, participantId: string, allied: boolean) => {
+  const encounter = d.tacticalEncounter;
+  if (encounter?.id !== encounterId) return;
+  const participant = encounter.participants.find((p) => p.id === participantId && p.side === 'encounter');
+  if (!participant || !!participant.influencedAlly === allied) return;
+  participant.influencedAlly = allied;
+  const saved = d.encounterHandoffs?.find((entry) => entry.encounterId === encounterId)
+    ?.participants.find((p) => p.id === participantId);
+  if (saved) saved.influencedAlly = allied;
+  log(d, allied
+    ? `${participant.name} agrees to fight alongside the party. Their morale can change during combat.`
+    : `${participant.name} is no longer fighting alongside the party.`);
+});
+
 type FightOrFlightChoice = { kind: 'committed' } | { kind: 'save'; leaderId: string; modifier: number; dc?: number };
 
 export const decideFightOrFlight = act((d, ctx, encounterId: string, choice: FightOrFlightChoice) => {
@@ -8124,7 +8139,7 @@ export const decideFightOrFlight = act((d, ctx, encounterId: string, choice: Fig
   let decision: FightOrFlight;
   if (choice.kind === 'committed') decision = { kind: 'committed' };
   else {
-    const leader = encounter.participants.find((p) => p.side === 'encounter' && p.id === choice.leaderId);
+    const leader = encounter.participants.find((p) => p.side === 'encounter' && !p.influencedAlly && p.id === choice.leaderId);
     if (!leader || !Number.isInteger(choice.modifier) || Math.abs(choice.modifier) > 99) return;
     if (choice.dc !== undefined && (!Number.isInteger(choice.dc) || choice.dc < 1 || choice.dc > 99)) return;
     decision = { kind: 'save', leader: leader.name, roll: die(20, ctx.rng), modifier: choice.modifier, ...(choice.dc !== undefined ? { dc: choice.dc } : {}) };

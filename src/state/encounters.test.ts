@@ -274,3 +274,17 @@ it('rolls opening Fight or Flight once and retains it when reopening the encount
   expect(closed.tacticalEncounter).toBeUndefined();
   expect(closed.resolvedTacticalEncounters).toContain(encounter.id);
 });
+
+
+it('carries an influenced NPC into the handoff without using them as the enemy leader', () => {
+  const s = E.rollRandomEncounter(fresh(), LOW, 'camp');
+  const encounter = s.tacticalEncounter!;
+  const npc = encounter.participants.find((p) => p.side === 'encounter')!;
+  const joined = E.setInfluencedEncounterAlly(s, LOW, encounter.id, npc.id, true);
+  expect(joined.tacticalEncounter?.participants.find((p) => p.id === npc.id)?.influencedAlly).toBe(true);
+  const closed = E.dismissTacticalEncounter(joined, LOW);
+  const reopened = E.selectTacticalEncounter(closed, LOW, encounter.id);
+  expect(reopened.tacticalEncounter?.participants.find((p) => p.id === npc.id)?.influencedAlly).toBe(true);
+  expect(E.decideFightOrFlight(reopened, LOW, encounter.id, { kind: 'save', leaderId: npc.id, modifier: 0 })
+    .tacticalEncounter?.fightOrFlight).toBeUndefined();
+});
