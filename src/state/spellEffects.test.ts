@@ -113,3 +113,70 @@ describe('persistent spell bookkeeping', () => {
     expect(next.effects.some((e) => e.aidHp)).toBe(false);
   });
 });
+
+describe('conjured food and protective spells', () => {
+  function adventurers() {
+    const s = party();
+    s.settings.encounters = false;
+    s.settings.trackComponents = false;
+    s.stores.foodLb = 5;
+    s.stores.waterGal = 0;
+    const [caster, ally] = s.characters;
+    ally.hp = 4;
+    caster.spells.push(
+      { name: 'Create Food and Water', level: 3, prepared: true, alwaysPrepared: false },
+      { name: "Heroes' Feast", level: 6, prepared: true, alwaysPrepared: false },
+      { name: 'Death Ward', level: 4, prepared: true, alwaysPrepared: false },
+    );
+    return { s, caster: caster.id, ally: ally.id };
+  }
+
+  it('spends conjured food first and spoils only the unused batch, leaving the water', () => {
+    const { s, caster, ally } = adventurers();
+    let next = E.castSpell(s, ctx(), caster, 'Create Food and Water', 'slot');
+    expect(next.stores.foodLb).toBe(50);
+    next = E.eat(next, ctx(), ally, 2, 'stores');
+    expect(next.stores.conjuredFood?.[0].lb).toBe(43);
+    next = E.advance(next, ctx(), 60);
+    next = E.castSpell(next, ctx(), caster, 'Create Food and Water', 'slot');
+    next = E.advance(next, ctx(), 23 * 60);
+    expect(next.stores.foodLb).toBe(50);
+    expect(next.stores.conjuredFood?.map((batch) => batch.lb)).toEqual([45]);
+    expect(next.stores.waterGal).toBe(60);
+  });
+
+  it("starts Heroes' Feast benefits after the meal and expires them after 24 hours", () => {
+    const { s, caster, ally } = adventurers();
+    let next = E.castSpell(s, ctx(), caster, "Heroes' Feast", 'slot', null, null, [ally]);
+    expect(E.absNow(next) - E.absNow(s)).toBe(10);
+    expect(next.characters[1].maxHp).toBe(20);
+    next = E.advance(next, ctx(), 59);
+    expect(next.characters[1].hp).toBe(4);
+    next = E.advance(next, ctx(), 1);
+    expect(next.characters[1].maxHp).toBe(32);
+    expect(next.characters[1].hp).toBe(16);
+    next = E.exposePoison(next, ctx(0), ally, "Assassin's Blood", null);
+    expect(next.characters[1].hp).toBe(16);
+    expect(next.effects.some((e) => e.name.startsWith('Poisoned'))).toBe(false);
+    next = E.changeHp(next, ctx(), ally, -6, 'poison');
+    expect(next.characters[1].hp).toBe(13);
+    next = E.advance(next, ctx(), 24 * 60);
+    expect(next.characters[1].maxHp).toBe(20);
+    expect(next.characters[1].hp).toBe(13);
+  });
+
+  it('consumes Death Ward once for damage or an adjudicated instant-death effect', () => {
+    const { s, caster, ally } = adventurers();
+    let next = E.castSpell(s, ctx(), caster, 'Death Ward', 'slot', ally);
+    next = E.changeHp(next, ctx(), ally, -24);
+    expect(next.characters[1].hp).toBe(1);
+    expect(next.characters[1].diedAt).toBeNull();
+    expect(next.effects.some((e) => e.name === 'Death Ward')).toBe(false);
+    next = E.changeHp(next, ctx(), ally, -1);
+    expect(next.characters[1].dying).toBe(true);
+    next = E.castSpell(s, ctx(), caster, 'Death Ward', 'slot', ally);
+    next = E.negateInstantDeath(next, ctx(), ally);
+    expect(next.characters[1].hp).toBe(4);
+    expect(next.effects.some((e) => e.name === 'Death Ward')).toBe(false);
+  });
+});

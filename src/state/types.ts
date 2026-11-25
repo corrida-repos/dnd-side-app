@@ -203,6 +203,8 @@ export interface RestFocus {
 
 export interface ActiveEffect {
   aidHp?: number;
+  feastHp?: number;
+  feastMeal?: boolean;
   id: string;
   name: string;
   kind: EffectKind;
@@ -629,6 +631,8 @@ export interface Fire {
 
 export interface Stores {
   foodLb: number;
+  /** Perishable portions already included in foodLb, ordered by expiry. */
+  conjuredFood?: { lb: number; expiresAt: number }[];
   waterGal: number;
   /** Raw foraged or hunted food: cook it or purify it before eating. */
   foodRawLb: number;

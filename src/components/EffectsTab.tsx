@@ -96,6 +96,11 @@ function ActiveCard() {
                       </button>
                     )
                   )}
+                  {e.name.toLowerCase() === 'death ward' && e.targetIds.length === 1 && (
+                    <button className="ghost small" onClick={() => dispatch((st, cx) => E.negateInstantDeath(st, cx, e.targetIds[0]))}>
+                      Negate instant death
+                    </button>
+                  )}
                   <button className="ghost small bad" onClick={() => dispatch((st, cx) => E.endEffect(st, cx, e.id))}>
                     End
                   </button>

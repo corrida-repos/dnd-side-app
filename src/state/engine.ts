@@ -370,6 +370,10 @@ function applySaveResult(s: State, ctx: Ctx, c: Character, p: Omit<PendingSave, 
   log(s, `${c.name}: Constitution save, DC ${p.dc}, against ${p.reason}. ${detail}${passed ? 'Success.' : 'Failure.'}`, passed ? 'good' : 'warn');
   if (!passed) {
     if (p.kind === 'tainted' || p.kind === 'raw') {
+      if (feastProtection(s, c.id)) {
+        log(s, `Heroes' Feast prevents ${c.name} from becoming Poisoned.`, 'good');
+        return;
+      }
       const from = p.kind === 'raw' ? 'raw food' : 'unpurified water';
       const was = c.sick;
       c.sickFrom = was && c.sickFrom && c.sickFrom !== from ? 'raw food and unpurified water' : was && c.sickFrom ? c.sickFrom : from;
@@ -402,6 +406,16 @@ export function rollSave(c: Character, dc: number, mode: RollMode, rng: Rng) {
   const modeTxt = mode === 'normal' ? '' : ` (${mode === 'advantage' ? 'Advantage' : 'Disadvantage'})`;
   const exhTxt = c.exhaustion ? `, including −${2 * c.exhaustion} from Exhaustion` : '';
   return { passed: total >= dc, total, detail: `Rolled ${r.rolls.join('/')}${modeTxt} ${signed(mod)}${exhTxt} = ${total}. ` };
+}
+
+function feastProtection(s: State, id: string): boolean {
+  const now = absNow(s);
+  return s.effects.some((e) => e.feastHp && !e.feastMeal && e.targetIds.includes(id)
+    && (e.endsAt == null || e.endsAt > now));
+}
+
+function feastBlocksCondition(name: string): boolean {
+  return /^(poisoned|frightened)\b/i.test(name);
 }
 
 /** Is an Antitoxin giving this creature Advantage on saves to avoid or end the Poisoned condition? */
@@ -643,9 +657,8 @@ function hirelingsEat(s: State): void {
   const now = absNow(s);
   const fed = s.hirelings.filter((h) => h.active && !(h.busyUntil && h.busyUntil > now));
   if (!fed.length) return;
-  const food = Math.min(fed.length, s.stores.foodLb);
+  const food = takeSafeStoreFood(s, fed.length);
   const water = Math.min(fed.length, s.stores.waterGal);
-  s.stores.foodLb = Math.round((s.stores.foodLb - food) * 100) / 100;
   s.stores.waterGal = Math.round((s.stores.waterGal - water) * 100) / 100;
   const short = [food < fed.length && `${+(fed.length - food).toFixed(1)} lb of food`, water < fed.length && `${+(fed.length - water).toFixed(1)} gal of water`].filter(Boolean);
   log(
@@ -1311,6 +1324,10 @@ export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activi
   syncPorters(s);
   levelSidekicks(s, ctx);
   let remaining = Math.max(0, Math.round(minutes));
+  if (remaining > 0 && activity === 'travel' && s.effects.some((e) => e.feastMeal)) {
+    s.effects = s.effects.filter((e) => !e.feastMeal);
+    log(s, "The party leaves before finishing Heroes' Feast. The diners gain no benefits.", 'warn');
+  }
   if (remaining > 0 && s.settings.deathSavesResolve && !opts.combat) resolveDying(s, ctx);
   const checkOverland = s.settings.encounters && activity !== 'work' && !opts.exploring && !opts.combat && !opts.travelHour;
   const encounterActivity = opts.encounterActivity ?? (activity === 'travel' || activity === 'rest' ? activity : 'camp');
@@ -2319,6 +2336,31 @@ interface Taken {
   unsafe: number;
 }
 
+function takeSafeStoreFood(s: State, lb: number): number {
+  const taken = Math.min(lb, s.stores.foodLb);
+  let remaining = taken;
+  for (const batch of s.stores.conjuredFood ?? []) {
+    if (remaining <= 0) break;
+    const used = Math.min(remaining, batch.lb);
+    batch.lb = round2(batch.lb - used);
+    remaining = round2(remaining - used);
+  }
+  s.stores.conjuredFood = s.stores.conjuredFood?.filter((batch) => batch.lb > 0);
+  s.stores.foodLb = round2(s.stores.foodLb - taken);
+  return taken;
+}
+
+export function curableStoreFood(s: State): number {
+  const conjured = (s.stores.conjuredFood ?? []).reduce((lb, batch) => lb + batch.lb, 0);
+  return round2(s.stores.foodRawLb + Math.max(0, s.stores.foodLb - conjured));
+}
+
+export const setSafeStoreFood = act((d, _ctx, lb: number) => {
+  if (!Number.isFinite(lb) || lb < 0) return;
+  if (lb < d.stores.foodLb) takeSafeStoreFood(d, d.stores.foodLb - lb);
+  else d.stores.foodLb = round2(lb);
+});
+
 function takeFood(s: State, c: Character, lb: number, source: FoodSource): Taken {
   let left = lb;
   let unsafe = 0;
@@ -2328,7 +2370,7 @@ function takeFood(s: State, c: Character, lb: number, source: FoodSource): Taken
     left = round2(left - t);
     return t;
   };
-  const safeStores = () => pull(s.stores.foodLb, (v) => (s.stores.foodLb = v));
+  const safeStores = () => { left = round2(left - takeSafeStoreFood(s, left)); };
   const rations = () => pull(c.rationsLb, (v) => (c.rationsLb = v));
   const unsafeStores = () => (unsafe += pull(s.stores.foodRawLb, (v) => (s.stores.foodRawLb = v)));
   if (source === 'stores') (safeStores(), unsafeStores());
@@ -2567,7 +2609,7 @@ export const cureRations = act((d, ctx, curerId: string) => {
   const c = charById(d, curerId);
   if (!c || !alive(c)) return;
   if (!d.fire.lit) return void log(d, 'Smoking meat needs a lit fire.', 'warn');
-  const have = round2(d.stores.foodRawLb + d.stores.foodLb);
+  const have = curableStoreFood(d);
   if (have < CURE_LB_PER_RATION) return void log(d, `There isn't enough meat in the stores to smoke (it takes ${CURE_LB_PER_RATION} lb for a day of Rations).`, 'warn');
   const lb = Math.min(have, CURE_MAX_LB);
   advanceMut(d, ctx, CURE_MINUTES, 'camp');
@@ -4157,12 +4199,19 @@ export const spellOnTarget = act((d, ctx, spell: string, targetId: string) => ap
 
 // ---------------------------------------------------------------- poisons
 
-function dealDamage(d: State, ctx: Ctx, charId: string, amount: number): void {
-  if (amount > 0) Object.assign(d, changeHp(d, ctx, charId, -amount));
+function dealDamage(d: State, ctx: Ctx, charId: string, amount: number, type?: 'poison'): void {
+  if (amount > 0) Object.assign(d, changeHp(d, ctx, charId, -amount, type));
 }
 
-function poisonEffect(s: State, c: Character, p: PoisonInfo, minutes: number, extra?: string): void {
+function poisonEffect(s: State, c: Character, p: PoisonInfo, minutes: number, extra?: string): boolean {
+  if (feastProtection(s, c.id)) {
+    log(s, `Heroes' Feast prevents ${c.name} from becoming Poisoned.`, 'good');
+    if (!extra) return false;
+    s.effects.push({ id: uid(), name: extra, kind: 'other', targetIds: [c.id], casterId: null, concentration: false, shelter: false, startedAt: absNow(s), endsAt: absNow(s) + minutes, notes: p.effect });
+    return false;
+  }
   s.effects.push({ id: uid(), name: `Poisoned (${p.name})${extra ? `, ${extra}` : ''}`, kind: 'other', targetIds: [c.id], casterId: null, concentration: false, shelter: false, startedAt: absNow(s), endsAt: absNow(s) + minutes, notes: p.effect });
+  return true;
 }
 
 /** A creature is exposed to a dose of poison: roll its save and apply what happens (2024 DMG). */
@@ -4199,28 +4248,28 @@ export const exposePoison = act((d, ctx, charId: string, poisonName: string, fro
       else total2 += die(6, ctx.rng);
     }
     log(d, `The fumes linger for ${rounds} rounds until ${c.name} makes three saves.`, 'warn');
-    return dealDamage(d, ctx, charId, total2);
+    return dealDamage(d, ctx, charId, total2, 'poison');
   }
   if (p.name === 'Carrion Crawler Mucus') {
     if (r.passed) return;
     let rounds = 1;
     const c = charById(d, charId)!;
     while (rounds < 10 && !rollSave(c, p.dc, 'normal', ctx.rng).passed) rounds += 1;
-    poisonEffect(d, c, p, rounds >= 10 ? 1 : Math.max(1, Math.ceil(rounds / 10)), 'Paralyzed');
+    if (!poisonEffect(d, c, p, rounds >= 10 ? 1 : Math.max(1, Math.ceil(rounds / 10)), 'Paralyzed')) return;
     return void log(d, `${c.name} is Poisoned and Paralyzed for ${rounds >= 10 ? 'the full minute' : `${rounds} round(s)`}.`, 'bad');
   }
-  if (p.damage) dealDamage(d, ctx, charId, r.passed ? (p.halfOnSave ? Math.floor(dmg / 2) : 0) : dmg);
+  if (p.damage) dealDamage(d, ctx, charId, r.passed ? (p.halfOnSave ? Math.floor(dmg / 2) : 0) : dmg, 'poison');
   const c = charById(d, charId)!;
   if (r.passed) return;
   if (p.name === 'Pale Tincture') {
+    if (!poisonEffect(d, c, p, 8 * MIN_PER_DAY)) return;
     c.poisonTimers = [...(c.poisonTimers ?? []), { id: uid(), name: p.name, nextAt: absNow(d) + MIN_PER_DAY, successes: 0 }];
-    poisonEffect(d, c, p, 8 * MIN_PER_DAY);
     return;
   }
   const minutes = p.poisonedHoursDice ? (rollExpr(p.poisonedHoursDice, ctx.rng) ?? 4) * 60 : (p.poisonedMinutes ?? 0);
   if (!minutes) return;
   const extra = p.alsoCondition && (!p.extraOnFailBy5 || total <= p.dc - 5) ? p.alsoCondition : undefined;
-  poisonEffect(d, c, p, minutes, extra);
+  if (!poisonEffect(d, c, p, minutes, extra)) return;
   log(d, `${c.name} is Poisoned${extra ? ` and ${extra}` : ''} for ${formatDuration(minutes)}.`, 'bad');
 });
 
@@ -4236,14 +4285,14 @@ function tickPoisons(s: State, ctx: Ctx): void {
         c.poisonTimers = c.poisonTimers!.filter((x) => x.id !== t.id);
         const dmg = rollExpr('9d6', ctx.rng) ?? 31;
         log(s, `Midnight strikes, and the Midnight Tears in ${c.name} take hold: DC 17 Con save. ${r.detail}${r.passed ? 'Half damage.' : 'Failure.'}`, 'bad');
-        Object.assign(s, changeHp(s, ctx, c.id, -(r.passed ? Math.floor(dmg / 2) : dmg)));
+        Object.assign(s, changeHp(s, ctx, c.id, -(r.passed ? Math.floor(dmg / 2) : dmg), 'poison'));
         continue;
       }
       // Pale Tincture: a save every 24 hours; seven successes end it.
       t.nextAt = now + MIN_PER_DAY;
       if (r.passed) t.successes += 1;
       log(s, `${c.name} fights the Pale Tincture: DC 16 Con save. ${r.detail}${r.passed ? `Success (${t.successes}/7).` : 'Failure: 1d6 Poison damage that can’t be healed while Poisoned.'}`, r.passed ? 'good' : 'bad');
-      if (!r.passed) Object.assign(s, changeHp(s, ctx, c.id, -die(6, ctx.rng)));
+      if (!r.passed) Object.assign(s, changeHp(s, ctx, c.id, -die(6, ctx.rng), 'poison'));
       const me = charById(s, c.id)!;
       if (t.successes >= 7) {
         me.poisonTimers = (me.poisonTimers ?? []).filter((x) => x.id !== t.id);
@@ -5775,18 +5824,22 @@ export const spendHitDie = act((d, ctx, charId: string) => {
   status(d, c, 'hitDie', `${c.name} spends a Hit Point Die: d${c.hitDie} = ${roll} ${signed(mod)} = ${healed}. HP ${before} → ${c.hp}/${c.maxHp} (${c.level - c.hitDiceSpent} dice left).`, 'good');
 });
 
-export const changeHp = act((d, ctx, charId: string, amount: number) => {
+export const changeHp = act((d, ctx, charId: string, amount: number, damageType?: 'poison') => {
   const c = charById(d, charId);
   if (!c) return;
   if (amount < 0) {
     let dmg = -amount;
+    const resisted = damageType === 'poison' && feastProtection(d, c.id);
+    if (resisted) dmg = Math.floor(dmg / 2);
+    const damage = dmg;
     const absorbed = Math.min(c.tempHp, dmg);
     c.tempHp -= absorbed;
     dmg -= absorbed;
     const wasUp = c.hp > 0;
     const leftover = dmg - c.hp;
     c.hp = Math.max(0, c.hp - dmg);
-    status(d, c, 'hurt', `${c.name} takes ${-amount} damage${absorbed ? ` (${absorbed} absorbed by Temporary HP)` : ''}. HP ${c.hp}/${c.maxHp}.`, c.hp === 0 ? 'bad' : 'warn');
+    if (wasUp && c.hp === 0) spendDeathWard(d, c, 'dropping to 0 HP');
+    status(d, c, 'hurt', `${c.name} takes ${damage} damage${resisted ? " (Heroes’ Feast resistance)" : ""}${absorbed ? ` (${absorbed} absorbed by Temporary HP)` : ''}. HP ${c.hp}/${c.maxHp}.`, c.hp === 0 ? 'bad' : 'warn');
     if (wasUp && c.hp === 0) {
       if (leftover >= c.maxHp) {
         killOutright(d, c, `massive damage (${leftover} beyond 0 HP, at least their HP maximum)`);
@@ -5805,6 +5858,22 @@ export const changeHp = act((d, ctx, charId: string, amount: number) => {
     status(d, c, 'heal', `${c.name} heals ${amount}. HP ${c.hp}/${c.maxHp}.`, 'good');
     if (wasDown && c.hp > 0) wakeUp(d, c, 'healing');
   }
+});
+
+function spendDeathWard(s: State, c: Character, trigger: 'dropping to 0 HP' | 'instant death'): boolean {
+  const ward = [...s.effects].reverse().find((e) => e.name.toLowerCase() === 'death ward' && e.targetIds.includes(c.id)
+    && (e.endsAt == null || e.endsAt > absNow(s)));
+  if (!ward) return false;
+  ward.targetIds = ward.targetIds.filter((id) => id !== c.id);
+  if (!ward.targetIds.length) s.effects = s.effects.filter((e) => e !== ward);
+  if (trigger === 'dropping to 0 HP') c.hp = 1;
+  log(s, `Death Ward protects ${c.name} from ${trigger} and ends.`, 'good');
+  return true;
+}
+
+export const negateInstantDeath = act((d, _ctx, charId: string) => {
+  const c = charById(d, charId);
+  if (c && alive(c)) spendDeathWard(d, c, 'instant death');
 });
 
 function wakeUp(s: State, c: Character, why: string): void {
@@ -5959,22 +6028,23 @@ const effectWho = (s: State, e: ActiveEffect): string => {
   return names.length ? ` (${names.join(', ')})` : '';
 };
 
-function aidBonus(effects: ActiveEffect[], id: string): number {
-  return Math.max(0, ...effects.filter((e) => e.targetIds.includes(id)).map((e) => e.aidHp ?? 0));
+function spellHpBonus(effects: ActiveEffect[], id: string, field: 'aidHp' | 'feastHp'): number {
+  return Math.max(0, ...effects.filter((e) => !e.feastMeal && e.targetIds.includes(id)).map((e) => e[field] ?? 0));
 }
 
-function updateAid(s: State, previous: ActiveEffect[], targetIds: string[]): void {
+function updateSpellHp(s: State, previous: ActiveEffect[], targetIds: string[]): void {
   for (const id of new Set(targetIds)) {
     const c = charById(s, id);
     if (!c) continue;
-    const delta = aidBonus(s.effects, id) - aidBonus(previous, id);
-    if (!delta) continue;
-    c.maxHp = Math.max(1, c.maxHp + delta);
+    const aid = spellHpBonus(s.effects, id, 'aidHp') - spellHpBonus(previous, id, 'aidHp');
+    const feast = spellHpBonus(s.effects, id, 'feastHp') - spellHpBonus(previous, id, 'feastHp');
+    if (!aid && !feast) continue;
+    c.maxHp = Math.max(1, c.maxHp + aid + feast);
     if (!alive(c)) continue;
     const previousHp = c.hp;
-    c.hp = Math.min(c.maxHp, Math.max(0, c.hp + delta));
-    if (previousHp === 0 && c.hp > 0) wakeUp(s, c, 'Aid');
-    if (previousHp > 0 && c.hp === 0) {
+    c.hp = Math.min(c.maxHp, Math.max(0, c.hp + aid + Math.max(0, feast)));
+    if (previousHp === 0 && c.hp > 0) wakeUp(s, c, aid > 0 ? 'Aid' : "Heroes' Feast");
+    if (previousHp > 0 && c.hp === 0 && !spendDeathWard(s, c, 'dropping to 0 HP')) {
       Object.assign(c, { dying: true, stable: false, deathSuccesses: 0, deathFailures: 0, wakesAt: null });
       status(s, c, 'dying', `${c.name} drops to 0 HP as Aid ends and is dying. Roll death saves.`, 'bad');
     }
@@ -5983,6 +6053,15 @@ function updateAid(s: State, previous: ActiveEffect[], targetIds: string[]): voi
 
 function tickEffects(s: State, before: number): void {
   const now = absNow(s);
+  if (s.stores.conjuredFood?.length) {
+    const spoiled = s.stores.conjuredFood.filter((batch) => batch.expiresAt <= now);
+    if (spoiled.length) {
+      const lb = spoiled.reduce((total, batch) => total + batch.lb, 0);
+      s.stores.foodLb = round2(Math.max(0, s.stores.foodLb - lb));
+      s.stores.conjuredFood = s.stores.conjuredFood.filter((batch) => batch.expiresAt > now);
+      log(s, `${fmtLb(lb)} of conjured food spoils in the camp stores.`, 'warn');
+    }
+  }
   for (const holder of [...s.characters.map((c) => ({ name: c.name, items: c.inventory })), ...s.stashes]) {
     const items = holder.items;
     for (let i = items.length - 1; i >= 0; i--) {
@@ -6011,8 +6090,23 @@ function tickEffects(s: State, before: number): void {
   if (!ended.length) return;
   const previous = s.effects;
   s.effects = previous.filter((e) => !ended.includes(e));
-  updateAid(s, previous, ended.flatMap((e) => e.aidHp ? e.targetIds : []));
+  for (const meal of ended.filter((e) => e.feastMeal)) {
+    const targetIds = meal.targetIds.filter((id) => {
+      const diner = charById(s, id);
+      return diner && alive(diner) && mountWithParty(diner);
+    });
+    if (!targetIds.length) continue;
+    const startedAt = meal.endsAt!;
+    s.effects.push({ ...meal, id: uid(), name: "Heroes' Feast", targetIds, feastMeal: false,
+      startedAt, endsAt: startedAt + MIN_PER_DAY,
+      notes: `+${meal.feastHp} maximum and current HP on activation. Poison Resistance. Immune to Frightened and Poisoned.` });
+  }
+  updateSpellHp(s, previous, ended.flatMap((e) => e.aidHp || e.feastHp ? e.targetIds : []));
   for (const e of ended) {
+    if (e.feastMeal) {
+      log(s, `The Heroes' Feast meal${effectWho(s, e)} finishes. Eligible diners gain its benefits for 24 hours.`, 'good');
+      continue;
+    }
     noticed(s, e.kind === 'light' ? 'lightOut' : e.shelter ? 'shelterEnds' : 'effectEnds', effectChars(s, e), e.kind === 'light' ? `${e.name}${effectWho(s, e)} goes out.` : `${e.name}${effectWho(s, e)} ends.`, e.kind === 'light' || e.shelter ? 'warn' : 'info');
   }
 }
@@ -6103,11 +6197,18 @@ export const addEffect = act((d, _ctx, ne: NewEffect) => {
     const caster = charById(d, ne.casterId);
     if (caster) dropConcentration(d, caster, '');
   }
+  const targetIds = feastBlocksCondition(ne.preset.name)
+    ? ne.targetIds.filter((id) => !feastProtection(d, id))
+    : ne.targetIds;
+  if (ne.targetIds.length && !targetIds.length) {
+    log(d, `Heroes' Feast prevents ${ne.preset.name}.`, 'good');
+    return;
+  }
   const e: ActiveEffect = {
     id: uid(),
     name: ne.preset.name,
     kind: ne.preset.kind,
-    targetIds: ne.targetIds,
+    targetIds,
     casterId: ne.casterId,
     concentration: conc,
     shelter: !!ne.preset.shelter,
@@ -6168,7 +6269,7 @@ export const endEffect = act((d, _ctx, effectId: string) => {
   if (!e) return;
   const previous = d.effects;
   d.effects = previous.filter((x) => x.id !== effectId);
-  if (e.aidHp) updateAid(d, previous, e.targetIds);
+  if (e.aidHp || e.feastHp) updateSpellHp(d, previous, e.targetIds);
   log(d, `${e.name}${effectWho(d, e)} is ended early.`);
 });
 
@@ -6792,7 +6893,7 @@ export const castSpell = act((d, ctx, charId: string, spellName: string, mode: '
     }
     if (circle.option === 'supplant') discount = supplantDiscount(helpers.length);
   }
-  const base = sp.castMinutes ?? (spellKey === 'prayer of healing' ? 10 : 0);
+  const base = sp.castMinutes ?? (spellKey === 'prayer of healing' || spellKey === "heroes' feast" ? 10 : 0);
   let slot: ReturnType<typeof findSlot>;
   if (mode === 'ritual') {
     const check = canCastAsRitual(c, sp);
@@ -6856,6 +6957,29 @@ export const castSpell = act((d, ctx, charId: string, spellName: string, mode: '
   if (targetId && TARGET_SPELLS[sp.name]) applySpellTo(d, ctx, sp.name, targetId);
   const slotLevel = Number(/level (\d)/i.exec(slot?.name ?? '')?.[1] ?? chosenSlotLevel ?? sp.level);
   const extra = circle?.option === 'prolong' ? prolongMinutes(helpers.length) : 0;
+  if (spellKey === 'create food and water') {
+    d.stores.foodLb = round2(d.stores.foodLb + 45);
+    d.stores.waterGal = round2(d.stores.waterGal + 30);
+    (d.stores.conjuredFood ??= []).push({ lb: 45, expiresAt: absNow(d) + MIN_PER_DAY });
+    log(d, 'The camp stores gain 45 lb of food and 30 gallons of clean water. The food spoils after 24 hours.', 'good');
+    return;
+  }
+  if (spellKey === "heroes' feast" || spellKey === 'death ward') {
+    const now = absNow(d);
+    const targetIds = targets.map((target) => target.id);
+    const feast = spellKey === "heroes' feast";
+    if (!feast) {
+      d.effects = d.effects.filter((e) => !(e.name.toLowerCase() === 'death ward' && e.targetIds.length === 1 && e.targetIds[0] === targetIds[0]));
+    }
+    d.effects.push({
+      id: uid(), name: feast ? "Heroes' Feast meal" : 'Death Ward', kind: 'spell', casterId: c.id,
+      targetIds, concentration: false, shelter: false, startedAt: now,
+      endsAt: now + (feast ? 60 : 480 + extra),
+      ...(feast ? { feastMeal: true, feastHp: die(10, ctx.rng) + die(10, ctx.rng) } : {}),
+      notes: feast ? 'Benefits begin when the one-hour meal finishes.' : 'Triggers once on a drop to 0 HP or instant death without damage.',
+    });
+    return;
+  }
   if (spellKey === 'goodberry') {
     addLine(d, c, 'Goodberry', 10, { weight: 0, source: 'manual', goodberry: { expiresAt: absNow(d) + MIN_PER_DAY + extra } }, null, true);
     log(d, `${c.name} gathers ten Goodberries. Use them from their inventory.`, 'good');
@@ -6882,7 +7006,7 @@ export const castSpell = act((d, ctx, charId: string, spellName: string, mode: '
     const targetIds = targets.filter((target) => alive(target) && mountWithParty(target)).map((target) => target.id);
     const aidHp = 5 * (slotLevel - 1);
     d.effects = [...previous, { id: uid(), name: 'Aid', kind: 'spell', casterId: c.id, targetIds, aidHp, concentration: false, shelter: false, startedAt: now, endsAt: now + 480 + extra, notes: `+${aidHp} current and maximum HP.` }];
-    updateAid(d, previous, targetIds);
+    updateSpellHp(d, previous, targetIds);
     return;
   }
   if (sp.durationMinutes || sp.permanent) {
@@ -7951,7 +8075,7 @@ export const importDdb = act((d, _ctx, imp: DdbImport, parts: DdbParts) => {
   c.ddbSyncedAt = stamp(d);
   c.name = imp.name;
   if (parts.stats) {
-    const aid = aidBonus(d.effects, c.id);
+    const spellHp = spellHpBonus(d.effects, c.id, 'aidHp') + spellHpBonus(d.effects, c.id, 'feastHp');
     Object.assign(c, {
       className: imp.className,
       level: imp.level,
@@ -7965,8 +8089,8 @@ export const importDdb = act((d, _ctx, imp: DdbImport, parts: DdbParts) => {
       darkvision: imp.darkvision,
       coldResist: imp.coldResist,
       fireResist: imp.fireResist,
-      maxHp: imp.maxHp + aid,
-      hp: imp.hp > 0 ? imp.hp + aid : imp.hp,
+      maxHp: imp.maxHp + spellHp,
+      hp: imp.hp > 0 ? imp.hp + spellHp : imp.hp,
       tempHp: imp.tempHp,
       hitDie: imp.hitDie,
       hitDiceSpent: imp.hitDiceSpent,
@@ -8311,17 +8435,23 @@ const TACTICAL_CONDITIONS = new Set([
 function tacticalVitals(s: State, c: Character): TacticalVitals {
   const conditions: TacticalCondition[] = [];
   if (c.exhaustion > 0) conditions.push({ id: 'exhaustion', key: 'exhaustion', level: c.exhaustion });
-  if (c.sick || c.poisonedUntil != null) {
+  const protectedByFeast = feastProtection(s, c.id);
+  if ((c.sick || c.poisonedUntil != null) && !protectedByFeast) {
     conditions.push({ id: 'survival-poison', key: 'poisoned',
       remainingSeconds: c.sick ? undefined : Math.max(0, Math.round((c.poisonedUntil! - absNow(s)) * 60)) });
   }
   for (const effect of s.effects) {
     if (effect.pausedLeft != null || (effect.endsAt != null && effect.endsAt <= absNow(s))) continue;
     const remainingSeconds = effect.endsAt == null ? undefined : Math.round((effect.endsAt - absNow(s)) * 60);
-    if (effect.concentration && concentrators(effect).includes(c.id)) {
+    if (effect.targetIds.includes(c.id) && effect.feastHp && !effect.feastMeal) {
+      conditions.push({ id: `feast:${effect.id}`, key: 'custom', label: "Heroes’ Feast · Poison Resistance, Frightened and Poisoned immunity", remainingSeconds });
+    } else if (effect.targetIds.includes(c.id) && effect.name.toLowerCase() === 'death ward') {
+      conditions.push({ id: effect.id, key: 'custom', label: 'Death Ward · negate the first drop to 0 HP or instant death', remainingSeconds });
+    } else if (effect.concentration && concentrators(effect).includes(c.id)) {
       conditions.push({ id: effect.id, key: 'concentration', label: effect.name, remainingSeconds });
     } else if (effect.targetIds.length === 1 && effect.targetIds[0] === c.id) {
       const key = effect.name.toLowerCase();
+      if (protectedByFeast && feastBlocksCondition(key)) continue;
       if (TACTICAL_CONDITIONS.has(key) || effect.notes.startsWith(TACTICAL_EFFECT_PREFIX)) {
         conditions.push({ id: effect.id, key: TACTICAL_CONDITIONS.has(key) ? key : 'custom', label: effect.name, remainingSeconds });
       }
@@ -8459,6 +8589,7 @@ export const applyTacticalResult = act((d, ctx, result: TacticalResult) => {
     }
     for (const condition of vitals.conditions) {
       if (previousById.has(condition.id) || condition.key === 'exhaustion' || condition.remainingSeconds === 0) continue;
+      if (feastProtection(d, id) && (feastBlocksCondition(condition.key) || feastBlocksCondition(condition.label ?? ''))) continue;
       const concentration = condition.key === 'concentration';
       if (concentration) dropConcentration(d, c, ' during the encounter');
       d.effects.push({
@@ -8967,7 +9098,7 @@ export const tameSession = act((d, ctx, id: string, a: Omit<TameAids, 'attitude'
   const fed = fromRaw + fromFood >= need - 1e-9;
   if (fed) {
     d.stores.foodRawLb = Math.round((d.stores.foodRawLb - fromRaw) * 100) / 100;
-    d.stores.foodLb = Math.round((d.stores.foodLb - fromFood) * 100) / 100;
+    takeSafeStoreFood(d, fromFood);
     const m = t.mountId ? charById(d, t.mountId) : undefined;
     if (m) m.ateLbToday = Math.max(m.ateLbToday, need);
   }

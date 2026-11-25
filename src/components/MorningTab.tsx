@@ -109,7 +109,7 @@ function CastPanel({ c }: { c: Character }) {
           title={info.level > 0 && !info.prepared && !info.alwaysPrepared ? 'Not prepared' : ''}
           onClick={() => dispatch((st, cx) => E.castSpell(st, cx, c.id, pick.sp.name, 'slot', TARGET_SPELLS[pick.sp.name] ? target || null : null, null, selected, chosenLevel))}
         >
-          Cast ({info.castTime ?? (key === 'prayer of healing' ? '10 minutes' : 'casting time')}
+          Cast ({info.castTime ?? (key === 'prayer of healing' || key === "heroes' feast" ? '10 minutes' : 'casting time')}
           {info.level > 0 ? (slots.length ? `, slot: ${slotLeft} left` : ', uses a slot') : ''})
         </button>
         <button className="small primary" disabled={!ritualCheck.ok} title={ritualCheck.reason} onClick={() => dispatch((st, cx) => E.castSpell(st, cx, c.id, pick.sp.name, 'ritual'))}>
@@ -123,10 +123,10 @@ function CastPanel({ c }: { c: Character }) {
       {s.settings.circleMagic && circleEligible(info).ok && <CirclePanel c={c} info={info} helperIds={helperIds} setHelperIds={setHelperIds} option={option} setOption={setOption} target={TARGET_SPELLS[pick.sp.name] ? target || null : null} recipients={selected} requiresRecipients={!!limit} chosenSlotLevel={chosenLevel} />}
       {!!limit && (
         <fieldset>
-          <legend>Choose up to {limit} recipients</legend>
+          <legend>{limit === 1 ? 'Choose a recipient' : `Choose up to ${limit} recipients`}</legend>
           {eligible.map((x) => (
             <Toggle key={x.id} label={x.name} checked={selected.includes(x.id)}
-              onChange={(checked) => setTargetIds(checked ? [...selected, x.id].slice(0, limit) : selected.filter((id) => id !== x.id))} />
+              onChange={(checked) => setTargetIds(checked ? (limit === 1 ? [x.id] : [...selected, x.id].slice(0, limit)) : selected.filter((id) => id !== x.id))} />
           ))}
           {!eligible.length && <p className="small muted">No eligible recipients.</p>}
         </fieldset>

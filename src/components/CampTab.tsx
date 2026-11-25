@@ -224,13 +224,20 @@ function StoresCard() {
   return (
     <Card title="Camp stores">
       <div className="form-row">
-        <Num label="Food" value={s.stores.foodLb} onChange={(v) => edit((d) => void (d.stores.foodLb = v))} min={0} step={0.5} suffix="lb" width={4} />
+        <Num label="Food" value={s.stores.foodLb} onChange={(v) => dispatch((st, cx) => E.setSafeStoreFood(st, cx, v))} min={0} step={0.5} suffix="lb" width={4} />
         <Num label="Water" value={s.stores.waterGal} onChange={(v) => edit((d) => void (d.stores.waterGal = v))} min={0} step={0.5} suffix="gal" width={4} />
       </div>
       <div className="form-row">
         <Num label="Raw food" value={s.stores.foodRawLb} onChange={(v) => edit((d) => void (d.stores.foodRawLb = v))} min={0} step={0.5} suffix="lb" width={4} />
         <Num label="Unpurified water" value={s.stores.waterUnsafeGal} onChange={(v) => edit((d) => void (d.stores.waterUnsafeGal = v))} min={0} step={0.5} suffix="gal" width={4} />
       </div>
+      {!!s.stores.conjuredFood?.length && (
+        <ul className="small">
+          {s.stores.conjuredFood.map((batch, i) => (
+            <li key={`${batch.expiresAt}:${i}`}>{batch.lb} lb conjured food spoils in {formatDuration(Math.max(0, batch.expiresAt - E.absNow(s)))}</li>
+          ))}
+        </ul>
+      )}
       <Rule>Shared supplies. Foraged food arrives raw and foraged water unpurified. Party meals use safe stores first, then each person's rations or waterskin, and raw or unpurified supplies only as a last resort.</Rule>
       <div className="btn-row">
         <button disabled={!s.place.waterSource} onClick={() => dispatch(E.refillWater)} title={s.place.waterSource ? '' : 'No water source at this place'}>
@@ -572,7 +579,7 @@ function MealsCard() {
       </p>
       <div className="btn-row">
         <button
-          disabled={!s.fire.lit || !cook || cook.startsWith('h:') || s.stores.foodRawLb + s.stores.foodLb < CURE_LB_PER_RATION}
+          disabled={!s.fire.lit || !cook || cook.startsWith('h:') || E.curableStoreFood(s) < CURE_LB_PER_RATION}
           title={!s.fire.lit ? 'Light the fire first' : !cook || cook.startsWith('h:') ? 'Pick a party member as the cook' : ''}
           onClick={() => dispatch((st, c) => E.cureRations(st, c, cook))}
         >
