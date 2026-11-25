@@ -1086,6 +1086,8 @@ export interface Settings {
   runningBusiness: boolean;
   /** Roll random encounter checks automatically by the location's danger while travelling, camping, resting and exploring. */
   encounters: boolean;
+  /** Table rule: some hostile encounters on foot begin with a roadside snare. */
+  roadAmbushes: boolean;
   /** Use the built-in SRD 5.2 creatures for random encounter tables (imported bestiaries are always used). */
   srdEncounters: boolean;
   /** Built-in creatures from other books (5etools source codes) used in the random encounter tables. */
