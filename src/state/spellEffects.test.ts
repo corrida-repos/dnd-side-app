@@ -180,3 +180,82 @@ describe('conjured food and protective spells', () => {
     expect(next.effects.some((e) => e.name === 'Death Ward')).toBe(false);
   });
 });
+
+describe('travel and weather spells', () => {
+  function travelers() {
+    const s = createDefaultState(() => 0);
+    s.minutes = 12 * 60;
+    s.place.shelter = 'none';
+    s.place.onRoute = true;
+    s.place.goodRoad = true;
+    s.settings.encounters = false;
+    s.settings.sleepDeprivation = false;
+    s.weather.wind = 'none';
+    s.weather.precip = 'none';
+    const caster = newCharacter({ name: 'Caster', className: 'Wizard', hp: 10, maxHp: 10, spells: [
+      { name: 'Phantom Steed', level: 3, prepared: false, alwaysPrepared: false },
+      { name: 'Wind Walk', level: 6, prepared: true, alwaysPrepared: false },
+      { name: 'Control Weather', level: 8, prepared: true, alwaysPrepared: false },
+    ] });
+    s.characters = [caster];
+    return { s, caster: caster.id };
+  }
+
+  it('casts Phantom Steed as a ritual, splits pace at expiry and reports dismounting', () => {
+    const { s, caster } = travelers();
+    let next = E.castSpell(s, ctx(), caster, 'Phantom Steed', 'ritual');
+    expect(E.absNow(next) - E.absNow(s)).toBe(11);
+    next = E.advance(next, ctx(), 30);
+    next = E.travel(next, ctx(), { hours: 1, pace: 'normal', difficult: false, foragerIds: [], spellTravel: true });
+    expect(next.travel.milesToday).toBe(8);
+    expect(next.effects.some((e) => e.phantomSteed)).toBe(false);
+    expect(next.log.some((item) => item.text.includes('minute to dismount'))).toBe(true);
+  });
+
+  it('includes the Wind Walk caster and requires every traveler to be in cloud form for group flight', () => {
+    const { s, caster } = travelers();
+    const ally = newCharacter({ name: 'Ally', hp: 10, maxHp: 10 });
+    s.characters.push(ally);
+    let next = E.castSpell(s, ctx(), caster, 'Wind Walk', 'slot', null, null, [ally.id]);
+    expect(E.spellTravelSpeed(next)?.mph).toBe(30);
+    const effect = next.effects.find((e) => e.windWalk)!;
+    next = E.setWindWalkForm(next, ctx(), effect.id, ally.id);
+    expect(E.absNow(next) - E.absNow(s)).toBe(2);
+    expect(E.spellTravelSpeed(next)).toBeUndefined();
+    next = E.setWindWalkForm(next, ctx(), effect.id, ally.id);
+    next = E.travel(next, ctx(), { hours: 1, pace: 'normal', difficult: true, foragerIds: [], spellTravel: true });
+    expect(next.travel.milesToday).toBe(30);
+  });
+
+  it('delays each weather change and restores natural weather when the caster goes inside', () => {
+    const { s, caster } = travelers();
+    let next = E.castSpell(s, ctx(), caster, 'Control Weather', 'slot');
+    const control = next.controlledWeather!;
+    next = E.changeControlledWeather(next, ctx(0.5), { ...control.stages, wind: control.stages.wind + 1 }, 'west');
+    expect(next.controlledWeather?.pending?.at).toBe(E.absNow(next) + 30);
+    next = E.advance(next, ctx(), 29);
+    expect(next.weather.wind).toBe('none');
+    next = E.advance(next, ctx(), 1);
+    expect(next.weather.wind).toBe('light');
+    expect(next.controlledWeather?.direction).toBe('west');
+    next = E.setTravelShelter(next, ctx(), 'building');
+    expect(next.effects.some((e) => e.name === 'Control Weather')).toBe(false);
+    expect(next.weather.wind).toBe('light');
+    next = E.advance(next, ctx(), 10);
+    expect(next.controlledWeather).toBeUndefined();
+    expect(next.weather.wind).toBe('none');
+  });
+
+  it('cancels a queued change when the caster loses concentration', () => {
+    const { s, caster } = travelers();
+    let next = E.castSpell(s, ctx(), caster, 'Control Weather', 'slot');
+    const control = next.controlledWeather!;
+    const illegal = E.changeControlledWeather(next, ctx(), { ...control.stages, wind: 2 }, '');
+    expect(illegal.controlledWeather?.pending).toBeUndefined();
+    next = E.changeControlledWeather(next, ctx(), { ...control.stages, wind: 1 }, '');
+    next = E.loseConcentration(next, ctx(), control.effectId, caster);
+    expect(next.controlledWeather).toBeUndefined();
+    expect(next.weather.wind).toBe('none');
+  });
+
+});

@@ -96,7 +96,12 @@ function ActiveCard() {
                       </button>
                     )
                   )}
-                  {e.name.toLowerCase() === 'death ward' && e.targetIds.length === 1 && (
+                  {e.phantomSteed && (
+                    <button className="ghost small" onClick={() => dispatch((st, cx) => E.endEffect(st, cx, e.id))}>
+                      Steed took damage
+                    </button>
+                  )}
+                  {e.name.toLowerCase() === 'death ward'  && e.targetIds.length === 1 && (
                     <button className="ghost small" onClick={() => dispatch((st, cx) => E.negateInstantDeath(st, cx, e.targetIds[0]))}>
                       Negate instant death
                     </button>
@@ -106,6 +111,14 @@ function ActiveCard() {
                   </button>
                 </span>
               </div>
+              {e.windWalk && e.targetIds.map((id) => {
+                const c = E.charById(s, id);
+                if (!c || !E.alive(c)) return null;
+                const cloud = e.windWalk!.cloudIds.includes(id);
+                return <button key={id} className="ghost small" onClick={() => dispatch((st, ctx) => E.setWindWalkForm(st, ctx, e.id, id))}>
+                  {c.name}: {cloud ? 'return to normal form' : 'assume cloud form'} (1 min)
+                </button>;
+              })}
               <div className="small">
                 {e.pausedLeft != null ? (
                   <span className="muted">Put out · {formatDuration(e.pausedLeft)} of Oil left in it</span>

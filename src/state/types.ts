@@ -1,3 +1,4 @@
+import type { ControlledWeather } from '../rules/controlWeather';
 import type { EncounterHandoff } from '../rules/encounterHandoff';
 import type { NpcProfile } from '../rules/npcs';
 import type { UnderwaterVisibility } from '../rules/exploration';
@@ -205,6 +206,8 @@ export interface ActiveEffect {
   aidHp?: number;
   feastHp?: number;
   feastMeal?: boolean;
+  windWalk?: { cloudIds: string[] };
+  phantomSteed?: boolean;
   id: string;
   name: string;
   kind: EffectKind;
@@ -1391,6 +1394,7 @@ export interface State {
   minutes: number;
   place: Place;
   weather: Weather;
+  controlledWeather?: ControlledWeather;
   weatherHistory: Weather[];
   /** Tomorrow's weather, read from the sky ahead of time (table rule); used when that day comes if the climate matches. */
   forecast?: Weather | null;

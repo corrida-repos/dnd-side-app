@@ -1,4 +1,5 @@
-import { BOOKKEEPING_TARGET_LIMIT } from '../rules/spellBookkeeping';
+import { controlledForecast, initialWeatherStages, WEATHER_AXES, WEATHER_STAGES, type WeatherStages } from '../rules/controlWeather';
+import { BOOKKEEPING_CAST_MINUTES, BOOKKEEPING_TARGET_LIMIT } from '../rules/spellBookkeeping';
 import { roadNetChance, roadOpeningPosition, ROAD_NET_NOTICE_DC, ROAD_NET_SAVE_DC } from '../rules/roadAmbush';
 import { tacticalFromHandoff, type EncounterHandoff, type EncounterSurprise, type HandoffParticipant } from '../rules/encounterHandoff';
 import { BRELAND, BRELAND_ROUTES, nextDeparture, type BrelishLocality } from '../rules/eberron';
@@ -213,6 +214,7 @@ function act<A extends unknown[]>(fn: (d: State, ctx: Ctx, ...args: A) => void) 
     const d = structuredClone(s);
     ensureWeather(d, ctx);
     fn(d, ctx, ...args);
+    tickControlledWeather(d);
     return d;
   };
 }
@@ -244,6 +246,10 @@ function newWeather(s: State, ctx: Ctx): void {
       { dayIndex: s.dayIndex, season: seasonOf(s), climate: s.place.climate, altitudeFt: s.place.altitudeFt, climateAdjustedPrecip: s.settings.climateAdjustedPrecip },
       ctx.rng,
     );
+  if (s.controlledWeather) {
+    s.controlledWeather.natural = s.weather;
+    s.weather = controlledForecast(s.controlledWeather);
+  }
   s.weatherHistory = [s.weather, ...s.weatherHistory.filter((w) => w.dayIndex !== s.dayIndex)].slice(0, 30);
   const w = s.weather;
   if (!CLIMATES[w.climate].noWeather) {
@@ -253,6 +259,87 @@ function newWeather(s: State, ctx: Ctx): void {
 
 export const rerollWeather = act((d, ctx) => {
   newWeather(d, ctx);
+});
+
+export const setNaturalWeather = act((d, _ctx, patch: Partial<State['weather']>) => {
+  const weather = { ...(d.controlledWeather?.natural ?? d.weather), ...patch, edited: true };
+  if (d.controlledWeather) d.controlledWeather.natural = weather;
+  else d.weather = weather;
+  d.weatherHistory = [weather, ...d.weatherHistory.filter((w) => w.dayIndex !== d.dayIndex)];
+});
+
+function indoors(s: State): boolean {
+  return s.place.shelter !== 'none'
+    || s.effects.some((e) => e.shelter && (e.endsAt == null || e.endsAt > absNow(s)));
+}
+
+export const setTravelShelter = act((d, _ctx, shelter: State['place']['shelter']) => {
+  d.place.shelter = shelter;
+  d.place.encounterConcealedCave = false;
+});
+
+function tickControlledWeather(s: State): void {
+  const control = s.controlledWeather;
+  if (!control) return;
+  const now = absNow(s);
+  const effect = s.effects.find((e) => e.id === control.effectId);
+  const caster = effect?.casterId ? charById(s, effect.casterId) : undefined;
+  if (control.normalAt == null && (!effect || !caster || !alive(caster) || caster.hp <= 0 || indoors(s)
+    || (effect.endsAt != null && effect.endsAt <= now))) {
+    s.effects = s.effects.filter((e) => e.id !== control.effectId);
+    delete control.pending;
+    const normal = initialWeatherStages(control.natural, temperatureAt(control.natural, s.minutes % MIN_PER_DAY));
+    const steps = Math.max(...WEATHER_AXES.map((axis) => control.changed[axis] ? Math.abs(normal[axis] - control.stages[axis]) : 0));
+    control.normalAt = now + Math.max(steps, control.direction ? 1 : 0) * 10;
+    log(s, "Control Weather ends. The local weather begins returning to normal.", 'info');
+  }
+  if (control.normalAt != null) {
+    const normal = initialWeatherStages(control.natural, temperatureAt(control.natural, s.minutes % MIN_PER_DAY));
+    if (now >= control.normalAt) {
+      s.weather = control.natural;
+      delete s.controlledWeather;
+      return;
+    }
+    const left = Math.ceil((control.normalAt - now) / 10);
+    for (const axis of WEATHER_AXES) {
+      if (!control.changed[axis]) continue;
+      const delta = control.stages[axis] - normal[axis];
+      if (Math.abs(delta) > left) control.stages[axis] = normal[axis] + Math.sign(delta) * left;
+    }
+  } else if (control.pending && control.pending.at <= now) {
+    const { stages, direction } = control.pending;
+    for (const axis of WEATHER_AXES) {
+      if (control.stages[axis] !== stages[axis]) control.changed[axis] = true;
+    }
+    control.stages = stages;
+    control.direction = direction || undefined;
+    delete control.pending;
+    log(s, 'The weather settles into the new conditions.', 'good');
+  }
+  s.weather = controlledForecast(control);
+}
+
+function nextControlledWeatherEvent(s: State): number {
+  const control = s.controlledWeather;
+  if (!control) return Infinity;
+  if (control.normalAt == null) {
+    const ends = s.effects.find((e) => e.id === control.effectId)?.endsAt ?? Infinity;
+    return Math.min(control.pending?.at ?? Infinity, ends);
+  }
+  const remaining = control.normalAt - absNow(s);
+  return control.normalAt - 10 * Math.max(0, Math.ceil(remaining / 10) - 1);
+}
+
+export const changeControlledWeather = act((d, ctx, stages: WeatherStages, direction: string) => {
+  const control = d.controlledWeather;
+  if (!control || control.normalAt != null || control.pending) return;
+  if (WEATHER_AXES.some((axis) => !Number.isInteger(stages[axis]) || stages[axis] < 0
+    || stages[axis] >= WEATHER_STAGES[axis].length || Math.abs(stages[axis] - control.stages[axis]) > 1)) return;
+  const heading = direction.trim().slice(0, 40);
+  if (WEATHER_AXES.every((axis) => stages[axis] === control.stages[axis]) && heading === (control.direction ?? '')) return;
+  const minutes = die(4, ctx.rng) * 10;
+  control.pending = { stages: { ...stages }, at: absNow(d) + minutes, direction: heading };
+  log(d, `The weather will shift in ${minutes} minutes.`);
 });
 
 // ---------------------------------------------------------------- exposure
@@ -1328,6 +1415,7 @@ export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activi
     s.effects = s.effects.filter((e) => !e.feastMeal);
     log(s, "The party leaves before finishing Heroes' Feast. The diners gain no benefits.", 'warn');
   }
+  tickControlledWeather(s);
   if (remaining > 0 && s.settings.deathSavesResolve && !opts.combat) resolveDying(s, ctx);
   const checkOverland = s.settings.encounters && activity !== 'work' && !opts.exploring && !opts.combat && !opts.travelHour;
   const encounterActivity = opts.encounterActivity ?? (activity === 'travel' || activity === 'rest' ? activity : 'camp');
@@ -1336,7 +1424,8 @@ export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activi
     const untilEncounter = checkOverland
       ? nextEncounterMinutes(encounterIntervalMinutes(s.place.danger, encounterConditions(s, encounterActivity)), s.encounterClock)
       : Infinity;
-    const step = Math.min(remaining, toNextHour, untilEncounter);
+    const step = Math.min(remaining, toNextHour, untilEncounter,
+      Math.max(1, nextControlledWeatherEvent(s) - absNow(s)));
     const before = absNow(s);
     s.minutes += step;
     remaining -= step;
@@ -1349,6 +1438,7 @@ export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activi
     const dawn = s.dayIndex * MIN_PER_DAY + sunriseMinutes(seasonOf(s));
     if (before < dawn && absNow(s) >= dawn) atDawn(s, ctx);
     checkItemsLeftBehind(s);
+    tickControlledWeather(s);
     tickEffects(s, before);
     deliverDispatches(s);
     deliverLetters(s, ctx);
@@ -1719,11 +1809,56 @@ export interface TravelOpts {
   vesselId?: string | null;
   /** Everyone flies (or ignores Difficult Terrain): Fast pace allowed whatever the terrain (2024 DMG). */
   flying?: boolean;
+  /** Use active Wind Walk and Phantom Steeds when every traveler can keep up. */
+  spellTravel?: boolean;
   /** Sailing into a strong wind (half speed), or downstream on a river (+3 mph for keelboats and rowboats). */
   againstWind?: boolean;
   downstream?: boolean;
   /** Journey stages only: who charts an uncharted stage on the way (table rule). */
   mapperId?: string | null;
+}
+
+export function spellTravelSpeed(s: State): { mph: number; until: number; flying: boolean } | undefined {
+  const now = absNow(s);
+  const travelers = s.characters.filter((c) => alive(c) && mountWithParty(c));
+  if (!travelers.length || s.hirelings.some((h) => h.active && (h.busyUntil ?? 0) <= now)) return undefined;
+  const speeds = travelers.map((c) => {
+    if (c.hp <= 0) return undefined;
+    const walk = s.weather.wind === 'strong' ? undefined : s.effects
+      .filter((e) => e.windWalk?.cloudIds.includes(c.id) && (e.endsAt ?? 0) > now)
+      .sort((a, b) => b.endsAt! - a.endsAt!)[0];
+    if (walk) return { mph: 30, until: walk.endsAt!, flying: true };
+    const steed = s.effects
+      .filter((e) => e.phantomSteed && e.targetIds.includes(c.id) && (e.endsAt ?? 0) > now)
+      .sort((a, b) => b.endsAt! - a.endsAt!)[0];
+    if (steed) return { mph: 13, until: steed.endsAt!, flying: false };
+  });
+  const first = speeds[0];
+  if (!first || speeds.some((speed) => speed?.flying !== first.flying)) return undefined;
+  return { mph: first.mph, flying: first.flying, until: Math.min(...speeds.map((speed) => speed!.until)) };
+}
+
+export const setWindWalkForm = act((d, ctx, effectId: string, charId: string) => {
+  const effect = d.effects.find((e) => e.id === effectId && e.windWalk && e.targetIds.includes(charId));
+  const c = charById(d, charId);
+  if (!effect || !c || !alive(c) || c.hp <= 0 || (effect.endsAt ?? 0) <= absNow(d)) return;
+  const toCloud = !effect.windWalk!.cloudIds.includes(charId);
+  const start = absNow(d);
+  log(d, `${c.name} spends 1 minute changing into ${toCloud ? 'cloud' : 'normal'} form and is Stunned during the change.`);
+  advanceMut(d, ctx, 1, 'camp', { tactical: true });
+  const live = d.effects.find((e) => e.id === effectId)?.windWalk;
+  if (!live || absNow(d) < start + 1) return;
+  live.cloudIds = toCloud ? [...live.cloudIds, charId] : live.cloudIds.filter((id) => id !== charId);
+});
+
+function noteTravelSpellEnd(s: State, effect: ActiveEffect): void {
+  if (effect.phantomSteed) {
+    log(s, `${effect.name}${effectWho(s, effect)} fades. The rider has 1 minute to dismount.`, 'warn');
+  }
+  if (effect.windWalk?.cloudIds.length) {
+    const names = effect.windWalk.cloudIds.map((id) => charById(s, id)?.name).filter(Boolean).join(', ');
+    log(s, `Wind Walk ends for ${names}. If airborne, they descend up to 600 feet over 1 minute, then fall any remaining distance.`, 'warn');
+  }
 }
 
 /** Table rule: Unconscious companions who must be carried because there aren't enough spare mounts for them. */
@@ -1895,6 +2030,8 @@ function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
     gallop = false;
   }
   let darkWarned = false;
+  let spellTravelMinutes = 0;
+  let magicWarning = false;
   let traveledHours = 0;
   for (let i = 0; i < o.hours; i++) {
     const blind = o.pace !== 'slow' && travelsBlind(d);
@@ -1903,16 +2040,38 @@ function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
       log(d, 'Darkness falls and not everyone can see in it. With no lit Torch, Lantern or light spell (light one on the Effects & Ailments tab), the party picks its way forward at a Slow pace (table rule).', 'warn');
     }
     const onFoot = !o.flying && !(gallop && i === 0);
-    advanceMut(d, ctx, 60, 'travel', { travelHour: !!d.pauseForButler, onFoot });
+    let mundaneMinutes = 0;
+    let magicalMiles = 0;
+    const hourEnd = absNow(d) + 60;
+    while (absNow(d) < hourEnd) {
+      const now = absNow(d);
+      const magic = o.spellTravel ? spellTravelSpeed(d) : undefined;
+      if (magic) {
+        const nextWeather = nextControlledWeatherEvent(d);
+        const minutes = Math.max(1, Math.ceil(Math.min(hourEnd, magic.until, nextWeather) - now));
+        const mph = magic.mph * (!magic.flying && o.difficult ? 0.5 : 1);
+        advanceMut(d, ctx, minutes, 'travel', { travelHour: !!d.pauseForButler, onFoot: false });
+        const elapsed = absNow(d) - now;
+        spellTravelMinutes += elapsed;
+        magicalMiles += mph * elapsed / 60;
+      } else {
+        if (o.spellTravel && !magicWarning) {
+          magicWarning = true;
+          log(d, 'The party cannot all continue by the same travel spell. The remaining travel uses its selected pace.', 'warn');
+        }
+        advanceMut(d, ctx, hourEnd - now, 'travel', { travelHour: !!d.pauseForButler, onFoot });
+        mundaneMinutes += absNow(d) - now;
+      }
+    }
     traveledHours++;
     clearEncounterCampConditions(d.place);
     d.travel.hoursToday += altitude ? 2 : 1;
     const burst = gallop && i === 0 ? 2 : 1;
-    if (burst === 2) {
+    if (burst === 2 && mundaneMinutes > 0) {
       d.travel.gallopUsed = true;
       log(d, 'The mounts gallop for an hour, covering twice the distance.');
     }
-    const step = (blind ? PACES.slow.mph : p.mph) * (o.difficult ? 0.5 : 1) * burst;
+    const step = magicalMiles + (blind ? PACES.slow.mph : p.mph) * (o.difficult ? 0.5 : 1) * burst * mundaneMinutes / 60;
     miles += step;
     if (d.travel.lost) {
       offCourse += step;
@@ -1933,23 +2092,25 @@ function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
       }
     }
     if (d.pauseForButler && d.settings.encounters) {
-      overlandEncounterClock(d, ctx, 60, 'travel', true, onFoot);
+      overlandEncounterClock(d, ctx, 60, 'travel', true, onFoot && mundaneMinutes > 0);
       if (d.tacticalEncounter) {
         d.tacticalRemainingMinutes = (o.hours - traveledHours) * 60;
         break;
       }
     }
   }
+  if (spellTravelMinutes > 0) log(d, `Travel spells carry the party for ${formatDuration(spellTravelMinutes)} of the leg.`);
   d.travel.milesToday += miles;
   if (d.travel.lost) d.travel.milesOffCourse += offCourse;
   if (offCourse > 0 && d.travel.lost) log(d, `${+offCourse.toFixed(1)} of those miles went the wrong way. The party is still lost.`, 'warn');
   wearFromTravel(d, traveledHours, false);
   log(d, `Covered ${+miles.toFixed(1)} miles. That makes ${+d.travel.milesToday.toFixed(1)} miles and ${d.travel.hoursToday} travel hour(s) since the last Long Rest.`);
-  workOnTheMarch(d, ctx, traveledHours, d.travel.navigatorId, o.foragerIds, o.pace);
+  const mundaneHours = traveledHours - spellTravelMinutes / 60;
+  workOnTheMarch(d, ctx, mundaneHours, d.travel.navigatorId, o.foragerIds, o.pace);
   // One foraging roll per 8 hours on the road, with a shorter leg finding a share of a day's food.
   for (const id of o.foragerIds) {
     const c = charById(d, id);
-    if (c) for (let h = traveledHours; h > 0; h -= 8) doForage(d, ctx, c, o.pace, Math.min(8, h) / 8);
+    if (c) for (let h = mundaneHours; h > 0; h -= 8) doForage(d, ctx, c, o.pace, Math.min(8, h) / 8);
   }
   return d.travel.lost ? 0 : miles;
 }
@@ -6103,6 +6264,7 @@ function tickEffects(s: State, before: number): void {
   }
   updateSpellHp(s, previous, ended.flatMap((e) => e.aidHp || e.feastHp ? e.targetIds : []));
   for (const e of ended) {
+    noteTravelSpellEnd(s, e);
     if (e.feastMeal) {
       log(s, `The Heroes' Feast meal${effectWho(s, e)} finishes. Eligible diners gain its benefits for 24 hours.`, 'good');
       continue;
@@ -6270,6 +6432,7 @@ export const endEffect = act((d, _ctx, effectId: string) => {
   const previous = d.effects;
   d.effects = previous.filter((x) => x.id !== effectId);
   if (e.aidHp || e.feastHp) updateSpellHp(d, previous, e.targetIds);
+  noteTravelSpellEnd(d, e);
   log(d, `${e.name}${effectWho(d, e)} is ended early.`);
 });
 
@@ -6857,10 +7020,17 @@ export const castSpell = act((d, ctx, charId: string, spellName: string, mode: '
   const c = charById(d, charId);
   const own = c?.spells.find((x) => x.name === spellName);
   if (!c || !own || !alive(c)) return;
+  if (d.effects.some((e) => e.windWalk?.cloudIds.includes(c.id) && (e.endsAt ?? 0) > absNow(d))) {
+    return void log(d, `${c.name} must return to normal form before casting a spell.`, 'warn');
+  }
   let sp = { ...own, ...spellInfo(own, d.spellLibrary) } as CharacterSpell;
   const spellKey = sp.name.toLowerCase();
   const targetLimit = BOOKKEEPING_TARGET_LIMIT[spellKey];
-  const requestedTargets = [...new Set(recipients.length ? recipients : targetId ? [targetId] : [])];
+  const requestedTargets = [...new Set([
+    ...(spellKey === 'wind walk' ? [c.id] : []),
+    ...(recipients.length ? recipients : targetId ? [targetId] : spellKey === 'phantom steed' ? [c.id] : []),
+  ])];
+  if (spellKey === 'control weather' && indoors(d)) return void log(d, 'Control Weather must be cast outdoors.', 'warn');
   const targets = requestedTargets.map((id) => charById(d, id))
     .filter((target): target is Character => !!target && alive(target) && mountWithParty(target)
       && (spellKey !== 'prayer of healing' || !target.prayerOfHealingUsed));
@@ -6893,7 +7063,7 @@ export const castSpell = act((d, ctx, charId: string, spellName: string, mode: '
     }
     if (circle.option === 'supplant') discount = supplantDiscount(helpers.length);
   }
-  const base = sp.castMinutes ?? (spellKey === 'prayer of healing' || spellKey === "heroes' feast" ? 10 : 0);
+  const base = sp.castMinutes ?? BOOKKEEPING_CAST_MINUTES[spellKey] ?? 0;
   let slot: ReturnType<typeof findSlot>;
   if (mode === 'ritual') {
     const check = canCastAsRitual(c, sp);
@@ -6957,6 +7127,31 @@ export const castSpell = act((d, ctx, charId: string, spellName: string, mode: '
   if (targetId && TARGET_SPELLS[sp.name]) applySpellTo(d, ctx, sp.name, targetId);
   const slotLevel = Number(/level (\d)/i.exec(slot?.name ?? '')?.[1] ?? chosenSlotLevel ?? sp.level);
   const extra = circle?.option === 'prolong' ? prolongMinutes(helpers.length) : 0;
+  if (spellKey === 'wind walk' || spellKey === 'phantom steed' || spellKey === 'control weather') {
+    const now = absNow(d);
+    const id = uid();
+    const targetIds = targets.map((target) => target.id);
+    const windWalk = spellKey === 'wind walk';
+    const steed = spellKey === 'phantom steed';
+    const control = !windWalk && !steed;
+    const shared = control && circle?.option === 'distribute' ? casters.map((x) => x.id) : undefined;
+    if (control) {
+      const previous = d.controlledWeather;
+      if (previous) d.effects = d.effects.filter((e) => e.id !== previous.effectId);
+      d.controlledWeather = previous
+        ? { effectId: id, natural: previous.natural, stages: { ...previous.stages }, changed: { ...previous.changed }, direction: previous.direction }
+        : { effectId: id, natural: d.weather, stages: initialWeatherStages(d.weather, tempNow(d)), changed: {} };
+    }
+    d.effects.push({ id, name: sp.name, kind: 'spell', casterId: c.id, targetIds,
+      concentration: control, concentrationIds: shared, shelter: false, startedAt: now,
+      endsAt: now + (steed ? 60 : 480) + extra,
+      ...(windWalk ? { windWalk: { cloudIds: targetIds } } : {}),
+      ...(steed ? { phantomSteed: true } : {}),
+      notes: windWalk ? 'Cloud form flies at 300 feet per turn. Changing form takes 1 minute.'
+        : steed ? 'The chosen rider can travel at 13 mph. Any damage to the steed ends the spell.'
+        : 'Adjust weather one stage at a time in a 5-mile radius around the caster.' });
+    return;
+  }
   if (spellKey === 'create food and water') {
     d.stores.foodLb = round2(d.stores.foodLb + 45);
     d.stores.waterGal = round2(d.stores.waterGal + 30);
@@ -8443,7 +8638,11 @@ function tacticalVitals(s: State, c: Character): TacticalVitals {
   for (const effect of s.effects) {
     if (effect.pausedLeft != null || (effect.endsAt != null && effect.endsAt <= absNow(s))) continue;
     const remainingSeconds = effect.endsAt == null ? undefined : Math.round((effect.endsAt - absNow(s)) * 60);
-    if (effect.targetIds.includes(c.id) && effect.feastHp && !effect.feastMeal) {
+    if (effect.windWalk?.cloudIds.includes(c.id)) {
+      conditions.push({ id: `wind-walk:${effect.id}`, key: 'custom', label: 'Wind Walk · cloud form, 300 ft Fly Speed, physical damage Resistance, Prone immunity', remainingSeconds });
+    } else if (effect.targetIds.includes(c.id) && effect.phantomSteed) {
+      conditions.push({ id: effect.id, key: 'custom', label: 'Phantom Steed · ends if the steed takes damage', remainingSeconds });
+    } else if (effect.targetIds.includes(c.id) && effect.feastHp && !effect.feastMeal) {
       conditions.push({ id: `feast:${effect.id}`, key: 'custom', label: "Heroes’ Feast · Poison Resistance, Frightened and Poisoned immunity", remainingSeconds });
     } else if (effect.targetIds.includes(c.id) && effect.name.toLowerCase() === 'death ward') {
       conditions.push({ id: effect.id, key: 'custom', label: 'Death Ward · negate the first drop to 0 HP or instant death', remainingSeconds });
@@ -8585,7 +8784,11 @@ export const applyTacticalResult = act((d, ctx, result: TacticalResult) => {
         c.sick = false;
         c.sickFrom = undefined;
         c.poisonedUntil = null;
-      } else d.effects = d.effects.filter((effect) => effect.id !== condition.id);
+      } else {
+        const removed = d.effects.find((effect) => effect.id === condition.id);
+        if (removed?.phantomSteed) noteTravelSpellEnd(d, removed);
+        d.effects = d.effects.filter((effect) => effect.id !== condition.id);
+      }
     }
     for (const condition of vitals.conditions) {
       if (previousById.has(condition.id) || condition.key === 'exhaustion' || condition.remainingSeconds === 0) continue;

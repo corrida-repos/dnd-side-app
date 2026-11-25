@@ -1,4 +1,4 @@
-import { BOOKKEEPING_TARGET_LIMIT } from '../rules/spellBookkeeping';
+import { BOOKKEEPING_CAST_MINUTES, BOOKKEEPING_TARGET_LIMIT } from '../rules/spellBookkeeping';
 import { useMemo, useState } from 'react';
 import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
@@ -84,16 +84,18 @@ function CastPanel({ c }: { c: Character }) {
   const pick = known.find((k) => k.sp.name === name) ?? known[0];
   const info = pick.info;
   const ritualCheck = E.canCastAsRitual(c, info);
-  const base = info.castMinutes ?? 0;
+  const key = info.name.toLowerCase();
+  const base = info.castMinutes ?? BOOKKEEPING_CAST_MINUTES[key] ?? 0;
   const slots = c.resources.filter((r) => /(spell|pact) slots \(level (\d)\)/i.test(r.name) && Number(/level (\d)/i.exec(r.name)![1]) >= info.level);
   const slotLeft = slots.reduce((a, r) => a + r.current, 0);
-  const key = info.name.toLowerCase();
   const limit = BOOKKEEPING_TARGET_LIMIT[key];
   const eligible = s.characters.filter((x) => x.diedAt == null && E.mountWithParty(x)
     && (key !== 'prayer of healing' || !x.prayerOfHealingUsed));
   const availableLevels = [...new Set(slots.filter((r) => r.current > 0).map((r) => /level (\d)/i.exec(r.name)![1]))].sort();
   const chosenLevel = limit && availableLevels.includes(slotLevel) ? Number(slotLevel) : undefined;
   const selected = targetIds.filter((id) => eligible.some((x) => x.id === id));
+  if (key === 'wind walk' && !selected.includes(c.id)) selected.unshift(c.id);
+  if (key === 'phantom steed' && !selected.length) selected.push(c.id);
   return (
     <div className="cast-panel">
       <h3>Cast a spell</h3>
@@ -109,10 +111,10 @@ function CastPanel({ c }: { c: Character }) {
           title={info.level > 0 && !info.prepared && !info.alwaysPrepared ? 'Not prepared' : ''}
           onClick={() => dispatch((st, cx) => E.castSpell(st, cx, c.id, pick.sp.name, 'slot', TARGET_SPELLS[pick.sp.name] ? target || null : null, null, selected, chosenLevel))}
         >
-          Cast ({info.castTime ?? (key === 'prayer of healing' || key === "heroes' feast" ? '10 minutes' : 'casting time')}
+          Cast ({info.castTime ?? (base ? formatDuration(base) : 'casting time')}
           {info.level > 0 ? (slots.length ? `, slot: ${slotLeft} left` : ', uses a slot') : ''})
         </button>
-        <button className="small primary" disabled={!ritualCheck.ok} title={ritualCheck.reason} onClick={() => dispatch((st, cx) => E.castSpell(st, cx, c.id, pick.sp.name, 'ritual'))}>
+        <button className="small primary" disabled={!ritualCheck.ok} title={ritualCheck.reason} onClick={() => dispatch((st, cx) => E.castSpell(st, cx, c.id, pick.sp.name, 'ritual', null, null, selected))}>
           As ritual ({formatDuration(Math.max(1, Math.round(base + RITUAL_EXTRA_MINUTES)))}, no slot)
         </button>
       </div>
@@ -123,8 +125,8 @@ function CastPanel({ c }: { c: Character }) {
       {s.settings.circleMagic && circleEligible(info).ok && <CirclePanel c={c} info={info} helperIds={helperIds} setHelperIds={setHelperIds} option={option} setOption={setOption} target={TARGET_SPELLS[pick.sp.name] ? target || null : null} recipients={selected} requiresRecipients={!!limit} chosenSlotLevel={chosenLevel} />}
       {!!limit && (
         <fieldset>
-          <legend>{limit === 1 ? 'Choose a recipient' : `Choose up to ${limit} recipients`}</legend>
-          {eligible.map((x) => (
+          <legend>{key === 'wind walk' ? 'Choose up to 10 companions' : limit === 1 ? 'Choose a recipient' : `Choose up to ${limit} recipients`}</legend>
+          {eligible.filter((x) => key !== 'wind walk' || x.id !== c.id).map((x) => (
             <Toggle key={x.id} label={x.name} checked={selected.includes(x.id)}
               onChange={(checked) => setTargetIds(checked ? (limit === 1 ? [x.id] : [...selected, x.id].slice(0, limit)) : selected.filter((id) => id !== x.id))} />
           ))}
