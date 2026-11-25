@@ -154,6 +154,19 @@ Use the existing effect clock and concentration tracking. Add mechanics when a s
 | Follow-up | *Nystul's Magic Aura*, *Hallow*, *Teleportation Circle*, *Guards and Wards*, *Mordenkainen's Private Sanctum*, *Forbiddance* | Reuse the streak tracker for 30 daily casts of *Nystul's Magic Aura* on the same target. Record completed circles and wards with their location and selected effects. |
 | Follow-up | *Animal Messenger*, *Sending*, *Dream*, *Resurrection* | Extend letters with ground and flying messenger speeds, upcast deadlines, and the optional eight-hour *Sending* block. Track *Dream* waiting for sleep and its failed-save rest consequence. For *Resurrection* after 365 days or more, block the caster's spellcasting and apply Disadvantage on D20 Tests until their next Long Rest. |
 
+### Supplemental spell bookkeeping
+
+Build these alongside the PHB mechanics they reuse. Use the 2024 version where a legacy spell was revised. Keep older spell options labeled with their source.
+
+| Source | Spells | Roadmap work |
+|---|---|---|
+| [Forgotten Realms: Heroes of Faerûn](https://5e.tools/data/spells/spells-frhof.json) | *Deryan's Helpful Homunculi*, circle-cast *Dirge*, *Simbul's Synostodweomer* | Add one qualified crafting assistant for up to eight hours. Carry *Dirge*'s Exhaustion and Long Rest restrictions over from encounters. Give the target of *Synostodweomer* the option to spend Hit Point Dice for healing when they cast a slotted spell. |
+| [Eberron: Forge of the Artificer](https://5e.tools/data/spells/spells-efa.json) | *Homunculus Servant* | Reuse the persistent companion record. Record the caster and slot-dependent statistics, and replace the previous servant on recast. |
+| [Xanathar's Guide to Everything](https://5e.tools/data/spells/spells-xge.json) | *Catnap*, *Ceremony* | Reuse per-recipient rest eligibility for a full ten-minute *Catnap*, with damage and waking interrupting individual recipients. Record *Ceremony* rites, timed benefits, and lifetime or widowhood restrictions. Link Funeral Rite to the corpse record. |
+| [Xanathar's Guide to Everything](https://5e.tools/data/spells/spells-xge.json) | *Druid Grove*, *Temple of the Gods*, *Mighty Fortress*, *Snare* | Reuse site wards and recast schedules. Support daily recasts for a year for the grove and temple, and a seven-day cadence with expiry for the fortress. Track *Snare* at its site until expiry or trigger and hand off resolution to the DM. |
+| [Xanathar's Guide to Everything](https://5e.tools/data/spells/spells-xge.json) | *Create Homunculus*, *Tiny Servant*, *Danse Macabre* | Use the companion record for the legacy homunculus's optional Hit Point Dice transfer at Long Rest and for temporary servants or undead tied to spell expiry. |
+| [Tasha's Cauldron of Everything](https://5e.tools/data/spells/spells-tce.json) | *Dream of the Blue Veil*, legacy summon spells | Track the destination and travelers during the six-hour trance. Damage interrupts the affected traveler, or everyone if it hits the caster. Use the shared summon record for legacy spells still used at the table, including *Summon Shadowspawn*, with cleanup on expiry or loss of concentration. |
+
 ### Resurrection windows ✅
 - Time since death decides which spell still works: *Revivify* within 1 minute, *Raise Dead* and *Reincarnate* within 10 days, *Resurrection* within 100 years.
 - *Gentle Repose* (10 days) stops the clock.
