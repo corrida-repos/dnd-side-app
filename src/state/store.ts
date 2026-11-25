@@ -21,6 +21,10 @@ function migrate(raw: unknown): State | null {
     // Saves made before weatherDamage defaulted off keep the value they had.
     settings: (() => {
       const st = { ...base.settings, weatherDamage: true, ...parsed.settings };
+      if (parsed.settings && parsed.settings.campArt === undefined) {
+        const oldTier = matchTier({ ...st, campArt: false });
+        if (oldTier != null && oldTier < 3) st.campArt = false;
+      }
       // Version 2 moved lingering injuries and madness to the Brutal tier: saves that only had them on by default turn them off.
       if ((parsed.version ?? 1) < 2 && !st.gearWear) Object.assign(st, { lingeringInjuries: false, madness: false });
       if (parsed.settings?.roadAmbushes === undefined && matchTier({ ...st, roadAmbushes: false }) != null) {
@@ -49,6 +53,7 @@ function migrate(raw: unknown): State | null {
         return { count: 4, slots: [0, 1, 2, 3].map((i) => (order.length ? [order[i % order.length]] : [])) };
       })(),
     effects: parsed.effects ?? [],
+    artProjects: parsed.artProjects ?? [],
     hirelings: (parsed.hirelings ?? []).map((h) => ({ ...{ role: 'other' as const, bonus: 0, passivePerception: 10 }, ...(h as Partial<State['hirelings'][number]>) }) as State['hirelings'][number]),
     rituals: parsed.rituals ?? [],
     factions: parsed.factions ?? [],

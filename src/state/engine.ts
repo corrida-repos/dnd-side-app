@@ -1,3 +1,4 @@
+import { ART, ART_INSTRUMENTS, hasMusician, type ArtKind, type ArtProject } from '../rules/art';
 import { roadNetChance, roadOpeningPosition, ROAD_NET_NOTICE_DC, ROAD_NET_SAVE_DC } from '../rules/roadAmbush';
 import { tacticalFromHandoff, type EncounterHandoff, type EncounterSurprise, type HandoffParticipant } from '../rules/encounterHandoff';
 import { BRELAND, BRELAND_ROUTES, nextDeparture, type BrelishLocality } from '../rules/eberron';
@@ -1462,6 +1463,9 @@ function laborersMakeCamp(d: State, ctx: Ctx): void {
 function completeLongRest(d: State, ctx: Ctx, watched: Record<string, number>): void {
   injuryRestDay(d, d.travel.hoursToday === 0);
   d.lastLongRestEnd = absNow(d);
+  d.artMoraleUsed = false;
+  d.effects = d.effects.filter((e) => !e.artMorale);
+  noteMusicianRest(d, watched);
   d.travel.gallopUsed = false;
   d.travel.hoursToday = 0;
   d.travel.milesToday = 0;
@@ -1664,6 +1668,7 @@ export const interruptedRest = act((d, ctx, o: InterruptOpts) => {
 
 /** Short Rest benefits: resources, rest focus (attuning, identifying), Chef. Requires at least 1 HP. */
 function finishShortRest(d: State, ctx: Ctx): void {
+  noteMusicianRest(d);
   d.travel.gallopUsed = false;
   clearAppraiseTries(d);
   for (const c of d.characters) {
@@ -1703,6 +1708,8 @@ export interface TravelOpts {
   downstream?: boolean;
   /** Journey stages only: who charts an uncharted stage on the way (table rule). */
   mapperId?: string | null;
+  /** An artist with a free hour can work on this project during the leg. */
+  artProjectId?: string;
 }
 
 /** Table rule: Unconscious companions who must be carried because there aren't enough spare mounts for them. */
@@ -1822,7 +1829,12 @@ function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
   breakCamp(d, ctx);
   if (d.townMode === 'downtime') setTownModeMut(d, 'active', 'Downtime is over. ');
   for (const c of d.characters) if (c.lodging && !c.lodging.place) c.lodging = null;
-  if (vessel) return sail(d, ctx, vessel, o);
+  if (vessel) {
+    const started = absNow(d);
+    const miles = sail(d, ctx, vessel, o);
+    workOnArtDuringTravel(d, o, Math.floor((absNow(d) - started) / 60), o.navigatorId ?? d.travel.navigatorId, true);
+    return miles;
+  }
   if (o.flying && o.difficult) o = { ...o, difficult: false };
   const ground = groundDifficulty(d.place.ground, d.place.goodRoad);
   if (ground && !o.flying && !o.difficult) {
@@ -1925,6 +1937,10 @@ function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
   wearFromTravel(d, traveledHours, false);
   log(d, `Covered ${+miles.toFixed(1)} miles. That makes ${+d.travel.milesToday.toFixed(1)} miles and ${d.travel.hoursToday} travel hour(s) since the last Long Rest.`);
   workOnTheMarch(d, ctx, traveledHours, d.travel.navigatorId, o.foragerIds, o.pace);
+  if (o.pace !== 'fast' && !o.flying) {
+    const navigator = navId || d.travel.lost || currentNavigationDC(d).dc != null ? nav?.id : undefined;
+    workOnArtDuringTravel(d, o, traveledHours - Number(gallop), navigator, false);
+  }
   // One foraging roll per 8 hours on the road, with a shorter leg finding a share of a day's food.
   for (const id of o.foragerIds) {
     const c = charById(d, id);
@@ -7234,7 +7250,7 @@ function writePagesMut(d: State, ctx: Ctx, charId: string, pages: number, what: 
  * Table rule: an evening's performance at an inn, tavern or market square (2 hours, in a settlement). Charisma
  * (Performance), or Charisma with an instrument. Coin by the total; a good night brings supper and a room, a great one an admirer.
  */
-export const perform = act((d, ctx, charId: string, bonus: number) => {
+export const perform = act((d, ctx, charId: string, bonus: number, title?: string) => {
   const c = charById(d, charId);
   if (!c || !alive(c)) return;
   if (!d.place.settlement) return void log(d, `${c.name} needs an audience: performing for coin takes an inn, tavern or market in a settlement.`, 'warn');
@@ -7257,7 +7273,7 @@ export const perform = act((d, ctx, charId: string, bonus: number) => {
     extras.push('a comfortable room tonight');
   }
   if (t.admirer) addContactMut(d, { name: `An admirer from ${d.place.name || 'the crowd'}`, role: 'Noble', place: d.place.name, bond: 2, knownBy: [me.id], notes: `Charmed by ${me.name}'s performance.` });
-  log(d, `${me.name} performs for two hours (Charisma ${r.value} ${signed(mod)} = ${total}): ${t.text}. ${q} ${t.unit.toUpperCase()}${extras.length ? `, plus ${extras.join(' and ')}` : ''}${t.admirer ? ', and a new allied contact' : ''} (table rule).`, total >= 10 ? 'good' : 'info');
+  log(d, `${me.name} performs${title ? ` “${title}”` : ''} for two hours (Charisma ${r.value} ${signed(mod)} = ${total}): ${t.text}. ${q} ${t.unit.toUpperCase()}${extras.length ? `, plus ${extras.join(' and ')}` : ''}${t.admirer ? ', and a new allied contact' : ''} (table rule).`, total >= 10 ? 'good' : 'info');
 });
 
 /** Table rule: a fair copy of a map someone holds. 1 hour, a sheet of Paper or Parchment, Intelligence with Cartographer's Tools at DC 10. */
@@ -7816,6 +7832,129 @@ export const recoverAmmo = act((d, ctx, charIds: string[], search: boolean = tru
   if (!lines.length) return;
   advanceMut(d, ctx, 1, 'camp');
   log(d, `After a minute of searching the area: ${lines.join('; ')}.`, 'good');
+});
+
+// ---------------------------------------------------------------- art and camp performances
+
+export const canMakeArt = (c: Character): boolean => c.kind === 'pc' && alive(c) && c.hp > 0 && !c.dying && !c.stable;
+
+export const startArt = act((d, _ctx, artistId: string, kind: ArtKind, title: string, subject: string, tool: string, formal: boolean) => {
+  const artist = charById(d, artistId);
+  const recipe = ART[kind];
+  if (!d.settings.campArt || !artist || !canMakeArt(artist) || !recipe || !title.trim() || !subject.trim()) return;
+  if (tool !== recipe.tool && !(kind === 'song' && ART_INSTRUMENTS.some((t) => t.name === tool))) return;
+  const craft = nonmagicalCrafting(recipe.gp);
+  if (formal) {
+    if (!proficientWith(artist, tool) || !carriesTool(artist, tool)) {
+      return void log(d, `${artist.name} needs proficiency with and access to ${tool} to make saleable art.`, 'warn');
+    }
+    if (d.settings.chargeCosts) {
+      if (artist.gp < craft.gp) return void log(d, `${artist.name} needs ${fmtGp(craft.gp)} for art materials.`, 'warn');
+      spendWealth(artist, craft.gp);
+    }
+  }
+  d.artProjects.push({
+    id: uid(), artistId, kind, title: title.trim(), subject: subject.trim(), tool,
+    gp: formal ? recipe.gp : null, hours: 0, requiredHours: formal ? craft.days * 8 : recipe.hours,
+  });
+  log(d, `${artist.name} begins “${title.trim()}”${formal && d.settings.chargeCosts ? ` (materials: ${fmtGp(craft.gp)})` : ''}.`);
+});
+
+export const workOnArt = act((d, ctx, id: string) => {
+  const project = d.artProjects.find((p) => p.id === id);
+  const artist = project && charById(d, project.artistId);
+  if (!d.settings.campArt || !project || !artist || !canMakeArt(artist) || project.hours >= project.requiredHours || d.tacticalEncounter) return;
+  if (project.gp != null && (!carriesTool(artist, project.tool) || !proficientWith(artist, project.tool))) {
+    return void log(d, `${artist.name} needs ${project.tool} and its proficiency to continue “${project.title}”.`, 'warn');
+  }
+  advanceMut(d, ctx, 60, 'camp');
+  if (!canMakeArt(artist)) return void log(d, `${artist.name} couldn't finish the hour of work on “${project.title}”.`, 'warn');
+  advanceArtProject(d, project, artist, 1);
+});
+
+function workOnArtDuringTravel(d: State, o: TravelOpts, hours: number, navigatorId: string | null | undefined, aboard: boolean): void {
+  if (!d.settings.campArt || !o.artProjectId || hours <= 0) return;
+  const project = d.artProjects.find((p) => p.id === o.artProjectId);
+  const artist = project && charById(d, project.artistId);
+  if (!project || !artist || !canMakeArt(artist) || project.hours >= project.requiredHours) return;
+  const otherWork = d.settings.workWhileMarching && d.projects.some((p) => !p.done && p.charIds.includes(artist.id) && marchWork(p).ok);
+  if ((!aboard && (project.kind !== 'song' || project.gp != null)) ||
+    navigatorId === artist.id || o.foragerIds.includes(artist.id) || o.mapperId === artist.id || otherWork ||
+    (project.gp != null && (!carriesTool(artist, project.tool) || !proficientWith(artist, project.tool)))) {
+    return void log(d, `${artist.name} can't work on “${project.title}” during this leg.`, 'warn');
+  }
+  advanceArtProject(d, project, artist, hours);
+}
+
+function advanceArtProject(d: State, project: ArtProject, artist: Character, hours: number): void {
+  project.hours = Math.min(project.requiredHours, project.hours + hours);
+  if (project.hours < project.requiredHours) {
+    return void log(d, `${artist.name} works on “${project.title}” (${project.hours}/${project.requiredHours} hours).`);
+  }
+  if (project.gp != null) {
+    project.itemId = addLine(d, artist, project.title, 1, {
+      artKind: project.kind, valueGp: project.gp, crafted: true, treasure: { kind: 'art' },
+      weight: project.kind === 'book' ? 2 : project.kind === 'painting' ? 1 : 0.1,
+    }, null, true).id;
+  }
+  log(d, `${artist.name} finishes “${project.title}”${project.gp == null ? '' : ` and packs it away (${fmtGp(project.gp)} market value)`}.`, 'good');
+}
+
+export const shareArt = act((d, _ctx, id: string, listenerId?: string) => {
+  const project = d.artProjects.find((p) => p.id === id);
+  const artist = project && charById(d, project.artistId);
+  const listener = listenerId ? charById(d, listenerId) : undefined;
+  if (!d.settings.campArt || !project || !artist || !canMakeArt(artist) || d.tacticalEncounter || project.hours < project.requiredHours) return;
+  if (project.itemId && project.kind !== 'song' && project.kind !== 'poem' && !d.characters.some((c) => c.inventory.some((item) => item.id === project.itemId && item.qty > 0))) {
+    return void log(d, `The party needs a copy of “${project.title}” to share it.`, 'warn');
+  }
+  if (listenerId && (project.shared || d.artMoraleUsed || !listener || listener === artist || !canMakeArt(listener))) return;
+  project.shared = true;
+  log(d, `${artist.name} shares “${project.title}” with the party.`, 'good');
+  if (!listener) return;
+  d.artMoraleUsed = true;
+  d.effects.push({
+    id: uid(), kind: 'other', name: `Inspired by “${project.title}”`, artMorale: true,
+    targetIds: [listener.id], casterId: artist.id, concentration: false, shelter: false,
+    startedAt: absNow(d), endsAt: null, notes: '+1d4 to the next ability check before the next Long Rest (table rule).',
+  });
+  log(d, `${listener.name} gains +1d4 to their next ability check before the next Long Rest.`, 'good');
+});
+
+export const useArtMorale = act((d, ctx, effectId: string) => {
+  const effect = d.effects.find((e) => e.id === effectId && e.artMorale);
+  const listener = effect && charById(d, effect.targetIds[0]);
+  if (!effect || !listener || !canMakeArt(listener)) return;
+  d.effects = d.effects.filter((e) => e !== effect);
+  log(d, `${listener.name} adds +${die(4, ctx.rng)} to their ability check from ${effect.name.toLowerCase()}.`, 'good');
+});
+
+function noteMusicianRest(d: State, watched?: Record<string, number>): void {
+  d.musicianRest = {
+    at: absNow(d),
+    eligible: d.characters.filter((c) => canMakeArt(c) && hasMusician(c) &&
+      (!watched || (watched[c.id] ?? 0) <= maxWatchMinutes(c.trance))).map((c) => c.id),
+    performed: [],
+  };
+}
+
+export const encouragingSong = act((d, _ctx, artistId: string, instrument: string, listenerIds: string[]) => {
+  const artist = charById(d, artistId);
+  const rest = d.musicianRest;
+  if (!artist || !canMakeArt(artist) || !hasMusician(artist) || !rest || rest.at !== absNow(d) ||
+    !rest.eligible.includes(artistId) || rest.performed.includes(artistId) || d.tacticalEncounter ||
+    !ART_INSTRUMENTS.some((t) => t.name === instrument) || !proficientWith(artist, instrument) || !carriesTool(artist, instrument)) return;
+  const listeners = Array.from(new Set(listenerIds))
+    .map((id) => charById(d, id))
+    .filter((c): c is Character => !!c && c !== artist && canMakeArt(c));
+  if (!listeners.length || listeners.length > proficiencyBonus(artist.level)) return;
+  rest.performed.push(artistId);
+  for (const listener of listeners) {
+    if (listener.resources.some((r) => r.name === 'Heroic Inspiration' && r.current > 0)) continue;
+    listener.resources = listener.resources.filter((r) => r.name !== 'Heroic Inspiration');
+    listener.resources.push({ id: uid(), name: 'Heroic Inspiration', max: 1, current: 1, recharge: 'manual' });
+    log(d, `${artist.name}'s Encouraging Song gives ${listener.name} Heroic Inspiration.`, 'good');
+  }
 });
 
 /** A finished crafting project puts what was made into the first crafter's hands. */
@@ -9660,6 +9799,7 @@ export function localShop(s: State): Town | undefined {
 }
 
 export function localBuyers(s: State, item: Parameters<typeof townBuyers>[1]) {
+  if (item.artKind && !s.place.settlement) return [];
   const town = localShop(s);
   return town ? townBuyers(town, item) : undefined;
 }

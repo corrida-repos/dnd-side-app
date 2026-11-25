@@ -1,3 +1,4 @@
+import { ART, type ArtKind } from './art';
 /**
  * Settlements (2024 DMG, chapter 3): size, the Settlement Tables (Defining Traits, Claims to Fame, Current Calamities,
  * Local Leaders, Tavern Names, Random Shops) and Common Names for the people who run things.
@@ -692,7 +693,11 @@ export const CRIME_EXAMPLE: { label: string; covers: string; punishment: string 
 ];
 
 /** Buildings that handle sales back to merchants. Specialty goods take precedence over general equipment. */
-export function townBuyers(town: Town, item: { name: string; treasure?: { kind: TreasureKind } }): TownBuilding[] {
+export function townBuyers(town: Town, item: { name: string; treasure?: { kind: TreasureKind }; artKind?: ArtKind }): TownBuilding[] {
+  if (item.artKind) {
+    const types: readonly string[] = ART[item.artKind].buyers;
+    return town.buildings.filter((b) => b.type === 'pawnshop' || types.includes(b.type));
+  }
   const { name, treasure } = item;
   const catalog = ITEM_PRICES.find((entry) => entry.name.toLowerCase() === name.toLowerCase());
   let types: string[] | undefined;
