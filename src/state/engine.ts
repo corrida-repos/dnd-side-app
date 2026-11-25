@@ -1,3 +1,4 @@
+import { CARTOGRAPHER_TOOL, MAP_COMMISSION_GP, commissionRoutes, commissionSource } from '../rules/mapCommissions';
 import { ART, ART_INSTRUMENTS, hasMusician, type ArtKind, type ArtProject } from '../rules/art';
 import { roadNetChance, roadOpeningPosition, ROAD_NET_NOTICE_DC, ROAD_NET_SAVE_DC } from '../rules/roadAmbush';
 import { tacticalFromHandoff, type EncounterHandoff, type EncounterSurprise, type HandoffParticipant } from '../rules/encounterHandoff';
@@ -2065,6 +2066,8 @@ export const runStage = act((d, ctx, stageId: string, o: Omit<TravelOpts, 'hours
     log(d, `Stage complete: ${done.name}.`, 'good');
     if (uncharted) {
       if (done.trueMiles !== done.miles || !partyHasMapOf(d, done.name)) log(d, arrivalNote(done.miles, target(done)));
+    }
+    if (uncharted || (d.settings.mapCommissionWork && d.mapCommissions.some((order) => !order.delivered && samePlace(order.route, done.name)))) {
       chartStage(d, ctx, done, o.mapperId ?? null, fastDays);
     }
     if (d.travel.reconAdvantage && d.journey.every((x) => x.done)) {
@@ -7354,20 +7357,59 @@ export const copyMap = act((d, ctx, charId: string, mapItemId: string, bonus: nu
   const holder = d.characters.find((x) => x.inventory.some((i) => i.id === mapItemId));
   const map = holder?.inventory.find((i) => i.id === mapItemId);
   if (!c || !map) return;
-  if (!c.inventory.some((i) => CARTOGRAPHER.test(i.name))) return void log(d, `${c.name} needs Cartographer's Tools to copy a map.`, 'warn');
+  const roll = drawMapCopy(d, ctx, c, map, bonus);
+  if (!roll) return;
+  addLine(d, c, map.name, 1, { valueGp: map.valueGp ?? ROUTE_MAP_GP, weight: 0 }, null, false);
+  log(d, `${c.name} makes a fair copy of the ${map.name} (${roll}): worth ${fmtGp(map.valueGp ?? ROUTE_MAP_GP)} to a guide, trader or caravan master (table rule).`, 'good');
+});
+
+function drawMapCopy(d: State, ctx: Ctx, c: Character, map: InventoryItem, bonus: number): string | undefined {
+  if (!c.inventory.some((i) => i.qty > 0 && CARTOGRAPHER.test(i.name))) {
+    log(d, `${c.name} needs Cartographer's Tools to copy a map.`, 'warn');
+    return;
+  }
   const sheet = c.inventory.find((i) => PAPER.test(i.name.trim()) && i.qty > 0);
-  if (!sheet) return void log(d, `${c.name} needs a sheet of Paper or Parchment to copy the map onto.`, 'warn');
+  if (!sheet) {
+    log(d, `${c.name} needs a sheet of Paper or Parchment to copy the map onto.`, 'warn');
+    return;
+  }
   advanceMut(d, ctx, COPY_MAP_MINUTES, 'camp');
-  const me = charById(d, charId)!;
-  const paper = me.inventory.find((i) => i.id === sheet.id)!;
-  paper.qty -= 1;
-  me.inventory = me.inventory.filter((i) => i.qty > 0);
-  const mod = bonus - 2 * me.exhaustion;
+  sheet.qty -= 1;
+  c.inventory = c.inventory.filter((i) => i.qty > 0);
+  const mod = bonus - 2 * c.exhaustion;
   const r = d20('normal', ctx.rng);
-  const roll = `Intelligence with Cartographer's Tools ${r.value} ${signed(mod)} = ${r.value + mod} against DC ${COPY_MAP_DC}`;
-  if (r.value + mod < COPY_MAP_DC) return void log(d, `${me.name} copies the ${map.name} (${roll}), but a slip of the pen spoils the sheet.`, 'warn');
-  addLine(d, me, map.name, 1, { valueGp: map.valueGp ?? ROUTE_MAP_GP, weight: 0 }, null, false);
-  log(d, `${me.name} makes a fair copy of the ${map.name} (${roll}): worth ${fmtGp(map.valueGp ?? ROUTE_MAP_GP)} to a guide, trader or caravan master (table rule).`, 'good');
+  const roll = `Intelligence with Cartographer's Tools ${r.rolls.join('/')} ${signed(mod)} = ${r.value + mod} against DC ${COPY_MAP_DC}`;
+  if (r.value + mod >= COPY_MAP_DC) return roll;
+  log(d, `${c.name} copies the ${map.name} (${roll}), but a slip of the pen spoils the sheet.`, 'warn');
+}
+
+export const acceptMapCommission = act((d, _ctx, route: string) => {
+  const town = currentTown(d);
+  const buyer = townProviders(d, ['mapmaker'])[0];
+  if (!d.settings.mapCommissionWork || !town || !buyer || d.tacticalEncounter) return;
+  const requested = commissionRoutes(d, town.name).find((candidate) => samePlace(candidate, route));
+  if (!requested) return;
+  d.mapCommissions.push({ id: uid(), town: town.name, route: requested, delivered: false });
+  log(d, `${buyer.name} in ${town.name} offers ${fmtGp(MAP_COMMISSION_GP)} for a fair copy of the ${mapName(requested)}.`);
+});
+
+export const deliverMapCommission = act((d, ctx, id: string, charId: string, bonus: number) => {
+  const order = d.mapCommissions.find((commission) => commission.id === id);
+  const c = charById(d, charId);
+  if (!d.settings.mapCommissionWork || !order || order.delivered || !c || !canWorkOnProject(c) || !Number.isFinite(bonus) || d.tacticalEncounter) return;
+  if (!d.place.settlement || !samePlace(d.place.name, order.town)) {
+    return void log(d, `Return to ${order.town} to deliver the map commission.`, 'warn');
+  }
+  const buyer = townProviders(d, ['mapmaker'])[0];
+  if (!buyer) return void log(d, 'No mapmaker is open here.', 'warn');
+  if (!proficientWith(c, CARTOGRAPHER_TOOL)) return void log(d, `${c.name} needs Cartographer’s Tools proficiency for the commission.`, 'warn');
+  const source = commissionSource(d, order.route);
+  if (!source) return void log(d, `The party needs an accurate ${mapName(order.route)} to copy.`, 'warn');
+  const roll = drawMapCopy(d, ctx, c, source, bonus);
+  if (!roll) return;
+  order.delivered = true;
+  gainWealth(c, MAP_COMMISSION_GP);
+  log(d, `${c.name} delivers a copy of the ${mapName(order.route)} to ${buyer.name} for ${fmtGp(MAP_COMMISSION_GP)} (${roll}). The party keeps the original.`, 'good');
 });
 
 /** Table rule: a fair copy of a Book someone carries: 50 sheets of Paper or Parchment and 50 pages of Ink. The copy is worth a Book's price and sells as the copyist's own work. */
@@ -7908,12 +7950,12 @@ export const recoverAmmo = act((d, ctx, charIds: string[], search: boolean = tru
 
 // ---------------------------------------------------------------- art and camp performances
 
-export const canMakeArt = (c: Character): boolean => c.kind === 'pc' && alive(c) && c.hp > 0 && !c.dying && !c.stable;
+export const canWorkOnProject = (c: Character): boolean => c.kind === 'pc' && alive(c) && c.hp > 0 && !c.dying && !c.stable;
 
 export const startArt = act((d, _ctx, artistId: string, kind: ArtKind, title: string, subject: string, tool: string, formal: boolean) => {
   const artist = charById(d, artistId);
   const recipe = ART[kind];
-  if (!d.settings.campArt || !artist || !canMakeArt(artist) || !recipe || !title.trim() || !subject.trim()) return;
+  if (!d.settings.campArt || !artist || !canWorkOnProject(artist) || !recipe || !title.trim() || !subject.trim()) return;
   if (tool !== recipe.tool && !(kind === 'song' && ART_INSTRUMENTS.some((t) => t.name === tool))) return;
   const craft = nonmagicalCrafting(recipe.gp);
   if (formal) {
@@ -7935,12 +7977,12 @@ export const startArt = act((d, _ctx, artistId: string, kind: ArtKind, title: st
 export const workOnArt = act((d, ctx, id: string) => {
   const project = d.artProjects.find((p) => p.id === id);
   const artist = project && charById(d, project.artistId);
-  if (!d.settings.campArt || !project || !artist || !canMakeArt(artist) || project.hours >= project.requiredHours || d.tacticalEncounter) return;
+  if (!d.settings.campArt || !project || !artist || !canWorkOnProject(artist) || project.hours >= project.requiredHours || d.tacticalEncounter) return;
   if (project.gp != null && (!carriesTool(artist, project.tool) || !proficientWith(artist, project.tool))) {
     return void log(d, `${artist.name} needs ${project.tool} and its proficiency to continue “${project.title}”.`, 'warn');
   }
   advanceMut(d, ctx, 60, 'camp');
-  if (!canMakeArt(artist)) return void log(d, `${artist.name} couldn't finish the hour of work on “${project.title}”.`, 'warn');
+  if (!canWorkOnProject(artist)) return void log(d, `${artist.name} couldn't finish the hour of work on “${project.title}”.`, 'warn');
   advanceArtProject(d, project, artist, 1);
 });
 
@@ -7948,7 +7990,7 @@ function workOnArtDuringTravel(d: State, o: TravelOpts, hours: number, navigator
   if (!d.settings.campArt || !o.artProjectId || hours <= 0) return;
   const project = d.artProjects.find((p) => p.id === o.artProjectId);
   const artist = project && charById(d, project.artistId);
-  if (!project || !artist || !canMakeArt(artist) || project.hours >= project.requiredHours) return;
+  if (!project || !artist || !canWorkOnProject(artist) || project.hours >= project.requiredHours) return;
   const otherWork = d.settings.workWhileMarching && d.projects.some((p) => !p.done && p.charIds.includes(artist.id) && marchWork(p).ok);
   if ((!aboard && (project.kind !== 'song' || project.gp != null)) ||
     navigatorId === artist.id || o.foragerIds.includes(artist.id) || o.mapperId === artist.id || otherWork ||
@@ -7976,11 +8018,11 @@ export const shareArt = act((d, _ctx, id: string, listenerId?: string) => {
   const project = d.artProjects.find((p) => p.id === id);
   const artist = project && charById(d, project.artistId);
   const listener = listenerId ? charById(d, listenerId) : undefined;
-  if (!d.settings.campArt || !project || !artist || !canMakeArt(artist) || d.tacticalEncounter || project.hours < project.requiredHours) return;
+  if (!d.settings.campArt || !project || !artist || !canWorkOnProject(artist) || d.tacticalEncounter || project.hours < project.requiredHours) return;
   if (project.itemId && project.kind !== 'song' && project.kind !== 'poem' && !d.characters.some((c) => c.inventory.some((item) => item.id === project.itemId && item.qty > 0))) {
     return void log(d, `The party needs a copy of “${project.title}” to share it.`, 'warn');
   }
-  if (listenerId && (project.shared || d.artMoraleUsed || !listener || listener === artist || !canMakeArt(listener))) return;
+  if (listenerId && (project.shared || d.artMoraleUsed || !listener || listener === artist || !canWorkOnProject(listener))) return;
   project.shared = true;
   log(d, `${artist.name} shares “${project.title}” with the party.`, 'good');
   if (!listener) return;
@@ -7996,7 +8038,7 @@ export const shareArt = act((d, _ctx, id: string, listenerId?: string) => {
 export const useArtMorale = act((d, ctx, effectId: string) => {
   const effect = d.effects.find((e) => e.id === effectId && e.artMorale);
   const listener = effect && charById(d, effect.targetIds[0]);
-  if (!effect || !listener || !canMakeArt(listener)) return;
+  if (!effect || !listener || !canWorkOnProject(listener)) return;
   d.effects = d.effects.filter((e) => e !== effect);
   log(d, `${listener.name} adds +${die(4, ctx.rng)} to their ability check from ${effect.name.toLowerCase()}.`, 'good');
 });
@@ -8004,7 +8046,7 @@ export const useArtMorale = act((d, ctx, effectId: string) => {
 function noteMusicianRest(d: State, watched?: Record<string, number>): void {
   d.musicianRest = {
     at: absNow(d),
-    eligible: d.characters.filter((c) => canMakeArt(c) && hasMusician(c) &&
+    eligible: d.characters.filter((c) => canWorkOnProject(c) && hasMusician(c) &&
       (!watched || (watched[c.id] ?? 0) <= maxWatchMinutes(c.trance))).map((c) => c.id),
     performed: [],
   };
@@ -8013,12 +8055,12 @@ function noteMusicianRest(d: State, watched?: Record<string, number>): void {
 export const encouragingSong = act((d, _ctx, artistId: string, instrument: string, listenerIds: string[]) => {
   const artist = charById(d, artistId);
   const rest = d.musicianRest;
-  if (!artist || !canMakeArt(artist) || !hasMusician(artist) || !rest || rest.at !== absNow(d) ||
+  if (!artist || !canWorkOnProject(artist) || !hasMusician(artist) || !rest || rest.at !== absNow(d) ||
     !rest.eligible.includes(artistId) || rest.performed.includes(artistId) || d.tacticalEncounter ||
     !ART_INSTRUMENTS.some((t) => t.name === instrument) || !proficientWith(artist, instrument) || !carriesTool(artist, instrument)) return;
   const listeners = Array.from(new Set(listenerIds))
     .map((id) => charById(d, id))
-    .filter((c): c is Character => !!c && c !== artist && canMakeArt(c));
+    .filter((c): c is Character => !!c && c !== artist && canWorkOnProject(c));
   if (!listeners.length || listeners.length > proficiencyBonus(artist.level)) return;
   rest.performed.push(artistId);
   for (const listener of listeners) {

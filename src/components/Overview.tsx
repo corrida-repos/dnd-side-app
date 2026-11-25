@@ -1,3 +1,7 @@
+import { CARTOGRAPHER_TOOL } from '../rules/mapCommissions';
+import { carriesTool, proficientWith, toolReadiness } from '../rules/gear';
+import { samePlace } from '../rules/notoriety';
+import { MapCommissionsCard } from './MapCommissionsCard';
 import { ArtCard } from './ArtCard';
 import { BrelandCard } from './Breland';
 import { DANGER, DANGERS, type Danger } from '../rules/encounters';
@@ -54,6 +58,7 @@ export function TravelTab() {
       <TravelCard />
       <PlaceCard />
       <JourneyCard />
+      <MapCommissionsCard />
       <ArtCard />
     </div>
   );
@@ -560,7 +565,7 @@ function TravelCard() {
   const roadProjects = s.settings.campArt ? s.artProjects.filter((p) => p.hours < p.requiredHours &&
     (vessel || (pace !== 'fast' && !flying && p.kind === 'song' && p.gp == null)) &&
     p.artistId !== navigator && !foragers.includes(p.artistId) &&
-    s.characters.some((c) => c.id === p.artistId && E.canMakeArt(c))) : [];
+    s.characters.some((c) => c.id === p.artistId && E.canWorkOnProject(c))) : [];
   const artProjectId = roadProjects.some((p) => p.id === roadArt) ? roadArt : '';
   const navHasTools = !!navChar?.inventory.some((i) => NAVIGATOR.test(i.name));
   const hasMap = E.partyHasMapHere(s);
@@ -723,9 +728,12 @@ function JourneyCard() {
   const [vesselId, setVesselId] = useState('');
   const [mapperId, setMapperId] = useState('');
   const unchartedOn = s.settings.unchartedLand;
-  const cartographers = s.characters.filter((c) => c.kind !== 'mount' && E.alive(c) && c.inventory.some((i) => CARTOGRAPHER.test(i.name)));
+  const cartographers = s.characters.filter((c) => E.canWorkOnProject(c) && carriesTool(c, CARTOGRAPHER_TOOL))
+    .sort((a, b) => toolReadiness(b, CARTOGRAPHER_TOOL) - toolReadiness(a, CARTOGRAPHER_TOOL));
   const vessels = s.stashes.filter(canTravelAboard);
   const left = s.journey.filter((x) => !x.done);
+  const canChart = left.some((stage) => (unchartedOn && stage.uncharted) ||
+    (s.settings.mapCommissionWork && s.mapCommissions.some((order) => !order.delivered && samePlace(order.route, stage.name))));
   return (
     <Card title="Journey">
       {s.journey.length === 0 && <p className="muted small">Plan a trip in stages: each has a distance and a terrain, and runs day by day until it&apos;s done.</p>}
@@ -787,12 +795,12 @@ function JourneyCard() {
           />
           {vessels.length > 0 && <Select label="Aboard" value={vesselId} onChange={setVesselId} options={[{ value: '', label: 'On foot or mounted' }, ...vessels.map((v) => ({ value: v.id, label: `${v.name}${v.location ? ` · ${v.location}` : ''}` }))]} />}
           <Toggle checked={camp} onChange={setCamp} label="Camp each night (eat, drink, Long Rest)" />
-          {unchartedOn && left.some((x) => x.uncharted) && (
+          {canChart && (
             <Select
               label="Charts the way"
               value={mapperId}
               onChange={setMapperId}
-              options={[{ value: '', label: 'Nobody' }, ...cartographers.map((c) => ({ value: c.id, label: `${c.name} (Cartographer's Tools)` }))]}
+              options={[{ value: '', label: 'Nobody' }, ...cartographers.map((c) => ({ value: c.id, label: `${c.name} · carries Cartographer’s Tools${proficientWith(c, CARTOGRAPHER_TOOL) ? ' · proficient' : ''}` }))]}
             />
           )}
         </div>

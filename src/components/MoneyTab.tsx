@@ -1,3 +1,4 @@
+import { MapCommissionsCard } from './MapCommissionsCard';
 import { ArtMarketCard } from './ArtCard';
 import { GALIFAR_COINS } from '../rules/eberron';
 import { NpcProfile } from './NpcProfile';
@@ -33,6 +34,7 @@ export function MoneyTab() {
     <div className="grid">
       <PurseCard />
       <TownCard />
+      <MapCommissionsCard offers />
       <ArtMarketCard />
       <HirelingsCard />
       <SidekickCard />

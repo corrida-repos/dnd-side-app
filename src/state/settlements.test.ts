@@ -250,6 +250,33 @@ describe('local settlement workflows', () => {
     return state;
   }
 
+  it('commissions a route survey and pays once for a copy while the party keeps its original', () => {
+    let s = atTown('mapmaker');
+    Object.assign(s.settings, { encounters: false, navigation: false, townOpeningHours: false });
+    const c = s.characters[0];
+    c.toolProfs = ["Cartographer's Tools"];
+    c.inventory = [
+      { id: 'tools', name: "Cartographer's Tools", qty: 1, weight: 6, source: 'manual' },
+      { id: 'paper', name: 'Paper', qty: 2, weight: 0, source: 'manual' },
+    ];
+    s.journey = [{ id: 'ridge', name: 'Pine Ridge', notes: '', terrain: 'hill', onRoute: true, goodRoad: true, difficult: false, miles: 3, milesDone: 0, done: false }];
+    s = E.acceptMapCommission(s, ctx, 'Pine Ridge');
+    const order = s.mapCommissions[0];
+    expect(E.acceptMapCommission(s, ctx, 'pine ridge').mapCommissions).toHaveLength(1);
+    expect(E.deliverMapCommission(s, ctx, order.id, c.id, 2).characters[0].gp).toBe(1000);
+    s = E.runStage(s, ctx, 'ridge', { pace: 'normal', mapperId: c.id, foragerIds: [] }, false);
+    expect(E.partyHasMapOf(s, 'Pine Ridge')).toBe(true);
+    expect(E.deliverMapCommission({ ...s, place: { ...s.place, settlement: false } }, ctx, order.id, c.id, 2).characters[0].gp).toBe(1000);
+    s = E.deliverMapCommission(s, { rng: () => 0 }, order.id, c.id, 2);
+    expect(s.mapCommissions[0].delivered).toBe(false);
+    expect(s.characters[0].inventory.find((i) => i.id === 'paper')?.qty).toBe(1);
+    s = E.deliverMapCommission(s, ctx, order.id, c.id, 2);
+    expect(s.mapCommissions[0].delivered).toBe(true);
+    expect(s.characters[0].gp).toBe(1025);
+    expect(s.characters[0].inventory.filter((i) => i.name === 'Map of Pine Ridge')).toMatchObject([{ qty: 1 }]);
+    expect(E.deliverMapCommission(s, ctx, order.id, c.id, 2).characters[0].gp).toBe(1025);
+  });
+
   it('checks open local fare and casting providers before charging', () => {
     let s = atTown('docks', 'magic');
     const id = s.characters[0].id;

@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { ART, ART_INSTRUMENTS, artistRank, hasMusician, type ArtKind, type ArtProject } from '../rules/art';
+import { ART, ART_INSTRUMENTS, hasMusician, type ArtKind, type ArtProject } from '../rules/art';
 import { nonmagicalCrafting } from '../rules/crafting';
 import { signed } from '../rules/dice';
-import { abilityScore, carriesTool, hasSkill, proficientWith, toolCheck } from '../rules/gear';
+import { abilityScore, carriesTool, hasSkill, proficientWith, toolCheck, toolReadiness } from '../rules/gear';
 import { fmtGp } from '../rules/money';
 import { proficiencyBonus } from '../rules/survival';
 import { abilityMod } from '../rules/upkeep';
@@ -21,14 +21,14 @@ export function ArtCard() {
   const [subject, setSubject] = useState('');
   const [formal, setFormal] = useState(false);
   const recipe = ART[kind];
-  const party = s.characters.filter(E.canMakeArt);
+  const party = s.characters.filter(E.canWorkOnProject);
   const instrumentOptions = ART_INSTRUMENTS.map((t) => ({
     name: t.name,
-    rank: Math.max(0, ...party.map((c) => artistRank(c, t.name))),
+    rank: Math.max(0, ...party.map((c) => toolReadiness(c, t.name))),
   })).sort((a, b) => b.rank - a.rank);
   const bestInstrument = instrumentOptions.find((t) => t.rank >= 2);
   const tool = kind === 'song' ? instrument || bestInstrument?.name || recipe.tool : recipe.tool;
-  const artists = party.sort((a, b) => artistRank(b, tool) - artistRank(a, tool));
+  const artists = party.sort((a, b) => toolReadiness(b, tool) - toolReadiness(a, tool));
   const artist = artists.find((c) => c.id === artistId) ?? artists[0];
   const check = artist && toolCheck(artist, tool);
   const equipped = !!artist && carriesTool(artist, tool);
@@ -93,8 +93,8 @@ function ArtRow({ project: p }: { project: ArtProject }) {
   const done = p.hours >= p.requiredHours;
   const carried = !p.itemId || p.kind === 'song' || p.kind === 'poem' || s.characters.some((c) => c.inventory.some((i) => i.id === p.itemId && i.qty > 0));
   const equipped = p.gp == null || (carriesTool(artist, p.tool) && proficientWith(artist, p.tool));
-  const available = E.canMakeArt(artist) && !s.tacticalEncounter;
-  const allies = s.characters.filter((c) => c !== artist && E.canMakeArt(c));
+  const available = E.canWorkOnProject(artist) && !s.tacticalEncounter;
+  const allies = s.characters.filter((c) => c !== artist && E.canWorkOnProject(c));
   const share = done && carried && available;
   return (
     <li className="facility">
@@ -122,12 +122,12 @@ export function MusicianCard() {
   const [instrument, setInstrument] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
   const rest = s.musicianRest;
-  const musicians = s.characters.filter((c) => E.canMakeArt(c) && hasMusician(c));
+  const musicians = s.characters.filter((c) => E.canWorkOnProject(c) && hasMusician(c));
   const eligible = musicians.filter((c) => rest?.at === E.absNow(s) && rest.eligible.includes(c.id) && !rest.performed.includes(c.id));
   const artist = eligible.find((c) => c.id === artistId) ?? eligible[0];
   const instruments = artist ? ART_INSTRUMENTS.filter((t) => proficientWith(artist, t.name) && carriesTool(artist, t.name)) : [];
   const tool = instruments.find((t) => t.name === instrument) ?? instruments[0];
-  const allies = s.characters.filter((c) => c !== artist && E.canMakeArt(c));
+  const allies = s.characters.filter((c) => c !== artist && E.canWorkOnProject(c));
   const recipients = allies.filter((c) => selected.includes(c.id));
   const limit = artist ? proficiencyBonus(artist.level) : 0;
   if (!musicians.length) return null;
@@ -155,7 +155,7 @@ export function ArtMarketCard() {
   const [pieceId, setPieceId] = useState('');
   const [bonus, setBonus] = useState<number | null>(null);
   const performances = s.artProjects.filter((p) => (p.kind === 'song' || p.kind === 'poem') && p.hours >= p.requiredHours &&
-    s.characters.some((c) => c.id === p.artistId && E.canMakeArt(c)));
+    s.characters.some((c) => c.id === p.artistId && E.canWorkOnProject(c)));
   const piece = performances.find((p) => p.id === pieceId) ?? performances[0];
   const performer = piece && E.charById(s, piece.artistId);
   const score = performer && abilityScore(performer, 'cha');
