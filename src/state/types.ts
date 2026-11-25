@@ -6,6 +6,7 @@ import type { UnderwaterVisibility } from '../rules/exploration';
 import type { TreasureItem, TreasureRoll } from '../rules/treasure';
 import type { TacticalEncounter } from '../rules/butler';
 import type { Danger } from '../rules/encounters';
+import type { PhysicalAbility } from '../rules/physicalTraining';
 import type { ArmsKind } from '../rules/armsTraining';
 import type { ClimateId, Weather } from '../rules/weather';
 import type { Calendar } from '../rules/calendar';
@@ -437,6 +438,8 @@ export interface Character {
   skillProfs?: string[];
   /** Working a trade: workweeks left with Disadvantage from a reputation for laziness (Xanathar's). */
   workLazyWeeks?: number;
+  /** Highest base scores earned from physical training, used when re-syncing external stats. */
+  trainedPhysicalScores?: Partial<Record<PhysicalAbility, number>>;
   /** Ability scores, when known (D&D Beyond import or typed in). */
   abilities?: Partial<Record<'str' | 'dex' | 'con' | 'int' | 'wis' | 'cha', number>>;
   /** Mounts: how it moves, for the saddle it needs. */
@@ -704,6 +707,7 @@ export interface Project {
   learnKind?: TrainingKind;
   /** Arms training (table rule): the armor, shield or weapon course; `learn` names the weapon for a single Martial weapon. */
   armsKind?: ArmsKind;
+  physicalTraining?: PhysicalAbility;
   /** A finished activity waiting for its checks, and what came of it. */
   awaitingOutcome?: boolean;
   outcome?: string;
@@ -1006,6 +1010,7 @@ export interface Settings {
   /** Table rule: lighting a campfire takes a Wisdom (Survival) check instead of always working. */
   fireLightingCheck: boolean;
   campArt: boolean;
+  mapCommissionWork: boolean;
   /** Optional older rule: double water on days of 100 °F or hotter. */
   doubleWaterInHeat: boolean;
   /** Table rule: foraged food and water from questionable sources must be purified, or risk being Poisoned. */
@@ -1080,6 +1085,8 @@ export interface Settings {
   downtimeOutcomes: boolean;
   /** Table rule: armor training and weapon proficiency can be learned in downtime. */
   armsTraining: boolean;
+  /** Table rule: physical ability scores can be raised by downtime training. */
+  physicalTraining: boolean;
   /** Costly Material components must be in the caster's inventory and are used up (2024 PHB). */
   trackComponents: boolean;
   /** Table rule: Jeweler's Tools also cover jewelry and precious metals; Intelligence (History) values art objects at DC 15. */
@@ -1411,6 +1418,7 @@ export interface State {
   travel: Travel;
   lastLongRestEnd: number | null;
   artProjects: import('../rules/art').ArtProject[];
+  mapCommissions: import('../rules/mapCommissions').MapCommission[];
   artMoraleUsed?: boolean;
   musicianRest?: { at: number; eligible: string[]; performed: string[] };
   /** When tracking began, used as the start of the party's waking time until the first Long Rest. */

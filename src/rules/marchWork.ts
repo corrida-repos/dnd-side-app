@@ -51,7 +51,7 @@ const toolOk = (tool: string): MarchWork => {
   return { ok: false, why: `${t?.name ?? tool} need a bench or workshop` };
 };
 
-export function marchWork(p: Pick<Project, 'kind' | 'name' | 'product' | 'learn' | 'learnKind'>): MarchWork {
+export function marchWork(p: Pick<Project, 'kind' | 'name' | 'product' | 'learn' | 'learnKind' | 'physicalTraining'>): MarchWork {
   switch (p.kind) {
     case 'nonmagical': {
       const g = gearFor(p);
@@ -74,6 +74,7 @@ export function marchWork(p: Pick<Project, 'kind' | 'name' | 'product' | 'learn'
     case 'sellMagic':
       return { ok: false, why: 'deals are struck in town' };
     case 'activity': {
+      if (p.physicalTraining) return { ok: false, why: 'physical training needs dedicated practice time' };
       const learn = (p.learn ?? '').trim();
       if (p.learnKind === 'language') return { ok: true, talk: true, why: 'a language can be practised with a teacher walking alongside' };
       if (p.learnKind === 'tool') return learn ? toolOk(learn) : { ok: false, why: 'the tool isn’t named' };

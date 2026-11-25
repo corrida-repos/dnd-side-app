@@ -419,6 +419,11 @@ export function proficientWith(c: Pick<Character, 'toolProfs' | 'trainedProficie
   });
 }
 
+/** Sorts tool pickers with proficient, equipped characters first. */
+export function toolReadiness(c: Character, tool: string): number {
+  return (proficientWith(c, tool) ? 2 : 0) + Number(carriesTool(c, tool));
+}
+
 /** Proficient in this skill? Null when the character's skills have never been recorded. */
 export function hasSkill(c: Pick<Character, 'skillProfs'>, skill: string): boolean | null {
   if (c.skillProfs === undefined) return null;

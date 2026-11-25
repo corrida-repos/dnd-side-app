@@ -1,6 +1,7 @@
 import { bindableSummon, CREATURE_SPELLS, creatureSpell, PLANAR_BINDING_DAYS, undeadLimits, type CreatureCast, type CreatureSpell } from '../rules/spellCreatures';
 import { controlledForecast, initialWeatherStages, WEATHER_AXES, WEATHER_STAGES, type WeatherStages } from '../rules/controlWeather';
 import { BOOKKEEPING_CAST_MINUTES, BOOKKEEPING_TARGET_LIMIT } from '../rules/spellBookkeeping';
+import { CARTOGRAPHER_TOOL, MAP_COMMISSION_GP, commissionRoutes, commissionSource } from '../rules/mapCommissions';
 import { ART, ART_INSTRUMENTS, hasMusician, type ArtKind, type ArtProject } from '../rules/art';
 import { roadNetChance, roadOpeningPosition, ROAD_NET_NOTICE_DC, ROAD_NET_SAVE_DC } from '../rules/roadAmbush';
 import { tacticalFromHandoff, type EncounterHandoff, type EncounterSurprise, type HandoffParticipant } from '../rules/encounterHandoff';
@@ -55,6 +56,7 @@ import { BOILING_POT, CHARCOAL_WORDS, FRICTION_LIGHT_MINUTES, HIDE_WATERSKIN, LE
 import type { DdbImport } from '../rules/ddb';
 import { MEAL_GP, MEALS_PER_DAY, FEED_GP_PER_DAY, HIRELING_WAGE, magicItemValue, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset, type Lifestyle } from '../rules/money';
 import { STABLE_WAKE_DIE, STABILIZE_DC } from '../rules/upkeep';
+import { PHYSICAL_ABILITIES, PHYSICAL_TRAINING_CAP, physicalTrainingCourse, physicalTrainingScore, type PhysicalAbility } from '../rules/physicalTraining';
 import { ARMS_COURSES, armsCue, armsEntry, canTrainArms } from '../rules/armsTraining';
 import { FORT_NEGLECT_DAYS, FORT_UPKEEP, LAND, LODGING_CAP, MARK_LABEL, PRIZE_CROWN_SHARE, RIGHTS, TITLE_RANK, TRUST_LABEL, TRUST_MAX, lifestyleBelow, lowerLifestyle, monthDue, rollLandIncome, rollLandTrouble, sameCommunity, TRAINING_KIND_LABEL, levelRenown, renownMinimum } from '../rules/prestige';
 import { RITUAL_EXTRA_MINUTES as RITUAL_TAG_MINUTES, spellInfo } from '../rules/rituals';
@@ -2251,6 +2253,8 @@ export const runStage = act((d, ctx, stageId: string, o: Omit<TravelOpts, 'hours
     log(d, `Stage complete: ${done.name}.`, 'good');
     if (uncharted) {
       if (done.trueMiles !== done.miles || !partyHasMapOf(d, done.name)) log(d, arrivalNote(done.miles, target(done)));
+    }
+    if (uncharted || (d.settings.mapCommissionWork && d.mapCommissions.some((order) => !order.delivered && samePlace(order.route, done.name)))) {
       chartStage(d, ctx, done, o.mapperId ?? null, fastDays);
     }
     if (d.travel.reconAdvantage && d.journey.every((x) => x.done)) {
@@ -3055,7 +3059,18 @@ function workOnTheMarch(s: State, ctx: Ctx, hours: number, navigatorId: string |
 /** Project kinds that are hands-on work hired artisans can help with. */
 export const ARTISAN_KINDS: Project['kind'][] = ['nonmagical', 'potion'];
 
+export function canPracticePhysicalTraining(c: Character): boolean {
+  return c.kind === 'pc' && alive(c) && c.hp > 0 && !c.dying && !c.stable;
+}
+
 function progress(s: State, p: Project, ctx?: Ctx): void {
+  if (p.physicalTraining) {
+    const c = charById(s, p.charIds[0]);
+    if (!c || !canPracticePhysicalTraining(c)) {
+      log(s, `${p.name}: the trainee is unavailable today.`, 'warn');
+      return;
+    }
+  }
   const hired = ARTISAN_KINDS.includes(p.kind) ? (p.hiredArtisans ?? 0) : 0;
   const crafters =
     p.charIds.filter((id) => {
@@ -3065,7 +3080,7 @@ function progress(s: State, p: Project, ctx?: Ctx): void {
   if (hired > 0) payGold(s, p.charIds, hired * HIRELING_WAGE.skilled, `${hired} hired artisan${hired > 1 ? 's' : ''} on ${p.name}`);
   // Normally only one other character can help (the DM can allow more). Training is time with the trainer: trainees don't speed each other up.
   // Activities are each participant's own week (carousing together doesn't make the week shorter).
-  const amount = p.learnKind || p.armsKind || isSoloWork(p.kind) || (p.kind === 'activity' && activityOf(p.name)) ? 1 : Math.max(1, s.settings.extraCraftHelpers ? crafters : Math.min(2, crafters));
+  const amount = p.physicalTraining || p.learnKind || p.armsKind || isSoloWork(p.kind) || (p.kind === 'activity' && activityOf(p.name)) ? 1 : Math.max(1, s.settings.extraCraftHelpers ? crafters : Math.min(2, crafters));
   p.daysDone = Math.min(p.daysRequired, p.daysDone + amount);
   if (p.daysDone >= p.daysRequired) progressFinish(s, p, ctx);
   else log(s, `A day's work on ${p.name}: ${p.daysDone}/${p.daysRequired} workdays.`);
@@ -3075,8 +3090,9 @@ function progressFinish(s: State, p: Project, ctx?: Ctx): void {
   {
     p.done = true;
     log(s, `Downtime project complete: ${p.name}.`, 'good');
-    const act = p.kind === 'activity' && !p.learnKind && !p.armsKind ? activityOf(p.name) : null;
-    if (p.learnKind) finishSpecialTraining(s, p);
+    const act = p.kind === 'activity' && !p.learnKind && !p.armsKind && !p.physicalTraining ? activityOf(p.name) : null;
+    if (p.physicalTraining) finishPhysicalTraining(s, p, p.physicalTraining);
+    else if (p.learnKind) finishSpecialTraining(s, p);
     else if (p.armsKind) finishArmsTraining(s, p, ctx);
     else if (act && s.settings.downtimeOutcomes) {
       if (act === 'Training') {
@@ -3151,6 +3167,37 @@ export const fabricateProject = act((d, ctx, projectId: string, casterId: string
   np.daysDone = np.daysRequired;
   np.hiredArtisans = 0;
   progressFinish(d, np, ctx);
+});
+
+function setTrainedPhysicalScore(c: Character, ability: PhysicalAbility, score: number): void {
+  c.abilities = { ...c.abilities, [ability]: score };
+  if (ability === 'str') c.strScore = score;
+  if (ability === 'con') {
+    const change = abilityMod(score) - abilityMod(c.conScore);
+    c.conScore = score;
+    c.conSave += change;
+    c.maxHp += c.level * change;
+  }
+}
+
+function finishPhysicalTraining(s: State, p: Project, ability: PhysicalAbility): void {
+  const c = charById(s, p.charIds[0]);
+  const score = c && physicalTrainingScore(c, ability);
+  if (!c || score == null || score >= PHYSICAL_TRAINING_CAP) {
+    p.outcome = `Requires a recorded ${ABILITY_LABEL[ability]} score below ${PHYSICAL_TRAINING_CAP}.`;
+    log(s, p.outcome, 'warn');
+    return;
+  }
+  setTrainedPhysicalScore(c, ability, score + 1);
+  c.trainedPhysicalScores = { ...c.trainedPhysicalScores, [ability]: Math.max(c.trainedPhysicalScores?.[ability] ?? 0, score + 1) };
+  p.outcome = `${c.name}: ${ABILITY_LABEL[ability]} ${score} → ${score + 1}.`;
+  log(s, p.outcome, 'good', { charIds: [c.id] });
+}
+
+/** Records a day played outside the tracker. */
+export const recordPhysicalTrainingDay = act((d, ctx, projectId: string) => {
+  const p = d.projects.find((x) => x.id === projectId && !x.done && x.physicalTraining);
+  if (p) progress(d, p, ctx);
 });
 
 /** One full downtime day: work 8 hours, eat and drink, then Long Rest from 23:00. */
@@ -6511,6 +6558,34 @@ export const frigidWater = act((d, ctx, charId: string, minutes: number) => {
 
 // ---------------------------------------------------------------- money, projects, mounts
 
+export const startPhysicalTraining = act((d, ctx, charId: string, ability: PhysicalAbility, coached: boolean) => {
+  if (!d.settings.physicalTraining || !PHYSICAL_ABILITIES.includes(ability)) return;
+  const c = charById(d, charId);
+  if (!c || !canPracticePhysicalTraining(c)) return;
+  const score = physicalTrainingScore(c, ability);
+  if (score == null || score >= PHYSICAL_TRAINING_CAP) {
+    log(d, `${c.name} needs a recorded ${ABILITY_LABEL[ability]} score below ${PHYSICAL_TRAINING_CAP} to train it.`, 'warn');
+    return;
+  }
+  if (d.projects.some((p) => !p.done && p.physicalTraining && p.charIds.includes(charId))) {
+    log(d, `${c.name} already has an active physical training project.`, 'warn');
+    return;
+  }
+  const { days, gp } = physicalTrainingCourse(score, coached);
+  Object.assign(d, startProject(d, ctx, {
+    id: uid(),
+    name: `Physical training: ${ABILITY_LABEL[ability]}`,
+    kind: 'activity',
+    charIds: [charId],
+    daysRequired: days,
+    daysDone: 0,
+    costGp: gp,
+    notes: coached ? 'Professional trainer' : 'Self-directed practice',
+    done: false,
+    physicalTraining: ability,
+  }));
+});
+
 /** Starts a downtime project and pays for its materials up front (buying and selling settle on completion). */
 export const startProject = act((d, _ctx, p: Project) => {
   // Arms training: everyone on the course must be ready for it (Light before Medium before Heavy, and so on).
@@ -7872,20 +7947,59 @@ export const copyMap = act((d, ctx, charId: string, mapItemId: string, bonus: nu
   const holder = d.characters.find((x) => x.inventory.some((i) => i.id === mapItemId));
   const map = holder?.inventory.find((i) => i.id === mapItemId);
   if (!c || !map) return;
-  if (!c.inventory.some((i) => CARTOGRAPHER.test(i.name))) return void log(d, `${c.name} needs Cartographer's Tools to copy a map.`, 'warn');
+  const roll = drawMapCopy(d, ctx, c, map, bonus);
+  if (!roll) return;
+  addLine(d, c, map.name, 1, { valueGp: map.valueGp ?? ROUTE_MAP_GP, weight: 0 }, null, false);
+  log(d, `${c.name} makes a fair copy of the ${map.name} (${roll}): worth ${fmtGp(map.valueGp ?? ROUTE_MAP_GP)} to a guide, trader or caravan master (table rule).`, 'good');
+});
+
+function drawMapCopy(d: State, ctx: Ctx, c: Character, map: InventoryItem, bonus: number): string | undefined {
+  if (!c.inventory.some((i) => i.qty > 0 && CARTOGRAPHER.test(i.name))) {
+    log(d, `${c.name} needs Cartographer's Tools to copy a map.`, 'warn');
+    return;
+  }
   const sheet = c.inventory.find((i) => PAPER.test(i.name.trim()) && i.qty > 0);
-  if (!sheet) return void log(d, `${c.name} needs a sheet of Paper or Parchment to copy the map onto.`, 'warn');
+  if (!sheet) {
+    log(d, `${c.name} needs a sheet of Paper or Parchment to copy the map onto.`, 'warn');
+    return;
+  }
   advanceMut(d, ctx, COPY_MAP_MINUTES, 'camp');
-  const me = charById(d, charId)!;
-  const paper = me.inventory.find((i) => i.id === sheet.id)!;
-  paper.qty -= 1;
-  me.inventory = me.inventory.filter((i) => i.qty > 0);
-  const mod = bonus - 2 * me.exhaustion;
+  sheet.qty -= 1;
+  c.inventory = c.inventory.filter((i) => i.qty > 0);
+  const mod = bonus - 2 * c.exhaustion;
   const r = d20('normal', ctx.rng);
-  const roll = `Intelligence with Cartographer's Tools ${r.value} ${signed(mod)} = ${r.value + mod} against DC ${COPY_MAP_DC}`;
-  if (r.value + mod < COPY_MAP_DC) return void log(d, `${me.name} copies the ${map.name} (${roll}), but a slip of the pen spoils the sheet.`, 'warn');
-  addLine(d, me, map.name, 1, { valueGp: map.valueGp ?? ROUTE_MAP_GP, weight: 0 }, null, false);
-  log(d, `${me.name} makes a fair copy of the ${map.name} (${roll}): worth ${fmtGp(map.valueGp ?? ROUTE_MAP_GP)} to a guide, trader or caravan master (table rule).`, 'good');
+  const roll = `Intelligence with Cartographer's Tools ${r.rolls.join('/')} ${signed(mod)} = ${r.value + mod} against DC ${COPY_MAP_DC}`;
+  if (r.value + mod >= COPY_MAP_DC) return roll;
+  log(d, `${c.name} copies the ${map.name} (${roll}), but a slip of the pen spoils the sheet.`, 'warn');
+}
+
+export const acceptMapCommission = act((d, _ctx, route: string) => {
+  const town = currentTown(d);
+  const buyer = townProviders(d, ['mapmaker'])[0];
+  if (!d.settings.mapCommissionWork || !town || !buyer || d.tacticalEncounter) return;
+  const requested = commissionRoutes(d, town.name).find((candidate) => samePlace(candidate, route));
+  if (!requested) return;
+  d.mapCommissions.push({ id: uid(), town: town.name, route: requested, delivered: false });
+  log(d, `${buyer.name} in ${town.name} offers ${fmtGp(MAP_COMMISSION_GP)} for a fair copy of the ${mapName(requested)}.`);
+});
+
+export const deliverMapCommission = act((d, ctx, id: string, charId: string, bonus: number) => {
+  const order = d.mapCommissions.find((commission) => commission.id === id);
+  const c = charById(d, charId);
+  if (!d.settings.mapCommissionWork || !order || order.delivered || !c || !canWorkOnProject(c) || !Number.isFinite(bonus) || d.tacticalEncounter) return;
+  if (!d.place.settlement || !samePlace(d.place.name, order.town)) {
+    return void log(d, `Return to ${order.town} to deliver the map commission.`, 'warn');
+  }
+  const buyer = townProviders(d, ['mapmaker'])[0];
+  if (!buyer) return void log(d, 'No mapmaker is open here.', 'warn');
+  if (!proficientWith(c, CARTOGRAPHER_TOOL)) return void log(d, `${c.name} needs Cartographer’s Tools proficiency for the commission.`, 'warn');
+  const source = commissionSource(d, order.route);
+  if (!source) return void log(d, `The party needs an accurate ${mapName(order.route)} to copy.`, 'warn');
+  const roll = drawMapCopy(d, ctx, c, source, bonus);
+  if (!roll) return;
+  order.delivered = true;
+  gainWealth(c, MAP_COMMISSION_GP);
+  log(d, `${c.name} delivers a copy of the ${mapName(order.route)} to ${buyer.name} for ${fmtGp(MAP_COMMISSION_GP)} (${roll}). The party keeps the original.`, 'good');
 });
 
 /** Table rule: a fair copy of a Book someone carries: 50 sheets of Paper or Parchment and 50 pages of Ink. The copy is worth a Book's price and sells as the copyist's own work. */
@@ -8426,12 +8540,12 @@ export const recoverAmmo = act((d, ctx, charIds: string[], search: boolean = tru
 
 // ---------------------------------------------------------------- art and camp performances
 
-export const canMakeArt = (c: Character): boolean => c.kind === 'pc' && alive(c) && c.hp > 0 && !c.dying && !c.stable;
+export const canWorkOnProject = (c: Character): boolean => c.kind === 'pc' && alive(c) && c.hp > 0 && !c.dying && !c.stable;
 
 export const startArt = act((d, _ctx, artistId: string, kind: ArtKind, title: string, subject: string, tool: string, formal: boolean) => {
   const artist = charById(d, artistId);
   const recipe = ART[kind];
-  if (!d.settings.campArt || !artist || !canMakeArt(artist) || !recipe || !title.trim() || !subject.trim()) return;
+  if (!d.settings.campArt || !artist || !canWorkOnProject(artist) || !recipe || !title.trim() || !subject.trim()) return;
   if (tool !== recipe.tool && !(kind === 'song' && ART_INSTRUMENTS.some((t) => t.name === tool))) return;
   const craft = nonmagicalCrafting(recipe.gp);
   if (formal) {
@@ -8453,12 +8567,12 @@ export const startArt = act((d, _ctx, artistId: string, kind: ArtKind, title: st
 export const workOnArt = act((d, ctx, id: string) => {
   const project = d.artProjects.find((p) => p.id === id);
   const artist = project && charById(d, project.artistId);
-  if (!d.settings.campArt || !project || !artist || !canMakeArt(artist) || project.hours >= project.requiredHours || d.tacticalEncounter) return;
+  if (!d.settings.campArt || !project || !artist || !canWorkOnProject(artist) || project.hours >= project.requiredHours || d.tacticalEncounter) return;
   if (project.gp != null && (!carriesTool(artist, project.tool) || !proficientWith(artist, project.tool))) {
     return void log(d, `${artist.name} needs ${project.tool} and its proficiency to continue “${project.title}”.`, 'warn');
   }
   advanceMut(d, ctx, 60, 'camp');
-  if (!canMakeArt(artist)) return void log(d, `${artist.name} couldn't finish the hour of work on “${project.title}”.`, 'warn');
+  if (!canWorkOnProject(artist)) return void log(d, `${artist.name} couldn't finish the hour of work on “${project.title}”.`, 'warn');
   advanceArtProject(d, project, artist, 1);
 });
 
@@ -8466,7 +8580,7 @@ function workOnArtDuringTravel(d: State, o: TravelOpts, hours: number, navigator
   if (!d.settings.campArt || !o.artProjectId || hours <= 0) return;
   const project = d.artProjects.find((p) => p.id === o.artProjectId);
   const artist = project && charById(d, project.artistId);
-  if (!project || !artist || !canMakeArt(artist) || project.hours >= project.requiredHours) return;
+  if (!project || !artist || !canWorkOnProject(artist) || project.hours >= project.requiredHours) return;
   const otherWork = d.settings.workWhileMarching && d.projects.some((p) => !p.done && p.charIds.includes(artist.id) && marchWork(p).ok);
   if ((!aboard && (project.kind !== 'song' || project.gp != null)) ||
     navigatorId === artist.id || o.foragerIds.includes(artist.id) || o.mapperId === artist.id || otherWork ||
@@ -8494,11 +8608,11 @@ export const shareArt = act((d, _ctx, id: string, listenerId?: string) => {
   const project = d.artProjects.find((p) => p.id === id);
   const artist = project && charById(d, project.artistId);
   const listener = listenerId ? charById(d, listenerId) : undefined;
-  if (!d.settings.campArt || !project || !artist || !canMakeArt(artist) || d.tacticalEncounter || project.hours < project.requiredHours) return;
+  if (!d.settings.campArt || !project || !artist || !canWorkOnProject(artist) || d.tacticalEncounter || project.hours < project.requiredHours) return;
   if (project.itemId && project.kind !== 'song' && project.kind !== 'poem' && !d.characters.some((c) => c.inventory.some((item) => item.id === project.itemId && item.qty > 0))) {
     return void log(d, `The party needs a copy of “${project.title}” to share it.`, 'warn');
   }
-  if (listenerId && (project.shared || d.artMoraleUsed || !listener || listener === artist || !canMakeArt(listener))) return;
+  if (listenerId && (project.shared || d.artMoraleUsed || !listener || listener === artist || !canWorkOnProject(listener))) return;
   project.shared = true;
   log(d, `${artist.name} shares “${project.title}” with the party.`, 'good');
   if (!listener) return;
@@ -8514,7 +8628,7 @@ export const shareArt = act((d, _ctx, id: string, listenerId?: string) => {
 export const useArtMorale = act((d, ctx, effectId: string) => {
   const effect = d.effects.find((e) => e.id === effectId && e.artMorale);
   const listener = effect && charById(d, effect.targetIds[0]);
-  if (!effect || !listener || !canMakeArt(listener)) return;
+  if (!effect || !listener || !canWorkOnProject(listener)) return;
   d.effects = d.effects.filter((e) => e !== effect);
   log(d, `${listener.name} adds +${die(4, ctx.rng)} to their ability check from ${effect.name.toLowerCase()}.`, 'good');
 });
@@ -8522,7 +8636,7 @@ export const useArtMorale = act((d, ctx, effectId: string) => {
 function noteMusicianRest(d: State, watched?: Record<string, number>): void {
   d.musicianRest = {
     at: absNow(d),
-    eligible: d.characters.filter((c) => canMakeArt(c) && hasMusician(c) &&
+    eligible: d.characters.filter((c) => canWorkOnProject(c) && hasMusician(c) &&
       (!watched || (watched[c.id] ?? 0) <= maxWatchMinutes(c.trance))).map((c) => c.id),
     performed: [],
   };
@@ -8531,12 +8645,12 @@ function noteMusicianRest(d: State, watched?: Record<string, number>): void {
 export const encouragingSong = act((d, _ctx, artistId: string, instrument: string, listenerIds: string[]) => {
   const artist = charById(d, artistId);
   const rest = d.musicianRest;
-  if (!artist || !canMakeArt(artist) || !hasMusician(artist) || !rest || rest.at !== absNow(d) ||
+  if (!artist || !canWorkOnProject(artist) || !hasMusician(artist) || !rest || rest.at !== absNow(d) ||
     !rest.eligible.includes(artistId) || rest.performed.includes(artistId) || d.tacticalEncounter ||
     !ART_INSTRUMENTS.some((t) => t.name === instrument) || !proficientWith(artist, instrument) || !carriesTool(artist, instrument)) return;
   const listeners = Array.from(new Set(listenerIds))
     .map((id) => charById(d, id))
-    .filter((c): c is Character => !!c && c !== artist && canMakeArt(c));
+    .filter((c): c is Character => !!c && c !== artist && canWorkOnProject(c));
   if (!listeners.length || listeners.length > proficiencyBonus(artist.level)) return;
   rest.performed.push(artistId);
   for (const listener of listeners) {
@@ -8615,6 +8729,11 @@ export const importDdb = act((d, _ctx, imp: DdbImport, parts: DdbParts) => {
       armsProfs: [...new Set([...(c.armsProfs ?? []), ...(imp.armsProfs ?? [])])],
       abilities: { str: imp.stats.strength, dex: imp.stats.dexterity, con: imp.stats.constitution, int: imp.stats.intelligence, wis: imp.stats.wisdom, cha: imp.stats.charisma },
     });
+    for (const ability of PHYSICAL_ABILITIES) {
+      const trained = c.trainedPhysicalScores?.[ability];
+      const imported = physicalTrainingScore(c, ability);
+      if (trained != null && (imported == null || imported < trained)) setTrainedPhysicalScore(c, ability, trained);
+    }
   }
   if (parts.inventory) {
     // Replace what came from D&D Beyond last time; keep anything added by hand in the tracker.

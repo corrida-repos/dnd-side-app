@@ -1,6 +1,6 @@
 import type { Character } from '../state/types';
 import { CALL, PAINT } from './crafting';
-import { carriesTool, proficientWith, TOOLS } from './gear';
+import { TOOLS } from './gear';
 
 export const ART = {
   song: { label: 'Song', hours: 1, gp: 1, tool: CALL, buyers: ['inn', 'tavern', 'market'] },
@@ -25,10 +25,6 @@ export interface ArtProject {
   requiredHours: number;
   itemId?: string;
   shared?: boolean;
-}
-
-export function artistRank(c: Character, tool: string): number {
-  return (proficientWith(c, tool) ? 2 : 0) + Number(carriesTool(c, tool));
 }
 
 export function hasMusician(c: Character): boolean {
