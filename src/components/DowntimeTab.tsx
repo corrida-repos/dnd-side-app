@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { Project } from '../state/types';
+import { DowntimeSkipControls } from './CampaignDeadlines';
 import { SpeedUp } from './SpeedUp';
 import { PATRONS } from '../rules/patrons';
 import { ACTIVITY_CHECKS, activityOf, ASKING_PRICE_DICE, buyBonus, BUY_MAX_BONUS, BUY_WEEK_GP, buyTotalNeeded, CAROUSING_COST, CAROUSING_NEEDS, CRIME_TARGETS, MAGIC_LEVEL_LABEL, researchBonus, RESEARCH_MIN_GP, sellBase, SELL_WEEK_GP, sheetBonuses, WEEKLY, weeksIn, type MagicLevel } from '../rules/downtimeOutcomes';
@@ -102,6 +103,7 @@ export function DowntimeTab() {
             </button>
           </div>
         )}
+        <DowntimeSkipControls projectIds={sel} />
         <Rule>Each 8-hour workday adds one day of progress for every assigned crafter who is alive, because crafters who share the work divide the time between them.</Rule>
         {done.filter((p) => p.awaitingOutcome).map((p) =>
           p.kind === 'buyMagic' || p.kind === 'sellMagic' ? <DealResolver key={p.id} p={p} /> : <ActivityResolver key={`${p.id}-${(p.resolvedFor ?? []).length}`} p={p} />,

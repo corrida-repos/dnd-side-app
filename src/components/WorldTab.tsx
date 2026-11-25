@@ -1,3 +1,4 @@
+import { CampaignDeadlinesCard } from './CampaignDeadlines';
 import { NpcProfile } from './NpcProfile';
 import { useState } from 'react';
 import { ContactsCard, LettersCard, NotorietyCard } from './LifeCards';
@@ -34,6 +35,7 @@ export function WorldTab() {
       <MarksCard />
       {gate.show('Paths to power') && <PowerCard />}
       {gate.show('Piety and the gods') && <PietyCard />}
+      <CampaignDeadlinesCard />
       <RivalsCard />
       {gate.show('Wanted by the law') && <NotorietyCard />}
       <ContactsCard />
@@ -449,6 +451,7 @@ function RivalsCard() {
             <NpcProfile profile={r} />
             {r.active && (
               <>
+                <Toggle label="Advance on scheduled deadlines" checked={!!r.scheduled} onChange={(v) => set(r.id, { scheduled: v })} />
                 <div className="form-row">
                   <Text label="Goal" value={r.goal} onChange={(v) => set(r.id, { goal: v })} placeholder="What they want, and why the party is in the way" />
                   <Text label="Assets" value={r.assets} onChange={(v) => set(r.id, { assets: v })} placeholder="Money, allies, influence" />

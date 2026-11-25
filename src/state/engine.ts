@@ -6,7 +6,7 @@ import { BRELAND, BRELAND_ROUTES, nextDeparture, type BrelishLocality } from '..
 import { audibleDistance, LOCK_DC, LOCK_MINUTES, monsterBehavior, NOISE, UNDERWATER_DISTANCE, type LockDetails, type Noise } from '../rules/exploration';
 import { rollBastionTreasure, rollTreasure, type TreasureItem, type TreasureRequest } from '../rules/treasure';
 import { fightOrFlightText, type Disposition, type FightOrFlight, openingPositionText, type OpeningPosition, type TacticalCondition, type TacticalResult, type TacticalVitals } from '../rules/butler';
-import type { LadderPos, TameTarget, ActiveEffect, Activity, CharacterSpell, InventoryItem, LogEntry, NpcLoyalty, NpcWagePayment, Ritual, Stash, VehicleDetails, Bastion, Business, Character, FacilityWork, Obstacle, Rival, Debt, Mark, Faction, ExhaustionCause, Facility, JourneyStage, MagicItem, Pace, PendingSave, Project, Recruit, SaveKind, Size, State, Tone } from './types';
+import type { CampaignDeadline, LadderPos, TameTarget, ActiveEffect, Activity, CharacterSpell, InventoryItem, LogEntry, NpcLoyalty, NpcWagePayment, Ritual, Stash, VehicleDetails, Bastion, Business, Character, FacilityWork, Obstacle, Rival, Debt, Mark, Faction, ExhaustionCause, Facility, JourneyStage, MagicItem, Pace, PendingSave, Project, Recruit, SaveKind, Size, State, Tone } from './types';
 import { BASIC_BUILD, BASTION_TURN_DAYS, defaultSize, ENLARGE, rollBastionEvent, SIZE_LABEL, SPECIAL_FACILITIES, type FacilitySize } from '../rules/bastion';
 import { d20, die, combineModes, rollDice, rollExpr, signed, type Rng, type RollMode } from '../rules/dice';
 import { dateFromIndex, formatClock, formatDate, formatDuration, lightAt, sunriseMinutes } from '../rules/calendar';
@@ -481,6 +481,11 @@ function tickHour(s: State, ctx: Ctx, activity: Activity): void {
   }
 }
 
+function dailyLifestyleCost(s: State, c: Character): number {
+  const cost = patronLifestyleCost(s, c.lifestyle);
+  return freeLodging(s, c) ? Math.max(0, cost - patronLifestyleCost(s, lowerLifestyle(c.lifestyle, LODGING_CAP))) : cost;
+}
+
 function dailyCosts(s: State): void {
   if (s.place.settlement && !inDowntime(s)) {
     // Day to day in town: no lifestyle expenses (2024 PHB). Meals and rooms are bought as they go.
@@ -497,7 +502,7 @@ function dailyCosts(s: State): void {
         c.drankPintsToday = Math.max(c.drankPintsToday, waterNeedPints(c, false, false));
         fed.push(c.name);
       }
-      const cost = freeLodging(s, c) ? Math.max(0, patronLifestyleCost(s, c.lifestyle) - patronLifestyleCost(s, lowerLifestyle(c.lifestyle, LODGING_CAP))) : patronLifestyleCost(s, c.lifestyle);
+      const cost = dailyLifestyleCost(s, c);
       const next = dateFromIndex(s.calendar, s.startYear, s.dayIndex + 1);
       const period = s.settings.lifestylePeriod;
       if (period === 'day') payGold(s, [c.id], cost, `a day of ${LIFESTYLE_LABEL[c.lifestyle]} living`);
@@ -1308,8 +1313,57 @@ export function syncPorters(s: State): void {
   }
 }
 
-export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activity, opts: { exploring?: boolean; tactical?: boolean; combat?: boolean; travelHour?: boolean; encounterActivity?: 'travel'; onFoot?: boolean } = {}): void {
+export function campaignDeadlines(s: State): CampaignDeadline[] {
+  return (s.campaignDeadlines ?? []).filter((item) => !item.ruling).sort((a, b) => a.at - b.at);
+}
+
+export function waitingForDeadline(s: State): boolean {
+  const now = absNow(s);
+  return (s.campaignDeadlines ?? []).some((item) => !item.ruling && item.pause && item.at <= now);
+}
+
+export const addCampaignDeadline = act((d, _ctx, item: Omit<CampaignDeadline, 'id' | 'reached' | 'ruling'>) => {
+  if (!item.warning.trim() || !Number.isSafeInteger(item.at) || item.at <= absNow(d)) return;
+  const rival = d.rivals.find((r) => r.id === item.rivalId && r.active);
+  if (rival) rival.scheduled = true;
+  (d.campaignDeadlines ??= []).push({ ...item, warning: item.warning.trim(), rivalId: rival?.id, id: uid() });
+});
+
+export const resolveCampaignDeadline = act((d, _ctx, id: string, ruling: 'scene' | 'offscreen' | 'defer', deferMinutes: number = 0) => {
+  const item = d.campaignDeadlines?.find((entry) => entry.id === id && !entry.ruling);
+  if (!item || item.at > absNow(d)) return;
+  if (ruling === 'defer') {
+    if (!Number.isSafeInteger(deferMinutes) || deferMinutes < 1) return;
+    reachCampaignDeadline(d, item);
+    item.at = absNow(d) + deferMinutes;
+    log(d, `Deferred campaign decision: ${item.warning} Next decision in ${formatDuration(deferMinutes)}.`);
+    return;
+  }
+  reachCampaignDeadline(d, item);
+  item.ruling = ruling;
+  if (ruling === 'scene') setTownModeMut(d, 'active');
+  log(d, `${ruling === 'scene' ? 'Opened a live scene' : 'Accepted an offscreen outcome'}: ${item.warning}`);
+});
+
+function reachCampaignDeadline(s: State, item: CampaignDeadline): void {
+  if (item.reached) return;
+  item.reached = true;
+  const rival = s.rivals.find((r) => r.id === item.rivalId && r.active);
+  if (rival) rival.pressure += 1;
+  log(s, `Campaign deadline: ${item.warning}`, 'warn');
+}
+
+export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activity, opts: { exploring?: boolean; tactical?: boolean; combat?: boolean; travelHour?: boolean; encounterActivity?: 'travel'; onFoot?: boolean; stopForDeadline?: boolean } = {}): void {
   if (opts.tactical && s.pauseForButler && s.tacticalEncounter) return;
+  // Clock skips and resumable activities stop. Actions that apply a single result (such as cooking) finish as one operation.
+  const canPause = opts.stopForDeadline || opts.tactical;
+  const deadlines = campaignDeadlines(s);
+  let next = 0;
+  const reachDue = () => {
+    while (next < deadlines.length && deadlines[next].at <= absNow(s)) reachCampaignDeadline(s, deadlines[next++]);
+  };
+  reachDue();
+  if (canPause && waitingForDeadline(s)) return;
   syncPorters(s);
   levelSidekicks(s, ctx);
   let remaining = Math.max(0, Math.round(minutes));
@@ -1321,7 +1375,8 @@ export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activi
     const untilEncounter = checkOverland
       ? nextEncounterMinutes(encounterIntervalMinutes(s.place.danger, encounterConditions(s, encounterActivity)), s.encounterClock)
       : Infinity;
-    const step = Math.min(remaining, toNextHour, untilEncounter);
+    const untilDeadline = next < deadlines.length ? deadlines[next].at - absNow(s) : Infinity;
+    const step = Math.min(remaining, toNextHour, untilEncounter, untilDeadline);
     const before = absNow(s);
     s.minutes += step;
     remaining -= step;
@@ -1342,6 +1397,7 @@ export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activi
     tickPoisons(s, ctx);
     if (s.minutes % 60 === 0) tickHour(s, ctx, activity);
     if (s.minutes >= MIN_PER_DAY) endOfDay(s, ctx);
+    reachDue();
     if (checkOverland) {
       overlandEncounterClock(s, ctx, step, encounterActivity, opts.tactical && s.pauseForButler, opts.onFoot);
       if (opts.tactical && s.pauseForButler && s.tacticalEncounter) {
@@ -1349,6 +1405,7 @@ export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activi
         break;
       }
     }
+    if (canPause && next > 0 && waitingForDeadline(s)) break;
   }
 }
 
@@ -1358,13 +1415,27 @@ export const setDetailTier = act((d, _ctx, tier: TierId) => {
   log(d, `Level of detail set to ${tierName(tier)}: ${TIERS.find((t) => t.id === tier)!.tagline}`);
 });
 
-export const advance = act((d, ctx, minutes: number, activity: Activity = 'camp') => advanceMut(d, ctx, minutes, activity, { tactical: true }));
+function advanceClockSkip(d: State, ctx: Ctx, until: number, activity: Activity): void {
+  if (waitingForDeadline(d) || (d.pauseForButler && d.tacticalEncounter)) return;
+  advanceMut(d, ctx, until - absNow(d), activity, { tactical: true });
+  if (absNow(d) < until && waitingForDeadline(d)) d.clockSkipUntil ??= until;
+  if (d.clockSkipUntil != null && absNow(d) >= d.clockSkipUntil) d.clockSkipUntil = undefined;
+}
+
+export const advance = act((d, ctx, minutes: number, activity: Activity = 'camp') =>
+  advanceClockSkip(d, ctx, absNow(d) + Math.max(0, Math.round(minutes)), activity));
+
+export const resumeClockSkip = act((d, ctx) => {
+  if (d.clockSkipUntil != null && !waitingForDeadline(d)) {
+    if (absNow(d) < d.clockSkipUntil) advanceClockSkip(d, ctx, d.clockSkipUntil, 'camp');
+    else d.clockSkipUntil = undefined;
+  }
+});
 
 /** Advances to the next time the clock reads hh:mm. */
 export const advanceTo = act((d, ctx, targetMinutes: number, activity: Activity = 'camp') => {
-  let delta = (targetMinutes - d.minutes + MIN_PER_DAY) % MIN_PER_DAY;
-  if (delta === 0) delta = MIN_PER_DAY;
-  advanceMut(d, ctx, delta, activity, { tactical: true });
+  const delta = (targetMinutes - d.minutes + MIN_PER_DAY) % MIN_PER_DAY || MIN_PER_DAY;
+  advanceClockSkip(d, ctx, absNow(d) + delta, activity);
 });
 
 // ---------------------------------------------------------------- rests
@@ -1410,10 +1481,11 @@ export function canLongRest(s: State): { ok: boolean; reason?: string } {
 }
 
 export const shortRest = act((d, ctx) => {
-  if (d.pauseForButler && d.tacticalEncounter) return;
+  if ((d.pauseForButler && d.tacticalEncounter) || waitingForDeadline(d)) return;
+  const start = absNow(d);
   log(d, 'The party takes a Short Rest (1 hour). Everyone can spend Hit Point Dice.', 'info');
   advanceMut(d, ctx, 60, 'rest', { tactical: true });
-  if (d.pauseForButler && d.tacticalEncounter) return;
+  if ((d.pauseForButler && d.tacticalEncounter) || absNow(d) - start < 60) return;
   finishShortRest(d, ctx);
   for (const c of d.characters) {
     if (c.chef && alive(c)) {
@@ -1424,7 +1496,8 @@ export const shortRest = act((d, ctx) => {
 });
 
 export const longRest = act((d, ctx, force = false) => {
-  if (d.pauseForButler && d.tacticalEncounter) return;
+  if ((d.pauseForButler && d.tacticalEncounter) || waitingForDeadline(d)) return;
+  const start = absNow(d);
   if (regionForbidsRest(d)) return void log(d, 'The region won’t allow rest right now (Infested: a swarming migration).', 'warn');
   const check = canLongRest(d);
   if (!check.ok && !force) {
@@ -1440,7 +1513,7 @@ export const longRest = act((d, ctx, force = false) => {
   d.restStart = absNow(d);
   advanceMut(d, ctx, 8 * 60, 'rest', { tactical: true });
   d.restStart = null;
-  if (d.pauseForButler && d.tacticalEncounter) return;
+  if ((d.pauseForButler && d.tacticalEncounter) || absNow(d) - start < 8 * 60) return;
   completeLongRest(d, ctx, watched);
 });
 
@@ -1619,6 +1692,7 @@ function wakeTheCamp(d: State, minutesIn: number, noise: 'loud' | 'quiet', dc: n
 
 /** A rest that gets interrupted partway, using the 2024 rules for what still counts. */
 export const interruptedRest = act((d, ctx, o: InterruptOpts) => {
+  if (waitingForDeadline(d)) return;
   if (o.kind === 'long') {
     const check = canLongRest(d);
     if (!check.ok) {
@@ -1634,15 +1708,21 @@ export const interruptedRest = act((d, ctx, o: InterruptOpts) => {
   // The interruption is the encounter, so no automatic checks while it plays out.
   const auto = d.settings.encounters;
   d.settings.encounters = false;
-  advanceMut(d, ctx, after, 'rest');
+  advanceMut(d, ctx, after, 'rest', { stopForDeadline: true });
   d.settings.encounters = auto;
   d.restStart = null;
+  if (waitingForDeadline(d)) return;
   log(d, `${formatDuration(Math.max(1, after))} in, the rest is interrupted: ${INTERRUPT_LABEL[o.reason]}.`, 'warn');
   if (o.kind === 'long') wakeTheCamp(d, after, o.reason === 'disturbance' ? o.noise : 'loud', o.dc);
-  if (o.reason === 'exertion') advanceMut(d, ctx, 60, 'camp');
+  if (o.reason === 'exertion') {
+    advanceMut(d, ctx, 60, 'camp', { stopForDeadline: true });
+    if (waitingForDeadline(d)) return;
+  }
   if (o.reason === 'disturbance') {
     log(d, 'Nothing comes of it, and the party settles back down. A disturbance like this doesn’t break the rest.');
-    advanceMut(d, ctx, total - after, 'rest');
+    const start = absNow(d);
+    advanceMut(d, ctx, total - after, 'rest', { stopForDeadline: true });
+    if (absNow(d) - start < total - after) return;
     if (o.kind === 'long') completeLongRest(d, ctx, watched);
     else finishShortRest(d, ctx);
     return;
@@ -1656,7 +1736,9 @@ export const interruptedRest = act((d, ctx, o: InterruptOpts) => {
   if (o.resume) {
     const left = total - after + 60;
     log(d, `Once things settle, the party resumes the Long Rest. It needs ${formatDuration(left)} more (1 extra hour for the interruption).`);
-    advanceMut(d, ctx, left, 'rest');
+    const start = absNow(d);
+    advanceMut(d, ctx, left, 'rest', { stopForDeadline: true });
+    if (absNow(d) - start < left) return;
     completeLongRest(d, ctx, watched);
     return;
   }
@@ -1822,6 +1904,7 @@ function clearEncounterCampConditions(place: State['place']): void {
 }
 
 function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
+  if (waitingForDeadline(d)) return 0;
   if (d.pauseForButler && d.tacticalEncounter) return 0;
   const vessel = o.vesselId ? d.stashes.find((x) => x.id === o.vesselId && canTravelAboard(x)) : undefined;
   if (o.vesselId && !vessel) {
@@ -1896,20 +1979,24 @@ function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
       log(d, 'Darkness falls and not everyone can see in it. With no lit Torch, Lantern or light spell (light one on the Effects & Ailments tab), the party picks its way forward at a Slow pace (table rule).', 'warn');
     }
     const onFoot = !o.flying && !(gallop && i === 0);
-    advanceMut(d, ctx, 60, 'travel', { travelHour: !!d.pauseForButler, onFoot });
-    traveledHours++;
+    const start = absNow(d);
+    advanceMut(d, ctx, 60, 'travel', { travelHour: !!d.pauseForButler, onFoot, stopForDeadline: true });
+    const hours = (absNow(d) - start) / 60;
+    if (!hours) break;
+    traveledHours += hours;
     clearEncounterCampConditions(d.place);
-    d.travel.hoursToday += altitude ? 2 : 1;
+    const previousHours = Math.floor(d.travel.hoursToday + 1e-8);
+    d.travel.hoursToday += hours * (altitude ? 2 : 1);
     const burst = gallop && i === 0 ? 2 : 1;
     if (burst === 2) {
       d.travel.gallopUsed = true;
-      log(d, 'The mounts gallop for an hour, covering twice the distance.');
+      log(d, `The mounts gallop for ${formatDuration(Math.round(hours * 60))}, covering twice the distance.`);
     }
-    const step = (blind ? PACES.slow.mph : p.mph) * (o.difficult ? 0.5 : 1) * burst;
+    const step = (blind ? PACES.slow.mph : p.mph) * (o.difficult ? 0.5 : 1) * burst * hours;
     miles += step;
     if (d.travel.lost) {
       offCourse += step;
-      d.travel.lostRecheckIn -= 1;
+      d.travel.lostRecheckIn -= hours;
       if (d.travel.lostRecheckIn <= 0 && nav) {
         if (navigate(d, ctx, nav, o.pace) !== false) {
           d.travel.lost = false;
@@ -1919,19 +2006,21 @@ function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
         } else d.travel.lostRecheckIn = die(LOST_RECHECK_DIE, ctx.rng);
       }
     }
-    if (d.settings.forcedMarch && d.travel.hoursToday > 8) {
-      const dc = 10 + (d.travel.hoursToday - 8);
+    const marchHour = Math.floor(d.travel.hoursToday + 1e-8);
+    if (d.settings.forcedMarch && marchHour > Math.max(8, previousHours)) {
+      const dc = 10 + (marchHour - 8);
       for (const c of d.characters) {
-        if (alive(c) && mountWithParty(c)) requestSave(d, ctx, c, 'march', dc, 'normal', `a forced march (hour ${d.travel.hoursToday})`);
+        if (alive(c) && mountWithParty(c)) requestSave(d, ctx, c, 'march', dc, 'normal', `a forced march (hour ${marchHour})`);
       }
     }
     if (d.pauseForButler && d.settings.encounters) {
-      overlandEncounterClock(d, ctx, 60, 'travel', true, onFoot);
+      overlandEncounterClock(d, ctx, hours * 60, 'travel', true, onFoot);
       if (d.tacticalEncounter) {
         d.tacticalRemainingMinutes = (o.hours - traveledHours) * 60;
         break;
       }
     }
+    if (waitingForDeadline(d)) break;
   }
   d.travel.milesToday += miles;
   if (d.travel.lost) d.travel.milesOffCourse += offCourse;
@@ -2052,12 +2141,13 @@ export const runStage = act((d, ctx, stageId: string, o: Omit<TravelOpts, 'hours
       st.overdueNoted = true;
       log(d, OVERDUE_NOTE, 'warn');
     }
-    if (st.milesDone >= target(st) || !camp || (d.pauseForButler && d.tacticalEncounter)) break;
+    if (st.milesDone >= target(st) || !camp || waitingForDeadline(d) || (d.pauseForButler && d.tacticalEncounter)) break;
     const eaten = partyEat(d, ctx, 'topup');
     Object.assign(d, partyDrink(eaten, ctx, 'topup'));
-    if (d.minutes % MIN_PER_DAY < 22 * 60) advanceMut(d, ctx, 22 * 60 - (d.minutes % MIN_PER_DAY), 'camp');
+    if (d.minutes % MIN_PER_DAY < 22 * 60) advanceMut(d, ctx, 22 * 60 - (d.minutes % MIN_PER_DAY), 'camp', { stopForDeadline: true });
     Object.assign(d, longRest(d, ctx, false));
-    if (d.minutes % MIN_PER_DAY < 7 * 60) advanceMut(d, ctx, 7 * 60 - (d.minutes % MIN_PER_DAY), 'camp');
+    if (d.minutes % MIN_PER_DAY < 7 * 60) advanceMut(d, ctx, 7 * 60 - (d.minutes % MIN_PER_DAY), 'camp', { stopForDeadline: true });
+    if (waitingForDeadline(d)) break;
   }
   const done = stage()!;
   delete d.travel.stageName;
@@ -2752,9 +2842,11 @@ export const finishPreparation = act((d, _ctx, charId: string) => {
 export const workOnProjects = act((d, ctx, projectIds: string[]) => {
   const projects = d.projects.filter((p) => projectIds.includes(p.id) && !p.done);
   if (!projects.length) return;
+  if (waitingForDeadline(d)) return;
   if (d.place.settlement) setTownModeMut(d, 'downtime', 'The party settles in to work. ');
-  advanceMut(d, ctx, 8 * 60, 'work');
-  for (const p of projects) progress(d, p, ctx);
+  const start = absNow(d);
+  advanceMut(d, ctx, WORKDAY_HOURS * 60, 'work', { stopForDeadline: true });
+  if (absNow(d) - start === WORKDAY_HOURS * 60) for (const p of projects) progress(d, p, ctx);
 });
 
 /** Table rule: marching hours count at half rate toward a hand-held project. */
@@ -2847,18 +2939,22 @@ function progress(s: State, p: Project, ctx?: Ctx): void {
     }
   }
   const hired = ARTISAN_KINDS.includes(p.kind) ? (p.hiredArtisans ?? 0) : 0;
+  if (hired > 0) payGold(s, p.charIds, hired * HIRELING_WAGE.skilled, `${hired} hired artisan${hired > 1 ? 's' : ''} on ${p.name}`);
+  p.daysDone = Math.min(p.daysRequired, p.daysDone + projectWorkPerDay(s, p, hired));
+  if (p.daysDone >= p.daysRequired) progressFinish(s, p, ctx);
+  else log(s, `A day's work on ${p.name}: ${p.daysDone}/${p.daysRequired} workdays.`);
+}
+
+function projectWorkPerDay(s: State, p: Project, hired = ARTISAN_KINDS.includes(p.kind) ? (p.hiredArtisans ?? 0) : 0): number {
   const crafters =
     p.charIds.filter((id) => {
       const c = charById(s, id);
       return c && alive(c);
     }).length + hired;
-  if (hired > 0) payGold(s, p.charIds, hired * HIRELING_WAGE.skilled, `${hired} hired artisan${hired > 1 ? 's' : ''} on ${p.name}`);
-  // Normally only one other character can help (the DM can allow more). Training is time with the trainer: trainees don't speed each other up.
-  // Activities are each participant's own week (carousing together doesn't make the week shorter).
-  const amount = p.physicalTraining || p.learnKind || p.armsKind || isSoloWork(p.kind) || (p.kind === 'activity' && activityOf(p.name)) ? 1 : Math.max(1, s.settings.extraCraftHelpers ? crafters : Math.min(2, crafters));
-  p.daysDone = Math.min(p.daysRequired, p.daysDone + amount);
-  if (p.daysDone >= p.daysRequired) progressFinish(s, p, ctx);
-  else log(s, `A day's work on ${p.name}: ${p.daysDone}/${p.daysRequired} workdays.`);
+  // Training and individual activities don't speed up with extra participants.
+  return p.physicalTraining || p.learnKind || p.armsKind || isSoloWork(p.kind) || (p.kind === 'activity' && activityOf(p.name))
+    ? 1
+    : Math.max(1, s.settings.extraCraftHelpers ? crafters : Math.min(2, crafters));
 }
 
 function progressFinish(s: State, p: Project, ctx?: Ctx): void {
@@ -2878,11 +2974,7 @@ function progressFinish(s: State, p: Project, ctx?: Ctx): void {
           c.trainedProficiencies = [...new Set([...(c.trainedProficiencies ?? []), learn])];
           log(s, `${c.name} has learned ${learn} and is now proficient.`, 'good');
         }
-        if (ctx && Math.floor(p.daysRequired / 50) > 0 && die(10, ctx.rng) === 1) {
-          const comp = COMPLICATIONS.Training[die(COMPLICATIONS.Training.length, ctx.rng) - 1];
-          const c = charById(s, p.charIds[0]);
-          if (c) applyComplication(s, ctx, c, comp);
-        }
+        if (ctx) applyTrainingComplications(s, ctx, p);
         if (!learn) log(s, `${p.name} is done. Name the language or tool on the character sheet.`);
       } else if (act === 'Relaxation') {
         for (const id of p.charIds) {
@@ -2975,15 +3067,75 @@ export const recordPhysicalTrainingDay = act((d, ctx, projectId: string) => {
   if (p) progress(d, p, ctx);
 });
 
+const DOWNTIME_WORK_MINUTES = WORKDAY_HOURS * 60;
+const DOWNTIME_REST_START = MIN_PER_DAY - 8 * 60;
+
+export function downtimePreview(s: State, days: number, projectIds: string[], resuming = false) {
+  const until = resuming ? (s.downtimeSkip?.until ?? absNow(s)) : absNow(s) + days * MIN_PER_DAY;
+  const phase = resuming ? (s.downtimeSkip?.phaseMinutes ?? 0) : 0;
+  const workdaysBy = (at: number) => Math.floor((at + MIN_PER_DAY - DOWNTIME_WORK_MINUTES) / MIN_PER_DAY);
+  const workdays = workdaysBy(phase + Math.max(0, until - absNow(s))) - workdaysBy(phase);
+  const projects = s.projects.filter((p) => !p.done && projectIds.includes(p.id));
+  const finishes = projects.filter((p) => (!p.physicalTraining || s.characters.some((c) => c.id === p.charIds[0] && canPracticePhysicalTraining(c)))
+    && p.daysDone + workdays * projectWorkPerDay(s, p) >= p.daysRequired);
+  const elapsedDays = Math.max(0, Math.floor(until / MIN_PER_DAY) - s.dayIndex);
+  const upkeep = s.settings.chargeCosts ? elapsedDays * (
+    adventurers(s).reduce((sum, c) => sum + dailyLifestyleCost(s, c), 0) + s.hirelings.filter((h) => h.active).reduce((sum, h) => sum + h.wageGp, 0)
+  ) : 0;
+  const wages = s.settings.chargeCosts ? projects.reduce((sum, p) => {
+    if (!ARTISAN_KINDS.includes(p.kind)) return sum;
+    const daysLeft = Math.ceil((p.daysRequired - p.daysDone) / projectWorkPerDay(s, p));
+    return sum + Math.min(workdays, daysLeft) * (p.hiredArtisans ?? 0) * HIRELING_WAGE.skilled;
+  }, 0) : 0;
+  return { until, finishes, upkeep, wages };
+}
+
+function runDowntimeSkip(d: State, ctx: Ctx): void {
+  const skip = d.downtimeSkip;
+  if (!skip || !d.place.settlement || waitingForDeadline(d) || (d.pauseForButler && d.tacticalEncounter)) return;
+  if (absNow(d) < skip.until) setTownModeMut(d, 'downtime');
+  while (absNow(d) < skip.until && !waitingForDeadline(d)) {
+    const start = absNow(d);
+    const phase = skip.phaseMinutes;
+    const end = phase < DOWNTIME_WORK_MINUTES ? DOWNTIME_WORK_MINUTES : phase < DOWNTIME_REST_START ? DOWNTIME_REST_START : MIN_PER_DAY;
+    const resting = phase >= DOWNTIME_REST_START;
+    if (resting && phase === DOWNTIME_REST_START && canLongRest(d).ok && !regionForbidsRest(d)) skip.restStartedAt = start;
+    advanceMut(d, ctx, Math.min(end - phase, skip.until - start), resting ? 'rest' : 'work', { stopForDeadline: true });
+    skip.phaseMinutes += absNow(d) - start;
+    if (skip.phaseMinutes === DOWNTIME_WORK_MINUTES) {
+      for (const p of d.projects) if (!p.done && skip.projectIds.includes(p.id)) progress(d, p, ctx);
+    }
+    if (skip.phaseMinutes === MIN_PER_DAY) {
+      if (skip.restStartedAt === absNow(d) - 8 * 60) completeLongRest(d, ctx, {});
+      skip.phaseMinutes = 0;
+      delete skip.restStartedAt;
+    }
+  }
+  if (absNow(d) >= skip.until) d.downtimeSkip = undefined;
+}
+
+export const startDowntimeSkip = act((d, ctx, days: number, projectIds: string[]) => {
+  if (!d.place.settlement || waitingForDeadline(d) || !Number.isInteger(days) || days < 1 || days > 366) return;
+  d.downtimeSkip = { until: absNow(d) + days * MIN_PER_DAY, projectIds, phaseMinutes: 0 };
+  runDowntimeSkip(d, ctx);
+});
+
+export const resumeDowntimeSkip = act((d, ctx) => runDowntimeSkip(d, ctx));
+
 /** One full downtime day: work 8 hours, eat and drink, then Long Rest from 23:00. */
 export const downtimeDay = act((d, ctx, projectIds: string[]) => {
+  if (waitingForDeadline(d)) return;
   const projects = d.projects.filter((p) => projectIds.includes(p.id) && !p.done);
-  advanceMut(d, ctx, 8 * 60, 'work');
+  if (d.place.settlement) setTownModeMut(d, 'downtime');
+  const start = absNow(d);
+  advanceMut(d, ctx, DOWNTIME_WORK_MINUTES, 'work', { stopForDeadline: true });
+  if (absNow(d) - start < DOWNTIME_WORK_MINUTES) return;
   for (const p of projects) progress(d, p, ctx);
+  if (waitingForDeadline(d)) return;
   const eatAll = partyEat(d, ctx, 'topup');
   const drinkAll = partyDrink(eatAll, ctx, 'topup');
   Object.assign(d, drinkAll);
-  if (d.minutes < 23 * 60) advanceMut(d, ctx, 23 * 60 - d.minutes, 'camp');
+  if (d.minutes < 23 * 60) advanceMut(d, ctx, 23 * 60 - d.minutes, 'camp', { stopForDeadline: true });
   const rested = longRest(d, ctx, false);
   Object.assign(d, rested);
 });
@@ -3579,8 +3731,9 @@ function pickRival(d: State, ctx: Ctx): Rival | undefined {
 }
 
 /** Xanathar's: each time downtime is resolved, a rival advances one of its plans (effects are table rules). */
-function rivalAdvances(d: State, ctx: Ctx): void {
-  const rival = pickRival(d, ctx);
+function rivalAdvances(d: State, ctx: Ctx, manual = false): void {
+  const eligible = d.rivals.filter((r) => r.active && (manual || !r.scheduled));
+  const rival = eligible.length ? eligible[die(eligible.length, ctx.rng) - 1] : undefined;
   if (!rival) return;
   rival.pressure += 1;
   const own = rival.plans.filter((p) => p.trim());
@@ -3693,7 +3846,7 @@ export const addRival = act((d, ctx, name: string, idea: string) => {
   log(d, `A rival emerges: ${rivalName}.`, 'warn');
 });
 
-export const advanceRival = act((d, ctx) => rivalAdvances(d, ctx));
+export const advanceRival = act((d, ctx) => rivalAdvances(d, ctx, true));
 
 // ---------------------------------------------------------------- group patrons and supernatural regions (Tasha's)
 
@@ -4721,10 +4874,13 @@ export const runBusiness = act((d, ctx, businessId: string, days: number) => {
     const b = d.businesses.find((x) => x.id === businessId);
     const owner = b && charById(d, b.ownerId);
     if (!b || !owner || !alive(owner) || b.building) return;
+    const start = absNow(d);
     Object.assign(d, downtimeDay(d, ctx, []));
+    if (absNow(d) - start < DOWNTIME_WORK_MINUTES) break;
     const nb = d.businesses.find((x) => x.id === businessId)!;
     nb.daysWorked += 1;
     log(d, `${owner.name} spends the day running ${nb.name} (${nb.daysWorked} day${nb.daysWorked > 1 ? 's' : ''}${nb.daysWorked > BUSINESS_MAX_DAYS ? `, only ${BUSINESS_MAX_DAYS} count` : ''}).`);
+    if (waitingForDeadline(d)) break;
   }
 });
 
@@ -4772,7 +4928,7 @@ export const payBusinessDebts = act((d, _ctx, businessId: string) => {
 
 // ---------------------------------------------------------------- bastions
 
-export function turnsDue(s: State, b: Bastion): number {
+export function turnsDue(s: Pick<State, 'dayIndex'>, b: Bastion): number {
   return Math.floor((s.dayIndex - b.lastTurnDay) / BASTION_TURN_DAYS);
 }
 
@@ -8734,14 +8890,19 @@ function finishArmsTraining(s: State, p: Project, ctx?: Ctx): void {
     c.armsProfs = [...new Set([...(c.armsProfs ?? []), entry])];
     log(s, `${c.name} finishes ${p.name} and now has ${kind === 'One martial weapon' ? `proficiency with ${entry}` : ARMS_COURSES[kind].grants} (table rule). ${c.name} notices ${armsCue(kind, p.learn)}.`, 'good', { charIds: [c.id] });
   }
-  // Xanathar's training complication: 10% for each ten workweeks.
-  if (ctx && s.settings.downtimeOutcomes) {
-    for (let i = 0; i < Math.floor(p.daysRequired / 50); i++) {
-      if (die(10, ctx.rng) !== 1) continue;
-      const comp = COMPLICATIONS.Training[die(COMPLICATIONS.Training.length, ctx.rng) - 1];
-      const c = charById(s, p.charIds[0]);
-      if (c) applyComplication(s, ctx, c, comp);
-      break;
+  if (ctx && s.settings.downtimeOutcomes) applyTrainingComplications(s, ctx, p);
+}
+
+function applyTrainingComplications(s: State, ctx: Ctx, p: Project): void {
+  const intervals = Math.floor(p.daysRequired / 50);
+  for (const id of p.charIds) {
+    const c = charById(s, id);
+    if (!c) continue;
+    for (let i = 0; i < intervals; i++) {
+      if (die(10, ctx.rng) === 1) {
+        const comp = COMPLICATIONS.Training[die(COMPLICATIONS.Training.length, ctx.rng) - 1];
+        applyComplication(s, ctx, c, comp);
+      }
     }
   }
 }
@@ -10009,7 +10170,11 @@ export const rideBrelishRoute = act((d, ctx) => {
   const ticket = d.passage;
   const route = BRELAND_ROUTES.find((entry) => entry.id === ticket?.routeId);
   if (!ticket || !route || !canRideBrelishRoute(d)) return;
-  if (ticket.departure > absNow(d)) advanceMut(d, ctx, ticket.departure - absNow(d), 'work');
+  if (waitingForDeadline(d)) return;
+  if (ticket.departure > absNow(d)) {
+    advanceMut(d, ctx, ticket.departure - absNow(d), 'work', { stopForDeadline: true });
+    if (waitingForDeadline(d)) return;
+  }
   setTownModeMut(d, 'active');
   breakCamp(d, ctx);
   d.place = { ...brelishPlace(route.from), name: route.label, terrain: 'urban', settlement: false, shelter: 'building' };

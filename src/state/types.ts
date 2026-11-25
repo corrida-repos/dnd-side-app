@@ -885,7 +885,26 @@ export interface Mark {
   landId?: string;
 }
 
+export interface CampaignDeadline {
+  id: string;
+  warning: string;
+  outcome: string;
+  at: number;
+  rivalId?: string;
+  pause: boolean;
+  reached?: boolean;
+  ruling?: 'scene' | 'offscreen';
+}
+
+export interface DowntimeSkip {
+  until: number;
+  projectIds: string[];
+  phaseMinutes: number;
+  restStartedAt?: number;
+}
+
 export interface Rival extends NpcProfile {
+  scheduled?: boolean;
   id: string;
   name: string;
   /** Who they are (idea), what they want, and what they can bring to bear. */
@@ -1453,6 +1472,9 @@ export interface State {
   debts: Debt[];
   /** Rivals working against the party during downtime (Xanathar's). */
   rivals: Rival[];
+  campaignDeadlines?: CampaignDeadline[];
+  clockSkipUntil?: number;
+  downtimeSkip?: DowntimeSkip;
   /** A rival's bribed officials make the next crime harder (+5 DC). */
   rivalHeat?: boolean;
   /** Businesses the characters own (optional Running a Business rule). */

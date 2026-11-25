@@ -21,6 +21,7 @@ import { SettingsTab } from './components/SettingsTab';
 import { WaysTab } from './components/WaysAround';
 import { goTo, onGoTo } from './components/nav';
 import { Num } from './components/common';
+import { TimeAdvancePreview } from './components/CampaignDeadlines';
 import { JumpBar } from './components/JumpBar';
 import { CharactersTab } from './components/CharactersTab';
 import { SHEET_ALIASES, setSection } from './components/focus';
@@ -78,6 +79,10 @@ const typing = (e: KeyboardEvent) => {
  * The panel is drawn on the page body, under its button, because the bar scrolls sideways on phones and would clip it.
  */
 function MoreTime() {
+  const s = useGame();
+  const now = E.absNow(s);
+  const next = E.campaignDeadlines(s).find((item) => item.pause);
+  const blocked = E.waitingForDeadline(s);
   const [at, setAt] = useState<{ top: number; left: number } | null>(null);
   const [mins, setMins] = useState(30);
   const btn = useRef<HTMLButtonElement>(null);
@@ -112,17 +117,28 @@ function MoreTime() {
       </button>
       {at &&
         createPortal(
-          <div ref={panel} className="dm-more-panel" role="dialog" aria-label="More time" style={{ top: at.top, left: at.left }}>
+          <div ref={panel} className="dm-more-panel" role="dialog" aria-label="More time" style={{ top: at.top, left: at.left, maxHeight: `calc(100dvh - ${at.top + 12}px)` }}>
             <span className="inline-group">
-              <Num value={mins} onChange={setMins} min={1} max={10080} suffix="min" width={4} />
-              <button className="small" onClick={() => (dispatch((st, c) => E.advance(st, c, mins, 'camp'), `${mins} minutes passing`), done())}>
+              <Num value={mins} onChange={setMins} min={1} max={527040} suffix="min" width={4} />
+              <button className="small" disabled={blocked} onClick={() => (dispatch((st, c) => E.advance(st, c, mins, 'camp'), `${mins} minutes passing`), done())}>
                 Advance
               </button>
             </span>
+            <TimeAdvancePreview until={now + Math.round(mins)} />
             <span className="btn-row tight">
-              <button className="small" onClick={() => to(6 * 60, '06:00')}>To 06:00</button>
-              <button className="small" onClick={() => to(12 * 60, 'noon')}>To noon</button>
-              <button className="small" onClick={() => to(18 * 60, '18:00')}>To 18:00</button>
+              {next && !blocked && <button className="small" onClick={() => {
+                dispatch((st, cx) => E.advance(st, cx, next.at - now), 'advancing to the next decision');
+                done();
+              }}>To next decision</button>}
+              {s.clockSkipUntil != null && <button className="small" disabled={blocked} onClick={() => {
+                dispatch(E.resumeClockSkip, 'resuming the time skip');
+                done();
+              }}>Resume saved skip</button>}
+            </span>
+            <span className="btn-row tight">
+              <button className="small" disabled={blocked} onClick={() => to(6 * 60, '06:00')}>To 06:00</button>
+              <button className="small" disabled={blocked} onClick={() => to(12 * 60, 'noon')}>To noon</button>
+              <button className="small" disabled={blocked} onClick={() => to(18 * 60, '18:00')}>To 18:00</button>
             </span>
             <button className="ghost small" onClick={() => (goTo('world'), done())} title="Calendar, date and time setup on the World tab">
               Set the date or time…

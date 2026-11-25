@@ -1356,6 +1356,7 @@ button.dm-more-btn.open {
 }
 .dm-more-panel {
   position: fixed;
+  overflow-y: auto;
   z-index: 40;
   display: flex;
   flex-direction: column;

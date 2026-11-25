@@ -17,6 +17,12 @@ A control bar stays on screen on every tab: the time, +10 minutes, +1 hour, +4 h
 
 **Player checklists** (Party section, and a summary on the Dashboard) list, per player, the conditions they're suffering with what fixes each one (Exhaustion by cause, poison, disease, curses, jail, low HP, overloaded packs, the penalty after being raised) and upkeep that has real consequences if ignored (food and water today, rations and waterskin running low, unsafe water, no warm cover for a cold night, spells left unprepared, an attuned item out of reach, ammunition to recover or running out, fading charms, debts, finished downtime). Inventory that needs dealing with is flagged too: overfilled containers, an extradimensional container packed inside another (which destroys both), prepared spells whose costly component isn't carried, a spent Reliquary talisman, and (DM only) an attuned item that is secretly cursed. Chores with no game effect are left out. A player view hides DM-only secrets, and each list can be copied to send to that player.
 
+## Downtime and campaign deadlines
+
+Schedule a deadline in **World → Campaign deadlines** with a public warning, an optional private note, and an optional rival. Linked rivals advance on that schedule during downtime and travel. For example, the last ferry might leave while the party is still crafting. **Downtime → Projects → Plan a downtime skip** previews the target date, estimated upkeep, which selected projects could finish, and Bastion turns due. **More time** can also advance directly to the next decision.
+
+A deadline marked for a DM decision pauses clock skips, ordinary travel and downtime. Open it from **Needs attention** to play the scene, accept an offscreen outcome, or defer the decision. Playing the scene switches town play to Day to day. Resume the saved skip when the party returns to downtime. Individual actions that resolve in one step, such as cooking, can finish when a deadline falls during them. The Chronicle records when the deadline came due and how the DM ruled.
+
 ## Levels of detail
 
 **Settings → Level of detail** offers five cumulative presets. Light includes supported 5.5e player options. Complete adds 5.5e requirements and consequences. The three higher levels add increasingly involved legacy and table rules.

@@ -650,6 +650,29 @@ Build the return path in two passes. First cover time, vitals, deaths, and condi
 
 ---
 
+## Phase 14: Downtime consequences and return to play ✅
+
+Downtime should give the party time to recover, earn favors and finish projects. How much time they can spare depends on what is happening in the campaign. By default, rival plans advance when individual projects or activities resolve. Several simultaneous completions can generate more pressure than a longer stretch of elapsed time. Dated campaign deadlines give the DM a way to manage that tradeoff through the campaign clock, rivals, Downtime, Dashboard and Chronicle.
+
+### Rules references
+
+- *Xanathar's Guide to Everything* uses rivals and activity-specific complications to create problems and adventure hooks. Complications have different triggers, such as a chance per workweek for carousing and a chance every ten workweeks for training. Weekly activities already use their own triggers. Training now checks each trainee per completed ten-workweek interval. [5etools, Downtime Revisited](https://5e.tools/book.html#xge,2,downtime%20revisited,0)
+- The 2024 *Dungeon Master's Guide* defaults to one Bastion turn every seven in-game days, including during adventures. Keep those turns on the campaign clock and let the DM resolve due orders and events through the existing Bastions workflow. [5etools, Bastions](https://5e.tools/book.html#xdmg,7)
+
+### Build order
+
+1. **Add optional, dated campaign consequences.** Let the DM attach a deadline and a visible warning to a rival plan or an opportunity, such as a contact leaving town or a patron hiring another crew. Allow a private note for the actual outcome. An elapsed-time rival plan advances through its scheduled milestones during travel, live scenes and downtime alike. If a rival uses this schedule, it takes the place of that rival's automatic project-completion advances. Keep existing campaigns on their current behavior until the DM opts in. Label the new scheduling behavior as a table rule under Gritty.
+2. **Preview the tradeoff before advancing.** Use the existing time controls to show the target date, which projects can finish, and upcoming costs, Bastion turns and known deadlines. Offer to advance to the next decision point. A long skip stops at the first campaign milestone the DM marked as requiring a decision. Surface it in Needs attention, retain the requested end date for resuming the skip, and keep DM-only details out of player-facing previews. All clock advances surface due deadlines. Individual actions with a single outcome, such as cooking, finish as one operation.
+3. **Start the next live scene.** Let the DM use a milestone to open a playable situation, accept an offscreen world change, or defer the decision. Record the ruling and date in the Chronicle. A rival buying the last ferry passage can lead to a negotiation, a chase, or a new route. In town, switching back to Day to day pauses player downtime work while preserving earned progress. World deadlines and scheduled Bastion turns continue on the campaign clock.
+
+### Acceptance checks
+
+- Schedule a ferry departure on day four and queue two projects to finish on day seven. A seven-day skip should preview the departure and stop on day four. The DM can play out the ferry scene or accept the departure. Resuming downtime should finish both projects with no extra advance to the scheduled rival plan. The ferry deadline should also come due on day four if the same time passes during travel.
+- Allow a quiet month when no campaign deadline is active. Apply existing project progress, upkeep and Bastion turns. A month between real-world sessions leaves the campaign date as it was.
+- Confirm that undo and replay preserve whether a milestone has been resolved, and that advancing past its date again after resolution leaves the outcome applied once.
+
+---
+
 ## 5etools rules audit
 
 This review compares the revised core books and their supplements against the app at `8622f19`. It covers rules for travel, time, survival, equipment, downtime, factions, and Bastions, including features that exist in the app but only cover part of a published rule. The book links open the 5etools chapters used for the comparison. The audit records implementation gaps.

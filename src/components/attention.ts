@@ -25,6 +25,15 @@ export function attentionItems(s: State): AttentionItem[] {
   const now = E.absNow(s);
   const add = (i: AttentionItem) => out.push(i);
 
+  for (const item of E.campaignDeadlines(s)) {
+    if (item.at <= now) add({
+      id: `deadline-${item.id}`,
+      tone: item.pause ? 'bad' : 'warn',
+      text: `Campaign deadline: ${item.warning}`,
+      tab: 'world',
+    });
+  }
+
   if (s.pending.length) add({ id: 'saves', tone: 'bad', text: `${s.pending.length} saving throw${s.pending.length > 1 ? 's' : ''} to roll`, tab: 'overview' });
   for (const c of s.characters) {
     if (c.diedAt == null && c.dying) add({ id: `dying-${c.id}`, tone: 'bad', text: `${c.name} is dying: roll death saves`, tab: 'gear', charId: c.id });

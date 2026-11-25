@@ -10,7 +10,7 @@ import { RESEARCH_EXTRA_LORE } from './chorePayoffs';
 /**
  * Downtime activity outcomes. The 2024 books give these activities no tables, so this follows the optional
  * *Xanathar's Guide to Everything* (2014) rules: one workweek (5 days), checks against set or rolled DCs,
- * and a 10% chance of a complication. Complications here are short generic versions (table rule).
+ * and activity-specific complication triggers. Complications here are short generic versions (table rule).
  */
 export type ActivityId = 'Carousing' | 'Crime' | 'Gambling' | 'Pit fighting' | 'Relaxation' | 'Religious service' | 'Research' | 'Training' | 'Working a trade';
 
