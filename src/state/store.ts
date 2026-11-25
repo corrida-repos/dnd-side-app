@@ -21,6 +21,8 @@ function migrate(raw: unknown): State | null {
     // Saves made before weatherDamage defaulted off keep the value they had.
     settings: (() => {
       const st = { ...base.settings, weatherDamage: true, ...parsed.settings };
+      // Physical training follows the existing arms training setting in older saves.
+      if (parsed.settings?.physicalTraining === undefined) st.physicalTraining = st.armsTraining;
       if (parsed.settings && parsed.settings.campArt === undefined) {
         const oldTier = matchTier({ ...st, campArt: false });
         if (oldTier != null && oldTier < 3) st.campArt = false;

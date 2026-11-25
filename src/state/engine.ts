@@ -52,6 +52,7 @@ import { BOILING_POT, CHARCOAL_WORDS, FRICTION_LIGHT_MINUTES, HIDE_WATERSKIN, LE
 import type { DdbImport } from '../rules/ddb';
 import { MEAL_GP, MEALS_PER_DAY, FEED_GP_PER_DAY, HIRELING_WAGE, magicItemValue, fmtGp, LIFESTYLE_GP, LIFESTYLE_LABEL, type MountPreset, type Lifestyle } from '../rules/money';
 import { STABLE_WAKE_DIE, STABILIZE_DC } from '../rules/upkeep';
+import { PHYSICAL_ABILITIES, PHYSICAL_TRAINING_CAP, physicalTrainingCourse, physicalTrainingScore, type PhysicalAbility } from '../rules/physicalTraining';
 import { ARMS_COURSES, armsCue, armsEntry, canTrainArms } from '../rules/armsTraining';
 import { FORT_NEGLECT_DAYS, FORT_UPKEEP, LAND, LODGING_CAP, MARK_LABEL, PRIZE_CROWN_SHARE, RIGHTS, TITLE_RANK, TRUST_LABEL, TRUST_MAX, lifestyleBelow, lowerLifestyle, monthDue, rollLandIncome, rollLandTrouble, sameCommunity, TRAINING_KIND_LABEL, levelRenown, renownMinimum } from '../rules/prestige';
 import { RITUAL_EXTRA_MINUTES as RITUAL_TAG_MINUTES, spellInfo } from '../rules/rituals';
@@ -2830,7 +2831,18 @@ function workOnTheMarch(s: State, ctx: Ctx, hours: number, navigatorId: string |
 /** Project kinds that are hands-on work hired artisans can help with. */
 export const ARTISAN_KINDS: Project['kind'][] = ['nonmagical', 'potion'];
 
+export function canPracticePhysicalTraining(c: Character): boolean {
+  return c.kind === 'pc' && alive(c) && c.hp > 0 && !c.dying && !c.stable;
+}
+
 function progress(s: State, p: Project, ctx?: Ctx): void {
+  if (p.physicalTraining) {
+    const c = charById(s, p.charIds[0]);
+    if (!c || !canPracticePhysicalTraining(c)) {
+      log(s, `${p.name}: the trainee is unavailable today.`, 'warn');
+      return;
+    }
+  }
   const hired = ARTISAN_KINDS.includes(p.kind) ? (p.hiredArtisans ?? 0) : 0;
   const crafters =
     p.charIds.filter((id) => {
@@ -2840,7 +2852,7 @@ function progress(s: State, p: Project, ctx?: Ctx): void {
   if (hired > 0) payGold(s, p.charIds, hired * HIRELING_WAGE.skilled, `${hired} hired artisan${hired > 1 ? 's' : ''} on ${p.name}`);
   // Normally only one other character can help (the DM can allow more). Training is time with the trainer: trainees don't speed each other up.
   // Activities are each participant's own week (carousing together doesn't make the week shorter).
-  const amount = p.learnKind || p.armsKind || isSoloWork(p.kind) || (p.kind === 'activity' && activityOf(p.name)) ? 1 : Math.max(1, s.settings.extraCraftHelpers ? crafters : Math.min(2, crafters));
+  const amount = p.physicalTraining || p.learnKind || p.armsKind || isSoloWork(p.kind) || (p.kind === 'activity' && activityOf(p.name)) ? 1 : Math.max(1, s.settings.extraCraftHelpers ? crafters : Math.min(2, crafters));
   p.daysDone = Math.min(p.daysRequired, p.daysDone + amount);
   if (p.daysDone >= p.daysRequired) progressFinish(s, p, ctx);
   else log(s, `A day's work on ${p.name}: ${p.daysDone}/${p.daysRequired} workdays.`);
@@ -2850,8 +2862,9 @@ function progressFinish(s: State, p: Project, ctx?: Ctx): void {
   {
     p.done = true;
     log(s, `Downtime project complete: ${p.name}.`, 'good');
-    const act = p.kind === 'activity' && !p.learnKind && !p.armsKind ? activityOf(p.name) : null;
-    if (p.learnKind) finishSpecialTraining(s, p);
+    const act = p.kind === 'activity' && !p.learnKind && !p.armsKind && !p.physicalTraining ? activityOf(p.name) : null;
+    if (p.physicalTraining) finishPhysicalTraining(s, p, p.physicalTraining);
+    else if (p.learnKind) finishSpecialTraining(s, p);
     else if (p.armsKind) finishArmsTraining(s, p, ctx);
     else if (act && s.settings.downtimeOutcomes) {
       if (act === 'Training') {
@@ -2926,6 +2939,37 @@ export const fabricateProject = act((d, ctx, projectId: string, casterId: string
   np.daysDone = np.daysRequired;
   np.hiredArtisans = 0;
   progressFinish(d, np, ctx);
+});
+
+function setTrainedPhysicalScore(c: Character, ability: PhysicalAbility, score: number): void {
+  c.abilities = { ...c.abilities, [ability]: score };
+  if (ability === 'str') c.strScore = score;
+  if (ability === 'con') {
+    const change = abilityMod(score) - abilityMod(c.conScore);
+    c.conScore = score;
+    c.conSave += change;
+    c.maxHp += c.level * change;
+  }
+}
+
+function finishPhysicalTraining(s: State, p: Project, ability: PhysicalAbility): void {
+  const c = charById(s, p.charIds[0]);
+  const score = c && physicalTrainingScore(c, ability);
+  if (!c || score == null || score >= PHYSICAL_TRAINING_CAP) {
+    p.outcome = `Requires a recorded ${ABILITY_LABEL[ability]} score below ${PHYSICAL_TRAINING_CAP}.`;
+    log(s, p.outcome, 'warn');
+    return;
+  }
+  setTrainedPhysicalScore(c, ability, score + 1);
+  c.trainedPhysicalScores = { ...c.trainedPhysicalScores, [ability]: Math.max(c.trainedPhysicalScores?.[ability] ?? 0, score + 1) };
+  p.outcome = `${c.name}: ${ABILITY_LABEL[ability]} ${score} → ${score + 1}.`;
+  log(s, p.outcome, 'good', { charIds: [c.id] });
+}
+
+/** Records a day played outside the tracker. */
+export const recordPhysicalTrainingDay = act((d, ctx, projectId: string) => {
+  const p = d.projects.find((x) => x.id === projectId && !x.done && x.physicalTraining);
+  if (p) progress(d, p, ctx);
 });
 
 /** One full downtime day: work 8 hours, eat and drink, then Long Rest from 23:00. */
@@ -6176,6 +6220,34 @@ export const frigidWater = act((d, ctx, charId: string, minutes: number) => {
 
 // ---------------------------------------------------------------- money, projects, mounts
 
+export const startPhysicalTraining = act((d, ctx, charId: string, ability: PhysicalAbility, coached: boolean) => {
+  if (!d.settings.physicalTraining || !PHYSICAL_ABILITIES.includes(ability)) return;
+  const c = charById(d, charId);
+  if (!c || !canPracticePhysicalTraining(c)) return;
+  const score = physicalTrainingScore(c, ability);
+  if (score == null || score >= PHYSICAL_TRAINING_CAP) {
+    log(d, `${c.name} needs a recorded ${ABILITY_LABEL[ability]} score below ${PHYSICAL_TRAINING_CAP} to train it.`, 'warn');
+    return;
+  }
+  if (d.projects.some((p) => !p.done && p.physicalTraining && p.charIds.includes(charId))) {
+    log(d, `${c.name} already has an active physical training project.`, 'warn');
+    return;
+  }
+  const { days, gp } = physicalTrainingCourse(score, coached);
+  Object.assign(d, startProject(d, ctx, {
+    id: uid(),
+    name: `Physical training: ${ABILITY_LABEL[ability]}`,
+    kind: 'activity',
+    charIds: [charId],
+    daysRequired: days,
+    daysDone: 0,
+    costGp: gp,
+    notes: coached ? 'Professional trainer' : 'Self-directed practice',
+    done: false,
+    physicalTraining: ability,
+  }));
+});
+
 /** Starts a downtime project and pays for its materials up front (buying and selling settle on completion). */
 export const startProject = act((d, _ctx, p: Project) => {
   // Arms training: everyone on the course must be ready for it (Light before Medium before Heavy, and so on).
@@ -8024,6 +8096,11 @@ export const importDdb = act((d, _ctx, imp: DdbImport, parts: DdbParts) => {
       armsProfs: [...new Set([...(c.armsProfs ?? []), ...(imp.armsProfs ?? [])])],
       abilities: { str: imp.stats.strength, dex: imp.stats.dexterity, con: imp.stats.constitution, int: imp.stats.intelligence, wis: imp.stats.wisdom, cha: imp.stats.charisma },
     });
+    for (const ability of PHYSICAL_ABILITIES) {
+      const trained = c.trainedPhysicalScores?.[ability];
+      const imported = physicalTrainingScore(c, ability);
+      if (trained != null && (imported == null || imported < trained)) setTrainedPhysicalScore(c, ability, trained);
+    }
   }
   if (parts.inventory) {
     // Replace what came from D&D Beyond last time; keep anything added by hand in the tracker.

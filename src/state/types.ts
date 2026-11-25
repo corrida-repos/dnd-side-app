@@ -4,6 +4,7 @@ import type { UnderwaterVisibility } from '../rules/exploration';
 import type { TreasureItem, TreasureRoll } from '../rules/treasure';
 import type { TacticalEncounter } from '../rules/butler';
 import type { Danger } from '../rules/encounters';
+import type { PhysicalAbility } from '../rules/physicalTraining';
 import type { ArmsKind } from '../rules/armsTraining';
 import type { ClimateId, Weather } from '../rules/weather';
 import type { Calendar } from '../rules/calendar';
@@ -428,6 +429,8 @@ export interface Character {
   skillProfs?: string[];
   /** Working a trade: workweeks left with Disadvantage from a reputation for laziness (Xanathar's). */
   workLazyWeeks?: number;
+  /** Highest base scores earned from physical training, used when re-syncing external stats. */
+  trainedPhysicalScores?: Partial<Record<PhysicalAbility, number>>;
   /** Ability scores, when known (D&D Beyond import or typed in). */
   abilities?: Partial<Record<'str' | 'dex' | 'con' | 'int' | 'wis' | 'cha', number>>;
   /** Mounts: how it moves, for the saddle it needs. */
@@ -693,6 +696,7 @@ export interface Project {
   learnKind?: TrainingKind;
   /** Arms training (table rule): the armor, shield or weapon course; `learn` names the weapon for a single Martial weapon. */
   armsKind?: ArmsKind;
+  physicalTraining?: PhysicalAbility;
   /** A finished activity waiting for its checks, and what came of it. */
   awaitingOutcome?: boolean;
   outcome?: string;
@@ -1069,6 +1073,8 @@ export interface Settings {
   downtimeOutcomes: boolean;
   /** Table rule: armor training and weapon proficiency can be learned in downtime. */
   armsTraining: boolean;
+  /** Table rule: physical ability scores can be raised by downtime training. */
+  physicalTraining: boolean;
   /** Costly Material components must be in the caster's inventory and are used up (2024 PHB). */
   trackComponents: boolean;
   /** Table rule: Jeweler's Tools also cover jewelry and precious metals; Intelligence (History) values art objects at DC 15. */

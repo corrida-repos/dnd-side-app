@@ -26,10 +26,11 @@ import { MAGIC_ITEM_VALUE, fmtGp } from '../rules/money';
 import { SPELLBOOK_COPY, ACTIVITY_PRESETS } from '../rules/longterm';
 import { AWAY_PROGRESS, BUILDING_PRESETS, BUSINESS_DEBT_PENALTY, BUSINESS_MAX_DAYS, BUSINESS_PRESETS, businessValue } from '../rules/business';
 import { WaysAround } from './WaysAround';
-import { BOOK, SKILLS, TOOLS, abilityScore, carriesTool, hasSkill, proficientWith, type AbilityKey } from '../rules/gear';
+import { ABILITY_LABEL, BOOK, SKILLS, TOOLS, abilityScore, carriesTool, hasSkill, proficientWith, type AbilityKey } from '../rules/gear';
 import { isLowLife } from '../rules/lowLife';
 import { TRAINING_KIND_LABEL, type TrainingKind } from '../rules/prestige';
 import { marchWork } from '../rules/marchWork';
+import { PHYSICAL_ABILITIES, PHYSICAL_TRAINING_CAP, physicalTrainingCourse, physicalTrainingScore, type PhysicalAbility } from '../rules/physicalTraining';
 import { ARMS_COURSES, ARMS_KINDS, ARMS_WEEK_DAYS, armsCost, armsModifier, armsWeeks, canTrainArms, type ArmsKind } from '../rules/armsTraining';
 
 const anRarity = (r: Rarity): string => `${/^[aeiou]/i.test(RARITY_LABEL[r]) ? 'an' : 'a'} ${RARITY_LABEL[r].toLowerCase()}`;
@@ -44,6 +45,7 @@ export function DowntimeTab() {
   return (
     <div className="grid">
       <NewProject />
+      {s.settings.physicalTraining && <PhysicalTrainingCard />}
       <MaterialsCard />
       {s.settings.runningBusiness && <BusinessCard />}
       <Card title="Projects" className="span-2">
@@ -72,7 +74,10 @@ export function DowntimeTab() {
                 {E.ARTISAN_KINDS.includes(p.kind) && <CraftSpeedUp p={p} />}
               </div>
               <span className="btn-row tight">
-                <button className="ghost small" onClick={() => edit((d) => void (d.projects.find((x) => x.id === p.id)!.daysDone = Math.min(p.daysRequired, p.daysDone + 1)))}>
+                <button className="ghost small" onClick={() => {
+                  if (p.physicalTraining) dispatch((st, cx) => E.recordPhysicalTrainingDay(st, cx, p.id));
+                  else edit((d) => void (d.projects.find((x) => x.id === p.id)!.daysDone = Math.min(p.daysRequired, p.daysDone + 1)));
+                }}>
                   +1 day
                 </button>
                 <button
@@ -131,6 +136,36 @@ export function DowntimeTab() {
         )}
       </Card>
     </div>
+  );
+}
+
+function PhysicalTrainingCard() {
+  const s = useGame();
+  const [charId, setCharId] = useState('');
+  const [ability, setAbility] = useState<PhysicalAbility>('str');
+  const [coached, setCoached] = useState(false);
+  const trainees = s.characters.filter(E.canPracticePhysicalTraining);
+  const trainee = trainees.find((c) => c.id === charId);
+  const score = trainee ? physicalTrainingScore(trainee, ability) : undefined;
+  const busy = trainee && s.projects.some((p) => !p.done && p.physicalTraining && p.charIds.includes(trainee.id));
+  const course = score != null && score < PHYSICAL_TRAINING_CAP ? physicalTrainingCourse(score, coached) : null;
+  return (
+    <Card title="Physical training">
+      <p className="small">Raise a base Strength, Dexterity or Constitution score by 1, up to {PHYSICAL_TRAINING_CAP}.</p>
+      <div className="form-row">
+        <Select label="Trainee" value={trainee?.id ?? ''} onChange={setCharId} options={[{ value: '', label: 'Choose…' }, ...trainees.map((c) => ({ value: c.id, label: c.name }))]} />
+        <Select label="Ability" value={ability} onChange={setAbility} options={PHYSICAL_ABILITIES.map((a) => ({ value: a, label: ABILITY_LABEL[a] }))} />
+      </div>
+      <Toggle checked={coached} onChange={setCoached} label="Hire a professional trainer" />
+      {busy ? <p className="small">This character already has an active physical training project.</p>
+        : trainee && score == null ? <p className="small">Record the character’s {ABILITY_LABEL[ability]} score on the Party tab first.</p>
+        : trainee && !course ? <p className="small">This score has reached the training cap.</p>
+        : course && score != null && <p className="small">{ABILITY_LABEL[ability]} {score} → {score + 1} · {course.days} eight-hour workdays · {fmtGp(course.gp)}</p>}
+      <Rule>Table rule. Solo practice is free. A trainer roughly halves the time and costs 25 GP per workweek. Higher scores take longer.</Rule>
+      <button className="primary" disabled={!trainee || !course || !!busy} onClick={() => dispatch((st, cx) => E.startPhysicalTraining(st, cx, charId, ability, coached))}>
+        Start training
+      </button>
+    </Card>
   );
 }
 
