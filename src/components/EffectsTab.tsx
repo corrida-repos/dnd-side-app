@@ -1,3 +1,4 @@
+import { SpellCreaturesCard } from './SpellCreatures';
 import { useState } from 'react';
 import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
@@ -24,6 +25,7 @@ export function EffectsTab() {
   return (
     <div className="grid">
       <ActiveCard />
+      <SpellCreaturesCard />
       <AddEffectCard />
       <ExploreCard />
       <BreathCard />

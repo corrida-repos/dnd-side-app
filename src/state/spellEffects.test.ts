@@ -259,3 +259,85 @@ describe('travel and weather spells', () => {
   });
 
 });
+
+describe('spell creature roster', () => {
+  function conjurer() {
+    const s = createDefaultState(() => 0);
+    s.minutes = 60;
+    s.settings.encounters = false;
+    s.settings.sleepDeprivation = false;
+    s.settings.trackComponents = false;
+    const caster = newCharacter({ name: 'Conjurer', className: 'Wizard', hp: 20, maxHp: 20, needsFood: false, needsWater: false,
+      spells: [
+        { name: 'Animate Dead', level: 3 }, { name: 'Create Undead', level: 6 }, { name: 'Planar Binding', level: 5 },
+        { name: 'Find Familiar', level: 1 }, { name: 'Find Steed', level: 2 }, { name: 'Awaken', level: 5 },
+      ].map((spell) => ({ ...spell, prepared: true, alwaysPrepared: false })) });
+    s.characters = [caster];
+    return { s, caster: caster.id };
+  }
+
+  it('renews only selected undead and retains creatures whose control lapses', () => {
+    const { s, caster } = conjurer();
+    let next = E.castSpell(s, ctx(), caster, 'Animate Dead', 'slot', null, null, [], 4, { count: 2, form: 'Zombie' });
+    const [first, second] = next.spellCreatures!;
+    next = E.setSpellCreatureOrder(next, ctx(), first.id, 'Guard the road');
+    next = E.advance(next, ctx(), 23 * 60);
+    next = E.castSpell(next, ctx(), caster, 'Animate Dead', 'slot', null, null, [], 3, { renewIds: [first.id] });
+    next = E.advance(next, ctx(), 60);
+    expect(next.spellCreatures?.map((c) => [c.id, c.status, c.order])).toEqual([
+      [first.id, 'present', 'Guard the road'], [second.id, 'uncontrolled', ''],
+    ]);
+    const retry = E.castSpell(next, ctx(), caster, 'Animate Dead', 'slot', null, null, [], 3, { renewIds: [second.id] });
+    expect(E.absNow(retry)).toBe(E.absNow(next));
+    expect(retry.spellCreatures).toHaveLength(2);
+  });
+
+  it('requires night, valid slot choices, and reusable onyx for each corpse', () => {
+    const { s, caster } = conjurer();
+    s.settings.trackComponents = true;
+    s.characters[0].inventory.push({ id: 'onyx', name: 'Black onyx', qty: 2, valueGp: 150, weight: 0, source: 'manual' });
+    const input = { form: 'Wight', count: 2 };
+    expect(E.castSpell(s, ctx(), caster, 'Create Undead', 'slot', null, null, [], 6, input).spellCreatures).toBeUndefined();
+    const night = E.castSpell(s, ctx(), caster, 'Create Undead', 'slot', null, null, [], 8, input);
+    expect(night.spellCreatures?.map((c) => c.form)).toEqual(['Wight', 'Wight']);
+    expect(night.characters[0].inventory[0].qty).toBe(2);
+    const day = E.advance(s, ctx(), 11 * 60);
+    expect(E.castSpell(day, ctx(), caster, 'Create Undead', 'slot', null, null, [], 8, input).spellCreatures).toBeUndefined();
+  });
+
+  it('binds a linked summon for the chosen slot duration only on a failed save', () => {
+    const { s, caster } = conjurer();
+    const summoner = newCharacter({ name: 'Summoner', hp: 10, maxHp: 10 });
+    s.characters.push(summoner);
+    s.effects.push({ id: 'summon', name: 'Summon Fey', kind: 'spell', casterId: summoner.id, targetIds: [],
+      concentration: true, shelter: false, startedAt: E.absNow(s), endsAt: E.absNow(s) + 61, notes: '' });
+    const input = { name: 'Briar', summonId: 'summon' };
+    const resists = E.castSpell(s, ctx(), caster, 'Planar Binding', 'slot', null, null, [], 6, { ...input, saveFailed: false });
+    expect(resists.spellCreatures ?? []).toHaveLength(0);
+    expect(resists.effects[0].endsAt).toBe(s.effects[0].endsAt);
+    const bound = E.castSpell(s, ctx(), caster, 'Planar Binding', 'slot', null, null, [], 6, { ...input, saveFailed: true });
+    expect(bound.spellCreatures?.[0].until).toBe(E.absNow(bound) + 10 * 1440);
+    expect(bound.effects[0].endsAt).toBe(bound.spellCreatures?.[0].until);
+    expect(E.loseConcentration(bound, ctx(), 'summon', summoner.id).spellCreatures?.[0].status).toBe('gone');
+  });
+
+  it('tracks familiar recall, steed replacement and early loss of the Awaken charm', () => {
+    const { s, caster } = conjurer();
+    let next = E.castSpell(s, ctx(), caster, 'Find Familiar', 'ritual', null, null, [], undefined, { form: 'Cat' });
+    const familiar = next.spellCreatures![0].id;
+    next = E.setSpellCreatureStatus(next, ctx(), familiar, 'dismiss');
+    expect(next.spellCreatures![0].status).toBe('dismissed');
+    next = E.setSpellCreatureStatus(next, ctx(), familiar, 'recall');
+    expect(next.spellCreatures![0].status).toBe('present');
+    next = E.castSpell(next, ctx(), caster, 'Find Steed', 'slot', null, null, [], 2, { form: 'Horse' });
+    next = E.castSpell(next, ctx(), caster, 'Find Steed', 'slot', null, null, [], 4, { form: 'Elk' });
+    expect(next.spellCreatures?.filter((c) => c.spell === 'find steed').map((c) => [c.form, c.slotLevel])).toEqual([['Elk', 4]]);
+    next = E.castSpell(next, ctx(), caster, 'Awaken', 'slot', null, null, [], 5, { name: 'Willow', form: 'Tree' });
+    const awakened = next.spellCreatures!.find((c) => c.spell === 'awaken')!;
+    expect(awakened.until).toBe(E.absNow(next) + 30 * 1440);
+    next = E.setSpellCreatureStatus(next, ctx(), awakened.id, 'hurt');
+    expect(next.spellCreatures?.find((c) => c.id === awakened.id)?.status).toBe('independent');
+    next = E.markDead(next, ctx(), caster, true);
+    expect(next.spellCreatures?.find((c) => c.spell === 'find steed')?.status).toBe('gone');
+  });
+});

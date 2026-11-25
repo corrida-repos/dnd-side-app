@@ -1,3 +1,5 @@
+import { SpellCreatureCastFields } from './SpellCreatures';
+import { creatureSpell, type CreatureCast } from '../rules/spellCreatures';
 import { BOOKKEEPING_CAST_MINUTES, BOOKKEEPING_TARGET_LIMIT } from '../rules/spellBookkeeping';
 import { useMemo, useState } from 'react';
 import { useGame, dispatch, edit } from '../state/store';
@@ -78,6 +80,7 @@ function CastPanel({ c }: { c: Character }) {
   const [target, setTarget] = useState('');
   const [targetIds, setTargetIds] = useState<string[]>([]);
   const [slotLevel, setSlotLevel] = useState('');
+  const [creatureCast, setCreatureCast] = useState<CreatureCast>({});
   const [helperIds, setHelperIds] = useState<string[]>([]);
   const [option, setOption] = useState<CircleOptionId>('prolong');
   if (!known.length) return null;
@@ -89,10 +92,11 @@ function CastPanel({ c }: { c: Character }) {
   const slots = c.resources.filter((r) => /(spell|pact) slots \(level (\d)\)/i.test(r.name) && Number(/level (\d)/i.exec(r.name)![1]) >= info.level);
   const slotLeft = slots.reduce((a, r) => a + r.current, 0);
   const limit = BOOKKEEPING_TARGET_LIMIT[key];
+  const creature = creatureSpell(key);
   const eligible = s.characters.filter((x) => x.diedAt == null && E.mountWithParty(x)
     && (key !== 'prayer of healing' || !x.prayerOfHealingUsed));
   const availableLevels = [...new Set(slots.filter((r) => r.current > 0).map((r) => /level (\d)/i.exec(r.name)![1]))].sort();
-  const chosenLevel = limit && availableLevels.includes(slotLevel) ? Number(slotLevel) : undefined;
+  const chosenLevel = (limit || creature) && availableLevels.includes(slotLevel) ? Number(slotLevel) : undefined;
   const selected = targetIds.filter((id) => eligible.some((x) => x.id === id));
   if (key === 'wind walk' && !selected.includes(c.id)) selected.unshift(c.id);
   if (key === 'phantom steed' && !selected.length) selected.push(c.id);
@@ -102,27 +106,32 @@ function CastPanel({ c }: { c: Character }) {
       <div className="btn-row tight">
         <Select
           value={pick.sp.name}
-          onChange={(value) => { setName(value); setTargetIds([]); setSlotLevel(''); }}
+          onChange={(value) => { setName(value); setTargetIds([]); setSlotLevel(''); setCreatureCast({}); }}
           options={known.map((k) => ({ value: k.sp.name, label: `${k.sp.name}${k.info.ritual ? ' (R)' : ''}${k.info.level ? ` · L${k.info.level}` : ' · cantrip'}` }))}
         />
         <button
           className="small"
           disabled={(info.level > 0 && !info.prepared && !info.alwaysPrepared) || (!!limit && !selected.length)}
           title={info.level > 0 && !info.prepared && !info.alwaysPrepared ? 'Not prepared' : ''}
-          onClick={() => dispatch((st, cx) => E.castSpell(st, cx, c.id, pick.sp.name, 'slot', TARGET_SPELLS[pick.sp.name] ? target || null : null, null, selected, chosenLevel))}
+          onClick={() => dispatch((st, cx) => E.castSpell(st, cx, c.id, pick.sp.name, 'slot', TARGET_SPELLS[pick.sp.name] ? target || null : null, null, selected, chosenLevel, creatureCast))}
         >
           Cast ({info.castTime ?? (base ? formatDuration(base) : 'casting time')}
           {info.level > 0 ? (slots.length ? `, slot: ${slotLeft} left` : ', uses a slot') : ''})
         </button>
-        <button className="small primary" disabled={!ritualCheck.ok} title={ritualCheck.reason} onClick={() => dispatch((st, cx) => E.castSpell(st, cx, c.id, pick.sp.name, 'ritual', null, null, selected))}>
+        <button className="small primary" disabled={!ritualCheck.ok} title={ritualCheck.reason} onClick={() => dispatch((st, cx) => E.castSpell(st, cx, c.id, pick.sp.name, 'ritual', null, null, selected, undefined, creatureCast))}>
           As ritual ({formatDuration(Math.max(1, Math.round(base + RITUAL_EXTRA_MINUTES)))}, no slot)
         </button>
       </div>
-      {!!limit && availableLevels.length > 1 && (
-        <Select label="Spell slot" value={chosenLevel?.toString() ?? ''} onChange={setSlotLevel}
+      {(!!limit || !!creature) && availableLevels.length > 1 && (
+        <Select label="Spell slot" value={chosenLevel?.toString() ?? ''} onChange={(value) => {
+          setSlotLevel(value);
+          if (creature === 'create undead' || creature === 'animate dead') setCreatureCast(({ form: _form, count: _count, ...rest }) => rest);
+        }}
           options={[{ value: '', label: 'Lowest available' }, ...availableLevels.map((value) => ({ value, label: `Level ${value}` }))]} />
       )}
-      {s.settings.circleMagic && circleEligible(info).ok && <CirclePanel c={c} info={info} helperIds={helperIds} setHelperIds={setHelperIds} option={option} setOption={setOption} target={TARGET_SPELLS[pick.sp.name] ? target || null : null} recipients={selected} requiresRecipients={!!limit} chosenSlotLevel={chosenLevel} />}
+      {s.settings.circleMagic && circleEligible(info).ok && <CirclePanel c={c} info={info} helperIds={helperIds} setHelperIds={setHelperIds} option={option} setOption={setOption} target={TARGET_SPELLS[pick.sp.name] ? target || null : null} recipients={selected} requiresRecipients={!!limit} chosenSlotLevel={chosenLevel} creatureCast={creatureCast} />}
+      {creature && <SpellCreatureCastFields key={creature} spell={creature} casterId={c.id}
+        slotLevel={chosenLevel ?? Number(availableLevels[0] ?? info.level)} input={creatureCast} onChange={setCreatureCast} />}
       {!!limit && (
         <fieldset>
           <legend>{key === 'wind walk' ? 'Choose up to 10 companions' : limit === 1 ? 'Choose a recipient' : `Choose up to ${limit} recipients`}</legend>
@@ -149,14 +158,14 @@ function CastPanel({ c }: { c: Character }) {
       <p className="small muted">
         {info.ritual ? (ritualCheck.ok ? 'Ritual: casting time + 10 minutes, and no spell slot.' : ritualCheck.reason) : 'Not a ritual.'}{' '}
         {info.durationMinutes ? `Lasts ${formatDuration(info.durationMinutes)}${info.concentration ? ' (Concentration)' : ''}, and a timer starts on the Effects & Ailments tab.` : info.permanent ? 'Lasts until dispelled.' : info.durationMinutes === null ? 'Instantaneous.' : ''}
-        {info.castMinutes === undefined && ' Casting time unknown: import a 5etools spell file for exact times.'}
+        {info.castMinutes === undefined && BOOKKEEPING_CAST_MINUTES[key] === undefined && ' Casting time unknown: import a 5etools spell file for exact times.'}
       </p>
     </div>
   );
 }
 
 /** Circle Magic (Heroes of Faerûn): secondary casters join a spell that takes 1 minute or longer. */
-function CirclePanel({ c, info, helperIds, setHelperIds, option: picked, setOption, target, recipients, requiresRecipients, chosenSlotLevel }: { c: Character; info: CharacterSpell; helperIds: string[]; setHelperIds: (v: string[]) => void; option: CircleOptionId; setOption: (v: CircleOptionId) => void; target: string | null; recipients: string[]; requiresRecipients: boolean; chosenSlotLevel?: number }) {
+function CirclePanel({ c, info, helperIds, setHelperIds, option: picked, setOption, target, recipients, requiresRecipients, chosenSlotLevel, creatureCast }: { c: Character; info: CharacterSpell; helperIds: string[]; setHelperIds: (v: string[]) => void; option: CircleOptionId; setOption: (v: CircleOptionId) => void; target: string | null; recipients: string[]; requiresRecipients: boolean; chosenSlotLevel?: number; creatureCast: CreatureCast }) {
   const s = useGame();
   // Options this spell can use, as far as the app knows (range and area aren't stored, so those are left to the table).
   const usable = CIRCLE_OPTIONS.filter((o) => !optionProblem(info, o.id, 99));
@@ -189,7 +198,7 @@ function CirclePanel({ c, info, helperIds, setHelperIds, option: picked, setOpti
           );
         })}
       </div>
-      <button className="small primary" disabled={!!problem || !prepared || (requiresRecipients && !recipients.length)} title={!prepared ? 'Not prepared' : problem} onClick={() => dispatch((st, cx) => E.castSpell(st, cx, c.id, info.name, 'slot', target, { helperIds: chosen, option }, recipients, chosenSlotLevel))}>
+      <button className="small primary" disabled={!!problem || !prepared || (requiresRecipients && !recipients.length)} title={!prepared ? 'Not prepared' : problem} onClick={() => dispatch((st, cx) => E.castSpell(st, cx, c.id, info.name, 'slot', target, { helperIds: chosen, option }, recipients, chosenSlotLevel, creatureCast))}>
         Cast as a Circle spell ({castTime}, {chosen.length + 1} caster{chosen.length ? 's' : ''})
       </button>
       {problem && chosen.length > 0 && <p className="small muted">{problem}</p>}

@@ -13,4 +13,9 @@ export const BOOKKEEPING_CAST_MINUTES: Readonly<Record<string, number>> = {
   'phantom steed': 1,
   'wind walk': 1,
   'control weather': 10,
+  'animate dead': 1,
+  'create undead': 1,
+  'planar binding': 60,
+  'find familiar': 60,
+  awaken: 480,
 };

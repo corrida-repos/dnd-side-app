@@ -1,3 +1,4 @@
+import type { SpellCreature } from '../rules/spellCreatures';
 import type { ControlledWeather } from '../rules/controlWeather';
 import type { EncounterHandoff } from '../rules/encounterHandoff';
 import type { NpcProfile } from '../rules/npcs';
@@ -1422,6 +1423,7 @@ export interface State {
   /** Night watch plan: how many watches the Long Rest is split into, and who stands each one. */
   watchPlan: { count: number; slots: string[][] };
   effects: ActiveEffect[];
+  spellCreatures?: SpellCreature[];
   /**
    * How the party lives in a settlement. Downtime: lifestyle expenses cover lodging and meals (2024 PHB). Day to day:
    * no lifestyle charge; they buy meals and rent rooms as they go. Undefined means day to day.

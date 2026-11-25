@@ -6,9 +6,12 @@ export interface CostlyComponent {
   match: string;
   what: string;
   consumed: boolean;
+  single?: boolean;
 }
 
 export const COSTLY_COMPONENTS: CostlyComponent[] = [
+  { spell: 'Awaken', gp: 1000, match: 'agate', what: 'an agate worth 1,000+ GP', consumed: true, single: true },
+  { spell: 'Planar Binding', gp: 1000, match: 'jewel', what: 'a jewel worth 1,000+ GP', consumed: true, single: true },
   { spell: 'Find Familiar', gp: 10, match: 'incense', what: 'burning incense worth 10+ GP', consumed: true },
   { spell: 'Identify', gp: 100, match: 'pearl', what: 'a pearl worth 100+ GP', consumed: false },
   { spell: 'Chromatic Orb', gp: 50, match: 'diamond', what: 'a diamond worth 50+ GP', consumed: false },

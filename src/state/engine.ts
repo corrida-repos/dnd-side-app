@@ -1,3 +1,4 @@
+import { bindableSummon, CREATURE_SPELLS, creatureSpell, PLANAR_BINDING_DAYS, undeadLimits, type CreatureCast, type CreatureSpell } from '../rules/spellCreatures';
 import { controlledForecast, initialWeatherStages, WEATHER_AXES, WEATHER_STAGES, type WeatherStages } from '../rules/controlWeather';
 import { BOOKKEEPING_CAST_MINUTES, BOOKKEEPING_TARGET_LIMIT } from '../rules/spellBookkeeping';
 import { ART, ART_INSTRUMENTS, hasMusician, type ArtKind, type ArtProject } from '../rules/art';
@@ -216,6 +217,7 @@ function act<A extends unknown[]>(fn: (d: State, ctx: Ctx, ...args: A) => void) 
     ensureWeather(d, ctx);
     fn(d, ctx, ...args);
     tickControlledWeather(d);
+    tickSpellCreatures(d);
     return d;
   };
 }
@@ -1441,6 +1443,7 @@ export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activi
     checkItemsLeftBehind(s);
     tickControlledWeather(s);
     tickEffects(s, before);
+    tickSpellCreatures(s);
     deliverDispatches(s);
     deliverLetters(s, ctx);
     deliverNews(s);
@@ -4244,12 +4247,16 @@ export const splitLoot = act((d, _ctx, gp: number, charIds: string[], what: stri
 
 /** True value of matching component items a character carries. The spell cares what they're worth, not what the caster knows. */
 export function componentValue(c: Character, comp: CostlyComponent): number {
-  return c.inventory.filter((i) => i.name.toLowerCase().includes(comp.match)).reduce((a, i) => a + (i.valueGp ?? 0) * i.qty, 0);
+  const items = c.inventory.filter((i) => i.name.toLowerCase().includes(comp.match));
+  if (comp.single) return Math.max(0, ...items.filter((i) => i.qty >= 1 && !i.scattered).map((i) => i.valueGp ?? 0));
+  return items.reduce((a, i) => a + (i.valueGp ?? 0) * i.qty, 0);
 }
 
 /** Value of matching component items as the party knows it, leaving out any of unknown value. */
 export function componentKnownValue(c: Character, comp: CostlyComponent): number {
-  return c.inventory.filter((i) => i.name.toLowerCase().includes(comp.match)).reduce((a, i) => a + (knownValue(i) ?? 0) * i.qty, 0);
+  const items = c.inventory.filter((i) => i.name.toLowerCase().includes(comp.match));
+  if (comp.single) return Math.max(0, ...items.filter((i) => i.qty >= 1 && !i.scattered).map((i) => knownValue(i) ?? 0));
+  return items.reduce((a, i) => a + (knownValue(i) ?? 0) * i.qty, 0);
 }
 
 /** Matching component items whose value the party doesn't know yet. */
@@ -4283,6 +4290,16 @@ function useComponent(s: State, c: Character, spell: string, opts: { discount?: 
   }
   const guessed = c.inventory.filter((i) => i.name.toLowerCase().includes(comp.match) && valueSecret(i));
   if (!comp.consumed || opts.checkOnly) return true;
+  if (comp.single) {
+    const stone = c.inventory
+      .filter((i) => i.name.toLowerCase().includes(comp.match) && i.qty >= 1 && !i.scattered && (i.valueGp ?? 0) >= comp.gp)
+      .sort((a, b) => a.valueGp! - b.valueGp!)[0];
+    if (!stone) return false;
+    stone.qty -= 1;
+    c.inventory = c.inventory.filter((i) => i.qty > 0);
+    log(s, `${spell} consumes ${stone.name}.`);
+    return true;
+  }
   let left = comp.gp;
   for (const it of c.inventory.filter((i) => i.name.toLowerCase().includes(comp.match)).sort((a, b) => (a.valueGp ?? 0) - (b.valueGp ?? 0))) {
     while (left > 0 && it.qty > 0) {
@@ -7025,6 +7042,142 @@ export const loseConcentration = act((d, _ctx, effectId: string, charId: string)
   }
 });
 
+function tickSpellCreatures(s: State): void {
+  const now = absNow(s);
+  for (const creature of s.spellCreatures ?? []) {
+    if (creature.status !== 'present') continue;
+    const caster = charById(s, creature.casterId);
+    const vanished = (creature.summonId && !s.effects.some((e) => e.id === creature.summonId))
+      || (creature.spell === 'find steed' && caster && !alive(caster));
+    if (vanished) {
+      creature.status = 'gone';
+      log(s, `${creature.name} disappears.`, 'warn');
+    } else if (creature.until != null && creature.until <= now) {
+      creature.status = creature.spell === 'awaken' || creature.spell === 'planar binding' ? 'independent' : 'uncontrolled';
+      log(s, creature.spell === 'awaken'
+        ? `${creature.name} is no longer Charmed. The DM determines its attitude.`
+        : `${creature.name} is no longer under ${caster?.name ?? "its caster"}'s control.`, 'warn');
+    }
+  }
+}
+
+export const setSpellCreatureOrder = act((d, _ctx, id: string, order: string) => {
+  const creature = d.spellCreatures?.find((x) => x.id === id);
+  if (creature?.status === 'present') creature.order = order.trim().slice(0, 300);
+});
+
+export const setSpellCreatureStatus = act((d, _ctx, id: string, action: 'dismiss' | 'recall' | 'gone' | 'forget' | 'hurt') => {
+  const creature = d.spellCreatures?.find((x) => x.id === id);
+  if (!creature) return;
+  if (action === 'forget') {
+    d.spellCreatures = d.spellCreatures!.filter((x) => x.id !== id);
+    return;
+  }
+  const familiar = creature.spell === 'find familiar';
+  if (action === 'dismiss' && familiar && creature.status === 'present') {
+    creature.status = 'dismissed';
+    log(d, `${creature.name} goes to its pocket dimension, leaving carried gear behind.`);
+  } else if (action === 'recall' && familiar && creature.status === 'dismissed') {
+    creature.status = 'present';
+    log(d, `${creature.name} returns from its pocket dimension.`);
+  } else if (action === 'gone' && creature.status !== 'gone') {
+    creature.status = 'gone';
+    log(d, `${creature.name} is gone.`);
+  } else if (action === 'hurt' && creature.spell === 'awaken' && creature.status === 'present') {
+    creature.status = 'independent';
+    log(d, `${creature.name} was hurt by its caster or an ally. Its charm ends and the DM determines its attitude.`, 'warn');
+  }
+});
+
+function creatureCastProblem(s: State, c: Character, spell: CreatureSpell, input: CreatureCast, slotLevel: number, finishAt: number): string | undefined {
+  const now = absNow(s);
+  if (spell === 'create undead' && (!isNight(s) || lightAt(finishAt % MIN_PER_DAY, seasonOf(s)).phase !== 'Night')) {
+    return 'Create Undead can only be cast at night.';
+  }
+  if (spell === 'planar binding') {
+    if (!input.name?.trim() || input.saveFailed == null) return 'Choose a creature and record the result of its Charisma save.';
+    if (input.summonId && !s.effects.some((e) => e.id === input.summonId && bindableSummon(e.name) && e.pausedLeft == null
+      && (e.endsAt == null || e.endsAt > finishAt))) return 'The linked summon must remain present throughout the casting.';
+  }
+  if (spell === 'awaken' && !input.name?.trim()) return 'Name the creature or plant being awakened.';
+  if (spell !== 'animate dead' && spell !== 'create undead') return;
+  const renewing = input.renewIds !== undefined;
+  const limits = undeadLimits(spell, slotLevel, renewing);
+  if (renewing) {
+    const ids = [...new Set(input.renewIds)];
+    if (!ids.length) return 'Select at least one undead creature to renew.';
+    const creatures = ids.map((id) => s.spellCreatures?.find((x) => x.id === id));
+    if (creatures.some((x) => !x || x.casterId !== c.id || x.spell !== spell || x.status !== 'present' || (x.until ?? now) <= finishAt)) {
+      return 'Select undead you still control after this casting finishes.';
+    }
+    const count = (form: string) => creatures.filter((x) => x?.form === form).length;
+    if (spell === 'animate dead' ? ids.length > limits.Skeleton
+      : Object.entries(limits).some(([form, max]) => count(form) > max)
+        || new Set(creatures.map((x) => x?.form)).size !== 1 || !limits[creatures[0]!.form]) {
+      return 'This spell slot cannot renew control of that group.';
+    }
+    return;
+  }
+  const form = input.form ?? (spell === 'animate dead' ? 'Skeleton' : 'Ghoul');
+  const count = input.count ?? 1;
+  if (!Number.isInteger(count) || count < 1 || count > (limits[form] ?? 0)) return 'This spell slot cannot create that group.';
+  if (spell === 'create undead' && s.settings.trackComponents) {
+    const stones = c.inventory.filter((item) => /black onyx/i.test(item.name) && (item.valueGp ?? 0) >= 150 && !item.scattered)
+      .reduce((total, item) => total + item.qty, 0);
+    if (stones < count) return 'Create Undead requires a reusable black onyx stone worth 150+ GP for each corpse.';
+  }
+}
+
+function applyCreatureCast(s: State, caster: Character, spell: CreatureSpell, input: CreatureCast, slotLevel: number, extra: number): void {
+  const now = absNow(s);
+  const roster = s.spellCreatures ??= [];
+  if (input.renewIds?.length && (spell === 'animate dead' || spell === 'create undead')) {
+    for (const creature of roster.filter((x) => input.renewIds!.includes(x.id))) creature.until = now + MIN_PER_DAY;
+    log(s, `${caster.name} renews control of the selected undead for 24 hours.`, 'good');
+    return;
+  }
+  let until: number | undefined;
+  let form = input.form?.trim();
+  if (spell === 'planar binding') {
+    if (!input.saveFailed) {
+      log(s, `${input.name} succeeds on the Charisma save and is free of the binding.`);
+      return;
+    }
+    const linked = input.summonId ? s.effects.find((e) => e.id === input.summonId) : undefined;
+    if (input.summonId && !linked) {
+      log(s, 'The linked summon disappeared before the binding took effect.', 'warn');
+      return;
+    }
+    until = now + (PLANAR_BINDING_DAYS[slotLevel] ?? 1) * MIN_PER_DAY + extra;
+    if (linked?.endsAt != null) linked.endsAt = until;
+    form = linked?.name ?? 'Planar creature';
+  } else if (spell === 'animate dead' || spell === 'create undead') {
+    until = now + MIN_PER_DAY;
+    form ??= spell === 'animate dead' ? 'Skeleton' : 'Ghoul';
+  } else if (spell === 'awaken') {
+    until = now + 30 * MIN_PER_DAY;
+    form ||= 'Awakened creature';
+  } else {
+    form ||= spell === 'find familiar' ? 'Owl' : 'Horse';
+  }
+  const count = spell === 'animate dead' || spell === 'create undead' ? input.count ?? 1 : 1;
+  const spirit = spell === 'find familiar' || spell === 'find steed' ? input.spirit ?? 'Celestial' : undefined;
+  const name = input.name?.trim().slice(0, 80) || form;
+  const prior = spell === 'find familiar' || spell === 'find steed'
+    ? roster.find((x) => x.spell === spell && x.casterId === caster.id)
+    : undefined;
+  if (prior) {
+    Object.assign(prior, { name: input.name?.trim() ? name : prior.name, form, spirit, slotLevel, status: prior.status === 'dismissed' ? 'dismissed' : 'present' });
+    if (spell === 'find steed') prior.order = '';
+  } else {
+    for (let i = 0; i < count; i++) roster.push({
+      id: uid(), spell, casterId: caster.id, name: count > 1 ? `${name} ${i + 1}` : name,
+      form, spirit, slotLevel, status: 'present', until, summonId: spell === 'planar binding' ? input.summonId : undefined, order: '',
+    });
+  }
+  log(s, `${CREATURE_SPELLS[spell]} updates ${caster.name}'s creature roster.`, 'good');
+}
+
 /** Counts random encounters with creatures, so a long casting can tell whether one turned up mid-casting. */
 let encounterSerial = 0;
 
@@ -7034,7 +7187,7 @@ let encounterSerial = 0;
  * a creature encounter or a caster going down breaks it off: the spell fails, no slot is spent and no Material
  * component is consumed. With `circle` (Heroes of Faerûn Circle Magic, optional), secondary casters join in.
  */
-export const castSpell = act((d, ctx, charId: string, spellName: string, mode: 'ritual' | 'slot', targetId: string | null = null, circle: CircleCast | null = null, recipients: string[] = [], chosenSlotLevel?: number) => {
+export const castSpell = act((d, ctx, charId: string, spellName: string, mode: 'ritual' | 'slot', targetId: string | null = null, circle: CircleCast | null = null, recipients: string[] = [], chosenSlotLevel?: number, creatureInput: CreatureCast = {}) => {
   const c = charById(d, charId);
   const own = c?.spells.find((x) => x.name === spellName);
   if (!c || !own || !alive(c)) return;
@@ -7097,6 +7250,12 @@ export const castSpell = act((d, ctx, charId: string, spellName: string, mode: '
   }
   if (!useComponent(d, c, own.name, { discount, checkOnly: true })) return;
   const minutes = base + (mode === 'ritual' ? RITUAL_TAG_MINUTES : 0);
+  const slotLevel = Number(/level (\d)/i.exec(slot?.name ?? '')?.[1] ?? chosenSlotLevel ?? sp.level);
+  const creature = creatureSpell(spellKey);
+  if (creature) {
+    const problem = creatureCastProblem(d, c, creature, creatureInput, slotLevel, absNow(d) + minutes);
+    if (problem) return void log(d, problem, 'warn');
+  }
   const casters = [c, ...helpers];
   const names = casters.map((x) => x.name);
   const opt = circle ? circleOption(circle.option) : null;
@@ -7118,7 +7277,10 @@ export const castSpell = act((d, ctx, charId: string, spellName: string, mode: '
       const step = Math.min(left, 60);
       advanceMut(d, ctx, step, 'camp');
       left -= step;
-      const fallen = casters.filter((x) => !alive(x) || x.hp <= 0 || x.dying);
+      const fallen = casters.filter((x) => {
+        const current = charById(d, x.id);
+        return !current || !alive(current) || current.hp <= 0 || current.dying;
+      });
       if (encounterSerial !== startSerial || fallen.length) {
         const spent = Math.round(minutes) - left;
         const why = fallen.length ? `${fallen.map((x) => x.name).join(', ')} can't keep casting` : 'creatures turn up mid-casting';
@@ -7132,19 +7294,31 @@ export const castSpell = act((d, ctx, charId: string, spellName: string, mode: '
       }
     }
   }
-  if (!useComponent(d, c, own.name, { discount })) return;
-  if (slot) slot.current -= 1;
+  const liveCaster = charById(d, c.id);
+  if (!liveCaster) return;
+  if (creature) {
+    const problem = creatureCastProblem(d, liveCaster, creature, creatureInput, slotLevel, absNow(d));
+    if (problem) return void log(d, problem, 'warn');
+  }
+  const liveSlot = slot && liveCaster.resources.find((resource) => resource.id === slot.id);
+  if (slot && !liveSlot?.current) return void log(d, `${c.name} no longer has the chosen spell slot available.`, 'warn');
+  if (!useComponent(d, liveCaster, own.name, { discount })) return;
+  if (liveSlot) liveSlot.current -= 1;
   for (const h of helpers) {
-    if (need.kind === 'none') continue;
-    const hs = findSlot(h, need.kind === 'any' ? 1 : need.level);
+    const helper = charById(d, h.id);
+    if (!helper || need.kind === 'none') continue;
+    const hs = findSlot(helper, need.kind === 'any' ? 1 : need.level);
     if (hs) hs.current -= 1;
   }
   if (helpers.length) {
     log(d, `${c.name} completes ${sp.name} as a Circle spell with ${optTxt.replace(/\.$/, '')}. ${helpers.map((h) => h.name).join(', ')} spend${helpers.length > 1 ? '' : 's'} ${slotNeedText(need)}${helpers.length > 1 && need.kind !== 'none' ? ' each' : ''}.`, 'good', { charIds: casters.map((x) => x.id), sense: circleEndsText(sp.name) });
   } else log(d, `${c.name} casts ${sp.name} ${timeTxt}.`, 'good');
   if (targetId && TARGET_SPELLS[sp.name]) applySpellTo(d, ctx, sp.name, targetId);
-  const slotLevel = Number(/level (\d)/i.exec(slot?.name ?? '')?.[1] ?? chosenSlotLevel ?? sp.level);
   const extra = circle?.option === 'prolong' ? prolongMinutes(helpers.length) : 0;
+  if (creature) {
+    applyCreatureCast(d, liveCaster, creature, creatureInput, slotLevel, extra);
+    return;
+  }
   if (spellKey === 'wind walk' || spellKey === 'phantom steed' || spellKey === 'control weather') {
     const now = absNow(d);
     const id = uid();
@@ -7194,7 +7368,7 @@ export const castSpell = act((d, ctx, charId: string, spellName: string, mode: '
     return;
   }
   if (spellKey === 'goodberry') {
-    addLine(d, c, 'Goodberry', 10, { weight: 0, source: 'manual', goodberry: { expiresAt: absNow(d) + MIN_PER_DAY + extra } }, null, true);
+    addLine(d, liveCaster, 'Goodberry', 10, { weight: 0, source: 'manual', goodberry: { expiresAt: absNow(d) + MIN_PER_DAY + extra } }, null, true);
     log(d, `${c.name} gathers ten Goodberries. Use them from their inventory.`, 'good');
     return;
   }
