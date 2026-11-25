@@ -1,3 +1,4 @@
+import { WEATHER_AXES, WEATHER_STAGES, type ControlledWeather } from '../rules/controlWeather';
 import { CARTOGRAPHER_TOOL } from '../rules/mapCommissions';
 import { carriesTool, proficientWith, toolReadiness } from '../rules/gear';
 import { samePlace } from '../rules/notoriety';
@@ -277,11 +278,7 @@ function WeatherCard() {
   const w = s.weather;
   const t = E.tempNow(s);
   const clim = CLIMATES[w.climate];
-  const setW = (patch: Partial<Weather>) =>
-    edit((d) => {
-      d.weather = { ...d.weather, ...patch, edited: true };
-      d.weatherHistory = [d.weather, ...d.weatherHistory.filter((x) => x.dayIndex !== d.dayIndex)];
-    });
+  const setW = (patch: Partial<Weather>) => dispatch((d, ctx) => E.setNaturalWeather(d, ctx, patch));
   const curve = [0, 3, 6, 9, 12, 15, 18, 21].map((h) => ({ h, t: temperatureAt(w, h * 60) }));
   return (
     <Card
@@ -302,6 +299,10 @@ function WeatherCard() {
           </span>
         </span>
       </div>
+      {s.controlledWeather && (
+        <ControlledWeatherForm key={`${s.controlledWeather.effectId}:${WEATHER_AXES.map((axis) => s.controlledWeather!.stages[axis]).join(',')}:${s.controlledWeather.direction}`}
+          control={s.controlledWeather} now={E.absNow(s)} />
+      )}
       <div className="curve">
         {curve.map((p) => (
           <span key={p.h} className={p.t <= 0 ? 'cold' : p.t >= 100 ? 'hot' : ''}>
@@ -556,6 +557,9 @@ function TravelCard() {
   const slow = E.slowTravelers(s);
   const vessels = s.stashes.filter(canTravelAboard);
   const [vesselId, setVesselId] = useState('');
+  const [spellTravel, setSpellTravel] = useState(false);
+  const spellSpeed = E.spellTravelSpeed(s);
+  const usingSpells = !vesselId && !!spellSpeed && spellTravel;
   const vessel = vessels.find((x) => x.id === vesselId);
   const vesselPace = vessel && E.vesselSpeed(s, vessel, { againstWind, downstream });
   const [seeker, setSeeker] = useState(s.characters[0]?.id ?? '');
@@ -592,6 +596,10 @@ function TravelCard() {
           <Toggle checked={gallop} onChange={setGallop} label={s.travel.gallopUsed ? 'Gallop (mounts need a rest first)' : 'Gallop: double distance for 1 hour'} />
         )}
         <Toggle checked={flying} onChange={setFlying} label="Flying, or ignoring Difficult Terrain (Fast pace anywhere)" />
+        {!vesselId && spellSpeed && (
+          <Toggle checked={spellTravel} onChange={setSpellTravel}
+            label={`Use ${spellSpeed.flying ? 'Wind Walk' : 'Phantom Steeds'} (${spellSpeed.mph} mph until the spells end)`} />
+        )}
         {vessel && transportMode(vessel) === 'sea' && <Toggle checked={againstWind} onChange={setAgainstWind} label="Sailing into the wind" />}
         {vessel && transportMode(vessel) === 'sea' && <Toggle checked={downstream} onChange={setDownstream} label="Downstream on a river" />}
         {vessels.length > 0 && (
@@ -607,7 +615,7 @@ function TravelCard() {
       {(s.place.ground?.snowIn ?? 0) > 0 && !groundDifficulty(s.place.ground, s.place.goodRoad) && <p className="small muted">{s.place.ground!.snowIn} inches of snow on the ground (Difficult Terrain at {DEEP_SNOW_IN}).</p>}
       {slow.length > 0 && !vesselId && <p className="small warn-text">{slow.join(', ')} {slow.length > 1 ? 'are' : 'is'} at half Speed or less (load or Exhaustion): the party must travel at a Slow pace.</p>}
       {vessel && vesselPace ? <p className="small">About <b>{+(hours * vesselPace.mph).toFixed(1)} miles</b> aboard {vessel.name}{vesselPace.note ? ` · ${vesselPace.note}` : ''}.</p> : <p className="small">
-        {p.note}. About <b>{+miles.toFixed(1)} miles</b>. {s.travel.hoursToday} travel hour(s) since the last Long Rest
+        {p.note}. {usingSpells ? <>Up to <b>{spellSpeed.mph} mph</b> with the spell. Remaining time uses the selected pace.</> : <>About <b>{+miles.toFixed(1)} miles</b>.</>} {s.travel.hoursToday} travel hour(s) since the last Long Rest
         {s.settings.forcedMarch && counted > 8 && (
           <span className="bad-text">
             {' '}
@@ -691,7 +699,7 @@ function TravelCard() {
       {roadProjects.length > 0 && <Select label="Art during travel" value={artProjectId} onChange={setRoadArt}
         options={[{ value: '', label: 'No project' }, ...roadProjects.map((p) => ({ value: p.id, label: `${p.title} · ${E.charById(s, p.artistId)?.name}` }))]} />}
       <div className="btn-row">
-        <button className="primary" onClick={() => dispatch((st, c) => E.travel(st, c, { hours, pace, difficult, foragerIds: foragers, navigatorId: navigator || null, gallop, vesselId: vesselId || null, flying, againstWind, downstream, artProjectId }))}>
+        <button className="primary" onClick={() => dispatch((st, c) => E.travel(st, c, { hours, pace, difficult, foragerIds: foragers, navigatorId: navigator || null, gallop, vesselId: vesselId || null, flying, spellTravel: usingSpells, againstWind, downstream, artProjectId }))}>
           Travel {hours} h
         </button>
         <button className="ghost" onClick={() => edit((d) => ((d.travel.hoursToday = 0), (d.travel.milesToday = 0)))}>
@@ -859,6 +867,33 @@ function MapLine() {
   );
 }
 
+function ControlledWeatherForm({ control, now }: { control: ControlledWeather; now: number }) {
+  const [stages, setStages] = useState(control.stages);
+  const [direction, setDirection] = useState(control.direction ?? '');
+  const labels = WEATHER_AXES.map((axis) => WEATHER_STAGES[axis][control.stages[axis]]);
+  return (
+    <div className="stack tight">
+      <p className="small">Control Weather · {labels.join(' · ')}{control.direction ? ` · Wind direction ${control.direction}` : ''}</p>
+      {control.normalAt != null ? <p className="small">Natural weather returns in {formatDuration(control.normalAt - now)}.</p>
+        : control.pending ? <p className="small">Conditions shift in {formatDuration(control.pending.at - now)}.</p>
+        : (
+          <div className="form-row">
+            {WEATHER_AXES.map((axis) => (
+              <Select key={axis} label={axis === 'precip' ? 'Precipitation' : axis === 'wind' ? 'Wind' : 'Temperature'}
+                value={String(stages[axis])} onChange={(value) => setStages({ ...stages, [axis]: Number(value) })}
+                options={WEATHER_STAGES[axis].map((label, index) => ({ label, value: String(index) }))
+                  .filter(({ value }) => Math.abs(Number(value) - control.stages[axis]) <= 1)} />
+            ))}
+            <Text label="Wind direction" value={direction} onChange={setDirection} placeholder="Optional" />
+            <button className="small" onClick={() => dispatch((s, ctx) => E.changeControlledWeather(s, ctx, stages, direction))}>
+              Shift weather
+            </button>
+          </div>
+        )}
+    </div>
+  );
+}
+
 function PlaceCard() {
   const s = useGame();
   const set = (patch: Partial<typeof s.place>) => edit((d) => void (d.place = { ...d.place, ...patch }));
@@ -897,7 +932,7 @@ function PlaceCard() {
         <Select
           label="Shelter"
           value={s.place.shelter}
-          onChange={(v: Shelter) => set({ shelter: v, encounterConcealedCave: false })}
+          onChange={(v: Shelter) => dispatch((d, ctx) => E.setTravelShelter(d, ctx, v))}
           options={[
             { value: 'none', label: 'Open sky' },
             { value: 'tent', label: 'Tents' },

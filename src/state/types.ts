@@ -1,3 +1,5 @@
+import type { SpellCreature } from '../rules/spellCreatures';
+import type { ControlledWeather } from '../rules/controlWeather';
 import type { EncounterHandoff } from '../rules/encounterHandoff';
 import type { NpcProfile } from '../rules/npcs';
 import type { UnderwaterVisibility } from '../rules/exploration';
@@ -120,6 +122,7 @@ export interface ItemFinding {
 }
 
 export interface InventoryItem {
+  goodberry?: { expiresAt: number };
   artKind?: import('../rules/art').ArtKind;
   id: string;
   name: string;
@@ -203,6 +206,11 @@ export interface RestFocus {
 }
 
 export interface ActiveEffect {
+  aidHp?: number;
+  feastHp?: number;
+  feastMeal?: boolean;
+  windWalk?: { cloudIds: string[] };
+  phantomSteed?: boolean;
   artMorale?: boolean;
   id: string;
   name: string;
@@ -369,6 +377,7 @@ export interface Character {
   /** Minutes spent dead under Gentle Repose, which don't count toward resurrection limits. */
   reposeMinutes: number;
   /** Divination castings since the last Long Rest, by spell name. */
+  prayerOfHealingUsed?: boolean;
   divinationCasts: Record<string, number>;
   /** What the character focuses on during the next rest: attuning, identifying or ending attunement. */
   restFocus: RestFocus | null;
@@ -631,6 +640,8 @@ export interface Fire {
 
 export interface Stores {
   foodLb: number;
+  /** Perishable portions already included in foodLb, ordered by expiry. */
+  conjuredFood?: { lb: number; expiresAt: number }[];
   waterGal: number;
   /** Raw foraged or hunted food: cook it or purify it before eating. */
   foodRawLb: number;
@@ -1394,6 +1405,7 @@ export interface State {
   minutes: number;
   place: Place;
   weather: Weather;
+  controlledWeather?: ControlledWeather;
   weatherHistory: Weather[];
   /** Tomorrow's weather, read from the sky ahead of time (table rule); used when that day comes if the climate matches. */
   forecast?: Weather | null;
@@ -1419,6 +1431,7 @@ export interface State {
   /** Night watch plan: how many watches the Long Rest is split into, and who stands each one. */
   watchPlan: { count: number; slots: string[][] };
   effects: ActiveEffect[];
+  spellCreatures?: SpellCreature[];
   /**
    * How the party lives in a settlement. Downtime: lifestyle expenses cover lodging and meals (2024 PHB). Day to day:
    * no lifestyle charge; they buy meals and rent rooms as they go. Undefined means day to day.

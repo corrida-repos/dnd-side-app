@@ -1,3 +1,6 @@
+import { bindableSummon, CREATURE_SPELLS, creatureSpell, PLANAR_BINDING_DAYS, undeadLimits, type CreatureCast, type CreatureSpell } from '../rules/spellCreatures';
+import { controlledForecast, initialWeatherStages, WEATHER_AXES, WEATHER_STAGES, type WeatherStages } from '../rules/controlWeather';
+import { BOOKKEEPING_CAST_MINUTES, BOOKKEEPING_TARGET_LIMIT } from '../rules/spellBookkeeping';
 import { CARTOGRAPHER_TOOL, MAP_COMMISSION_GP, commissionRoutes, commissionSource } from '../rules/mapCommissions';
 import { ART, ART_INSTRUMENTS, hasMusician, type ArtKind, type ArtProject } from '../rules/art';
 import { roadNetChance, roadOpeningPosition, ROAD_NET_NOTICE_DC, ROAD_NET_SAVE_DC } from '../rules/roadAmbush';
@@ -215,6 +218,8 @@ function act<A extends unknown[]>(fn: (d: State, ctx: Ctx, ...args: A) => void) 
     const d = structuredClone(s);
     ensureWeather(d, ctx);
     fn(d, ctx, ...args);
+    tickControlledWeather(d);
+    tickSpellCreatures(d);
     return d;
   };
 }
@@ -246,6 +251,10 @@ function newWeather(s: State, ctx: Ctx): void {
       { dayIndex: s.dayIndex, season: seasonOf(s), climate: s.place.climate, altitudeFt: s.place.altitudeFt, climateAdjustedPrecip: s.settings.climateAdjustedPrecip },
       ctx.rng,
     );
+  if (s.controlledWeather) {
+    s.controlledWeather.natural = s.weather;
+    s.weather = controlledForecast(s.controlledWeather);
+  }
   s.weatherHistory = [s.weather, ...s.weatherHistory.filter((w) => w.dayIndex !== s.dayIndex)].slice(0, 30);
   const w = s.weather;
   if (!CLIMATES[w.climate].noWeather) {
@@ -255,6 +264,87 @@ function newWeather(s: State, ctx: Ctx): void {
 
 export const rerollWeather = act((d, ctx) => {
   newWeather(d, ctx);
+});
+
+export const setNaturalWeather = act((d, _ctx, patch: Partial<State['weather']>) => {
+  const weather = { ...(d.controlledWeather?.natural ?? d.weather), ...patch, edited: true };
+  if (d.controlledWeather) d.controlledWeather.natural = weather;
+  else d.weather = weather;
+  d.weatherHistory = [weather, ...d.weatherHistory.filter((w) => w.dayIndex !== d.dayIndex)];
+});
+
+function indoors(s: State): boolean {
+  return s.place.shelter !== 'none'
+    || s.effects.some((e) => e.shelter && (e.endsAt == null || e.endsAt > absNow(s)));
+}
+
+export const setTravelShelter = act((d, _ctx, shelter: State['place']['shelter']) => {
+  d.place.shelter = shelter;
+  d.place.encounterConcealedCave = false;
+});
+
+function tickControlledWeather(s: State): void {
+  const control = s.controlledWeather;
+  if (!control) return;
+  const now = absNow(s);
+  const effect = s.effects.find((e) => e.id === control.effectId);
+  const caster = effect?.casterId ? charById(s, effect.casterId) : undefined;
+  if (control.normalAt == null && (!effect || !caster || !alive(caster) || caster.hp <= 0 || indoors(s)
+    || (effect.endsAt != null && effect.endsAt <= now))) {
+    s.effects = s.effects.filter((e) => e.id !== control.effectId);
+    delete control.pending;
+    const normal = initialWeatherStages(control.natural, temperatureAt(control.natural, s.minutes % MIN_PER_DAY));
+    const steps = Math.max(...WEATHER_AXES.map((axis) => control.changed[axis] ? Math.abs(normal[axis] - control.stages[axis]) : 0));
+    control.normalAt = now + Math.max(steps, control.direction ? 1 : 0) * 10;
+    log(s, "Control Weather ends. The local weather begins returning to normal.", 'info');
+  }
+  if (control.normalAt != null) {
+    const normal = initialWeatherStages(control.natural, temperatureAt(control.natural, s.minutes % MIN_PER_DAY));
+    if (now >= control.normalAt) {
+      s.weather = control.natural;
+      delete s.controlledWeather;
+      return;
+    }
+    const left = Math.ceil((control.normalAt - now) / 10);
+    for (const axis of WEATHER_AXES) {
+      if (!control.changed[axis]) continue;
+      const delta = control.stages[axis] - normal[axis];
+      if (Math.abs(delta) > left) control.stages[axis] = normal[axis] + Math.sign(delta) * left;
+    }
+  } else if (control.pending && control.pending.at <= now) {
+    const { stages, direction } = control.pending;
+    for (const axis of WEATHER_AXES) {
+      if (control.stages[axis] !== stages[axis]) control.changed[axis] = true;
+    }
+    control.stages = stages;
+    control.direction = direction || undefined;
+    delete control.pending;
+    log(s, 'The weather settles into the new conditions.', 'good');
+  }
+  s.weather = controlledForecast(control);
+}
+
+function nextControlledWeatherEvent(s: State): number {
+  const control = s.controlledWeather;
+  if (!control) return Infinity;
+  if (control.normalAt == null) {
+    const ends = s.effects.find((e) => e.id === control.effectId)?.endsAt ?? Infinity;
+    return Math.min(control.pending?.at ?? Infinity, ends);
+  }
+  const remaining = control.normalAt - absNow(s);
+  return control.normalAt - 10 * Math.max(0, Math.ceil(remaining / 10) - 1);
+}
+
+export const changeControlledWeather = act((d, ctx, stages: WeatherStages, direction: string) => {
+  const control = d.controlledWeather;
+  if (!control || control.normalAt != null || control.pending) return;
+  if (WEATHER_AXES.some((axis) => !Number.isInteger(stages[axis]) || stages[axis] < 0
+    || stages[axis] >= WEATHER_STAGES[axis].length || Math.abs(stages[axis] - control.stages[axis]) > 1)) return;
+  const heading = direction.trim().slice(0, 40);
+  if (WEATHER_AXES.every((axis) => stages[axis] === control.stages[axis]) && heading === (control.direction ?? '')) return;
+  const minutes = die(4, ctx.rng) * 10;
+  control.pending = { stages: { ...stages }, at: absNow(d) + minutes, direction: heading };
+  log(d, `The weather will shift in ${minutes} minutes.`);
 });
 
 // ---------------------------------------------------------------- exposure
@@ -372,6 +462,10 @@ function applySaveResult(s: State, ctx: Ctx, c: Character, p: Omit<PendingSave, 
   log(s, `${c.name}: Constitution save, DC ${p.dc}, against ${p.reason}. ${detail}${passed ? 'Success.' : 'Failure.'}`, passed ? 'good' : 'warn');
   if (!passed) {
     if (p.kind === 'tainted' || p.kind === 'raw') {
+      if (feastProtection(s, c.id)) {
+        log(s, `Heroes' Feast prevents ${c.name} from becoming Poisoned.`, 'good');
+        return;
+      }
       const from = p.kind === 'raw' ? 'raw food' : 'unpurified water';
       const was = c.sick;
       c.sickFrom = was && c.sickFrom && c.sickFrom !== from ? 'raw food and unpurified water' : was && c.sickFrom ? c.sickFrom : from;
@@ -404,6 +498,16 @@ export function rollSave(c: Character, dc: number, mode: RollMode, rng: Rng) {
   const modeTxt = mode === 'normal' ? '' : ` (${mode === 'advantage' ? 'Advantage' : 'Disadvantage'})`;
   const exhTxt = c.exhaustion ? `, including −${2 * c.exhaustion} from Exhaustion` : '';
   return { passed: total >= dc, total, detail: `Rolled ${r.rolls.join('/')}${modeTxt} ${signed(mod)}${exhTxt} = ${total}. ` };
+}
+
+function feastProtection(s: State, id: string): boolean {
+  const now = absNow(s);
+  return s.effects.some((e) => e.feastHp && !e.feastMeal && e.targetIds.includes(id)
+    && (e.endsAt == null || e.endsAt > now));
+}
+
+function feastBlocksCondition(name: string): boolean {
+  return /^(poisoned|frightened)\b/i.test(name);
 }
 
 /** Is an Antitoxin giving this creature Advantage on saves to avoid or end the Poisoned condition? */
@@ -645,9 +749,8 @@ function hirelingsEat(s: State): void {
   const now = absNow(s);
   const fed = s.hirelings.filter((h) => h.active && !(h.busyUntil && h.busyUntil > now));
   if (!fed.length) return;
-  const food = Math.min(fed.length, s.stores.foodLb);
+  const food = takeSafeStoreFood(s, fed.length);
   const water = Math.min(fed.length, s.stores.waterGal);
-  s.stores.foodLb = Math.round((s.stores.foodLb - food) * 100) / 100;
   s.stores.waterGal = Math.round((s.stores.waterGal - water) * 100) / 100;
   const short = [food < fed.length && `${+(fed.length - food).toFixed(1)} lb of food`, water < fed.length && `${+(fed.length - water).toFixed(1)} gal of water`].filter(Boolean);
   log(
@@ -1313,6 +1416,11 @@ export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activi
   syncPorters(s);
   levelSidekicks(s, ctx);
   let remaining = Math.max(0, Math.round(minutes));
+  if (remaining > 0 && activity === 'travel' && s.effects.some((e) => e.feastMeal)) {
+    s.effects = s.effects.filter((e) => !e.feastMeal);
+    log(s, "The party leaves before finishing Heroes' Feast. The diners gain no benefits.", 'warn');
+  }
+  tickControlledWeather(s);
   if (remaining > 0 && s.settings.deathSavesResolve && !opts.combat) resolveDying(s, ctx);
   const checkOverland = s.settings.encounters && activity !== 'work' && !opts.exploring && !opts.combat && !opts.travelHour;
   const encounterActivity = opts.encounterActivity ?? (activity === 'travel' || activity === 'rest' ? activity : 'camp');
@@ -1321,7 +1429,8 @@ export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activi
     const untilEncounter = checkOverland
       ? nextEncounterMinutes(encounterIntervalMinutes(s.place.danger, encounterConditions(s, encounterActivity)), s.encounterClock)
       : Infinity;
-    const step = Math.min(remaining, toNextHour, untilEncounter);
+    const step = Math.min(remaining, toNextHour, untilEncounter,
+      Math.max(1, nextControlledWeatherEvent(s) - absNow(s)));
     const before = absNow(s);
     s.minutes += step;
     remaining -= step;
@@ -1334,7 +1443,9 @@ export function advanceMut(s: State, ctx: Ctx, minutes: number, activity: Activi
     const dawn = s.dayIndex * MIN_PER_DAY + sunriseMinutes(seasonOf(s));
     if (before < dawn && absNow(s) >= dawn) atDawn(s, ctx);
     checkItemsLeftBehind(s);
+    tickControlledWeather(s);
     tickEffects(s, before);
+    tickSpellCreatures(s);
     deliverDispatches(s);
     deliverLetters(s, ctx);
     deliverNews(s);
@@ -1507,6 +1618,7 @@ function completeLongRest(d: State, ctx: Ctx, watched: Record<string, number>): 
     }
     for (const t of c.tasks) if (t.daily) t.done = false;
     c.divinationCasts = {};
+    c.prayerOfHealingUsed = false;
     if (d.settings.stressPerLongRest > 0 && c.stress > 0) {
       const before = c.stress;
       c.stress = Math.max(0, c.stress - d.settings.stressPerLongRest);
@@ -1669,11 +1781,13 @@ export const interruptedRest = act((d, ctx, o: InterruptOpts) => {
 });
 
 /** Short Rest benefits: resources, rest focus (attuning, identifying), Chef. Requires at least 1 HP. */
-function finishShortRest(d: State, ctx: Ctx): void {
-  noteMusicianRest(d);
-  d.travel.gallopUsed = false;
-  clearAppraiseTries(d);
-  for (const c of d.characters) {
+function finishShortRest(d: State, ctx: Ctx, recipients?: Character[]): void {
+  if (!recipients) {
+    noteMusicianRest(d);
+    d.travel.gallopUsed = false;
+    clearAppraiseTries(d);
+  }
+  for (const c of recipients ?? d.characters) {
     if (!alive(c) || !mountWithParty(c)) continue;
     if (c.hp <= 0) {
       log(d, `${c.name} is at 0 HP, so they get no Short Rest benefits.`, 'warn');
@@ -1705,6 +1819,8 @@ export interface TravelOpts {
   vesselId?: string | null;
   /** Everyone flies (or ignores Difficult Terrain): Fast pace allowed whatever the terrain (2024 DMG). */
   flying?: boolean;
+  /** Use active Wind Walk and Phantom Steeds when every traveler can keep up. */
+  spellTravel?: boolean;
   /** Sailing into a strong wind (half speed), or downstream on a river (+3 mph for keelboats and rowboats). */
   againstWind?: boolean;
   downstream?: boolean;
@@ -1712,6 +1828,49 @@ export interface TravelOpts {
   mapperId?: string | null;
   /** An artist with a free hour can work on this project during the leg. */
   artProjectId?: string;
+}
+
+export function spellTravelSpeed(s: State): { mph: number; until: number; flying: boolean } | undefined {
+  const now = absNow(s);
+  const travelers = s.characters.filter((c) => alive(c) && mountWithParty(c));
+  if (!travelers.length || s.hirelings.some((h) => h.active && (h.busyUntil ?? 0) <= now)) return undefined;
+  const speeds = travelers.map((c) => {
+    if (c.hp <= 0) return undefined;
+    const walk = s.weather.wind === 'strong' ? undefined : s.effects
+      .filter((e) => e.windWalk?.cloudIds.includes(c.id) && (e.endsAt ?? 0) > now)
+      .sort((a, b) => b.endsAt! - a.endsAt!)[0];
+    if (walk) return { mph: 30, until: walk.endsAt!, flying: true };
+    const steed = s.effects
+      .filter((e) => e.phantomSteed && e.targetIds.includes(c.id) && (e.endsAt ?? 0) > now)
+      .sort((a, b) => b.endsAt! - a.endsAt!)[0];
+    if (steed) return { mph: 13, until: steed.endsAt!, flying: false };
+  });
+  const first = speeds[0];
+  if (!first || speeds.some((speed) => speed?.flying !== first.flying)) return undefined;
+  return { mph: first.mph, flying: first.flying, until: Math.min(...speeds.map((speed) => speed!.until)) };
+}
+
+export const setWindWalkForm = act((d, ctx, effectId: string, charId: string) => {
+  const effect = d.effects.find((e) => e.id === effectId && e.windWalk && e.targetIds.includes(charId));
+  const c = charById(d, charId);
+  if (!effect || !c || !alive(c) || c.hp <= 0 || (effect.endsAt ?? 0) <= absNow(d)) return;
+  const toCloud = !effect.windWalk!.cloudIds.includes(charId);
+  const start = absNow(d);
+  log(d, `${c.name} spends 1 minute changing into ${toCloud ? 'cloud' : 'normal'} form and is Stunned during the change.`);
+  advanceMut(d, ctx, 1, 'camp', { tactical: true });
+  const live = d.effects.find((e) => e.id === effectId)?.windWalk;
+  if (!live || absNow(d) < start + 1) return;
+  live.cloudIds = toCloud ? [...live.cloudIds, charId] : live.cloudIds.filter((id) => id !== charId);
+});
+
+function noteTravelSpellEnd(s: State, effect: ActiveEffect): void {
+  if (effect.phantomSteed) {
+    log(s, `${effect.name}${effectWho(s, effect)} fades. The rider has 1 minute to dismount.`, 'warn');
+  }
+  if (effect.windWalk?.cloudIds.length) {
+    const names = effect.windWalk.cloudIds.map((id) => charById(s, id)?.name).filter(Boolean).join(', ');
+    log(s, `Wind Walk ends for ${names}. If airborne, they descend up to 600 feet over 1 minute, then fall any remaining distance.`, 'warn');
+  }
 }
 
 /** Table rule: Unconscious companions who must be carried because there aren't enough spare mounts for them. */
@@ -1888,6 +2047,9 @@ function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
     gallop = false;
   }
   let darkWarned = false;
+  let spellTravelMinutes = 0;
+  let gallopHours = 0;
+  let magicWarning = false;
   let traveledHours = 0;
   for (let i = 0; i < o.hours; i++) {
     const blind = o.pace !== 'slow' && travelsBlind(d);
@@ -1896,16 +2058,39 @@ function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
       log(d, 'Darkness falls and not everyone can see in it. With no lit Torch, Lantern or light spell (light one on the Effects & Ailments tab), the party picks its way forward at a Slow pace (table rule).', 'warn');
     }
     const onFoot = !o.flying && !(gallop && i === 0);
-    advanceMut(d, ctx, 60, 'travel', { travelHour: !!d.pauseForButler, onFoot });
+    let mundaneMinutes = 0;
+    let magicalMiles = 0;
+    const hourEnd = absNow(d) + 60;
+    while (absNow(d) < hourEnd) {
+      const now = absNow(d);
+      const magic = o.spellTravel ? spellTravelSpeed(d) : undefined;
+      if (magic) {
+        const nextWeather = nextControlledWeatherEvent(d);
+        const minutes = Math.max(1, Math.ceil(Math.min(hourEnd, magic.until, nextWeather) - now));
+        const mph = magic.mph * (!magic.flying && o.difficult ? 0.5 : 1);
+        advanceMut(d, ctx, minutes, 'travel', { travelHour: !!d.pauseForButler, onFoot: false });
+        const elapsed = absNow(d) - now;
+        spellTravelMinutes += elapsed;
+        magicalMiles += mph * elapsed / 60;
+      } else {
+        if (o.spellTravel && !magicWarning) {
+          magicWarning = true;
+          log(d, 'The party cannot all continue by the same travel spell. The remaining travel uses its selected pace.', 'warn');
+        }
+        advanceMut(d, ctx, hourEnd - now, 'travel', { travelHour: !!d.pauseForButler, onFoot });
+        mundaneMinutes += absNow(d) - now;
+      }
+    }
     traveledHours++;
     clearEncounterCampConditions(d.place);
     d.travel.hoursToday += altitude ? 2 : 1;
     const burst = gallop && i === 0 ? 2 : 1;
-    if (burst === 2) {
+    if (burst === 2 && mundaneMinutes > 0) {
+      gallopHours = mundaneMinutes / 60;
       d.travel.gallopUsed = true;
       log(d, 'The mounts gallop for an hour, covering twice the distance.');
     }
-    const step = (blind ? PACES.slow.mph : p.mph) * (o.difficult ? 0.5 : 1) * burst;
+    const step = magicalMiles + (blind ? PACES.slow.mph : p.mph) * (o.difficult ? 0.5 : 1) * burst * mundaneMinutes / 60;
     miles += step;
     if (d.travel.lost) {
       offCourse += step;
@@ -1926,27 +2111,29 @@ function travelMut(d: State, ctx: Ctx, o: TravelOpts): number {
       }
     }
     if (d.pauseForButler && d.settings.encounters) {
-      overlandEncounterClock(d, ctx, 60, 'travel', true, onFoot);
+      overlandEncounterClock(d, ctx, 60, 'travel', true, onFoot && mundaneMinutes > 0);
       if (d.tacticalEncounter) {
         d.tacticalRemainingMinutes = (o.hours - traveledHours) * 60;
         break;
       }
     }
   }
+  if (spellTravelMinutes > 0) log(d, `Travel spells carry the party for ${formatDuration(spellTravelMinutes)} of the leg.`);
   d.travel.milesToday += miles;
   if (d.travel.lost) d.travel.milesOffCourse += offCourse;
   if (offCourse > 0 && d.travel.lost) log(d, `${+offCourse.toFixed(1)} of those miles went the wrong way. The party is still lost.`, 'warn');
   wearFromTravel(d, traveledHours, false);
   log(d, `Covered ${+miles.toFixed(1)} miles. That makes ${+d.travel.milesToday.toFixed(1)} miles and ${d.travel.hoursToday} travel hour(s) since the last Long Rest.`);
-  workOnTheMarch(d, ctx, traveledHours, d.travel.navigatorId, o.foragerIds, o.pace);
+  const mundaneHours = traveledHours - spellTravelMinutes / 60;
+  workOnTheMarch(d, ctx, mundaneHours, d.travel.navigatorId, o.foragerIds, o.pace);
   if (o.pace !== 'fast' && !o.flying) {
     const navigator = navId || d.travel.lost || currentNavigationDC(d).dc != null ? nav?.id : undefined;
-    workOnArtDuringTravel(d, o, traveledHours - Number(gallop), navigator, false);
+    workOnArtDuringTravel(d, o, mundaneHours - gallopHours, navigator, false);
   }
   // One foraging roll per 8 hours on the road, with a shorter leg finding a share of a day's food.
   for (const id of o.foragerIds) {
     const c = charById(d, id);
-    if (c) for (let h = traveledHours; h > 0; h -= 8) doForage(d, ctx, c, o.pace, Math.min(8, h) / 8);
+    if (c) for (let h = mundaneHours; h > 0; h -= 8) doForage(d, ctx, c, o.pace, Math.min(8, h) / 8);
   }
   return d.travel.lost ? 0 : miles;
 }
@@ -2335,6 +2522,31 @@ interface Taken {
   unsafe: number;
 }
 
+function takeSafeStoreFood(s: State, lb: number): number {
+  const taken = Math.min(lb, s.stores.foodLb);
+  let remaining = taken;
+  for (const batch of s.stores.conjuredFood ?? []) {
+    if (remaining <= 0) break;
+    const used = Math.min(remaining, batch.lb);
+    batch.lb = round2(batch.lb - used);
+    remaining = round2(remaining - used);
+  }
+  s.stores.conjuredFood = s.stores.conjuredFood?.filter((batch) => batch.lb > 0);
+  s.stores.foodLb = round2(s.stores.foodLb - taken);
+  return taken;
+}
+
+export function curableStoreFood(s: State): number {
+  const conjured = (s.stores.conjuredFood ?? []).reduce((lb, batch) => lb + batch.lb, 0);
+  return round2(s.stores.foodRawLb + Math.max(0, s.stores.foodLb - conjured));
+}
+
+export const setSafeStoreFood = act((d, _ctx, lb: number) => {
+  if (!Number.isFinite(lb) || lb < 0) return;
+  if (lb < d.stores.foodLb) takeSafeStoreFood(d, d.stores.foodLb - lb);
+  else d.stores.foodLb = round2(lb);
+});
+
 function takeFood(s: State, c: Character, lb: number, source: FoodSource): Taken {
   let left = lb;
   let unsafe = 0;
@@ -2344,7 +2556,7 @@ function takeFood(s: State, c: Character, lb: number, source: FoodSource): Taken
     left = round2(left - t);
     return t;
   };
-  const safeStores = () => pull(s.stores.foodLb, (v) => (s.stores.foodLb = v));
+  const safeStores = () => { left = round2(left - takeSafeStoreFood(s, left)); };
   const rations = () => pull(c.rationsLb, (v) => (c.rationsLb = v));
   const unsafeStores = () => (unsafe += pull(s.stores.foodRawLb, (v) => (s.stores.foodRawLb = v)));
   if (source === 'stores') (safeStores(), unsafeStores());
@@ -2417,6 +2629,19 @@ export const eat = act((d, ctx, charId: string, lb: number, source: 'rations' | 
     got.amount > 0 ? 'info' : 'warn',
   );
   riskTainted(d, ctx, c, got.unsafe, 'food');
+});
+
+export const eatGoodberry = act((d, ctx, holderId: string, itemId: string, recipientId: string) => {
+  const holder = charById(d, holderId);
+  const recipient = charById(d, recipientId);
+  const batch = holder?.inventory.find((i) => i.id === itemId);
+  if (!holder || !recipient || !alive(recipient) || !mountWithParty(recipient) || !mountWithParty(holder)
+    || !batch?.goodberry || batch.qty < 1 || batch.scattered || batch.goodberry.expiresAt <= absNow(d)) return;
+  batch.qty -= 1;
+  if (!batch.qty) holder.inventory = holder.inventory.filter((i) => i !== batch);
+  recipient.ateLbToday = Math.max(recipient.ateLbToday, foodNeedLb(recipient));
+  Object.assign(d, changeHp(d, ctx, recipient.id, 1));
+  log(d, `${recipient.name} eats a Goodberry and gets a full day's nourishment.`, 'good');
 });
 
 export const drink = act((d, ctx, charId: string, pints: number, source: 'personal' | 'stores') => {
@@ -2570,7 +2795,7 @@ export const cureRations = act((d, ctx, curerId: string) => {
   const c = charById(d, curerId);
   if (!c || !alive(c)) return;
   if (!d.fire.lit) return void log(d, 'Smoking meat needs a lit fire.', 'warn');
-  const have = round2(d.stores.foodRawLb + d.stores.foodLb);
+  const have = curableStoreFood(d);
   if (have < CURE_LB_PER_RATION) return void log(d, `There isn't enough meat in the stores to smoke (it takes ${CURE_LB_PER_RATION} lb for a day of Rations).`, 'warn');
   const lb = Math.min(have, CURE_MAX_LB);
   advanceMut(d, ctx, CURE_MINUTES, 'camp');
@@ -4069,12 +4294,16 @@ export const splitLoot = act((d, _ctx, gp: number, charIds: string[], what: stri
 
 /** True value of matching component items a character carries. The spell cares what they're worth, not what the caster knows. */
 export function componentValue(c: Character, comp: CostlyComponent): number {
-  return c.inventory.filter((i) => i.name.toLowerCase().includes(comp.match)).reduce((a, i) => a + (i.valueGp ?? 0) * i.qty, 0);
+  const items = c.inventory.filter((i) => i.name.toLowerCase().includes(comp.match));
+  if (comp.single) return Math.max(0, ...items.filter((i) => i.qty >= 1 && !i.scattered).map((i) => i.valueGp ?? 0));
+  return items.reduce((a, i) => a + (i.valueGp ?? 0) * i.qty, 0);
 }
 
 /** Value of matching component items as the party knows it, leaving out any of unknown value. */
 export function componentKnownValue(c: Character, comp: CostlyComponent): number {
-  return c.inventory.filter((i) => i.name.toLowerCase().includes(comp.match)).reduce((a, i) => a + (knownValue(i) ?? 0) * i.qty, 0);
+  const items = c.inventory.filter((i) => i.name.toLowerCase().includes(comp.match));
+  if (comp.single) return Math.max(0, ...items.filter((i) => i.qty >= 1 && !i.scattered).map((i) => knownValue(i) ?? 0));
+  return items.reduce((a, i) => a + (knownValue(i) ?? 0) * i.qty, 0);
 }
 
 /** Matching component items whose value the party doesn't know yet. */
@@ -4108,6 +4337,16 @@ function useComponent(s: State, c: Character, spell: string, opts: { discount?: 
   }
   const guessed = c.inventory.filter((i) => i.name.toLowerCase().includes(comp.match) && valueSecret(i));
   if (!comp.consumed || opts.checkOnly) return true;
+  if (comp.single) {
+    const stone = c.inventory
+      .filter((i) => i.name.toLowerCase().includes(comp.match) && i.qty >= 1 && !i.scattered && (i.valueGp ?? 0) >= comp.gp)
+      .sort((a, b) => a.valueGp! - b.valueGp!)[0];
+    if (!stone) return false;
+    stone.qty -= 1;
+    c.inventory = c.inventory.filter((i) => i.qty > 0);
+    log(s, `${spell} consumes ${stone.name}.`);
+    return true;
+  }
   let left = comp.gp;
   for (const it of c.inventory.filter((i) => i.name.toLowerCase().includes(comp.match)).sort((a, b) => (a.valueGp ?? 0) - (b.valueGp ?? 0))) {
     while (left > 0 && it.qty > 0) {
@@ -4203,12 +4442,19 @@ export const spellOnTarget = act((d, ctx, spell: string, targetId: string) => ap
 
 // ---------------------------------------------------------------- poisons
 
-function dealDamage(d: State, ctx: Ctx, charId: string, amount: number): void {
-  if (amount > 0) Object.assign(d, changeHp(d, ctx, charId, -amount));
+function dealDamage(d: State, ctx: Ctx, charId: string, amount: number, type?: 'poison'): void {
+  if (amount > 0) Object.assign(d, changeHp(d, ctx, charId, -amount, type));
 }
 
-function poisonEffect(s: State, c: Character, p: PoisonInfo, minutes: number, extra?: string): void {
+function poisonEffect(s: State, c: Character, p: PoisonInfo, minutes: number, extra?: string): boolean {
+  if (feastProtection(s, c.id)) {
+    log(s, `Heroes' Feast prevents ${c.name} from becoming Poisoned.`, 'good');
+    if (!extra) return false;
+    s.effects.push({ id: uid(), name: extra, kind: 'other', targetIds: [c.id], casterId: null, concentration: false, shelter: false, startedAt: absNow(s), endsAt: absNow(s) + minutes, notes: p.effect });
+    return false;
+  }
   s.effects.push({ id: uid(), name: `Poisoned (${p.name})${extra ? `, ${extra}` : ''}`, kind: 'other', targetIds: [c.id], casterId: null, concentration: false, shelter: false, startedAt: absNow(s), endsAt: absNow(s) + minutes, notes: p.effect });
+  return true;
 }
 
 /** A creature is exposed to a dose of poison: roll its save and apply what happens (2024 DMG). */
@@ -4245,28 +4491,28 @@ export const exposePoison = act((d, ctx, charId: string, poisonName: string, fro
       else total2 += die(6, ctx.rng);
     }
     log(d, `The fumes linger for ${rounds} rounds until ${c.name} makes three saves.`, 'warn');
-    return dealDamage(d, ctx, charId, total2);
+    return dealDamage(d, ctx, charId, total2, 'poison');
   }
   if (p.name === 'Carrion Crawler Mucus') {
     if (r.passed) return;
     let rounds = 1;
     const c = charById(d, charId)!;
     while (rounds < 10 && !rollSave(c, p.dc, 'normal', ctx.rng).passed) rounds += 1;
-    poisonEffect(d, c, p, rounds >= 10 ? 1 : Math.max(1, Math.ceil(rounds / 10)), 'Paralyzed');
+    if (!poisonEffect(d, c, p, rounds >= 10 ? 1 : Math.max(1, Math.ceil(rounds / 10)), 'Paralyzed')) return;
     return void log(d, `${c.name} is Poisoned and Paralyzed for ${rounds >= 10 ? 'the full minute' : `${rounds} round(s)`}.`, 'bad');
   }
-  if (p.damage) dealDamage(d, ctx, charId, r.passed ? (p.halfOnSave ? Math.floor(dmg / 2) : 0) : dmg);
+  if (p.damage) dealDamage(d, ctx, charId, r.passed ? (p.halfOnSave ? Math.floor(dmg / 2) : 0) : dmg, 'poison');
   const c = charById(d, charId)!;
   if (r.passed) return;
   if (p.name === 'Pale Tincture') {
+    if (!poisonEffect(d, c, p, 8 * MIN_PER_DAY)) return;
     c.poisonTimers = [...(c.poisonTimers ?? []), { id: uid(), name: p.name, nextAt: absNow(d) + MIN_PER_DAY, successes: 0 }];
-    poisonEffect(d, c, p, 8 * MIN_PER_DAY);
     return;
   }
   const minutes = p.poisonedHoursDice ? (rollExpr(p.poisonedHoursDice, ctx.rng) ?? 4) * 60 : (p.poisonedMinutes ?? 0);
   if (!minutes) return;
   const extra = p.alsoCondition && (!p.extraOnFailBy5 || total <= p.dc - 5) ? p.alsoCondition : undefined;
-  poisonEffect(d, c, p, minutes, extra);
+  if (!poisonEffect(d, c, p, minutes, extra)) return;
   log(d, `${c.name} is Poisoned${extra ? ` and ${extra}` : ''} for ${formatDuration(minutes)}.`, 'bad');
 });
 
@@ -4282,14 +4528,14 @@ function tickPoisons(s: State, ctx: Ctx): void {
         c.poisonTimers = c.poisonTimers!.filter((x) => x.id !== t.id);
         const dmg = rollExpr('9d6', ctx.rng) ?? 31;
         log(s, `Midnight strikes, and the Midnight Tears in ${c.name} take hold: DC 17 Con save. ${r.detail}${r.passed ? 'Half damage.' : 'Failure.'}`, 'bad');
-        Object.assign(s, changeHp(s, ctx, c.id, -(r.passed ? Math.floor(dmg / 2) : dmg)));
+        Object.assign(s, changeHp(s, ctx, c.id, -(r.passed ? Math.floor(dmg / 2) : dmg), 'poison'));
         continue;
       }
       // Pale Tincture: a save every 24 hours; seven successes end it.
       t.nextAt = now + MIN_PER_DAY;
       if (r.passed) t.successes += 1;
       log(s, `${c.name} fights the Pale Tincture: DC 16 Con save. ${r.detail}${r.passed ? `Success (${t.successes}/7).` : 'Failure: 1d6 Poison damage that can’t be healed while Poisoned.'}`, r.passed ? 'good' : 'bad');
-      if (!r.passed) Object.assign(s, changeHp(s, ctx, c.id, -die(6, ctx.rng)));
+      if (!r.passed) Object.assign(s, changeHp(s, ctx, c.id, -die(6, ctx.rng), 'poison'));
       const me = charById(s, c.id)!;
       if (t.successes >= 7) {
         me.poisonTimers = (me.poisonTimers ?? []).filter((x) => x.id !== t.id);
@@ -5821,18 +6067,22 @@ export const spendHitDie = act((d, ctx, charId: string) => {
   status(d, c, 'hitDie', `${c.name} spends a Hit Point Die: d${c.hitDie} = ${roll} ${signed(mod)} = ${healed}. HP ${before} → ${c.hp}/${c.maxHp} (${c.level - c.hitDiceSpent} dice left).`, 'good');
 });
 
-export const changeHp = act((d, ctx, charId: string, amount: number) => {
+export const changeHp = act((d, ctx, charId: string, amount: number, damageType?: 'poison') => {
   const c = charById(d, charId);
   if (!c) return;
   if (amount < 0) {
     let dmg = -amount;
+    const resisted = damageType === 'poison' && feastProtection(d, c.id);
+    if (resisted) dmg = Math.floor(dmg / 2);
+    const damage = dmg;
     const absorbed = Math.min(c.tempHp, dmg);
     c.tempHp -= absorbed;
     dmg -= absorbed;
     const wasUp = c.hp > 0;
     const leftover = dmg - c.hp;
     c.hp = Math.max(0, c.hp - dmg);
-    status(d, c, 'hurt', `${c.name} takes ${-amount} damage${absorbed ? ` (${absorbed} absorbed by Temporary HP)` : ''}. HP ${c.hp}/${c.maxHp}.`, c.hp === 0 ? 'bad' : 'warn');
+    if (wasUp && c.hp === 0) spendDeathWard(d, c, 'dropping to 0 HP');
+    status(d, c, 'hurt', `${c.name} takes ${damage} damage${resisted ? " (Heroes’ Feast resistance)" : ""}${absorbed ? ` (${absorbed} absorbed by Temporary HP)` : ''}. HP ${c.hp}/${c.maxHp}.`, c.hp === 0 ? 'bad' : 'warn');
     if (wasUp && c.hp === 0) {
       if (leftover >= c.maxHp) {
         killOutright(d, c, `massive damage (${leftover} beyond 0 HP, at least their HP maximum)`);
@@ -5851,6 +6101,22 @@ export const changeHp = act((d, ctx, charId: string, amount: number) => {
     status(d, c, 'heal', `${c.name} heals ${amount}. HP ${c.hp}/${c.maxHp}.`, 'good');
     if (wasDown && c.hp > 0) wakeUp(d, c, 'healing');
   }
+});
+
+function spendDeathWard(s: State, c: Character, trigger: 'dropping to 0 HP' | 'instant death'): boolean {
+  const ward = [...s.effects].reverse().find((e) => e.name.toLowerCase() === 'death ward' && e.targetIds.includes(c.id)
+    && (e.endsAt == null || e.endsAt > absNow(s)));
+  if (!ward) return false;
+  ward.targetIds = ward.targetIds.filter((id) => id !== c.id);
+  if (!ward.targetIds.length) s.effects = s.effects.filter((e) => e !== ward);
+  if (trigger === 'dropping to 0 HP') c.hp = 1;
+  log(s, `Death Ward protects ${c.name} from ${trigger} and ends.`, 'good');
+  return true;
+}
+
+export const negateInstantDeath = act((d, _ctx, charId: string) => {
+  const c = charById(d, charId);
+  if (c && alive(c)) spendDeathWard(d, c, 'instant death');
 });
 
 function wakeUp(s: State, c: Character, why: string): void {
@@ -6005,8 +6271,49 @@ const effectWho = (s: State, e: ActiveEffect): string => {
   return names.length ? ` (${names.join(', ')})` : '';
 };
 
+function spellHpBonus(effects: ActiveEffect[], id: string, field: 'aidHp' | 'feastHp'): number {
+  return Math.max(0, ...effects.filter((e) => !e.feastMeal && e.targetIds.includes(id)).map((e) => e[field] ?? 0));
+}
+
+function updateSpellHp(s: State, previous: ActiveEffect[], targetIds: string[]): void {
+  for (const id of new Set(targetIds)) {
+    const c = charById(s, id);
+    if (!c) continue;
+    const aid = spellHpBonus(s.effects, id, 'aidHp') - spellHpBonus(previous, id, 'aidHp');
+    const feast = spellHpBonus(s.effects, id, 'feastHp') - spellHpBonus(previous, id, 'feastHp');
+    if (!aid && !feast) continue;
+    c.maxHp = Math.max(1, c.maxHp + aid + feast);
+    if (!alive(c)) continue;
+    const previousHp = c.hp;
+    c.hp = Math.min(c.maxHp, Math.max(0, c.hp + aid + Math.max(0, feast)));
+    if (previousHp === 0 && c.hp > 0) wakeUp(s, c, aid > 0 ? 'Aid' : "Heroes' Feast");
+    if (previousHp > 0 && c.hp === 0 && !spendDeathWard(s, c, 'dropping to 0 HP')) {
+      Object.assign(c, { dying: true, stable: false, deathSuccesses: 0, deathFailures: 0, wakesAt: null });
+      status(s, c, 'dying', `${c.name} drops to 0 HP as Aid ends and is dying. Roll death saves.`, 'bad');
+    }
+  }
+}
+
 function tickEffects(s: State, before: number): void {
   const now = absNow(s);
+  if (s.stores.conjuredFood?.length) {
+    const spoiled = s.stores.conjuredFood.filter((batch) => batch.expiresAt <= now);
+    if (spoiled.length) {
+      const lb = spoiled.reduce((total, batch) => total + batch.lb, 0);
+      s.stores.foodLb = round2(Math.max(0, s.stores.foodLb - lb));
+      s.stores.conjuredFood = s.stores.conjuredFood.filter((batch) => batch.expiresAt > now);
+      log(s, `${fmtLb(lb)} of conjured food spoils in the camp stores.`, 'warn');
+    }
+  }
+  for (const holder of [...s.characters.map((c) => ({ name: c.name, items: c.inventory })), ...s.stashes]) {
+    const items = holder.items;
+    for (let i = items.length - 1; i >= 0; i--) {
+      const batch = items[i];
+      if (!batch.goodberry || batch.goodberry.expiresAt > now) continue;
+      items.splice(i, 1);
+      if (batch.qty > 0) log(s, `${batch.qty} uneaten Goodberry berries disappear from ${holder.name}.`);
+    }
+  }
   for (const e of s.effects) {
     if (!/gentle repose/i.test(e.name)) continue;
     for (const id of e.targetIds) {
@@ -6024,8 +6331,26 @@ function tickEffects(s: State, before: number): void {
     if (now >= e.endsAt) ended.push(e);
   }
   if (!ended.length) return;
-  s.effects = s.effects.filter((e) => !ended.includes(e));
+  const previous = s.effects;
+  s.effects = previous.filter((e) => !ended.includes(e));
+  for (const meal of ended.filter((e) => e.feastMeal)) {
+    const targetIds = meal.targetIds.filter((id) => {
+      const diner = charById(s, id);
+      return diner && alive(diner) && mountWithParty(diner);
+    });
+    if (!targetIds.length) continue;
+    const startedAt = meal.endsAt!;
+    s.effects.push({ ...meal, id: uid(), name: "Heroes' Feast", targetIds, feastMeal: false,
+      startedAt, endsAt: startedAt + MIN_PER_DAY,
+      notes: `+${meal.feastHp} maximum and current HP on activation. Poison Resistance. Immune to Frightened and Poisoned.` });
+  }
+  updateSpellHp(s, previous, ended.flatMap((e) => e.aidHp || e.feastHp ? e.targetIds : []));
   for (const e of ended) {
+    noteTravelSpellEnd(s, e);
+    if (e.feastMeal) {
+      log(s, `The Heroes' Feast meal${effectWho(s, e)} finishes. Eligible diners gain its benefits for 24 hours.`, 'good');
+      continue;
+    }
     noticed(s, e.kind === 'light' ? 'lightOut' : e.shelter ? 'shelterEnds' : 'effectEnds', effectChars(s, e), e.kind === 'light' ? `${e.name}${effectWho(s, e)} goes out.` : `${e.name}${effectWho(s, e)} ends.`, e.kind === 'light' || e.shelter ? 'warn' : 'info');
   }
 }
@@ -6116,11 +6441,18 @@ export const addEffect = act((d, _ctx, ne: NewEffect) => {
     const caster = charById(d, ne.casterId);
     if (caster) dropConcentration(d, caster, '');
   }
+  const targetIds = feastBlocksCondition(ne.preset.name)
+    ? ne.targetIds.filter((id) => !feastProtection(d, id))
+    : ne.targetIds;
+  if (ne.targetIds.length && !targetIds.length) {
+    log(d, `Heroes' Feast prevents ${ne.preset.name}.`, 'good');
+    return;
+  }
   const e: ActiveEffect = {
     id: uid(),
     name: ne.preset.name,
     kind: ne.preset.kind,
-    targetIds: ne.targetIds,
+    targetIds,
     casterId: ne.casterId,
     concentration: conc,
     shelter: !!ne.preset.shelter,
@@ -6179,7 +6511,10 @@ export const setHood = act((d, _ctx, effectId: string, lowered: boolean) => {
 export const endEffect = act((d, _ctx, effectId: string) => {
   const e = d.effects.find((x) => x.id === effectId);
   if (!e) return;
-  d.effects = d.effects.filter((x) => x.id !== effectId);
+  const previous = d.effects;
+  d.effects = previous.filter((x) => x.id !== effectId);
+  if (e.aidHp || e.feastHp) updateSpellHp(d, previous, e.targetIds);
+  noteTravelSpellEnd(d, e);
   log(d, `${e.name}${effectWho(d, e)} is ended early.`);
 });
 
@@ -6738,13 +7073,13 @@ export interface CircleCast {
 }
 
 /** Lowest tracked spell slot of at least this level with a use left; null if none; undefined if slots aren't tracked. */
-function findSlot(c: Character, level: number): Character['resources'][number] | null | undefined {
+function findSlot(c: Character, level: number, exactLevel?: number): Character['resources'][number] | null | undefined {
   if (!c.resources.some((r) => /(spell|pact) slots/i.test(r.name))) return undefined;
   return (
     c.resources
       .filter((r) => /(spell|pact) slots \(level (\d)\)/i.test(r.name))
       .map((r) => ({ r, lvl: Number(/level (\d)/i.exec(r.name)![1]) }))
-      .filter((x) => x.lvl >= level && x.r.current > 0)
+      .filter((x) => x.lvl >= level && (exactLevel == null || x.lvl === exactLevel) && x.r.current > 0)
       .sort((a, b) => a.lvl - b.lvl)[0]?.r ?? null
   );
 }
@@ -6782,6 +7117,142 @@ export const loseConcentration = act((d, _ctx, effectId: string, charId: string)
   }
 });
 
+function tickSpellCreatures(s: State): void {
+  const now = absNow(s);
+  for (const creature of s.spellCreatures ?? []) {
+    if (creature.status !== 'present') continue;
+    const caster = charById(s, creature.casterId);
+    const vanished = (creature.summonId && !s.effects.some((e) => e.id === creature.summonId))
+      || (creature.spell === 'find steed' && caster && !alive(caster));
+    if (vanished) {
+      creature.status = 'gone';
+      log(s, `${creature.name} disappears.`, 'warn');
+    } else if (creature.until != null && creature.until <= now) {
+      creature.status = creature.spell === 'awaken' || creature.spell === 'planar binding' ? 'independent' : 'uncontrolled';
+      log(s, creature.spell === 'awaken'
+        ? `${creature.name} is no longer Charmed. The DM determines its attitude.`
+        : `${creature.name} is no longer under ${caster?.name ?? "its caster"}'s control.`, 'warn');
+    }
+  }
+}
+
+export const setSpellCreatureOrder = act((d, _ctx, id: string, order: string) => {
+  const creature = d.spellCreatures?.find((x) => x.id === id);
+  if (creature?.status === 'present') creature.order = order.trim().slice(0, 300);
+});
+
+export const setSpellCreatureStatus = act((d, _ctx, id: string, action: 'dismiss' | 'recall' | 'gone' | 'forget' | 'hurt') => {
+  const creature = d.spellCreatures?.find((x) => x.id === id);
+  if (!creature) return;
+  if (action === 'forget') {
+    d.spellCreatures = d.spellCreatures!.filter((x) => x.id !== id);
+    return;
+  }
+  const familiar = creature.spell === 'find familiar';
+  if (action === 'dismiss' && familiar && creature.status === 'present') {
+    creature.status = 'dismissed';
+    log(d, `${creature.name} goes to its pocket dimension, leaving carried gear behind.`);
+  } else if (action === 'recall' && familiar && creature.status === 'dismissed') {
+    creature.status = 'present';
+    log(d, `${creature.name} returns from its pocket dimension.`);
+  } else if (action === 'gone' && creature.status !== 'gone') {
+    creature.status = 'gone';
+    log(d, `${creature.name} is gone.`);
+  } else if (action === 'hurt' && creature.spell === 'awaken' && creature.status === 'present') {
+    creature.status = 'independent';
+    log(d, `${creature.name} was hurt by its caster or an ally. Its charm ends and the DM determines its attitude.`, 'warn');
+  }
+});
+
+function creatureCastProblem(s: State, c: Character, spell: CreatureSpell, input: CreatureCast, slotLevel: number, finishAt: number): string | undefined {
+  const now = absNow(s);
+  if (spell === 'create undead' && (!isNight(s) || lightAt(finishAt % MIN_PER_DAY, seasonOf(s)).phase !== 'Night')) {
+    return 'Create Undead can only be cast at night.';
+  }
+  if (spell === 'planar binding') {
+    if (!input.name?.trim() || input.saveFailed == null) return 'Choose a creature and record the result of its Charisma save.';
+    if (input.summonId && !s.effects.some((e) => e.id === input.summonId && bindableSummon(e.name) && e.pausedLeft == null
+      && (e.endsAt == null || e.endsAt > finishAt))) return 'The linked summon must remain present throughout the casting.';
+  }
+  if (spell === 'awaken' && !input.name?.trim()) return 'Name the creature or plant being awakened.';
+  if (spell !== 'animate dead' && spell !== 'create undead') return;
+  const renewing = input.renewIds !== undefined;
+  const limits = undeadLimits(spell, slotLevel, renewing);
+  if (renewing) {
+    const ids = [...new Set(input.renewIds)];
+    if (!ids.length) return 'Select at least one undead creature to renew.';
+    const creatures = ids.map((id) => s.spellCreatures?.find((x) => x.id === id));
+    if (creatures.some((x) => !x || x.casterId !== c.id || x.spell !== spell || x.status !== 'present' || (x.until ?? now) <= finishAt)) {
+      return 'Select undead you still control after this casting finishes.';
+    }
+    const count = (form: string) => creatures.filter((x) => x?.form === form).length;
+    if (spell === 'animate dead' ? ids.length > limits.Skeleton
+      : Object.entries(limits).some(([form, max]) => count(form) > max)
+        || new Set(creatures.map((x) => x?.form)).size !== 1 || !limits[creatures[0]!.form]) {
+      return 'This spell slot cannot renew control of that group.';
+    }
+    return;
+  }
+  const form = input.form ?? (spell === 'animate dead' ? 'Skeleton' : 'Ghoul');
+  const count = input.count ?? 1;
+  if (!Number.isInteger(count) || count < 1 || count > (limits[form] ?? 0)) return 'This spell slot cannot create that group.';
+  if (spell === 'create undead' && s.settings.trackComponents) {
+    const stones = c.inventory.filter((item) => /black onyx/i.test(item.name) && (item.valueGp ?? 0) >= 150 && !item.scattered)
+      .reduce((total, item) => total + item.qty, 0);
+    if (stones < count) return 'Create Undead requires a reusable black onyx stone worth 150+ GP for each corpse.';
+  }
+}
+
+function applyCreatureCast(s: State, caster: Character, spell: CreatureSpell, input: CreatureCast, slotLevel: number, extra: number): void {
+  const now = absNow(s);
+  const roster = s.spellCreatures ??= [];
+  if (input.renewIds?.length && (spell === 'animate dead' || spell === 'create undead')) {
+    for (const creature of roster.filter((x) => input.renewIds!.includes(x.id))) creature.until = now + MIN_PER_DAY;
+    log(s, `${caster.name} renews control of the selected undead for 24 hours.`, 'good');
+    return;
+  }
+  let until: number | undefined;
+  let form = input.form?.trim();
+  if (spell === 'planar binding') {
+    if (!input.saveFailed) {
+      log(s, `${input.name} succeeds on the Charisma save and is free of the binding.`);
+      return;
+    }
+    const linked = input.summonId ? s.effects.find((e) => e.id === input.summonId) : undefined;
+    if (input.summonId && !linked) {
+      log(s, 'The linked summon disappeared before the binding took effect.', 'warn');
+      return;
+    }
+    until = now + (PLANAR_BINDING_DAYS[slotLevel] ?? 1) * MIN_PER_DAY + extra;
+    if (linked?.endsAt != null) linked.endsAt = until;
+    form = linked?.name ?? 'Planar creature';
+  } else if (spell === 'animate dead' || spell === 'create undead') {
+    until = now + MIN_PER_DAY;
+    form ??= spell === 'animate dead' ? 'Skeleton' : 'Ghoul';
+  } else if (spell === 'awaken') {
+    until = now + 30 * MIN_PER_DAY;
+    form ||= 'Awakened creature';
+  } else {
+    form ||= spell === 'find familiar' ? 'Owl' : 'Horse';
+  }
+  const count = spell === 'animate dead' || spell === 'create undead' ? input.count ?? 1 : 1;
+  const spirit = spell === 'find familiar' || spell === 'find steed' ? input.spirit ?? 'Celestial' : undefined;
+  const name = input.name?.trim().slice(0, 80) || form;
+  const prior = spell === 'find familiar' || spell === 'find steed'
+    ? roster.find((x) => x.spell === spell && x.casterId === caster.id)
+    : undefined;
+  if (prior) {
+    Object.assign(prior, { name: input.name?.trim() ? name : prior.name, form, spirit, slotLevel, status: prior.status === 'dismissed' ? 'dismissed' : 'present' });
+    if (spell === 'find steed') prior.order = '';
+  } else {
+    for (let i = 0; i < count; i++) roster.push({
+      id: uid(), spell, casterId: caster.id, name: count > 1 ? `${name} ${i + 1}` : name,
+      form, spirit, slotLevel, status: 'present', until, summonId: spell === 'planar binding' ? input.summonId : undefined, order: '',
+    });
+  }
+  log(s, `${CREATURE_SPELLS[spell]} updates ${caster.name}'s creature roster.`, 'good');
+}
+
 /** Counts random encounters with creatures, so a long casting can tell whether one turned up mid-casting. */
 let encounterSerial = 0;
 
@@ -6791,11 +7262,27 @@ let encounterSerial = 0;
  * a creature encounter or a caster going down breaks it off: the spell fails, no slot is spent and no Material
  * component is consumed. With `circle` (Heroes of Faerûn Circle Magic, optional), secondary casters join in.
  */
-export const castSpell = act((d, ctx, charId: string, spellName: string, mode: 'ritual' | 'slot', targetId: string | null = null, circle: CircleCast | null = null) => {
+export const castSpell = act((d, ctx, charId: string, spellName: string, mode: 'ritual' | 'slot', targetId: string | null = null, circle: CircleCast | null = null, recipients: string[] = [], chosenSlotLevel?: number, creatureInput: CreatureCast = {}) => {
   const c = charById(d, charId);
   const own = c?.spells.find((x) => x.name === spellName);
   if (!c || !own || !alive(c)) return;
+  if (d.effects.some((e) => e.windWalk?.cloudIds.includes(c.id) && (e.endsAt ?? 0) > absNow(d))) {
+    return void log(d, `${c.name} must return to normal form before casting a spell.`, 'warn');
+  }
   let sp = { ...own, ...spellInfo(own, d.spellLibrary) } as CharacterSpell;
+  const spellKey = sp.name.toLowerCase();
+  const targetLimit = BOOKKEEPING_TARGET_LIMIT[spellKey];
+  const requestedTargets = [...new Set([
+    ...(spellKey === 'wind walk' ? [c.id] : []),
+    ...(recipients.length ? recipients : targetId ? [targetId] : spellKey === 'phantom steed' ? [c.id] : []),
+  ])];
+  if (spellKey === 'control weather' && indoors(d)) return void log(d, 'Control Weather must be cast outdoors.', 'warn');
+  const targets = requestedTargets.map((id) => charById(d, id))
+    .filter((target): target is Character => !!target && alive(target) && mountWithParty(target)
+      && (spellKey !== 'prayer of healing' || !target.prayerOfHealingUsed));
+  if (targetLimit && (targets.length < 1 || targets.length > targetLimit || targets.length !== requestedTargets.length)) {
+    return void log(d, `Choose 1–${targetLimit} eligible targets for ${sp.name}.`, 'warn');
+  }
   // Circle magic: check everything before anything is spent.
   const helpers: Character[] = [];
   let need: HelperSlot = { kind: 'none' };
@@ -6822,18 +7309,28 @@ export const castSpell = act((d, ctx, charId: string, spellName: string, mode: '
     }
     if (circle.option === 'supplant') discount = supplantDiscount(helpers.length);
   }
-  const base = sp.castMinutes ?? 0;
+  const base = sp.castMinutes ?? BOOKKEEPING_CAST_MINUTES[spellKey] ?? 0;
   let slot: ReturnType<typeof findSlot>;
   if (mode === 'ritual') {
     const check = canCastAsRitual(c, sp);
     if (!check.ok) return void log(d, check.reason, 'warn');
   } else if (sp.level > 0) {
     if (!sp.prepared && !sp.alwaysPrepared) return void log(d, `${c.name} doesn't have ${sp.name} prepared.`, 'warn');
-    slot = findSlot(c, sp.level);
+    if (chosenSlotLevel != null && (!Number.isInteger(chosenSlotLevel) || chosenSlotLevel < sp.level || chosenSlotLevel > 9)) {
+      return void log(d, `Choose a spell slot of level ${sp.level} or higher for ${sp.name}.`, 'warn');
+    }
+    slot = findSlot(c, sp.level, chosenSlotLevel);
+    if (slot === null && chosenSlotLevel != null) return void log(d, `${c.name} has no level ${chosenSlotLevel} spell slot left for ${sp.name}.`, 'warn');
     if (slot === null) return void log(d, `${c.name} has no spell slots of level ${sp.level} or higher left for ${sp.name}.`, 'warn');
   }
   if (!useComponent(d, c, own.name, { discount, checkOnly: true })) return;
   const minutes = base + (mode === 'ritual' ? RITUAL_TAG_MINUTES : 0);
+  const slotLevel = Number(/level (\d)/i.exec(slot?.name ?? '')?.[1] ?? chosenSlotLevel ?? sp.level);
+  const creature = creatureSpell(spellKey);
+  if (creature) {
+    const problem = creatureCastProblem(d, c, creature, creatureInput, slotLevel, absNow(d) + minutes);
+    if (problem) return void log(d, problem, 'warn');
+  }
   const casters = [c, ...helpers];
   const names = casters.map((x) => x.name);
   const opt = circle ? circleOption(circle.option) : null;
@@ -6855,7 +7352,10 @@ export const castSpell = act((d, ctx, charId: string, spellName: string, mode: '
       const step = Math.min(left, 60);
       advanceMut(d, ctx, step, 'camp');
       left -= step;
-      const fallen = casters.filter((x) => !alive(x) || x.hp <= 0 || x.dying);
+      const fallen = casters.filter((x) => {
+        const current = charById(d, x.id);
+        return !current || !alive(current) || current.hp <= 0 || current.dying;
+      });
       if (encounterSerial !== startSerial || fallen.length) {
         const spent = Math.round(minutes) - left;
         const why = fallen.length ? `${fallen.map((x) => x.name).join(', ')} can't keep casting` : 'creatures turn up mid-casting';
@@ -6869,11 +7369,20 @@ export const castSpell = act((d, ctx, charId: string, spellName: string, mode: '
       }
     }
   }
-  if (!useComponent(d, c, own.name, { discount })) return;
-  if (slot) slot.current -= 1;
+  const liveCaster = charById(d, c.id);
+  if (!liveCaster) return;
+  if (creature) {
+    const problem = creatureCastProblem(d, liveCaster, creature, creatureInput, slotLevel, absNow(d));
+    if (problem) return void log(d, problem, 'warn');
+  }
+  const liveSlot = slot && liveCaster.resources.find((resource) => resource.id === slot.id);
+  if (slot && !liveSlot?.current) return void log(d, `${c.name} no longer has the chosen spell slot available.`, 'warn');
+  if (!useComponent(d, liveCaster, own.name, { discount })) return;
+  if (liveSlot) liveSlot.current -= 1;
   for (const h of helpers) {
-    if (need.kind === 'none') continue;
-    const hs = findSlot(h, need.kind === 'any' ? 1 : need.level);
+    const helper = charById(d, h.id);
+    if (!helper || need.kind === 'none') continue;
+    const hs = findSlot(helper, need.kind === 'any' ? 1 : need.level);
     if (hs) hs.current -= 1;
   }
   if (helpers.length) {
@@ -6881,6 +7390,87 @@ export const castSpell = act((d, ctx, charId: string, spellName: string, mode: '
   } else log(d, `${c.name} casts ${sp.name} ${timeTxt}.`, 'good');
   if (targetId && TARGET_SPELLS[sp.name]) applySpellTo(d, ctx, sp.name, targetId);
   const extra = circle?.option === 'prolong' ? prolongMinutes(helpers.length) : 0;
+  if (creature) {
+    applyCreatureCast(d, liveCaster, creature, creatureInput, slotLevel, extra);
+    return;
+  }
+  if (spellKey === 'wind walk' || spellKey === 'phantom steed' || spellKey === 'control weather') {
+    const now = absNow(d);
+    const id = uid();
+    const targetIds = targets.map((target) => target.id);
+    const windWalk = spellKey === 'wind walk';
+    const steed = spellKey === 'phantom steed';
+    const control = !windWalk && !steed;
+    const shared = control && circle?.option === 'distribute' ? casters.map((x) => x.id) : undefined;
+    if (control) {
+      const previous = d.controlledWeather;
+      if (previous) d.effects = d.effects.filter((e) => e.id !== previous.effectId);
+      d.controlledWeather = previous
+        ? { effectId: id, natural: previous.natural, stages: { ...previous.stages }, changed: { ...previous.changed }, direction: previous.direction }
+        : { effectId: id, natural: d.weather, stages: initialWeatherStages(d.weather, tempNow(d)), changed: {} };
+    }
+    d.effects.push({ id, name: sp.name, kind: 'spell', casterId: c.id, targetIds,
+      concentration: control, concentrationIds: shared, shelter: false, startedAt: now,
+      endsAt: now + (steed ? 60 : 480) + extra,
+      ...(windWalk ? { windWalk: { cloudIds: targetIds } } : {}),
+      ...(steed ? { phantomSteed: true } : {}),
+      notes: windWalk ? 'Cloud form flies at 300 feet per turn. Changing form takes 1 minute.'
+        : steed ? 'The chosen rider can travel at 13 mph. Any damage to the steed ends the spell.'
+        : 'Adjust weather one stage at a time in a 5-mile radius around the caster.' });
+    return;
+  }
+  if (spellKey === 'create food and water') {
+    d.stores.foodLb = round2(d.stores.foodLb + 45);
+    d.stores.waterGal = round2(d.stores.waterGal + 30);
+    (d.stores.conjuredFood ??= []).push({ lb: 45, expiresAt: absNow(d) + MIN_PER_DAY });
+    log(d, 'The camp stores gain 45 lb of food and 30 gallons of clean water. The food spoils after 24 hours.', 'good');
+    return;
+  }
+  if (spellKey === "heroes' feast" || spellKey === 'death ward') {
+    const now = absNow(d);
+    const targetIds = targets.map((target) => target.id);
+    const feast = spellKey === "heroes' feast";
+    if (!feast) {
+      d.effects = d.effects.filter((e) => !(e.name.toLowerCase() === 'death ward' && e.targetIds.length === 1 && e.targetIds[0] === targetIds[0]));
+    }
+    d.effects.push({
+      id: uid(), name: feast ? "Heroes' Feast meal" : 'Death Ward', kind: 'spell', casterId: c.id,
+      targetIds, concentration: false, shelter: false, startedAt: now,
+      endsAt: now + (feast ? 60 : 480 + extra),
+      ...(feast ? { feastMeal: true, feastHp: die(10, ctx.rng) + die(10, ctx.rng) } : {}),
+      notes: feast ? 'Benefits begin when the one-hour meal finishes.' : 'Triggers once on a drop to 0 HP or instant death without damage.',
+    });
+    return;
+  }
+  if (spellKey === 'goodberry') {
+    addLine(d, liveCaster, 'Goodberry', 10, { weight: 0, source: 'manual', goodberry: { expiresAt: absNow(d) + MIN_PER_DAY + extra } }, null, true);
+    log(d, `${c.name} gathers ten Goodberries. Use them from their inventory.`, 'good');
+    return;
+  }
+  if (spellKey === 'prayer of healing') {
+    const present = targets.map((target) => target.id).filter((id) => {
+      const target = charById(d, id);
+      return target && alive(target) && mountWithParty(target);
+    });
+    let healing = 0;
+    for (let i = 0; i < slotLevel; i++) healing += die(8, ctx.rng);
+    for (const id of present) {
+      const live = charById(d, id)!;
+      live.prayerOfHealingUsed = true;
+      Object.assign(d, changeHp(d, ctx, live.id, healing));
+    }
+    finishShortRest(d, ctx, present.map((id) => charById(d, id)!));
+    return;
+  }
+  if (spellKey === 'aid') {
+    const previous = d.effects;
+    const now = absNow(d);
+    const targetIds = targets.filter((target) => alive(target) && mountWithParty(target)).map((target) => target.id);
+    const aidHp = 5 * (slotLevel - 1);
+    d.effects = [...previous, { id: uid(), name: 'Aid', kind: 'spell', casterId: c.id, targetIds, aidHp, concentration: false, shelter: false, startedAt: now, endsAt: now + 480 + extra, notes: `+${aidHp} current and maximum HP.` }];
+    updateSpellHp(d, previous, targetIds);
+    return;
+  }
   if (sp.durationMinutes || sp.permanent) {
     const minutesLong = sp.permanent ? null : (sp.durationMinutes ?? 0) + extra;
     const concentration = !!sp.concentration;
@@ -7587,7 +8177,7 @@ function stowItem(s: State, c: Character, name: string, qty: number, extra: Part
 }
 
 function addLine(_s: State, c: Character, name: string, qty: number, extra: Partial<InventoryItem>, inside: string | null, fresh: boolean): InventoryItem {
-  const same = !fresh && c.inventory.find((i) => sameStack(i, { name, valueGp: extra.valueGp }) && !!i.crafted === !!extra.crafted && (i.containerId ?? null) === inside && !i.scattered && !i.damaged);
+  const same = !fresh && c.inventory.find((i) => sameStack(i, { name, valueGp: extra.valueGp }) && i.goodberry?.expiresAt === extra.goodberry?.expiresAt && !!i.crafted === !!extra.crafted && (i.containerId ?? null) === inside && !i.scattered && !i.damaged);
   if (same) {
     same.qty += qty;
     return same;
@@ -7734,7 +8324,7 @@ export const moveItem = act((d, _ctx, from: Holder, to: Holder, itemId: string, 
     }
   } else {
     it.qty -= n;
-    const same = b.items.find((i) => sameStack(i, it) && !i.containerId);
+    const same = b.items.find((i) => sameStack(i, it) && i.goodberry?.expiresAt === it.goodberry?.expiresAt && !i.containerId);
     if (same) same.qty += n;
     else b.items.push({ ...it, id: uid(), qty: n, containerId: null, ammo: it.ammo ? { spent: 0 } : null });
   }
@@ -8109,6 +8699,7 @@ export const importDdb = act((d, _ctx, imp: DdbImport, parts: DdbParts) => {
   c.ddbSyncedAt = stamp(d);
   c.name = imp.name;
   if (parts.stats) {
+    const spellHp = spellHpBonus(d.effects, c.id, 'aidHp') + spellHpBonus(d.effects, c.id, 'feastHp');
     Object.assign(c, {
       className: imp.className,
       level: imp.level,
@@ -8122,8 +8713,8 @@ export const importDdb = act((d, _ctx, imp: DdbImport, parts: DdbParts) => {
       darkvision: imp.darkvision,
       coldResist: imp.coldResist,
       fireResist: imp.fireResist,
-      maxHp: imp.maxHp,
-      hp: imp.hp,
+      maxHp: imp.maxHp + spellHp,
+      hp: imp.hp > 0 ? imp.hp + spellHp : imp.hp,
       tempHp: imp.tempHp,
       hitDie: imp.hitDie,
       hitDiceSpent: imp.hitDiceSpent,
@@ -8473,17 +9064,27 @@ const TACTICAL_CONDITIONS = new Set([
 function tacticalVitals(s: State, c: Character): TacticalVitals {
   const conditions: TacticalCondition[] = [];
   if (c.exhaustion > 0) conditions.push({ id: 'exhaustion', key: 'exhaustion', level: c.exhaustion });
-  if (c.sick || c.poisonedUntil != null) {
+  const protectedByFeast = feastProtection(s, c.id);
+  if ((c.sick || c.poisonedUntil != null) && !protectedByFeast) {
     conditions.push({ id: 'survival-poison', key: 'poisoned',
       remainingSeconds: c.sick ? undefined : Math.max(0, Math.round((c.poisonedUntil! - absNow(s)) * 60)) });
   }
   for (const effect of s.effects) {
     if (effect.pausedLeft != null || (effect.endsAt != null && effect.endsAt <= absNow(s))) continue;
     const remainingSeconds = effect.endsAt == null ? undefined : Math.round((effect.endsAt - absNow(s)) * 60);
-    if (effect.concentration && concentrators(effect).includes(c.id)) {
+    if (effect.windWalk?.cloudIds.includes(c.id)) {
+      conditions.push({ id: `wind-walk:${effect.id}`, key: 'custom', label: 'Wind Walk · cloud form, 300 ft Fly Speed, physical damage Resistance, Prone immunity', remainingSeconds });
+    } else if (effect.targetIds.includes(c.id) && effect.phantomSteed) {
+      conditions.push({ id: effect.id, key: 'custom', label: 'Phantom Steed · ends if the steed takes damage', remainingSeconds });
+    } else if (effect.targetIds.includes(c.id) && effect.feastHp && !effect.feastMeal) {
+      conditions.push({ id: `feast:${effect.id}`, key: 'custom', label: "Heroes’ Feast · Poison Resistance, Frightened and Poisoned immunity", remainingSeconds });
+    } else if (effect.targetIds.includes(c.id) && effect.name.toLowerCase() === 'death ward') {
+      conditions.push({ id: effect.id, key: 'custom', label: 'Death Ward · negate the first drop to 0 HP or instant death', remainingSeconds });
+    } else if (effect.concentration && concentrators(effect).includes(c.id)) {
       conditions.push({ id: effect.id, key: 'concentration', label: effect.name, remainingSeconds });
     } else if (effect.targetIds.length === 1 && effect.targetIds[0] === c.id) {
       const key = effect.name.toLowerCase();
+      if (protectedByFeast && feastBlocksCondition(key)) continue;
       if (TACTICAL_CONDITIONS.has(key) || effect.notes.startsWith(TACTICAL_EFFECT_PREFIX)) {
         conditions.push({ id: effect.id, key: TACTICAL_CONDITIONS.has(key) ? key : 'custom', label: effect.name, remainingSeconds });
       }
@@ -8617,10 +9218,15 @@ export const applyTacticalResult = act((d, ctx, result: TacticalResult) => {
         c.sick = false;
         c.sickFrom = undefined;
         c.poisonedUntil = null;
-      } else d.effects = d.effects.filter((effect) => effect.id !== condition.id);
+      } else {
+        const removed = d.effects.find((effect) => effect.id === condition.id);
+        if (removed?.phantomSteed) noteTravelSpellEnd(d, removed);
+        d.effects = d.effects.filter((effect) => effect.id !== condition.id);
+      }
     }
     for (const condition of vitals.conditions) {
       if (previousById.has(condition.id) || condition.key === 'exhaustion' || condition.remainingSeconds === 0) continue;
+      if (feastProtection(d, id) && (feastBlocksCondition(condition.key) || feastBlocksCondition(condition.label ?? ''))) continue;
       const concentration = condition.key === 'concentration';
       if (concentration) dropConcentration(d, c, ' during the encounter');
       d.effects.push({
@@ -9129,7 +9735,7 @@ export const tameSession = act((d, ctx, id: string, a: Omit<TameAids, 'attitude'
   const fed = fromRaw + fromFood >= need - 1e-9;
   if (fed) {
     d.stores.foodRawLb = Math.round((d.stores.foodRawLb - fromRaw) * 100) / 100;
-    d.stores.foodLb = Math.round((d.stores.foodLb - fromFood) * 100) / 100;
+    takeSafeStoreFood(d, fromFood);
     const m = t.mountId ? charById(d, t.mountId) : undefined;
     if (m) m.ateLbToday = Math.max(m.ateLbToday, need);
   }

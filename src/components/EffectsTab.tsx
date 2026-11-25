@@ -1,3 +1,4 @@
+import { SpellCreaturesCard } from './SpellCreatures';
 import { useState } from 'react';
 import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
@@ -24,6 +25,7 @@ export function EffectsTab() {
   return (
     <div className="grid">
       <ActiveCard />
+      <SpellCreaturesCard />
       <AddEffectCard />
       <ExploreCard />
       <BreathCard />
@@ -96,11 +98,29 @@ function ActiveCard() {
                       </button>
                     )
                   )}
+                  {e.phantomSteed && (
+                    <button className="ghost small" onClick={() => dispatch((st, cx) => E.endEffect(st, cx, e.id))}>
+                      Steed took damage
+                    </button>
+                  )}
+                  {e.name.toLowerCase() === 'death ward'  && e.targetIds.length === 1 && (
+                    <button className="ghost small" onClick={() => dispatch((st, cx) => E.negateInstantDeath(st, cx, e.targetIds[0]))}>
+                      Negate instant death
+                    </button>
+                  )}
                   <button className="ghost small bad" onClick={() => dispatch((st, cx) => E.endEffect(st, cx, e.id))}>
                     End
                   </button>
                 </span>
               </div>
+              {e.windWalk && e.targetIds.map((id) => {
+                const c = E.charById(s, id);
+                if (!c || !E.alive(c)) return null;
+                const cloud = e.windWalk!.cloudIds.includes(id);
+                return <button key={id} className="ghost small" onClick={() => dispatch((st, ctx) => E.setWindWalkForm(st, ctx, e.id, id))}>
+                  {c.name}: {cloud ? 'return to normal form' : 'assume cloud form'} (1 min)
+                </button>;
+              })}
               <div className="small">
                 {e.pausedLeft != null ? (
                   <span className="muted">Put out · {formatDuration(e.pausedLeft)} of Oil left in it</span>

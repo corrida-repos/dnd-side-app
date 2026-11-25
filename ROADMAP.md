@@ -131,13 +131,41 @@ These all happen during Short and Long Rests or at dawn, so they fit straight in
 - Most of these take a set number of days and end with a check and a table roll.
 - **To build:** activity presets with their own time, cost and outcome tables, sitting next to crafting.
 
-### Spells that build up over days ✅
+### Daily casting streaks ✅
 - *Teleportation Circle*, *Guards and Wards*, *Mordenkainen's Private Sanctum*: permanent if cast in the same place every day for a year.
 - *Forbiddance*: permanent if cast every day for 30 days.
-- *Hallow*: 24 hours to cast.
-- *Clone*: 1 hour to cast, then 120 days to grow.
-- *Simulacrum*: 12 hours to cast.
-- **To build:** long-running magic projects with a day counter that warns if a day is missed.
+- The World tab tracks consecutive days and warns when a missed day resets the streak.
+
+### PHB 2024 spell bookkeeping
+
+Use the existing effect clock and concentration tracking. Add mechanics when a spell changes supplies, rests, HP, travel, or world state. Include lasting consequences of Instantaneous spells. Resolve encounter triggers through the encounter handoff or a DM action. [5etools PHB 2024 spell data](https://5e.tools/data/spells/spells-xphb.json)
+
+| Order | Spells | Roadmap work |
+|---|---|---|
+| 1 ✅ | *Goodberry* | Create a batch of ten berries per cast. Each use removes a berry, heals 1 HP, and supplies one day of nourishment. Remove unused berries after 24 hours. |
+| 2 ✅ | *Prayer of Healing* | Apply Short Rest benefits and slot-scaled healing to up to five recipients. Track eligibility per recipient and reset it on their next Long Rest. |
+| 3 ✅ | *Aid* | Apply the slot-scaled increase to current and maximum HP for up to three recipients. Remove the bonus when the effect ends and handle recasts under the same-spell rule. |
+| 4 ✅ | *Create Food and Water*, *Heroes' Feast*, *Death Ward* | Reuse supply batches for food that spoils after 24 hours and clean water tracked separately. Start feast benefits after the one-hour meal and expire them after 24 hours. Spend a ward on the first qualifying drop to 0 HP or instant-death effect. |
+| 5 ✅ | *Wind Walk*, *Phantom Steed*, *Control Weather* | Track cloud form by traveler, recalculate travel when a steed disappears, and schedule weather stage changes after their rolled delays. Restore normal weather gradually when the spell ends. |
+| 6 ✅ | *Animate Dead*, *Create Undead*, *Planar Binding*, *Find Familiar*, *Find Steed*, *Awaken* | Track creatures with their caster, current orders, and conditions for disappearance or loss of control. Support renewing undead control before its per-creature 24-hour deadline. Extend a linked summon when binding succeeds. Track *Awaken*'s charm and leave the creature's later attitude to the DM. |
+| Follow-up | *Befuddlement*, *Contagion*, *Geas* | Track *Befuddlement*'s casting restriction and 30-day repeat saves. Carry *Contagion*'s seven-day outcome over from the encounter and handle saves against poison removal. Record *Geas* commands, slot-dependent duration, and the once-per-day breach limit. |
+| Follow-up | *Clone*, *Simulacrum*, *Leomund's Secret Chest* | Track clone vessels and 120-day maturity, with a prompt on death. Track simulacrum HP, replacement, and paid repairs during the caster's Long Rest. Link a secret chest and its inventory to the replica and resolve its escalating daily loss chance after 60 days. |
+| Follow-up | *Contingency*, *Glyph of Warding*, *Creation*, *Tasha's Bubbling Cauldron* | Record stored spells and DM-resolved triggers. For *Contingency*, spend both slots at setup and track the ten-day deadline and component requirement. Track created objects by material-dependent expiry and remove unused cauldron potions when the caster casts it again. |
+| Follow-up | *Nystul's Magic Aura*, *Hallow*, *Teleportation Circle*, *Guards and Wards*, *Mordenkainen's Private Sanctum*, *Forbiddance* | Reuse the streak tracker for 30 daily casts of *Nystul's Magic Aura* on the same target. Record completed circles and wards with their location and selected effects. |
+| Follow-up | *Animal Messenger*, *Sending*, *Dream*, *Resurrection* | Extend letters with ground and flying messenger speeds, upcast deadlines, and the optional eight-hour *Sending* block. Track *Dream* waiting for sleep and its failed-save rest consequence. For *Resurrection* after 365 days or more, block the caster's spellcasting and apply Disadvantage on D20 Tests until their next Long Rest. |
+
+### Supplemental spell bookkeeping
+
+Build these alongside the PHB mechanics they reuse. Use the 2024 version where a legacy spell was revised. Keep older spell options labeled with their source.
+
+| Source | Spells | Roadmap work |
+|---|---|---|
+| [Forgotten Realms: Heroes of Faerûn](https://5e.tools/data/spells/spells-frhof.json) | *Deryan's Helpful Homunculi*, circle-cast *Dirge*, *Simbul's Synostodweomer* | Add one qualified crafting assistant for up to eight hours. Carry *Dirge*'s Exhaustion and Long Rest restrictions over from encounters. Give the target of *Synostodweomer* the option to spend Hit Point Dice for healing when they cast a slotted spell. |
+| [Eberron: Forge of the Artificer](https://5e.tools/data/spells/spells-efa.json) | *Homunculus Servant* | Reuse the persistent companion record. Record the caster and slot-dependent statistics, and replace the previous servant on recast. |
+| [Xanathar's Guide to Everything](https://5e.tools/data/spells/spells-xge.json) | *Catnap*, *Ceremony* | Reuse per-recipient rest eligibility for a full ten-minute *Catnap*, with damage and waking interrupting individual recipients. Record *Ceremony* rites, timed benefits, and lifetime or widowhood restrictions. Link Funeral Rite to the corpse record. |
+| [Xanathar's Guide to Everything](https://5e.tools/data/spells/spells-xge.json) | *Druid Grove*, *Temple of the Gods*, *Mighty Fortress*, *Snare* | Reuse site wards and recast schedules. Support daily recasts for a year for the grove and temple, and a seven-day cadence with expiry for the fortress. Track *Snare* at its site until expiry or trigger and hand off resolution to the DM. |
+| [Xanathar's Guide to Everything](https://5e.tools/data/spells/spells-xge.json) | *Create Homunculus*, *Tiny Servant*, *Danse Macabre* | Use the companion record for the legacy homunculus's optional Hit Point Dice transfer at Long Rest and for temporary servants or undead tied to spell expiry. |
+| [Tasha's Cauldron of Everything](https://5e.tools/data/spells/spells-tce.json) | *Dream of the Blue Veil*, legacy summon spells | Track the destination and travelers during the six-hour trance. Damage interrupts the affected traveler, or everyone if it hits the caster. Use the shared summon record for legacy spells still used at the table, including *Summon Shadowspawn*, with cleanup on expiry or loss of concentration. |
 
 ### Resurrection windows ✅
 - Time since death decides which spell still works: *Revivify* within 1 minute, *Raise Dead* and *Reincarnate* within 10 days, *Resurrection* within 100 years.
