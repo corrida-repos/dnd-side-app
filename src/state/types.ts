@@ -266,6 +266,17 @@ export interface Holiday {
   day: number;
 }
 
+export interface NpcWagePayment {
+  payerId: string;
+  gp: number;
+}
+
+export interface NpcLoyalty {
+  score: number;
+  /** The most recent wage or fee the ledger actually charged. */
+  lastPayment?: NpcWagePayment[];
+}
+
 export interface SidekickInfo {
   cls: import('../rules/sidekicks').SidekickClass;
   role: import('../rules/sidekicks').SidekickRole | null;
@@ -332,6 +343,8 @@ export interface Character {
   ddbSyncedAt?: string;
   /** Optional rule (Tasha's): this character is a sidekick with a sidekick class that levels with the party. */
   sidekick?: SidekickInfo | null;
+  npcCompanion?: { wageGp: number; payerId: string };
+  loyalty?: NpcLoyalty;
   /** Personal renown, fear and stress trackers. */
   renown: number;
   fear: number;
@@ -634,6 +647,8 @@ export interface PendingSave {
 }
 
 export interface Hireling extends NpcProfile {
+  loyalty?: NpcLoyalty;
+  volunteer?: boolean;
   id: string;
   name: string;
   role: HirelingRole;

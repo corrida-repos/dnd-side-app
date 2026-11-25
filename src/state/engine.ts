@@ -3,7 +3,7 @@ import { BRELAND, BRELAND_ROUTES, nextDeparture, type BrelishLocality } from '..
 import { audibleDistance, LOCK_DC, LOCK_MINUTES, monsterBehavior, NOISE, UNDERWATER_DISTANCE, type LockDetails, type Noise } from '../rules/exploration';
 import { rollBastionTreasure, rollTreasure, type TreasureItem, type TreasureRequest } from '../rules/treasure';
 import { fightOrFlightText, type Disposition, type FightOrFlight, type TacticalCondition, type TacticalResult, type TacticalVitals } from '../rules/butler';
-import type { LadderPos, TameTarget, ActiveEffect, Activity, CharacterSpell, InventoryItem, LogEntry, Ritual, Stash, VehicleDetails, Bastion, Business, Character, FacilityWork, Obstacle, Rival, Debt, Mark, Faction, ExhaustionCause, Facility, JourneyStage, MagicItem, Pace, PendingSave, Project, Recruit, SaveKind, Size, State, Tone } from './types';
+import type { LadderPos, TameTarget, ActiveEffect, Activity, CharacterSpell, InventoryItem, LogEntry, NpcLoyalty, NpcWagePayment, Ritual, Stash, VehicleDetails, Bastion, Business, Character, FacilityWork, Obstacle, Rival, Debt, Mark, Faction, ExhaustionCause, Facility, JourneyStage, MagicItem, Pace, PendingSave, Project, Recruit, SaveKind, Size, State, Tone } from './types';
 import { BASIC_BUILD, BASTION_TURN_DAYS, defaultSize, ENLARGE, rollBastionEvent, SIZE_LABEL, SPECIAL_FACILITIES, type FacilitySize } from '../rules/bastion';
 import { d20, die, combineModes, rollDice, rollExpr, signed, type Rng, type RollMode } from '../rules/dice';
 import { dateFromIndex, formatClock, formatDate, formatDuration, lightAt, sunriseMinutes } from '../rules/calendar';
@@ -173,12 +173,12 @@ export function gainWealth(c: Character, gp: number): void {
 }
 
 /** Charges gold to one or more characters, split evenly. Does nothing when charging costs is switched off. */
-export function payGold(s: State, payerIds: string[], amount: number, what: string): void {
-  if (!s.settings.chargeCosts || amount <= 0) return;
+export function payGold(s: State, payerIds: string[], amount: number, what: string): NpcWagePayment[] {
+  if (!s.settings.chargeCosts || !Number.isFinite(amount) || amount <= 0) return [];
   let payers = payerIds.map((id) => charById(s, id)).filter((c): c is Character => !!c && c.kind !== 'mount');
-  if (!payers.length) payers = adventurers(s).filter((c) => !c.sidekick);
+  if (!payers.length) payers = adventurers(s).filter((c) => !c.sidekick && !c.npcCompanion);
   if (!payers.length) payers = adventurers(s);
-  if (!payers.length) return;
+  if (!payers.length) return [];
   const share = Math.round((amount / payers.length) * 100) / 100;
   for (const c of payers) spendWealth(c, share);
   const broke = payers.filter((c) => c.gp < 0).map((c) => c.name);
@@ -187,6 +187,7 @@ export function payGold(s: State, payerIds: string[], amount: number, what: stri
     `${payers.map((c) => c.name).join(', ')} pay${payers.length > 1 ? '' : 's'} ${fmtGp(amount)}${payers.length > 1 ? ` (${fmtGp(share)} each)` : ''} for ${what}.${broke.length ? ` ${broke.join(', ')} ${broke.length > 1 ? 'are' : 'is'} now in debt.` : ''}`,
     broke.length ? 'warn' : 'info',
   );
+  return share > 0 ? payers.map((c) => ({ payerId: c.id, gp: share })) : [];
 }
 
 /** Pays for a service (fares, tolls, spellcasting), split among the payers. */
@@ -516,13 +517,22 @@ function dailyCosts(s: State): void {
   }
   if (s.place.settlement && s.settings.stabling && !currentTown(s)) stableMounts(s);
   for (const h of s.hirelings) {
-    if (h.active && h.wageGp > 0) payGold(s, h.payer === 'party' ? [] : [h.payer], h.wageGp, `${h.name}'s daily wage`);
+    if (h.active) {
+      const loyalty = h.loyalty ??= initialLoyalty(s);
+      const paid = payGold(s, h.payer === 'party' ? [] : [h.payer], h.wageGp, `${h.name}'s daily wage`);
+      if (paid.length) loyalty.lastPayment = paid;
+    }
   }
-  // Table rule: a hired sidekick's pay goes into their own purse; they pay their own way from it.
-  for (const k of s.characters) {
-    if (!k.sidekick || !alive(k) || k.sidekick.wageGp <= 0 || !s.settings.chargeCosts) continue;
-    payGold(s, k.sidekick.payerId === 'party' ? [] : [k.sidekick.payerId], k.sidekick.wageGp, `${k.name}'s pay as a co-adventurer`);
-    gainWealth(k, k.sidekick.wageGp);
+  // A paid adventuring NPC receives the ledger's actual charge in their own purse.
+  for (const npc of s.characters) {
+    if (!isJoinedNpc(npc) || !alive(npc)) continue;
+    const loyalty = npc.loyalty ??= initialLoyalty(s);
+    const contract = (npc.sidekick ?? npc.npcCompanion)!;
+    const paid = payGold(s, contract.payerId === 'party' ? [] : [contract.payerId], contract.wageGp, `${npc.name}'s pay as a co-adventurer`);
+    if (paid.length) {
+      gainWealth(npc, paid.reduce((total, p) => total + p.gp, 0));
+      loyalty.lastPayment = paid;
+    }
   }
 }
 
@@ -967,7 +977,7 @@ function expireConditions(s: State): void {
 // ---------------------------------------------------------------- sidekicks (optional rule, Tasha's Cauldron)
 
 /** The adventurers whose levels set a sidekick's: player characters who aren't sidekicks themselves. */
-const levelSetters = (s: State): Character[] => s.characters.filter((c) => c.kind === 'pc' && !c.sidekick);
+const levelSetters = (s: State): Character[] => s.characters.filter((c) => c.kind === 'pc' && !c.sidekick && !c.npcCompanion);
 
 /** Applies one sidekick level: a Hit Die rolled for HP, the class features of that level, and its resources. */
 function gainSidekickLevel(s: State, ctx: Ctx, c: Character, quiet = false): string {
@@ -1064,6 +1074,7 @@ function hireSidekickMut(d: State, ctx: Ctx, o: SidekickOpts, befriended = false
   });
   c.sidekick = { cls: o.cls, role: o.role, creature: o.creature, cr: o.cr, wageGp: animal ? 0 : Math.max(0, o.wageGp), payerId: o.payerId || 'party', since: absNow(d) };
   if (animal) c.kind = 'mount'; // an animal companion eats, drinks and rests like the party's other animals
+  else c.loyalty = initialLoyalty(d);
   const target = sidekickLevelFor(levelSetters(d).map((x) => x.level));
   const lines: string[] = [];
   while (c.level < target) lines.push(gainSidekickLevel(d, ctx, c, true));
@@ -1192,6 +1203,83 @@ export const makeSidekick = act((d, ctx, charId: string, cls: SidekickClass, rol
   const lines: string[] = [];
   while (c.level < target) lines.push(gainSidekickLevel(d, ctx, c, true));
   log(d, `${c.name} has earned a place beside the party: a ${SIDEKICK_CLASS_LABEL[cls]} sidekick at level ${c.level} (Tasha's). ${lines.join('; ')}.`, 'good');
+});
+
+export const isJoinedNpc = (c: Character): boolean => c.kind === 'pc' && !!(c.sidekick || c.npcCompanion);
+
+export function loyaltyMaximum(s: State): number {
+  const scores = levelSetters(s).filter(alive).map((c) => c.abilities?.cha ?? 10);
+  return Math.max(1, Math.min(20, scores.length ? Math.max(...scores) : 10));
+}
+
+export function initialLoyalty(s: State): NpcLoyalty {
+  return { score: Math.floor(loyaltyMaximum(s) / 2) };
+}
+
+export function initializeNpcLoyalty(s: State): void {
+  for (const h of s.hirelings) if (h.active) h.loyalty ??= initialLoyalty(s);
+  for (const c of s.characters) if (isJoinedNpc(c)) c.loyalty ??= initialLoyalty(s);
+}
+
+export const markNpcCompanion = act((d, _ctx, id: string, wageGp: number, payerId: string) => {
+  const npc = charById(d, id);
+  if (!npc || npc.kind !== 'pc' || npc.sidekick || npc.npcCompanion || !alive(npc) || !Number.isFinite(wageGp)) return;
+  npc.npcCompanion = { wageGp: Math.max(0, Math.round(wageGp * 100) / 100), payerId: payerId === id ? 'party' : payerId };
+  npc.loyalty ??= initialLoyalty(d);
+  log(d, `${npc.name} joins as an NPC companion${npc.npcCompanion.wageGp > 0 ? `, paid ${fmtGp(npc.npcCompanion.wageGp)} per day` : ''}.`);
+});
+
+export type LoyaltyEvent = 'help' | 'mistreat' | 'abuse';
+type LoyaltyTarget = { kind: 'hireling' | 'character'; id: string };
+
+/** Refund half a recent payment, rounded down to a copper, to each original payer. */
+function refundNpcPay(s: State, loyalty: NpcLoyalty, npc?: Character): number {
+  const refunds = (loyalty.lastPayment ?? []).flatMap((p) => {
+    const payer = charById(s, p.payerId);
+    const cp = Math.floor(Math.round(p.gp * 100) / 2);
+    return payer && payer !== npc && cp > 0 ? [{ payer, cp }] : [];
+  });
+  let owed = refunds.reduce((total, p) => total + p.cp, 0);
+  const available = npc ? Math.round(purseValue(npc.purse) * 100) : owed;
+  const total = Math.min(owed, available);
+  let remaining = total;
+  for (const { payer, cp } of refunds) {
+    const share = Math.floor(remaining * cp / owed);
+    owed -= cp;
+    remaining -= share;
+    if (share === 0) continue;
+    const earned = payer.earnedGp;
+    gainWealth(payer, share / 100);
+    payer.earnedGp = earned;
+  }
+  if (npc && total > 0) spendWealth(npc, total / 100);
+  delete loyalty.lastPayment;
+  return total / 100;
+}
+
+
+/** Records a Loyalty event privately. The log reports a departure without exposing the score. */
+export const changeNpcLoyalty = act((d, ctx, target: LoyaltyTarget, event: LoyaltyEvent | number) => {
+  const npc = target.kind === 'character' ? charById(d, target.id) : undefined;
+  const hireling = target.kind === 'hireling' ? d.hirelings.find((h) => h.id === target.id && h.active) : undefined;
+  const member = npc && isJoinedNpc(npc) && alive(npc) ? npc : hireling;
+  if (!member) return;
+  const max = loyaltyMaximum(d);
+  const loyalty = member.loyalty ??= initialLoyalty(d);
+  const current = Math.min(loyalty.score, max);
+  if (typeof event === 'number' && !Number.isInteger(event)) return;
+  loyalty.score = Math.max(0, Math.min(max, typeof event === 'number' ? event
+    : current + (event === 'help' ? die(4, ctx.rng) : event === 'mistreat' ? -die(4, ctx.rng) : -die(4, ctx.rng) - die(4, ctx.rng))));
+  if (loyalty.score > 0) return;
+  const refund = refundNpcPay(d, loyalty, npc);
+  if (hireling) {
+    hireling.active = false;
+    syncPorters(d);
+  } else if (npc) {
+    dropConcentration(d, npc, ' as they leave');
+    d.characters = d.characters.filter((c) => c.id !== npc.id);
+  }
+  log(d, `${member.name} leaves the party${refund ? `, returning ${fmtGp(refund)} to their payers` : ''}.`, 'warn');
 });
 
 /** A sidekick leaves the party, taking what they carry. */
@@ -3509,8 +3597,8 @@ export function hirelingProblem(s: State, role: HirelingRole): string | undefine
   return undefined;
 }
 
-export const employHireling = act((d, ctx, role: HirelingRole, name: string, payer: string) => {
-  const problem = hirelingProblem(d, role);
+export const employHireling = act((d, ctx, role: HirelingRole, name: string, payer: string, volunteer: boolean = false) => {
+  const problem = volunteer ? undefined : hirelingProblem(d, role);
   if (problem) return void log(d, problem, 'warn');
   const info = HIRELING_ROLES[role];
   const provider = townProviders(d, hirelingProviders(role))[0];
@@ -3521,7 +3609,9 @@ export const employHireling = act((d, ctx, role: HirelingRole, name: string, pay
     bonus: info.skilled ? 4 : 0,
     passivePerception: role === 'guard' ? 12 : 10,
     skilled: info.skilled,
-    wageGp: role === 'messenger' ? 0 : info.skilled ? HIRELING_WAGE.skilled : HIRELING_WAGE.untrained,
+    loyalty: initialLoyalty(d),
+    volunteer,
+    wageGp: volunteer || role === 'messenger' ? 0 : info.skilled ? HIRELING_WAGE.skilled : HIRELING_WAGE.untrained,
     payer,
     active: true,
     hiredIn: provider ? d.place.name : undefined,
@@ -6735,7 +6825,9 @@ export const sendMessage = act((d, _ctx, hirelingId: string, miles: number, paye
   const h = d.hirelings.find((x) => x.id === hirelingId && x.active && x.role === 'messenger');
   if (!h || miles <= 0) return;
   log(d, `${h.name} sets off to deliver a message ${miles} mile(s) away.`);
-  payGold(d, payer === 'party' ? [] : [payer], Math.round(miles * MESSENGER_GP_PER_MILE * 100) / 100, `a message carried ${miles} mile(s)`);
+  if (h.volunteer) return;
+  const paid = payGold(d, payer === 'party' ? [] : [payer], Math.round(miles * MESSENGER_GP_PER_MILE * 100) / 100, `a message carried ${miles} mile(s)`);
+  if (paid.length) (h.loyalty ??= initialLoyalty(d)).lastPayment = paid;
 });
 
 export const torchbearerLights = act((d, _ctx, hirelingId: string) => {
@@ -8127,7 +8219,7 @@ export const setInfluencedEncounterAlly = act((d, _ctx, encounterId: string, par
     ?.participants.find((p) => p.id === participantId);
   if (saved) saved.influencedAlly = allied;
   log(d, allied
-    ? `${participant.name} agrees to fight alongside the party. Their morale can change during combat.`
+    ? `${participant.name} agrees to fight alongside the party for this encounter.`
     : `${participant.name} is no longer fighting alongside the party.`);
 });
 

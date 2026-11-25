@@ -34,6 +34,7 @@ export function MoneyTab() {
       <TownCard />
       <HirelingsCard />
       <SidekickCard />
+      <LoyaltyCard />
       <MountsCard />
       <ShopCard />
       <DebtsCard />
@@ -215,7 +216,7 @@ function ExchangeRow() {
 /** Optional rule (Tasha's): hire a co-adventurer who comes with their sidekick class and levels with the party. */
 function SidekickCard() {
   const s = useGame();
-  const pcs = s.characters.filter((c) => c.kind === 'pc' && !c.sidekick);
+  const pcs = s.characters.filter((c) => c.kind === 'pc' && !E.isJoinedNpc(c));
   const sidekicks = s.characters.filter((c) => c.sidekick);
   const [kind, setKind] = useState<SidekickKind>('sellsword');
   const [name, setName] = useState('');
@@ -275,8 +276,9 @@ function HirelingsCard() {
   const [name, setName] = useState('');
   const [payer, setPayer] = useState('party');
   const [miles, setMiles] = useState(10);
+  const [volunteer, setVolunteer] = useState(false);
   const info = HIRELING_ROLES[role];
-  const hireProblem = E.hirelingProblem(s, role);
+  const hireProblem = volunteer ? undefined : E.hirelingProblem(s, role);
   const employer = E.townProviders(s, E.hirelingProviders(role))[0];
   const set = (id: string, patch: Partial<Hireling>) => edit((d) => void Object.assign(d.hirelings.find((x) => x.id === id)!, patch));
   return (
@@ -291,11 +293,12 @@ function HirelingsCard() {
                 <span>
                   <b>{h.name}</b> <Pill tone="muted">{r.label}</Pill>{' '}
                   <span className="muted small">
-                    {fmtGp(h.wageGp)}/day, paid by {h.payer === 'party' ? 'the party' : E.charById(s, h.payer)?.name ?? '?'}{h.hiredAt ? ` · hired at ${h.hiredAt}` : ''}
+                    {h.volunteer ? 'Volunteer · unpaid' : <>{fmtGp(h.wageGp)}/day, paid by {h.payer === 'party' ? 'the party' : E.charById(s, h.payer)?.name ?? '?'}{h.hiredAt ? ` · hired at ${h.hiredAt}` : ''}</>}
                   </span>
                 </span>
                 <span className="btn-row tight">
-                  <Toggle checked={h.active} onChange={(v) => set(h.id, { active: v })} label="Employed" />
+                  {h.loyalty?.score === 0 ? <Pill tone="muted">Left the party</Pill>
+                    : <Toggle checked={h.active} onChange={(v) => set(h.id, { active: v })} label={h.volunteer ? 'With party' : 'Employed'} />}
                   <button className="ghost small bad" aria-label={`Dismiss ${h.name}`} onClick={() => edit((d) => void (d.hirelings = d.hirelings.filter((x) => x.id !== h.id)))}>
                     ✕
                   </button>
@@ -318,7 +321,7 @@ function HirelingsCard() {
                   <>
                     <Num value={miles} onChange={(v) => setMiles(Math.max(1, Math.round(v)))} min={1} suffix="miles" width={4} />
                     <button className="small" onClick={() => dispatch((st, cx) => E.sendMessage(st, cx, h.id, miles, h.payer))}>
-                      Send a message ({fmtGp(miles * MESSENGER_GP_PER_MILE)})
+                      Send a message ({h.volunteer ? 'unpaid' : fmtGp(miles * MESSENGER_GP_PER_MILE)})
                     </button>
                   </>
                 )}
@@ -331,6 +334,7 @@ function HirelingsCard() {
       <div className="form-row">
         <Select label="Job" value={role} onChange={setRole} options={(Object.keys(HIRELING_ROLES) as HirelingRole[]).map((k) => ({ value: k, label: `${HIRELING_ROLES[k].label} (${HIRELING_ROLES[k].skilled ? 'skilled' : 'untrained'})` }))} />
         <Text label="Name" value={name} onChange={setName} placeholder={info.label} />
+        <Toggle checked={volunteer} onChange={setVolunteer} label="Joins as an unpaid volunteer" />
         <Select label="Paid by" value={payer} onChange={setPayer} options={[{ value: 'party', label: 'Party (split)' }, ...pcs.map((c) => ({ value: c.id, label: c.name }))]} />
       </div>
       <p className="small">
@@ -340,16 +344,66 @@ function HirelingsCard() {
       <button
         disabled={!!hireProblem}
         onClick={() => {
-          dispatch((state, ctx) => E.employHireling(state, ctx, role, name, payer));
+          dispatch((state, ctx) => E.employHireling(state, ctx, role, name, payer, volunteer));
           setName('');
         }}
       >
-        Hire {name.trim() || info.label} ({role === 'messenger' ? '2 CP per mile' : `${fmtGp(info.skilled ? HIRELING_WAGE.skilled : HIRELING_WAGE.untrained)}/day`})
+        {volunteer ? 'Add' : 'Hire'} {name.trim() || info.label} ({volunteer ? 'unpaid' : role === 'messenger' ? '2 CP per mile' : `${fmtGp(info.skilled ? HIRELING_WAGE.skilled : HIRELING_WAGE.untrained)}/day`})
       </button>
       <Rule>Skilled hirelings cost 2 GP a day and untrained ones 2 SP, charged at midnight. Messengers charge 2 CP per mile instead.</Rule>
       <WaysAround topic={'hirelings'} />
     </Card>
   );
+}
+
+function LoyaltyCard() {
+  const s = useGame();
+  const max = E.loyaltyMaximum(s);
+  const pcs = s.characters.filter((c) => c.kind === 'pc' && !E.isJoinedNpc(c) && E.alive(c));
+  const [character, setCharacter] = useState('');
+  const [wage, setWage] = useState(0);
+  const [payer, setPayer] = useState('party');
+  const candidates = pcs.filter((c) => c.id !== character);
+  const members = [
+    ...s.hirelings.filter((h) => h.active).map((h) => ({ ...h, kind: 'hireling' as const })),
+    ...s.characters.filter((c) => E.isJoinedNpc(c) && E.alive(c)).map((c) => ({ ...c, kind: 'character' as const })),
+  ];
+  return <Card title="NPC Loyalty" className="span-2">
+    <details>
+      <summary>GM only · Review Loyalty</summary>
+      <p className="small">New NPCs start at half the highest Charisma score among player characters. At Loyalty 0 they leave the party.</p>
+      {members.map((member) => {
+        const target = { kind: member.kind, id: member.id };
+        const score = Math.min(max, member.loyalty?.score ?? Math.floor(max / 2));
+        return <div key={member.kind + member.id} className="facility">
+          <div className="form-row">
+            <strong>{member.name}</strong>
+            <Num label="Loyalty" value={score} min={0} max={max} width={2}
+              onChange={(value) => dispatch((d, c) => E.changeNpcLoyalty(d, c, target, Math.round(value)), 'Change NPC loyalty')} />
+            <span className="small muted">of {max} · {score >= 10 ? 'Loyal' : 'Tenuous'}</span>
+          </div>
+          <div className="btn-row">
+            <button onClick={() => dispatch((d, c) => E.changeNpcLoyalty(d, c, target, 'help'), 'Help an NPC')}>Help or rescue (+1d4)</button>
+            <button onClick={() => dispatch((d, c) => E.changeNpcLoyalty(d, c, target, 'mistreat'), 'Disregard an NPC')}>Act against their values (−1d4)</button>
+            <button onClick={() => dispatch((d, c) => E.changeNpcLoyalty(d, c, target, 'abuse'), 'Abuse or endanger an NPC')}>Abuse or endanger (−2d4)</button>
+          </div>
+        </div>;
+      })}
+      <p className="small">A paid NPC who quits returns half the last payment recorded in the ledger, rounded down to copper. An NPC with a tracked purse can return up to what they have.</p>
+      {pcs.length > 0 && <div className="form-row">
+        <Select label="Character sheet for an NPC" value={character} onChange={(v) => { setCharacter(v); setPayer('party'); }}
+          options={[{ value: '', label: 'Choose a character' }, ...pcs.map((c) => ({ value: c.id, label: c.name }))]} />
+        <Num label="Daily pay (0 for unpaid)" value={wage} min={0} suffix="GP" onChange={setWage} />
+        {wage > 0 && <Select label="Paid by" value={payer} onChange={setPayer} options={[
+          { value: 'party', label: 'Party (split)' }, ...candidates.map((c) => ({ value: c.id, label: c.name })),
+        ]} />}
+        <button disabled={!pcs.some((c) => c.id === character)} onClick={() => {
+          dispatch((d, c) => E.markNpcCompanion(d, c, character, wage, payer));
+          setCharacter(''); setWage(0); setPayer('party');
+        }}>Mark as joined NPC</button>
+      </div>}
+    </details>
+  </Card>;
 }
 
 function MountsCard() {

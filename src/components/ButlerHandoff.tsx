@@ -72,7 +72,7 @@ export function ButlerHandoff() {
             {p.side === 'encounter' && <Toggle checked={!!p.influencedAlly} label={`${p.name} agreed to fight alongside the party`}
               onChange={(allied) => dispatch((d, c) => setInfluencedEncounterAlly(d, c, encounter.id, p.id, allied))} />}
           </div>)}
-          <p className="small muted">Mark an NPC after resolving Influence. Butler tracks their morale during this fight.</p>
+          <p className="small muted">Mark an NPC who agreed to help in this encounter. Use Town &amp; Money to track Loyalty for NPCs who join the party.</p>
         </details>
         {!!s.tacticalRemainingMinutes && <p className="small">Paused with {s.tacticalRemainingMinutes} minutes left. Choose how to continue after the encounter.</p>}
         {encounter.at !== absNow(s) && <p className="small">The campaign clock has moved. Record this encounter’s outcome manually.</p>}

@@ -3,7 +3,7 @@ import type { State } from './types';
 import { createEberronState, createDefaultState, newCharacter, SAVE_VERSION } from './defaults';
 import { coinsFor } from '../rules/coins';
 import { MECHANICS, applyTier } from '../rules/detailTiers';
-import { ensureWeather, type Ctx } from './engine';
+import { ensureWeather, initializeNpcLoyalty, type Ctx } from './engine';
 import { TERRAIN_FOR_CLIMATE } from '../rules/terrain';
 
 const KEY = 'wayfarers-ledger:v1';
@@ -80,6 +80,7 @@ function migrate(raw: unknown): State | null {
     if (!c.purse) merged.purse = coinsFor(Math.max(0, c.gp ?? 0));
     return merged;
   });
+  initializeNpcLoyalty(s);
   ensureWeather(s, ctx);
   return s;
 }
