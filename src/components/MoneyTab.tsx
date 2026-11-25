@@ -1,3 +1,4 @@
+import { ArtMarketCard } from './ArtCard';
 import { GALIFAR_COINS } from '../rules/eberron';
 import { NpcProfile } from './NpcProfile';
 import { useState } from 'react';
@@ -32,6 +33,7 @@ export function MoneyTab() {
     <div className="grid">
       <PurseCard />
       <TownCard />
+      <ArtMarketCard />
       <HirelingsCard />
       <SidekickCard />
       <LoyaltyCard />

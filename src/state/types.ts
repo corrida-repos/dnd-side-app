@@ -121,6 +121,7 @@ export interface ItemFinding {
 
 export interface InventoryItem {
   goodberry?: { expiresAt: number };
+  artKind?: import('../rules/art').ArtKind;
   id: string;
   name: string;
   qty: number;
@@ -208,6 +209,7 @@ export interface ActiveEffect {
   feastMeal?: boolean;
   windWalk?: { cloudIds: string[] };
   phantomSteed?: boolean;
+  artMorale?: boolean;
   id: string;
   name: string;
   kind: EffectKind;
@@ -1002,6 +1004,7 @@ export interface Settings {
   fireColdLimitF: number;
   /** Table rule: lighting a campfire takes a Wisdom (Survival) check instead of always working. */
   fireLightingCheck: boolean;
+  campArt: boolean;
   /** Optional older rule: double water on days of 100 °F or hotter. */
   doubleWaterInHeat: boolean;
   /** Table rule: foraged food and water from questionable sources must be purified, or risk being Poisoned. */
@@ -1406,6 +1409,9 @@ export interface State {
   log: LogEntry[];
   travel: Travel;
   lastLongRestEnd: number | null;
+  artProjects: import('../rules/art').ArtProject[];
+  artMoraleUsed?: boolean;
+  musicianRest?: { at: number; eligible: string[]; performed: string[] };
   /** When tracking began, used as the start of the party's waking time until the first Long Rest. */
   trackingStart: number;
   settings: Settings;

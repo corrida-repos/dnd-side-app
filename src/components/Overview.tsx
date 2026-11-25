@@ -1,4 +1,5 @@
 import { WEATHER_AXES, WEATHER_STAGES, type ControlledWeather } from '../rules/controlWeather';
+import { ArtCard } from './ArtCard';
 import { BrelandCard } from './Breland';
 import { DANGER, DANGERS, type Danger } from '../rules/encounters';
 import { useState } from 'react';
@@ -54,6 +55,7 @@ export function TravelTab() {
       <TravelCard />
       <PlaceCard />
       <JourneyCard />
+      <ArtCard />
     </div>
   );
 }
@@ -543,6 +545,7 @@ function TravelCard() {
   const [navigator, setNavigator] = useState<string>(s.travel.navigatorId ?? s.characters.filter((c) => c.kind !== 'mount').sort((a, b) => b.survival - a.survival)[0]?.id ?? '');
   const nav = E.currentNavigationDC(s);
   const [gallop, setGallop] = useState(false);
+  const [roadArt, setRoadArt] = useState('');
   const [flying, setFlying] = useState(false);
   const [againstWind, setAgainstWind] = useState(false);
   const [downstream, setDownstream] = useState(false);
@@ -558,6 +561,11 @@ function TravelCard() {
   const [seekBonus, setSeekBonus] = useState(0);
   const [starBonus, setStarBonus] = useState(0);
   const navChar = s.characters.find((c) => c.id === navigator);
+  const roadProjects = s.settings.campArt ? s.artProjects.filter((p) => p.hours < p.requiredHours &&
+    (vessel || (pace !== 'fast' && !flying && p.kind === 'song' && p.gp == null)) &&
+    p.artistId !== navigator && !foragers.includes(p.artistId) &&
+    s.characters.some((c) => c.id === p.artistId && E.canMakeArt(c))) : [];
+  const artProjectId = roadProjects.some((p) => p.id === roadArt) ? roadArt : '';
   const navHasTools = !!navChar?.inventory.some((i) => NAVIGATOR.test(i.name));
   const hasMap = E.partyHasMapHere(s);
   const stars = E.starsVisible(s);
@@ -683,8 +691,10 @@ function TravelCard() {
           ))}
         </div>
       </div>
+      {roadProjects.length > 0 && <Select label="Art during travel" value={artProjectId} onChange={setRoadArt}
+        options={[{ value: '', label: 'No project' }, ...roadProjects.map((p) => ({ value: p.id, label: `${p.title} · ${E.charById(s, p.artistId)?.name}` }))]} />}
       <div className="btn-row">
-        <button className="primary" onClick={() => dispatch((st, c) => E.travel(st, c, { hours, pace, difficult, foragerIds: foragers, navigatorId: navigator || null, gallop, vesselId: vesselId || null, flying, spellTravel: usingSpells, againstWind, downstream }))}>
+        <button className="primary" onClick={() => dispatch((st, c) => E.travel(st, c, { hours, pace, difficult, foragerIds: foragers, navigatorId: navigator || null, gallop, vesselId: vesselId || null, flying, spellTravel: usingSpells, againstWind, downstream, artProjectId }))}>
           Travel {hours} h
         </button>
         <button className="ghost" onClick={() => edit((d) => ((d.travel.hoursToday = 0), (d.travel.milesToday = 0)))}>

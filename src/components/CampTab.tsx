@@ -1,3 +1,4 @@
+import { ArtCard, MusicianCard } from './ArtCard';
 import { useState } from 'react';
 import { useGame, dispatch, edit } from '../state/store';
 import * as E from '../state/engine';
@@ -35,6 +36,8 @@ export function CampTab() {
       <FireCard />
       <WatchCard />
       <MealsCard />
+      <ArtCard />
+      <MusicianCard />
       <StoresCard />
       <PurifyCard />
       <ArmorCard />
