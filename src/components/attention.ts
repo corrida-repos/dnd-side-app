@@ -26,10 +26,10 @@ export function attentionItems(s: State): AttentionItem[] {
   const add = (i: AttentionItem) => out.push(i);
 
   for (const item of E.campaignDeadlines(s)) {
-    if (item.at <= now) add({
+    if (item.at <= now && (item.threatStage == null || item.pause)) add({
       id: `deadline-${item.id}`,
       tone: item.pause ? 'bad' : 'warn',
-      text: `Campaign deadline: ${item.warning}`,
+      text: `${item.threatStage == null ? 'Campaign deadline' : 'Enemy endgame'}: ${item.warning}`,
       tab: 'world',
     });
   }

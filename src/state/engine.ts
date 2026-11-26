@@ -104,6 +104,7 @@ import { REPLY_DIE, newsDelay, type NewsRoute } from '../rules/letters';
 import { innPrices, townBuyers, townSells, townSpecials, arrivalLine, buildingType, generateTown, newBuilding, rollCalamity, rollFame, rollKeeper, rollLeader, rollRuler, rollTrait, sortBuildings, type Town } from '../rules/settlements';
 import { npcLine, rollName, rollNpc, rollNpcProfile, type Npc } from '../rules/npcs';
 import { COMMON_SPELL_REQUESTS, PASSAGE, SPELL_SERVICES, spellServiceAvailable, type Settlement } from '../rules/services';
+import { THREAT_STAGES } from '../rules/campaignThreat';
 import { ITEM_PRICES } from '../rules/itemPrices';
 
 export interface Ctx {
@@ -1329,6 +1330,46 @@ export const addCampaignDeadline = act((d, _ctx, item: Omit<CampaignDeadline, 'i
   (d.campaignDeadlines ??= []).push({ ...item, warning: item.warning.trim(), rivalId: rival?.id, id: uid() });
 });
 
+export const startCampaignThreat = act((d, _ctx, name: string, endgame: string, daysPerStage: number,
+  signs: string[], consequences: string[], intervention: string = '') => {
+  if (d.campaignThreat || !name.trim() || !endgame.trim() || !Number.isInteger(daysPerStage) || daysPerStage < 1 || daysPerStage > 366) return;
+  d.campaignThreat = { name: name.trim(), stage: 0, intervention: intervention.trim() || undefined };
+  const start = absNow(d);
+  (d.campaignDeadlines ??= []).push(...THREAT_STAGES.map((stage, index): CampaignDeadline => {
+    const final = index === THREAT_STAGES.length - 1;
+    return {
+      id: uid(),
+      at: start + (index + 1) * daysPerStage * MIN_PER_DAY,
+      threatStage: index + 1,
+      warning: signs[index]?.trim() || stage.warning,
+      outcome: final ? endgame.trim() : consequences[index]?.trim() || stage.outcome,
+      pause: final,
+    };
+  }));
+});
+
+export const delayCampaignThreat = act((d, _ctx, days: number) => {
+  if (!d.campaignThreat || d.campaignThreat.stopped || !Number.isInteger(days) || days < 1 || days > 366) return;
+  const now = absNow(d);
+  const pending = (d.campaignDeadlines ?? []).filter((item) => item.threatStage != null && (!item.ruling || item.ruling === 'scene'));
+  for (const item of pending) if (item.at <= now) reachCampaignDeadline(d, item);
+  const remaining = pending.filter((item) => !item.ruling || item.ruling === 'scene');
+  if (!remaining.length) return;
+  const delay = days * MIN_PER_DAY + Math.max(0, now - remaining[0].at);
+  for (const item of remaining) {
+    item.at += delay;
+    item.ruling = undefined;
+  }
+  log(d, `The party sets back the enemy plan by ${formatDuration(days * MIN_PER_DAY)}.`, 'good');
+});
+
+export const stopCampaignThreat = act((d, _ctx) => {
+  if (!d.campaignThreat || d.campaignThreat.stopped) return;
+  d.campaignThreat.stopped = true;
+  for (const item of campaignDeadlines(d)) if (item.threatStage != null) item.ruling = 'foiled';
+  log(d, 'The party stops the enemy plan.', 'good');
+});
+
 export const resolveCampaignDeadline = act((d, _ctx, id: string, ruling: 'scene' | 'offscreen' | 'defer', deferMinutes: number = 0) => {
   const item = d.campaignDeadlines?.find((entry) => entry.id === id && !entry.ruling);
   if (!item || item.at > absNow(d)) return;
@@ -1348,6 +1389,12 @@ export const resolveCampaignDeadline = act((d, _ctx, id: string, ruling: 'scene'
 function reachCampaignDeadline(s: State, item: CampaignDeadline): void {
   if (item.reached) return;
   item.reached = true;
+  if (item.threatStage != null && s.campaignThreat) {
+    s.campaignThreat.stage = Math.max(s.campaignThreat.stage, item.threatStage);
+    if (!item.pause) item.ruling = 'advanced';
+    log(s, item.warning, item.pause ? 'bad' : 'warn');
+    return;
+  }
   const rival = s.rivals.find((r) => r.id === item.rivalId && r.active);
   if (rival) rival.pressure += 1;
   log(s, `Campaign deadline: ${item.warning}`, 'warn');

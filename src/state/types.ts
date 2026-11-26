@@ -891,9 +891,17 @@ export interface CampaignDeadline {
   outcome: string;
   at: number;
   rivalId?: string;
+  threatStage?: number;
   pause: boolean;
   reached?: boolean;
-  ruling?: 'scene' | 'offscreen';
+  ruling?: 'scene' | 'offscreen' | 'advanced' | 'foiled';
+}
+
+export interface CampaignThreat {
+  name: string;
+  intervention?: string;
+  stage: number;
+  stopped?: boolean;
 }
 
 export interface DowntimeSkip {
@@ -1473,6 +1481,7 @@ export interface State {
   /** Rivals working against the party during downtime (Xanathar's). */
   rivals: Rival[];
   campaignDeadlines?: CampaignDeadline[];
+  campaignThreat?: CampaignThreat;
   clockSkipUntil?: number;
   downtimeSkip?: DowntimeSkip;
   /** A rival's bribed officials make the next crime harder (+5 DC). */

@@ -673,6 +673,14 @@ Downtime should give the party time to recover, earn favors and finish projects.
 
 ---
 
+## Phase 15: Enemy force and endgame ✅
+
+A campaign can configure one main enemy force whose operations follow the campaign clock. Five stages take it from gathering strength to attempting its endgame. Each stage has a public sign and a private consequence. Downtime previews show the projected increase in danger, and the endgame pauses a skip for a DM decision. A setback moves pending operations while preserving what has already happened. Stopping the enemy clears its remaining operations.
+
+The 2024 DMG frames enemy forces as campaign conflicts and gives examples by genre. The app groups those examples into six editable templates based on how the threat advances: conquest, infiltration, coercion, seizing power, spreading calamity, and pursuit. Their five-stage schedules are a table rule. [5etools, Creating Campaigns](https://5e.tools/book.html#xdmg,4)
+
+---
+
 ## 5etools rules audit
 
 This review compares the revised core books and their supplements against the app at `8622f19`. It covers rules for travel, time, survival, equipment, downtime, factions, and Bastions, including features that exist in the app but only cover part of a published rule. The book links open the 5etools chapters used for the comparison. The audit records implementation gaps.

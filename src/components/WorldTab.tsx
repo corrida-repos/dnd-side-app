@@ -1,3 +1,4 @@
+import { EnemyForceCard } from './EnemyForce';
 import { CampaignDeadlinesCard } from './CampaignDeadlines';
 import { NpcProfile } from './NpcProfile';
 import { useState } from 'react';
@@ -32,6 +33,7 @@ export function WorldTab() {
     <div className="grid">
       <SkyCard />
       <FactionsCard />
+      <EnemyForceCard />
       <MarksCard />
       {gate.show('Paths to power') && <PowerCard />}
       {gate.show('Piety and the gods') && <PietyCard />}

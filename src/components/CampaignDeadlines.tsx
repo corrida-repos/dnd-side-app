@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { formatClock, formatDate } from '../rules/calendar';
+import { THREAT_STAGES } from '../rules/campaignThreat';
 import { fmtGp } from '../rules/money';
 import * as E from '../state/engine';
 import { dispatch, edit, useGame } from '../state/store';
 import type { State } from '../state/types';
 import { Card, Num, Select, Text, Toggle } from './common';
 
-function campaignTime(s: State, at: number): string {
+export function campaignTime(s: State, at: number): string {
   return `${formatDate(s.calendar, s.startYear, Math.floor(at / E.MIN_PER_DAY))} · ${formatClock(at % E.MIN_PER_DAY)}`;
 }
 
@@ -14,6 +15,9 @@ export function TimeAdvancePreview({ until, downtime }: { until: number; downtim
   const s = useGame();
   const deadlines = E.campaignDeadlines(s).filter((item) => item.at <= until);
   const stop = deadlines.find((item) => item.pause);
+  const actualUntil = stop ? Math.max(stop.at, E.absNow(s)) : until;
+  const currentDanger = s.campaignThreat?.stage ?? 0;
+  const projectedDanger = deadlines.reduce((stage, item) => item.at <= actualUntil ? Math.max(stage, item.threatStage ?? 0) : stage, currentDanger);
   const projected = { dayIndex: Math.floor(until / E.MIN_PER_DAY) };
   const turns = s.bastions.map((b) => ({ name: b.name, count: E.turnsDue(projected, b) })).filter((b) => b.count > 0);
   return (
@@ -25,6 +29,7 @@ export function TimeAdvancePreview({ until, downtime }: { until: number; downtim
           {' '}{downtime.finishes.length ? `Could finish: ${downtime.finishes.map((p) => p.name).join(', ')}.` : 'No selected projects finish in this span.'}
         </p>
       )}
+      {projectedDanger > currentDanger && <p>Enemy danger rises from {currentDanger} to {projectedDanger} of {THREAT_STAGES.length}.</p>}
       {turns.length > 0 && <p>Bastion turns due by then: {turns.map((b) => `${b.name} (${b.count})`).join(', ')}.</p>}
       {deadlines.length > 0 && <ul>{deadlines.map((item) => <li key={item.id}>{campaignTime(s, item.at)} — {item.warning}</li>)}</ul>}
       {stop && <p><b>Stops for a DM decision on {campaignTime(s, Math.max(stop.at, E.absNow(s)))}.</b></p>}
@@ -43,8 +48,8 @@ export function CampaignDeadlinesCard() {
   const [deferHours, setDeferHours] = useState(24);
   const now = E.absNow(s);
   const at = now + Math.round(days * E.MIN_PER_DAY + hours * 60);
-  const deadlines = E.campaignDeadlines(s);
-  const resolved = (s.campaignDeadlines ?? []).filter((item) => item.ruling);
+  const deadlines = E.campaignDeadlines(s).filter((item) => item.threatStage == null);
+  const resolved = (s.campaignDeadlines ?? []).filter((item) => item.ruling && item.threatStage == null);
   return (
     <Card title="Campaign deadlines">
       <p className="small muted">Optional table rule (Gritty). Deadlines follow the campaign clock during adventures and downtime.</p>

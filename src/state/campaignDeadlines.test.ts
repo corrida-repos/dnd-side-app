@@ -135,3 +135,53 @@ describe('campaign deadlines', () => {
     expect(result.log.some((entry) => entry.text.includes('bribed'))).toBe(false);
   });
 });
+
+describe('enemy force', () => {
+  const startThreat = (s: State) => E.startCampaignThreat(s, ctx, 'The Ashen Order', 'The Order seizes the capital.', 2,
+    ['Agents come to town.'], ['The Order gains informants.']);
+
+  it('advances automatically with elapsed time and pauses a downtime skip at the endgame', () => {
+    let state = startThreat(town());
+    const start = E.absNow(state);
+    state = E.startDowntimeSkip(state, ctx, 14, []);
+    expect(E.absNow(state)).toBe(start + 10 * day);
+    expect(state.campaignThreat?.stage).toBe(5);
+    expect(state.downtimeSkip?.until).toBe(start + 14 * day);
+    expect(E.campaignDeadlines(state)).toHaveLength(1);
+    expect(attentionItems(state).some((item) => item.text.startsWith('Enemy endgame:'))).toBe(true);
+    expect(state.log.filter((entry) => entry.text === 'Agents come to town.')).toHaveLength(1);
+    expect(state.log.some((entry) => entry.text.includes('seizes the capital'))).toBe(false);
+    state = E.resolveCampaignDeadline(state, ctx, E.campaignDeadlines(state)[0].id, 'scene');
+    state = E.resumeDowntimeSkip(state, ctx);
+    expect(E.absNow(state)).toBe(start + 14 * day);
+    expect(state.campaignThreat?.stage).toBe(5);
+  });
+
+  it('pushes remaining operations back by the setback without repeating past advances', () => {
+    let state = startThreat(town());
+    const start = E.absNow(state);
+    state = E.advance(state, ctx, 3 * day, 'work');
+    expect(state.campaignThreat?.stage).toBe(1);
+    state = E.delayCampaignThreat(state, ctx, 3);
+    expect(E.campaignDeadlines(state)[0].at).toBe(start + 7 * day);
+    expect(state.campaignThreat?.stage).toBe(1);
+    state = E.advance(state, ctx, 4 * day, 'work');
+    expect(state.campaignThreat?.stage).toBe(2);
+    expect(state.log.filter((entry) => entry.text === 'Agents come to town.')).toHaveLength(1);
+  });
+
+  it('lets the party delay or stop a due endgame while keeping unrelated deadlines', () => {
+    let state = ferry(startThreat(town()), 20 * day);
+    state = E.advance(state, ctx, 12 * day, 'work');
+    expect(E.waitingForDeadline(state)).toBe(true);
+    state = E.delayCampaignThreat(state, ctx, 1);
+    expect(E.waitingForDeadline(state)).toBe(false);
+    state = E.advance(state, ctx, day, 'work');
+    expect(E.waitingForDeadline(state)).toBe(true);
+    state = E.stopCampaignThreat(state, ctx);
+    expect(state.campaignThreat?.stopped).toBe(true);
+    expect(E.waitingForDeadline(state)).toBe(false);
+    expect(E.campaignDeadlines(state).map((item) => item.warning)).toEqual(['The last ferry departs']);
+    expect(state.log.filter((entry) => entry.text === 'The enemy is ready to make its decisive move.')).toHaveLength(1);
+  });
+});

@@ -23,6 +23,12 @@ Schedule a deadline in **World → Campaign deadlines** with a public warning, a
 
 A deadline marked for a DM decision pauses clock skips, ordinary travel and downtime. Open it from **Needs attention** to play the scene, accept an offscreen outcome, or defer the decision. Playing the scene switches town play to Day to day. Resume the saved skip when the party returns to downtime. Individual actions that resolve in one step, such as cooking, can finish when a deadline falls during them. The Chronicle records when the deadline came due and how the DM ruled.
 
+## Enemy force
+
+Set up the campaign antagonist under **World → Enemy force**. Choose a custom enemy or an editable preset inspired by the 2024 DMG’s campaign conflicts. Enter the days per stage and what happens if the endgame succeeds. Danger rises from 0 to 5 on the campaign clock, including during downtime and travel. Warning signs appear in skip previews and the Chronicle. The DM can inspect what each operation changes in the world.
+
+A setback moves future operations without erasing what the enemy has already achieved. At the endgame, a skip pauses so the DM can play the scene or accept the offscreen outcome. Marking the enemy force stopped clears its pending operations. Each campaign tracks one main enemy force alongside its independent campaign deadlines.
+
 ## Levels of detail
 
 **Settings → Level of detail** offers five cumulative presets. Light includes supported 5.5e player options. Complete adds 5.5e requirements and consequences. The three higher levels add increasingly involved legacy and table rules.
